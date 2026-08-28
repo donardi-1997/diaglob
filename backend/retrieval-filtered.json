@@ -1,0 +1,11 @@
+{
+  "vectorSearchConfiguration": {
+    "numberOfResults": 5,
+    "filter": {
+      "equals": {
+        "key": "x-amz-bedrock-kb-data-source-id",
+        "value": "RCH1VO2AFZ"
+      }
+    }
+  }
+}

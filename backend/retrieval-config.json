@@ -1,0 +1,5 @@
+{
+  "vectorSearchConfiguration": {
+    "numberOfResults": 5
+  }
+}
