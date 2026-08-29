@@ -2044,3 +2044,202 @@ def _diaglob_store_active_since_update(
         target.active_since = datetime.utcnow()
     else:
         target.active_since = None
+
+
+
+# ============================================================
+# AUTOMATIONS
+# ============================================================
+
+
+class Automation(Base):
+    __tablename__ = "automations"
+
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+    )
+
+    organization_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "organizations.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+        index=True,
+    )
+
+    store_id: Mapped[int | None] = mapped_column(
+        ForeignKey(
+            "stores.id",
+            ondelete="CASCADE",
+        ),
+        nullable=True,
+        index=True,
+    )
+
+    name: Mapped[str] = mapped_column(
+        String(200),
+        nullable=False,
+    )
+
+    description: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    active: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False,
+    )
+
+    trigger_type: Mapped[str] = mapped_column(
+        String(50),
+        default="manual",
+        nullable=False,
+        index=True,
+    )
+
+    conditions_json: Mapped[str] = mapped_column(
+        Text,
+        default="[]",
+        nullable=False,
+    )
+
+    actions_json: Mapped[str] = mapped_column(
+        Text,
+        default="[]",
+        nullable=False,
+    )
+
+    created_by: Mapped[int | None] = mapped_column(
+        ForeignKey(
+            "users.id",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False,
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+    organization = relationship(
+        "Organization",
+    )
+
+    store = relationship(
+        "Store",
+    )
+
+    executions = relationship(
+        "AutomationExecution",
+        back_populates="automation",
+        order_by="AutomationExecution.id.desc()",
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "store_id",
+            "name",
+            name="uq_automation_org_store_name",
+        ),
+    )
+
+
+
+class AutomationExecution(Base):
+    __tablename__ = "automation_executions"
+
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+    )
+
+    automation_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "automations.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+        index=True,
+    )
+
+    organization_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "organizations.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+        index=True,
+    )
+
+    store_id: Mapped[int | None] = mapped_column(
+        ForeignKey(
+            "stores.id",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+        index=True,
+    )
+
+    event_type: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+    )
+
+    event_id: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(20),
+        default="pending",
+        nullable=False,
+        index=True,
+    )
+
+    input_json: Mapped[str] = mapped_column(
+        Text,
+        default="{}",
+        nullable=False,
+    )
+
+    result_json: Mapped[str] = mapped_column(
+        Text,
+        default="{}",
+        nullable=False,
+    )
+
+    error_message: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False,
+    )
+
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+    )
+
+    automation = relationship(
+        "Automation",
+        back_populates="executions",
+    )

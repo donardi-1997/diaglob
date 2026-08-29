@@ -62,6 +62,8 @@ from .permissions import (
 from .db import Base, engine, get_db
 from .models import (
     Agent,
+    Automation,
+    AutomationExecution,
     CommerceConnection,
     Conversation,
     Customer,
@@ -105,6 +107,12 @@ from .shopify_orders import (
     create_shopify_draft_order,
     list_shopify_orders,
     get_shopify_order,
+)
+
+from .automations import (
+    execute_automation,
+    emit_event,
+    VALID_TRIGGER_TYPES,
 )
 
 from .shopify_client import (
@@ -288,6 +296,30 @@ class KnowledgeBaseUpdate(BaseModel):
     active: bool | None = None
     store_ids: list[int] | None = None
 
+
+class AutomationCreate(BaseModel):
+    name: str
+    description: str | None = None
+    store_id: int | None = None
+    active: bool = True
+    trigger_type: str = "manual"
+    conditions_json: list[dict] = []
+    actions_json: list[dict] = []
+
+
+class AutomationUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    store_id: int | None = None
+    active: bool | None = None
+    trigger_type: str | None = None
+    conditions_json: list[dict] | None = None
+    actions_json: list[dict] | None = None
+
+
+class AutomationRunRequest(BaseModel):
+    event_type: str = "manual"
+    payload: dict = {}
 
 
 bearer_scheme = HTTPBearer(
@@ -7989,6 +8021,1159 @@ def get_store_commerce_connection(
             connection.last_error,
     }
 
+
+@app.get(
+    "/api/stores/{store_id}"
+    "/commerce/summary"
+)
+def get_commerce_summary(
+    store_id: int,
+    membership: OrganizationMembership = Depends(
+        require_permission(
+            "commerce.read"
+        )
+    ),
+    db: Session = Depends(get_db),
+):
+    store = (
+        db.query(Store)
+        .filter(
+            Store.id == store_id,
+            Store.organization_id
+            == membership.organization_id,
+            Store.deleted.is_(False),
+        )
+        .first()
+    )
+
+    if not store:
+        raise HTTPException(
+            status_code=404,
+            detail="Store not found",
+        )
+
+    connection = (
+        db.query(CommerceConnection)
+        .filter(
+            CommerceConnection.store_id
+            == store.id,
+            CommerceConnection.organization_id
+            == membership.organization_id,
+        )
+        .first()
+    )
+
+    total_products = (
+        db.query(Product)
+        .filter(
+            Product.store_id == store.id,
+            Product.organization_id
+            == membership.organization_id,
+        )
+        .count()
+    )
+
+    total_variants = (
+        db.query(ProductVariant)
+        .join(Product)
+        .filter(
+            Product.store_id == store.id,
+            Product.organization_id
+            == membership.organization_id,
+        )
+        .count()
+    )
+
+    orders_query = (
+        db.query(Order)
+        .filter(
+            Order.store_id == store.id,
+            Order.organization_id
+            == membership.organization_id,
+        )
+    )
+
+    total_orders = orders_query.count()
+
+    orders_by_status = {}
+
+    for status_val in (
+        "pending",
+        "created",
+        "failed",
+        "unknown",
+    ):
+        orders_by_status[status_val] = (
+            orders_query.filter(
+                Order.external_creation_status
+                == status_val
+            )
+            .count()
+        )
+
+    total_order_value = 0.0
+
+    value_rows = (
+        db.query(
+            Order.total_amount,
+            Order.currency,
+        )
+        .filter(
+            Order.store_id == store.id,
+            Order.organization_id
+            == membership.organization_id,
+            Order.external_creation_status
+            .in_(["created", "pending"]),
+        )
+        .all()
+    )
+
+    for amount, _currency in value_rows:
+        total_order_value += float(amount)
+
+    recent_orders = (
+        db.query(Order)
+        .filter(
+            Order.store_id == store.id,
+            Order.organization_id
+            == membership.organization_id,
+        )
+        .order_by(Order.created_at.desc())
+        .limit(5)
+        .all()
+    )
+
+    recent_products = (
+        db.query(Product)
+        .filter(
+            Product.store_id == store.id,
+            Product.organization_id
+            == membership.organization_id,
+        )
+        .order_by(Product.updated_at.desc())
+        .limit(5)
+        .all()
+    )
+
+    return {
+        "connected":
+            connection is not None
+            and connection.status
+            == "connected",
+
+        "provider":
+            connection.provider
+            if connection
+            else None,
+
+        "total_products": total_products,
+        "total_variants": total_variants,
+        "total_orders": total_orders,
+        "orders_by_status": orders_by_status,
+        "total_order_value": round(
+            total_order_value, 2
+        ),
+        "currency": store.currency,
+
+        "recent_orders": [
+            {
+                "id": o.id,
+                "order_number": o.order_number,
+                "total_amount": float(
+                    o.total_amount
+                ),
+                "currency": o.currency,
+                "financial_status": (
+                    o.financial_status
+                ),
+                "source": o.source,
+                "external_creation_status": (
+                    o.external_creation_status
+                ),
+                "created_at": (
+                    o.created_at.isoformat()
+                    + "Z"
+                    if o.created_at
+                    else None
+                ),
+            }
+            for o in recent_orders
+        ],
+
+        "recent_products": [
+            {
+                "id": p.id,
+                "title": p.title,
+                "image_url": p.image_url,
+                "active": p.active,
+                "updated_at": (
+                    p.updated_at.isoformat()
+                    + "Z"
+                    if p.updated_at
+                    else None
+                ),
+            }
+            for p in recent_products
+        ],
+    }
+
+
+@app.get(
+    "/api/stores/{store_id}"
+    "/commerce/products"
+)
+def list_store_commerce_products(
+    store_id: int,
+    q: str | None = None,
+    membership: OrganizationMembership = Depends(
+        require_permission(
+            "commerce.read"
+        )
+    ),
+    db: Session = Depends(get_db),
+):
+    store = (
+        db.query(Store)
+        .filter(
+            Store.id == store_id,
+            Store.organization_id
+            == membership.organization_id,
+            Store.deleted.is_(False),
+        )
+        .first()
+    )
+
+    if not store:
+        raise HTTPException(
+            status_code=404,
+            detail="Store not found",
+        )
+
+    query = (
+        db.query(Product)
+        .filter(
+            Product.store_id == store.id,
+            Product.organization_id
+            == membership.organization_id,
+        )
+    )
+
+    if q and q.strip():
+        search = f"%{q.strip()}%"
+
+        query = query.filter(
+            Product.title.ilike(search)
+        )
+
+    products = (
+        query
+        .order_by(Product.title)
+        .all()
+    )
+
+    return {
+        "items": [
+            serialize_commerce_product(p)
+            for p in products
+        ],
+        "total": len(products),
+    }
+
+
+@app.get(
+    "/api/stores/{store_id}"
+    "/commerce/orders"
+)
+def list_store_commerce_orders(
+    store_id: int,
+    membership: OrganizationMembership = Depends(
+        require_permission(
+            "commerce.read"
+        )
+    ),
+    db: Session = Depends(get_db),
+):
+    store = (
+        db.query(Store)
+        .filter(
+            Store.id == store_id,
+            Store.organization_id
+            == membership.organization_id,
+            Store.deleted.is_(False),
+        )
+        .first()
+    )
+
+    if not store:
+        raise HTTPException(
+            status_code=404,
+            detail="Store not found",
+        )
+
+    orders = list_shopify_orders(
+        db=db,
+        store_id=store.id,
+        organization_id=store.organization_id,
+    )
+
+    return {
+        "items": orders,
+        "total": len(orders),
+    }
+
+
+# ============================================================
+# AUTOMATIONS ENDPOINTS
+# ============================================================
+
+
+@app.get(
+    "/api/stores/{store_id}/automations"
+)
+def list_automations(
+    store_id: int,
+    membership: OrganizationMembership = Depends(
+        require_permission(
+            "automations.read"
+        )
+    ),
+    db: Session = Depends(get_db),
+):
+    store = (
+        db.query(Store)
+        .filter(
+            Store.id == store_id,
+            Store.organization_id
+            == membership.organization_id,
+            Store.deleted.is_(False),
+        )
+        .first()
+    )
+
+    if not store:
+        raise HTTPException(
+            status_code=404,
+            detail="Store not found",
+        )
+
+    automations = (
+        db.query(Automation)
+        .filter(
+            Automation.organization_id
+            == membership.organization_id,
+            (Automation.store_id == store_id)
+            | (Automation.store_id.is_(None)),
+        )
+        .order_by(Automation.updated_at.desc())
+        .all()
+    )
+
+    items = []
+
+    for a in automations:
+        last_exec = (
+            db.query(AutomationExecution)
+            .filter(
+                AutomationExecution.automation_id
+                == a.id,
+            )
+            .order_by(
+                AutomationExecution.id.desc()
+            )
+            .first()
+        )
+
+        items.append(
+            {
+                "id": a.id,
+                "organization_id": (
+                    a.organization_id
+                ),
+                "store_id": a.store_id,
+                "name": a.name,
+                "description": a.description,
+                "active": a.active,
+                "trigger_type": a.trigger_type,
+                "conditions_json": json.loads(
+                    a.conditions_json
+                )
+                if a.conditions_json
+                else [],
+                "actions_json": json.loads(
+                    a.actions_json
+                )
+                if a.actions_json
+                else [],
+                "created_by": a.created_by,
+                "created_at": (
+                    a.created_at.isoformat()
+                    + "Z"
+                    if a.created_at
+                    else None
+                ),
+                "updated_at": (
+                    a.updated_at.isoformat()
+                    + "Z"
+                    if a.updated_at
+                    else None
+                ),
+                "last_execution": (
+                    {
+                        "id": last_exec.id,
+                        "status": (
+                            last_exec.status
+                        ),
+                        "started_at": (
+                            last_exec.started_at.isoformat()
+                            + "Z"
+                            if last_exec.started_at
+                            else None
+                        ),
+                        "completed_at": (
+                            last_exec.completed_at.isoformat()
+                            + "Z"
+                            if last_exec.completed_at
+                            else None
+                        ),
+                    }
+                    if last_exec
+                    else None
+                ),
+            }
+        )
+
+    return {
+        "items": items,
+        "total": len(items),
+    }
+
+
+@app.post(
+    "/api/stores/{store_id}/automations"
+)
+def create_automation(
+    store_id: int,
+    payload: AutomationCreate,
+    membership: OrganizationMembership = Depends(
+        require_permission(
+            "automations.write"
+        )
+    ),
+    db: Session = Depends(get_db),
+):
+    store = (
+        db.query(Store)
+        .filter(
+            Store.id == store_id,
+            Store.organization_id
+            == membership.organization_id,
+            Store.deleted.is_(False),
+        )
+        .first()
+    )
+
+    if not store:
+        raise HTTPException(
+            status_code=404,
+            detail="Store not found",
+        )
+
+    if (
+        payload.trigger_type
+        not in VALID_TRIGGER_TYPES
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid trigger_type",
+        )
+
+    existing = (
+        db.query(Automation)
+        .filter(
+            Automation.organization_id
+            == membership.organization_id,
+            Automation.store_id == store_id,
+            Automation.name == payload.name,
+        )
+        .first()
+    )
+
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail="Automation with this name "
+            "already exists in this store",
+        )
+
+    automation = Automation(
+        organization_id=(
+            membership.organization_id
+        ),
+        store_id=store_id,
+        name=payload.name,
+        description=payload.description,
+        active=payload.active,
+        trigger_type=payload.trigger_type,
+        conditions_json=json.dumps(
+            payload.conditions_json
+        ),
+        actions_json=json.dumps(
+            payload.actions_json
+        ),
+        created_by=membership.user_id,
+    )
+
+    db.add(automation)
+    db.commit()
+    db.refresh(automation)
+
+    return {
+        "id": automation.id,
+        "organization_id": (
+            automation.organization_id
+        ),
+        "store_id": automation.store_id,
+        "name": automation.name,
+        "description": automation.description,
+        "active": automation.active,
+        "trigger_type": automation.trigger_type,
+        "conditions_json": json.loads(
+            automation.conditions_json
+        ),
+        "actions_json": json.loads(
+            automation.actions_json
+        ),
+        "created_by": automation.created_by,
+        "created_at": (
+            automation.created_at.isoformat()
+            + "Z"
+            if automation.created_at
+            else None
+        ),
+        "updated_at": (
+            automation.updated_at.isoformat()
+            + "Z"
+            if automation.updated_at
+            else None
+        ),
+    }
+
+
+@app.get(
+    "/api/stores/{store_id}"
+    "/automations/{automation_id}"
+)
+def get_automation(
+    store_id: int,
+    automation_id: int,
+    membership: OrganizationMembership = Depends(
+        require_permission(
+            "automations.read"
+        )
+    ),
+    db: Session = Depends(get_db),
+):
+    store = (
+        db.query(Store)
+        .filter(
+            Store.id == store_id,
+            Store.organization_id
+            == membership.organization_id,
+            Store.deleted.is_(False),
+        )
+        .first()
+    )
+
+    if not store:
+        raise HTTPException(
+            status_code=404,
+            detail="Store not found",
+        )
+
+    automation = (
+        db.query(Automation)
+        .filter(
+            Automation.id == automation_id,
+            Automation.organization_id
+            == membership.organization_id,
+        )
+        .first()
+    )
+
+    if not automation:
+        raise HTTPException(
+            status_code=404,
+            detail="Automation not found",
+        )
+
+    return {
+        "id": automation.id,
+        "organization_id": (
+            automation.organization_id
+        ),
+        "store_id": automation.store_id,
+        "name": automation.name,
+        "description": automation.description,
+        "active": automation.active,
+        "trigger_type": automation.trigger_type,
+        "conditions_json": json.loads(
+            automation.conditions_json
+        ),
+        "actions_json": json.loads(
+            automation.actions_json
+        ),
+        "created_by": automation.created_by,
+        "created_at": (
+            automation.created_at.isoformat()
+            + "Z"
+            if automation.created_at
+            else None
+        ),
+        "updated_at": (
+            automation.updated_at.isoformat()
+            + "Z"
+            if automation.updated_at
+            else None
+        ),
+    }
+
+
+@app.put(
+    "/api/stores/{store_id}"
+    "/automations/{automation_id}"
+)
+def update_automation(
+    store_id: int,
+    automation_id: int,
+    payload: AutomationUpdate,
+    membership: OrganizationMembership = Depends(
+        require_permission(
+            "automations.write"
+        )
+    ),
+    db: Session = Depends(get_db),
+):
+    store = (
+        db.query(Store)
+        .filter(
+            Store.id == store_id,
+            Store.organization_id
+            == membership.organization_id,
+            Store.deleted.is_(False),
+        )
+        .first()
+    )
+
+    if not store:
+        raise HTTPException(
+            status_code=404,
+            detail="Store not found",
+        )
+
+    automation = (
+        db.query(Automation)
+        .filter(
+            Automation.id == automation_id,
+            Automation.organization_id
+            == membership.organization_id,
+        )
+        .first()
+    )
+
+    if not automation:
+        raise HTTPException(
+            status_code=404,
+            detail="Automation not found",
+        )
+
+    if (
+        payload.trigger_type is not None
+        and payload.trigger_type
+        not in VALID_TRIGGER_TYPES
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid trigger_type",
+        )
+
+    if payload.name is not None:
+        automation.name = payload.name
+
+    if payload.description is not None:
+        automation.description = (
+            payload.description
+        )
+
+    if payload.store_id is not None:
+        automation.store_id = (
+            payload.store_id
+        )
+
+    if payload.active is not None:
+        automation.active = payload.active
+
+    if payload.trigger_type is not None:
+        automation.trigger_type = (
+            payload.trigger_type
+        )
+
+    if payload.conditions_json is not None:
+        automation.conditions_json = json.dumps(
+            payload.conditions_json
+        )
+
+    if payload.actions_json is not None:
+        automation.actions_json = json.dumps(
+            payload.actions_json
+        )
+
+    automation.updated_at = datetime.utcnow()
+
+    db.commit()
+    db.refresh(automation)
+
+    return {
+        "id": automation.id,
+        "organization_id": (
+            automation.organization_id
+        ),
+        "store_id": automation.store_id,
+        "name": automation.name,
+        "description": automation.description,
+        "active": automation.active,
+        "trigger_type": automation.trigger_type,
+        "conditions_json": json.loads(
+            automation.conditions_json
+        ),
+        "actions_json": json.loads(
+            automation.actions_json
+        ),
+        "created_by": automation.created_by,
+        "created_at": (
+            automation.created_at.isoformat()
+            + "Z"
+            if automation.created_at
+            else None
+        ),
+        "updated_at": (
+            automation.updated_at.isoformat()
+            + "Z"
+            if automation.updated_at
+            else None
+        ),
+    }
+
+
+@app.delete(
+    "/api/stores/{store_id}"
+    "/automations/{automation_id}"
+)
+def delete_automation(
+    store_id: int,
+    automation_id: int,
+    membership: OrganizationMembership = Depends(
+        require_permission(
+            "automations.write"
+        )
+    ),
+    db: Session = Depends(get_db),
+):
+    store = (
+        db.query(Store)
+        .filter(
+            Store.id == store_id,
+            Store.organization_id
+            == membership.organization_id,
+            Store.deleted.is_(False),
+        )
+        .first()
+    )
+
+    if not store:
+        raise HTTPException(
+            status_code=404,
+            detail="Store not found",
+        )
+
+    automation = (
+        db.query(Automation)
+        .filter(
+            Automation.id == automation_id,
+            Automation.organization_id
+            == membership.organization_id,
+        )
+        .first()
+    )
+
+    if not automation:
+        raise HTTPException(
+            status_code=404,
+            detail="Automation not found",
+        )
+
+    db.delete(automation)
+    db.commit()
+
+    return {"ok": True}
+
+
+@app.post(
+    "/api/stores/{store_id}"
+    "/automations/{automation_id}/toggle"
+)
+def toggle_automation(
+    store_id: int,
+    automation_id: int,
+    membership: OrganizationMembership = Depends(
+        require_permission(
+            "automations.write"
+        )
+    ),
+    db: Session = Depends(get_db),
+):
+    store = (
+        db.query(Store)
+        .filter(
+            Store.id == store_id,
+            Store.organization_id
+            == membership.organization_id,
+            Store.deleted.is_(False),
+        )
+        .first()
+    )
+
+    if not store:
+        raise HTTPException(
+            status_code=404,
+            detail="Store not found",
+        )
+
+    automation = (
+        db.query(Automation)
+        .filter(
+            Automation.id == automation_id,
+            Automation.organization_id
+            == membership.organization_id,
+        )
+        .first()
+    )
+
+    if not automation:
+        raise HTTPException(
+            status_code=404,
+            detail="Automation not found",
+        )
+
+    automation.active = not automation.active
+    automation.updated_at = datetime.utcnow()
+
+    db.commit()
+    db.refresh(automation)
+
+    return {
+        "id": automation.id,
+        "active": automation.active,
+        "updated_at": (
+            automation.updated_at.isoformat()
+            + "Z"
+            if automation.updated_at
+            else None
+        ),
+    }
+
+
+@app.post(
+    "/api/stores/{store_id}"
+    "/automations/{automation_id}/run"
+)
+def run_automation(
+    store_id: int,
+    automation_id: int,
+    payload: AutomationRunRequest,
+    membership: OrganizationMembership = Depends(
+        require_permission(
+            "automations.write"
+        )
+    ),
+    db: Session = Depends(get_db),
+):
+    store = (
+        db.query(Store)
+        .filter(
+            Store.id == store_id,
+            Store.organization_id
+            == membership.organization_id,
+            Store.deleted.is_(False),
+        )
+        .first()
+    )
+
+    if not store:
+        raise HTTPException(
+            status_code=404,
+            detail="Store not found",
+        )
+
+    automation = (
+        db.query(Automation)
+        .filter(
+            Automation.id == automation_id,
+            Automation.organization_id
+            == membership.organization_id,
+        )
+        .first()
+    )
+
+    if not automation:
+        raise HTTPException(
+            status_code=404,
+            detail="Automation not found",
+        )
+
+    execution = execute_automation(
+        db=db,
+        automation=automation,
+        event_type=payload.event_type,
+        payload=payload.payload,
+    )
+
+    return {
+        "id": execution.id,
+        "automation_id": (
+            execution.automation_id
+        ),
+        "status": execution.status,
+        "event_type": execution.event_type,
+        "input_json": json.loads(
+            execution.input_json
+        ),
+        "result_json": json.loads(
+            execution.result_json
+        ),
+        "error_message": (
+            execution.error_message
+        ),
+        "started_at": (
+            execution.started_at.isoformat()
+            + "Z"
+            if execution.started_at
+            else None
+        ),
+        "completed_at": (
+            execution.completed_at.isoformat()
+            + "Z"
+            if execution.completed_at
+            else None
+        ),
+    }
+
+
+@app.get(
+    "/api/stores/{store_id}"
+    "/automations/{automation_id}"
+    "/executions"
+)
+def list_automation_executions(
+    store_id: int,
+    automation_id: int,
+    membership: OrganizationMembership = Depends(
+        require_permission(
+            "automations.read"
+        )
+    ),
+    db: Session = Depends(get_db),
+):
+    store = (
+        db.query(Store)
+        .filter(
+            Store.id == store_id,
+            Store.organization_id
+            == membership.organization_id,
+            Store.deleted.is_(False),
+        )
+        .first()
+    )
+
+    if not store:
+        raise HTTPException(
+            status_code=404,
+            detail="Store not found",
+        )
+
+    automation = (
+        db.query(Automation)
+        .filter(
+            Automation.id == automation_id,
+            Automation.organization_id
+            == membership.organization_id,
+        )
+        .first()
+    )
+
+    if not automation:
+        raise HTTPException(
+            status_code=404,
+            detail="Automation not found",
+        )
+
+    executions = (
+        db.query(AutomationExecution)
+        .filter(
+            AutomationExecution.automation_id
+            == automation_id,
+            AutomationExecution.organization_id
+            == membership.organization_id,
+        )
+        .order_by(
+            AutomationExecution.id.desc()
+        )
+        .all()
+    )
+
+    items = []
+
+    for e in executions:
+        items.append(
+            {
+                "id": e.id,
+                "automation_id": (
+                    e.automation_id
+                ),
+                "automation_name": (
+                    automation.name
+                ),
+                "status": e.status,
+                "event_type": e.event_type,
+                "event_id": e.event_id,
+                "input_json": json.loads(
+                    e.input_json
+                ),
+                "result_json": json.loads(
+                    e.result_json
+                ),
+                "error_message": (
+                    e.error_message
+                ),
+                "started_at": (
+                    e.started_at.isoformat()
+                    + "Z"
+                    if e.started_at
+                    else None
+                ),
+                "completed_at": (
+                    e.completed_at.isoformat()
+                    + "Z"
+                    if e.completed_at
+                    else None
+                ),
+            }
+        )
+
+    return {
+        "items": items,
+        "total": len(items),
+    }
+
+
+@app.get(
+    "/api/stores/{store_id}"
+    "/automation-executions"
+)
+def list_all_automation_executions(
+    store_id: int,
+    membership: OrganizationMembership = Depends(
+        require_permission(
+            "automations.read"
+        )
+    ),
+    db: Session = Depends(get_db),
+):
+    store = (
+        db.query(Store)
+        .filter(
+            Store.id == store_id,
+            Store.organization_id
+            == membership.organization_id,
+            Store.deleted.is_(False),
+        )
+        .first()
+    )
+
+    if not store:
+        raise HTTPException(
+            status_code=404,
+            detail="Store not found",
+        )
+
+    executions = (
+        db.query(AutomationExecution)
+        .filter(
+            AutomationExecution.organization_id
+            == membership.organization_id,
+            AutomationExecution.store_id
+            == store_id,
+        )
+        .order_by(
+            AutomationExecution.id.desc()
+        )
+        .limit(100)
+        .all()
+    )
+
+    items = []
+
+    for e in executions:
+        auto = (
+            db.query(Automation)
+            .filter(
+                Automation.id
+                == e.automation_id,
+            )
+            .first()
+        )
+
+        items.append(
+            {
+                "id": e.id,
+                "automation_id": (
+                    e.automation_id
+                ),
+                "automation_name": (
+                    auto.name
+                    if auto
+                    else "Deleted"
+                ),
+                "status": e.status,
+                "event_type": e.event_type,
+                "event_id": e.event_id,
+                "input_json": json.loads(
+                    e.input_json
+                ),
+                "result_json": json.loads(
+                    e.result_json
+                ),
+                "error_message": (
+                    e.error_message
+                ),
+                "started_at": (
+                    e.started_at.isoformat()
+                    + "Z"
+                    if e.started_at
+                    else None
+                ),
+                "completed_at": (
+                    e.completed_at.isoformat()
+                    + "Z"
+                    if e.completed_at
+                    else None
+                ),
+            }
+        )
+
+    return {
+        "items": items,
+        "total": len(items),
+    }
 
 
 @app.get("/api/stores/{store_id}/dropi")

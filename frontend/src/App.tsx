@@ -31,6 +31,8 @@ import TeamPage from "./pages/TeamPage";
 import KnowledgeBasesPage from "./pages/KnowledgeBasesPage";
 import StoresPage from "./pages/StoresPage";
 import PlansPage from "./pages/PlansPage";
+import CommercePage from "./pages/CommercePage";
+import AutomationsPage from "./pages/AutomationsPage";
 import LoginPage from "./pages/LoginPage";
 import { getStores, type Store } from "./services/stores";
 import {
@@ -978,6 +980,23 @@ function App() {
           <PlansPage />
         )}
 
+        {activePage === "commerce" && (
+          <CommercePage
+            key={`commerce-${storeScopeVersion}`}
+            canWrite={can("commerce.write")}
+            storeId={
+              selectedStore?.id ?? 0
+            }
+          />
+        )}
+
+        {activePage === "automations" && (
+          <AutomationsPage
+            key={`automations-${storeScopeVersion}`}
+            canWrite={can("automations.write")}
+          />
+        )}
+
         {![
           "overview",
           "conversations",
@@ -986,6 +1005,8 @@ function App() {
           "knowledge",
           "settings",
           "plans",
+          "commerce",
+          "automations",
         ].includes(
           activePage,
         ) && (

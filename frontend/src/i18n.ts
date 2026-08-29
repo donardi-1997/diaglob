@@ -815,6 +815,125 @@ const resources = {
         "Recomendación generada con inventario disponible",
 
       now: "ahora",
+
+      commerceTabSummary: "Resumen",
+      commerceTabProducts: "Productos",
+      commerceTabOrders: "Órdenes",
+      commerceSummaryError:
+        "No se pudo cargar el resumen de comercio.",
+      commerceNoData:
+        "No hay datos de comercio disponibles.",
+      commerceStatProducts: "Productos",
+      commerceStatOrders: "Órdenes",
+      commerceStatTotalValue: "Valor total",
+      commerceStatusPending: "Pendientes",
+      commerceStatusCreated: "Creadas",
+      commerceStatusFailed: "Fallidas",
+      commerceStatusUnknown: "Desconocido",
+      commerceRecentOrders: "Órdenes recientes",
+      commerceRecentProducts:
+        "Productos recientes",
+      commerceActive: "Activo",
+      commerceInactive: "Inactivo",
+      commerceProductsError:
+        "No se pudieron cargar los productos.",
+      commerceProductsSearch: "Buscar productos...",
+      commerceSearch: "Buscar",
+      commerceNoProducts:
+        "No hay productos disponibles.",
+      commerceResultsCount:
+        "{{count}} producto(s)",
+      commerceMore: "más",
+      commerceOrdersError:
+        "No se pudieron cargar las órdenes.",
+      commerceNoOrders:
+        "No hay órdenes disponibles.",
+      commerceOrdersCount:
+        "{{count}} orden(es)",
+      commerceOrderNumber: "#",
+      commerceOrderTotal: "Total",
+      commerceOrderStatus: "Estado",
+      commerceOrderSource: "Origen",
+      commerceOrderDate: "Fecha",
+      commerceOrderStatusFailed: "Fallida",
+      commerceOrderStatusPending: "Pendiente",
+      commerceOrderStatusCreated: "Creada",
+      commerceOrderStatusUnknown: "Desconocido",
+      commerceOrderStatusHistorical: "Histórica",
+
+      autoTabRules: "Reglas",
+      autoTabExecutions: "Ejecuciones",
+      autoLoadError:
+        "No se pudieron cargar las automatizaciones.",
+      autoNoRules:
+        "No hay reglas de automatización configuradas.",
+      autoNewRule: "Nueva regla",
+      autoEditRule: "Editar regla",
+      autoNameRequired: "El nombre es obligatorio.",
+      autoSaveError:
+        "No se pudo guardar la automatización.",
+      autoToggleError:
+        "No se pudo cambiar el estado.",
+      autoDeleteError:
+        "No se pudo eliminar la automatización.",
+      autoDeleteTitle: "Eliminar regla",
+      autoDeleteConfirm:
+        "¿Estás seguro de que deseas eliminar «{{name}}»? Esta acción no se puede deshacer.",
+      autoDelete: "Eliminar",
+      autoCancel: "Cancelar",
+      autoSaveChanges: "Guardar cambios",
+      autoCreate: "Crear",
+      autoEdit: "Editar",
+      autoToggle: "Activar/Desactivar",
+      autoRun: "Ejecutar",
+      autoRunNow: "Ejecutar ahora",
+      autoConditions: "Condiciones",
+      autoActions: "Acciones",
+      autoLastRun: "Última ejecución",
+      autoFormName: "Nombre",
+      autoFormNamePlaceholder: "Ej: Nota automática",
+      autoFormDescription: "Descripción",
+      autoFormDescPlaceholder:
+        "Descripción opcional",
+      autoFormTrigger: "Disparador",
+      autoFormConditions: "Condiciones",
+      autoFormActions: "Acciones",
+      autoFormActive: "Activo",
+      autoFormValue: "Valor",
+      autoFormLogMessage: "Mensaje",
+      autoFormNoteText: "Texto de la nota",
+      autoNoConditions:
+        "Sin condiciones (se ejecuta siempre).",
+      autoNoActions:
+        "Sin acciones configuradas.",
+      autoAddCondition: "Agregar condición",
+      autoAddAction: "Agregar acción",
+      autoRunPayload: "Payload (JSON)",
+      autoRunResult: "Resultado",
+      autoTrigger_manual: "Manual",
+      autoTrigger_order_created: "Orden creada",
+      autoTrigger_order_failed: "Orden fallida",
+      autoTrigger_conversation_created:
+        "Conversación creada",
+      autoTrigger_message_received:
+        "Mensaje recibido",
+      autoAction_log_event: "Registrar evento",
+      autoAction_add_order_note:
+        "Agregar nota a orden",
+      autoExecLoadError:
+        "No se pudieron cargar las ejecuciones.",
+      autoNoExecutions:
+        "No hay ejecuciones registradas.",
+      autoExecAutomation: "Automatización",
+      autoExecEvent: "Evento",
+      autoExecStatus: "Estado",
+      autoExecStarted: "Inicio",
+      autoExecDuration: "Duración",
+      autoExecDetail: "Detalle de ejecución",
+      autoExecError: "Error",
+      autoExecInput: "Entrada",
+      autoExecResult: "Resultado",
+      autoClose: "Cerrar",
     },
   },
 
@@ -1589,6 +1708,125 @@ const resources = {
         "Recommendation generated with available inventory",
 
       now: "now",
+
+      commerceTabSummary: "Summary",
+      commerceTabProducts: "Products",
+      commerceTabOrders: "Orders",
+      commerceSummaryError:
+        "Could not load commerce summary.",
+      commerceNoData:
+        "No commerce data available.",
+      commerceStatProducts: "Products",
+      commerceStatOrders: "Orders",
+      commerceStatTotalValue: "Total value",
+      commerceStatusPending: "Pending",
+      commerceStatusCreated: "Created",
+      commerceStatusFailed: "Failed",
+      commerceStatusUnknown: "Unknown",
+      commerceRecentOrders: "Recent orders",
+      commerceRecentProducts: "Recent products",
+      commerceActive: "Active",
+      commerceInactive: "Inactive",
+      commerceProductsError:
+        "Could not load products.",
+      commerceProductsSearch: "Search products...",
+      commerceSearch: "Search",
+      commerceNoProducts:
+        "No products available.",
+      commerceResultsCount:
+        "{{count}} product(s)",
+      commerceMore: "more",
+      commerceOrdersError:
+        "Could not load orders.",
+      commerceNoOrders:
+        "No orders available.",
+      commerceOrdersCount:
+        "{{count}} order(s)",
+      commerceOrderNumber: "#",
+      commerceOrderTotal: "Total",
+      commerceOrderStatus: "Status",
+      commerceOrderSource: "Source",
+      commerceOrderDate: "Date",
+      commerceOrderStatusFailed: "Failed",
+      commerceOrderStatusPending: "Pending",
+      commerceOrderStatusCreated: "Created",
+      commerceOrderStatusUnknown: "Unknown",
+      commerceOrderStatusHistorical: "Historical",
+
+      autoTabRules: "Rules",
+      autoTabExecutions: "Executions",
+      autoLoadError:
+        "Could not load automations.",
+      autoNoRules:
+        "No automation rules configured.",
+      autoNewRule: "New rule",
+      autoEditRule: "Edit rule",
+      autoNameRequired: "Name is required.",
+      autoSaveError:
+        "Could not save automation.",
+      autoToggleError:
+        "Could not change status.",
+      autoDeleteError:
+        "Could not delete automation.",
+      autoDeleteTitle: "Delete rule",
+      autoDeleteConfirm:
+        'Are you sure you want to delete "{{name}}"? This action cannot be undone.',
+      autoDelete: "Delete",
+      autoCancel: "Cancel",
+      autoSaveChanges: "Save changes",
+      autoCreate: "Create",
+      autoEdit: "Edit",
+      autoToggle: "Enable/Disable",
+      autoRun: "Run",
+      autoRunNow: "Run now",
+      autoConditions: "Conditions",
+      autoActions: "Actions",
+      autoLastRun: "Last run",
+      autoFormName: "Name",
+      autoFormNamePlaceholder:
+        "e.g. Auto note",
+      autoFormDescription: "Description",
+      autoFormDescPlaceholder:
+        "Optional description",
+      autoFormTrigger: "Trigger",
+      autoFormConditions: "Conditions",
+      autoFormActions: "Actions",
+      autoFormActive: "Active",
+      autoFormValue: "Value",
+      autoFormLogMessage: "Message",
+      autoFormNoteText: "Note text",
+      autoNoConditions:
+        "No conditions (runs always).",
+      autoNoActions:
+        "No actions configured.",
+      autoAddCondition: "Add condition",
+      autoAddAction: "Add action",
+      autoRunPayload: "Payload (JSON)",
+      autoRunResult: "Result",
+      autoTrigger_manual: "Manual",
+      autoTrigger_order_created: "Order created",
+      autoTrigger_order_failed: "Order failed",
+      autoTrigger_conversation_created:
+        "Conversation created",
+      autoTrigger_message_received:
+        "Message received",
+      autoAction_log_event: "Log event",
+      autoAction_add_order_note:
+        "Add order note",
+      autoExecLoadError:
+        "Could not load executions.",
+      autoNoExecutions:
+        "No executions recorded.",
+      autoExecAutomation: "Automation",
+      autoExecEvent: "Event",
+      autoExecStatus: "Status",
+      autoExecStarted: "Started",
+      autoExecDuration: "Duration",
+      autoExecDetail: "Execution detail",
+      autoExecError: "Error",
+      autoExecInput: "Input",
+      autoExecResult: "Result",
+      autoClose: "Close",
     },
   },
 };

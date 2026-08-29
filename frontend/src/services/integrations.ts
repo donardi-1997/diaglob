@@ -326,3 +326,153 @@ export async function disconnectWhatsApp(
 
   return response.data;
 }
+
+
+export interface CommerceSummary {
+  connected: boolean;
+  provider: string | null;
+  total_products: number;
+  total_variants: number;
+  total_orders: number;
+  orders_by_status: {
+    pending: number;
+    created: number;
+    failed: number;
+    unknown: number;
+  };
+  total_order_value: number;
+  currency: string;
+  recent_orders: {
+    id: number;
+    order_number: string;
+    total_amount: number;
+    currency: string;
+    financial_status: string | null;
+    source: string | null;
+    external_creation_status: string | null;
+    created_at: string | null;
+  }[];
+  recent_products: {
+    id: number;
+    title: string;
+    image_url: string | null;
+    active: boolean;
+    updated_at: string | null;
+  }[];
+}
+
+
+export async function getCommerceSummary(
+  storeId: number,
+) {
+  const response =
+    await api.get<CommerceSummary>(
+      `/api/stores/${storeId}/commerce/summary`,
+    );
+
+  return response.data;
+}
+
+
+export interface CommerceProductVariant {
+  id: number;
+  shopify_variant_id: string | null;
+  title: string;
+  sku: string | null;
+  barcode: string | null;
+  price: number;
+  currency: string;
+  inventory_quantity: number;
+  available: boolean;
+}
+
+
+export interface CommerceProduct {
+  id: number;
+  organization_id: number;
+  store_id: number;
+  shopify_product_id: string | null;
+  title: string;
+  handle: string | null;
+  description: string;
+  image_url: string | null;
+  vendor: string | null;
+  product_type: string | null;
+  active: boolean;
+  store: {
+    id: number;
+    name: string;
+    country_code: string;
+    currency: string;
+  } | null;
+  variants: CommerceProductVariant[];
+}
+
+
+export async function listCommerceProducts(
+  storeId: number,
+  q?: string,
+) {
+  const params = new URLSearchParams();
+
+  if (q) {
+    params.set("q", q);
+  }
+
+  const url =
+    `/api/stores/${storeId}/commerce/products`
+    + (params.toString()
+      ? `?${params.toString()}`
+      : "");
+
+  const response =
+    await api.get<{
+      items: CommerceProduct[];
+      total: number;
+    }>(url);
+
+  return response.data;
+}
+
+
+export interface CommerceOrderItem {
+  id: number;
+  title: string;
+  sku: string | null;
+  quantity: number;
+  unit_price: number;
+  currency: string;
+  shopify_variant_id: string | null;
+}
+
+
+export interface CommerceOrder {
+  id: number;
+  order_number: string;
+  total_amount: number;
+  currency: string;
+  financial_status: string | null;
+  fulfillment_status: string | null;
+  source: string | null;
+  invoice_url: string | null;
+  shopify_draft_order_id: string | null;
+  external_creation_status: string | null;
+  note: string | null;
+  created_at: string | null;
+  items: CommerceOrderItem[];
+}
+
+
+export async function listCommerceOrders(
+  storeId: number,
+) {
+  const response =
+    await api.get<{
+      items: CommerceOrder[];
+      total: number;
+    }>(
+      `/api/stores/${storeId}/commerce/orders`,
+    );
+
+  return response.data;
+}
