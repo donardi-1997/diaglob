@@ -1,0 +1,30 @@
+name: Deploy Production
+
+on:
+  push:
+    branches:
+      - main
+
+  workflow_dispatch:
+
+concurrency:
+  group: diaglob-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy DIAGLOB Production
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Deploy to Lightsail
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.PROD_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          script_stop: true
+          command_timeout: 12m
+          script: |
+            /opt/diaglob/scripts/deploy.sh
