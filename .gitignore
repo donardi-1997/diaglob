@@ -81,3 +81,8 @@ Thumbs.db
 *.bak
 *.backup
 *~
+tempkey
+tempkey-cert.pub
+diaglob-prod-temp-cert.pub
+diaglob-dns.json
+route53-root-www.json
