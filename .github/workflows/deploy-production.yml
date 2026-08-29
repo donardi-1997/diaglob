@@ -18,13 +18,36 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - name: Deploy to Lightsail
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.PROD_HOST }}
-          username: ${{ secrets.PROD_USER }}
-          key: ${{ secrets.PROD_SSH_KEY }}
-          script_stop: true
-          command_timeout: 12m
-          script: |
-            /opt/diaglob/scripts/deploy.sh
+      - name: Configure SSH
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_SSH_KEY_B64: ${{ secrets.PROD_SSH_KEY_B64 }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+
+          echo "$PROD_SSH_KEY_B64" | base64 --decode > ~/.ssh/diaglob_actions_prod
+          chmod 600 ~/.ssh/diaglob_actions_prod
+
+          ssh-keyscan -H "$PROD_HOST" >> ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Test SSH
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+        run: |
+          ssh \
+            -i ~/.ssh/diaglob_actions_prod \
+            "$PROD_USER@$PROD_HOST" \
+            "echo GITHUB_ACTIONS_SSH_OK"
+
+      - name: Deploy DIAGLOB
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+        run: |
+          ssh \
+            -i ~/.ssh/diaglob_actions_prod \
+            "$PROD_USER@$PROD_HOST" \
+            "/opt/diaglob/scripts/deploy.sh"
