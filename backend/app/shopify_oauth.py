@@ -5,6 +5,8 @@ import re
 import secrets
 from urllib.parse import urlencode
 
+import httpx
+
 
 SHOPIFY_SCOPES = (
     "read_products,"
@@ -158,3 +160,66 @@ def verify_shopify_hmac(
         digest,
         received_hmac,
     )
+
+
+def exchange_access_token(
+    shop: str,
+    code: str,
+) -> str:
+    shop = normalize_shop_domain(
+        shop
+    )
+
+    payload = {
+        "client_id":
+            get_shopify_client_id(),
+
+        "client_secret":
+            get_shopify_client_secret(),
+
+        "code":
+            code,
+    }
+
+    try:
+        response = httpx.post(
+            (
+                f"https://{shop}"
+                f"/admin/oauth/access_token"
+            ),
+            json=payload,
+            timeout=20,
+        )
+
+    except httpx.HTTPError as exc:
+        raise RuntimeError(
+            "Unable to reach Shopify to "
+            "exchange the OAuth code"
+        ) from exc
+
+    if (
+        response.status_code
+        not in {200, 201}
+    ):
+        raise RuntimeError(
+            (
+                "Shopify rejected the OAuth "
+                "code exchange (HTTP "
+                f"{response.status_code})."
+            )
+        )
+
+    data = response.json()
+
+    access_token = (
+        data.get("access_token")
+        or ""
+    )
+
+    if not access_token:
+        raise RuntimeError(
+            "Shopify did not return an "
+            "access token"
+        )
+
+    return access_token

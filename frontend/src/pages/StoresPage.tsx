@@ -42,6 +42,8 @@ import {
   getLanguageName,
 } from "../utils/markets";
 
+import StoreIntegrations from "../components/StoreIntegrations";
+
 
 interface StoresPageProps {
   canWrite: boolean;
@@ -776,6 +778,15 @@ export default function StoresPage({
                     </strong>
                   </div>
                 </div>
+
+
+                <StoreIntegrations
+                  storeId={store.id}
+                  shopDomain={
+                    store.shopify_domain
+                  }
+                  canWrite={canWrite}
+                />
 
 
                 {canWrite && (

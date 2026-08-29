@@ -475,6 +475,41 @@ const resources = {
       storesI18nCancel:
         "Cancelar",
 
+      integrationsTitle:
+        "Integraciones",
+      integrationsLoading:
+        "Cargando integraciones...",
+      integrationsConnected:
+        "Conectado",
+      integrationsDisconnected:
+        "Desconectado",
+      integrationsConnect:
+        "Conectar",
+      integrationsDisconnect:
+        "Desconectar",
+      integrationsCopyWebhook:
+        "Copiar webhook",
+      integrationsShopifyNoDomain:
+        "Sin dominio Shopify",
+      integrationsShopifyConnectError:
+        "No se pudo iniciar la conexión con Shopify.",
+      integrationsShopifyDisconnected:
+        "Shopify se desconectó.",
+      integrationsDisconnectError:
+        "No se pudo desconectar.",
+      integrationsDropiTokenRequired:
+        "Ingresa el token de Dropi para conectar.",
+      integrationsDropiConnected:
+        "Dropi conectado.",
+      integrationsDropiDisconnected:
+        "Dropi se desconectó.",
+      integrationsDropiConnectError:
+        "No se pudo conectar Dropi.",
+      integrationsDropiTokenPlaceholder:
+        "Token de Dropi",
+      integrationsCopyError:
+        "No se pudo copiar el webhook.",
+
       appI18nViewPlans:
         "Ver planes",
       appI18nChangeTheme:
@@ -1190,6 +1225,41 @@ const resources = {
         "Stores",
       storesI18nCancel:
         "Cancel",
+
+      integrationsTitle:
+        "Integrations",
+      integrationsLoading:
+        "Loading integrations...",
+      integrationsConnected:
+        "Connected",
+      integrationsDisconnected:
+        "Disconnected",
+      integrationsConnect:
+        "Connect",
+      integrationsDisconnect:
+        "Disconnect",
+      integrationsCopyWebhook:
+        "Copy webhook",
+      integrationsShopifyNoDomain:
+        "No Shopify domain",
+      integrationsShopifyConnectError:
+        "Could not start the Shopify connection.",
+      integrationsShopifyDisconnected:
+        "Shopify disconnected.",
+      integrationsDisconnectError:
+        "Could not disconnect.",
+      integrationsDropiTokenRequired:
+        "Enter the Dropi token to connect.",
+      integrationsDropiConnected:
+        "Dropi connected.",
+      integrationsDropiDisconnected:
+        "Dropi disconnected.",
+      integrationsDropiConnectError:
+        "Could not connect Dropi.",
+      integrationsDropiTokenPlaceholder:
+        "Dropi token",
+      integrationsCopyError:
+        "Could not copy the webhook.",
 
       appI18nViewPlans:
         "View plans",

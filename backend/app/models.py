@@ -1266,6 +1266,115 @@ class CommerceConnection(Base):
 
 
 
+
+# ============================================================
+# DROPPI CONNECTION
+# ============================================================
+
+class DropiConnection(Base):
+    __tablename__ = "dropi_connections"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "store_id",
+            name="uq_dropi_connection_store",
+        ),
+        UniqueConstraint(
+            "webhook_token",
+            name="uq_dropi_webhook_token",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+    )
+
+    organization_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "organizations.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+        index=True,
+    )
+
+    store_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "stores.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+
+    external_store_id: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    api_url: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+    )
+
+    api_token_encrypted: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+
+    webhook_token: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(30),
+        default="connected",
+        nullable=False,
+        index=True,
+    )
+
+    connected_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False,
+    )
+
+    last_sync_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+    )
+
+    last_error: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False,
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False,
+    )
+
+    store = relationship(
+        "Store",
+    )
+
+    organization = relationship(
+        "Organization",
+    )
+
+
 # ============================================================
 # SHOPIFY OAUTH STATE
 # ============================================================
