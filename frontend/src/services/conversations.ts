@@ -53,3 +53,31 @@ export async function sendConversationMessage(
   return response.data;
 }
 
+export async function sendWhatsAppMessage(
+  conversationId: number,
+  text: string,
+) {
+  const response = await api.post(
+    `/api/conversations/${conversationId}/whatsapp/send`,
+    {
+      text,
+      sender: "human",
+    },
+  );
+
+  return response.data;
+}
+
+export async function getWhatsAppStatus(
+  storeId: number,
+) {
+  const response = await api.get<{
+    connected: boolean;
+    phone_number_id: string | null;
+  }>(
+    `/api/stores/${storeId}/whatsapp`,
+  );
+
+  return response.data;
+}
+

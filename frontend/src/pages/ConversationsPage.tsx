@@ -3,6 +3,7 @@ import {
   Bot,
   BrainCircuit,
   LoaderCircle,
+  MessageCircle,
   Search,
   Send,
   UserRound,
@@ -12,7 +13,9 @@ import { useTranslation } from "react-i18next";
 import {
   getConversation,
   getConversations,
+  getWhatsAppStatus,
   sendConversationMessage,
+  sendWhatsAppMessage,
   setConversationMode,
 } from "../services/conversations";
 
@@ -46,6 +49,8 @@ export default function ConversationsPage({
   const [search, setSearch] = useState("");
   const [message, setMessage] = useState("");
   const [sendingMessage, setSendingMessage] = useState(false);
+  const [whatsappConnected, setWhatsAppConnected] = useState(false);
+  const [sendChannel, setSendChannel] = useState<"auto" | "whatsapp">("auto");
 
   useEffect(() => {
     loadConversations();
@@ -89,6 +94,17 @@ export default function ConversationsPage({
       const data = await getConversation(id);
 
       setConversation(data);
+
+      if (data.store && data.channel === "WhatsApp") {
+        try {
+          const waStatus = await getWhatsAppStatus(data.store.id);
+          setWhatsAppConnected(waStatus.connected);
+        } catch {
+          setWhatsAppConnected(false);
+        }
+      } else {
+        setWhatsAppConnected(false);
+      }
     } catch (err) {
       console.error(err);
       setError(t("conversationLoadError"));
@@ -154,14 +170,37 @@ export default function ConversationsPage({
       return;
     }
 
+    const useWhatsApp =
+      sendChannel === "whatsapp" ||
+      (sendChannel === "auto" && whatsappConnected);
+
     try {
       setSendingMessage(true);
       setError("");
 
-      const newMessage = await sendConversationMessage(
-        conversation.id,
-        text,
-      );
+      let newMessage: any;
+
+      if (useWhatsApp) {
+        const result = await sendWhatsAppMessage(
+          conversation.id,
+          text,
+        );
+
+        newMessage = {
+          id: result.message_id,
+          sender: "human",
+          text,
+          time: new Date().toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+        };
+      } else {
+        newMessage = await sendConversationMessage(
+          conversation.id,
+          text,
+        );
+      }
 
       setConversation((current) =>
         current
@@ -401,41 +440,81 @@ export default function ConversationsPage({
               )}
 
               <div className="chat-composer">
-                <input
-                  value={message}
-                  onChange={(event) =>
-                    setMessage(event.target.value)
-                  }
-                  onKeyDown={(event) => {
-                    if (
-                      event.key === "Enter" &&
-                      !event.shiftKey
-                    ) {
-                      event.preventDefault();
-                      handleSendMessage();
-                    }
-                  }}
-                  placeholder={t("typeMessage")}
-                  disabled={sendingMessage}
-                />
+                {whatsappConnected && (
+                  <div className="send-channel-toggle">
+                    <button
+                      type="button"
+                      className={
+                        sendChannel === "auto"
+                          ? "active"
+                          : ""
+                      }
+                      onClick={() =>
+                        setSendChannel("auto")
+                      }
+                    >
+                      <Bot size={13} />
+                      {t("autoReply")}
+                    </button>
 
-                <button
-                  className="send-button"
-                  onClick={handleSendMessage}
-                  disabled={
-                    sendingMessage ||
-                    !message.trim()
-                  }
-                >
-                  {sendingMessage ? (
-                    <LoaderCircle
-                      className="spin"
-                      size={18}
-                    />
-                  ) : (
-                    <Send size={18} />
-                  )}
-                </button>
+                    <button
+                      type="button"
+                      className={
+                        sendChannel === "whatsapp"
+                          ? "active"
+                          : ""
+                      }
+                      onClick={() =>
+                        setSendChannel("whatsapp")
+                      }
+                    >
+                      <MessageCircle size={13} />
+                      WhatsApp
+                    </button>
+                  </div>
+                )}
+
+                <div className="chat-composer-row">
+                  <input
+                    value={message}
+                    onChange={(event) =>
+                      setMessage(event.target.value)
+                    }
+                    onKeyDown={(event) => {
+                      if (
+                        event.key === "Enter" &&
+                        !event.shiftKey
+                      ) {
+                        event.preventDefault();
+                        handleSendMessage();
+                      }
+                    }}
+                    placeholder={
+                      whatsappConnected
+                        ? t("typeMessageWhatsApp")
+                        : t("typeMessage")
+                    }
+                    disabled={sendingMessage}
+                  />
+
+                  <button
+                    className="send-button"
+                    onClick={handleSendMessage}
+                    disabled={
+                      sendingMessage ||
+                      !message.trim()
+                    }
+                  >
+                    {sendingMessage ? (
+                      <LoaderCircle
+                        className="spin"
+                        size={18}
+                      />
+                    ) : (
+                      <Send size={18} />
+                    )}
+                  </button>
+                </div>
               </div>
             </>
           ) : (

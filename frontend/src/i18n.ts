@@ -510,6 +510,21 @@ const resources = {
       integrationsCopyError:
         "No se pudo copiar el webhook.",
 
+      integrationsWhatsAppConnected:
+        "WhatsApp conectado.",
+      integrationsWhatsAppDisconnected:
+        "WhatsApp se desconectó.",
+      integrationsWhatsAppConnectError:
+        "No se pudo conectar WhatsApp.",
+      integrationsWhatsAppFieldsRequired:
+        "phone_number_id, business_account_id y access_token son obligatorios.",
+      integrationsWhatsAppPhonePlaceholder:
+        "Phone Number ID",
+      integrationsWhatsAppBizPlaceholder:
+        "Business Account ID",
+      integrationsWhatsAppTokenPlaceholder:
+        "Access Token de WhatsApp",
+
       appI18nViewPlans:
         "Ver planes",
       appI18nChangeTheme:
@@ -733,6 +748,9 @@ const resources = {
       takeConversation: "Tomar conversación",
       returnToAI: "Devolver a IA",
       typeMessage: "Escribe un mensaje...",
+      typeMessageWhatsApp:
+        "Escribe un mensaje... (se enviará por WhatsApp)",
+      autoReply: "Auto",
       send: "Enviar",
 
       customerInformation: "Información del cliente",
@@ -1261,6 +1279,21 @@ const resources = {
       integrationsCopyError:
         "Could not copy the webhook.",
 
+      integrationsWhatsAppConnected:
+        "WhatsApp connected.",
+      integrationsWhatsAppDisconnected:
+        "WhatsApp disconnected.",
+      integrationsWhatsAppConnectError:
+        "Could not connect WhatsApp.",
+      integrationsWhatsAppFieldsRequired:
+        "phone_number_id, business_account_id and access_token are required.",
+      integrationsWhatsAppPhonePlaceholder:
+        "Phone Number ID",
+      integrationsWhatsAppBizPlaceholder:
+        "Business Account ID",
+      integrationsWhatsAppTokenPlaceholder:
+        "WhatsApp Access Token",
+
       appI18nViewPlans:
         "View plans",
       appI18nChangeTheme:
@@ -1461,6 +1494,9 @@ const resources = {
       takeConversation: "Take conversation",
       returnToAI: "Return to AI",
       typeMessage: "Type a message...",
+      typeMessageWhatsApp:
+        "Type a message... (will be sent via WhatsApp)",
+      autoReply: "Auto",
       send: "Send",
 
       customerInformation: "Customer information",

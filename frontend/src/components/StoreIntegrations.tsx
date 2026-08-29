@@ -8,6 +8,8 @@ import {
   Check,
   Copy,
   Loader2,
+  MessageCircle,
+  Phone,
   Plug,
   PlugZap,
   ShoppingBag,
@@ -18,12 +20,16 @@ import {
 import {
   connectDropi,
   connectShopify,
+  connectWhatsApp,
   disconnectDropi,
   disconnectShopify,
+  disconnectWhatsApp,
   getCommerceStatus,
   getDropiStatus,
+  getWhatsAppStatus,
   type CommerceConnectionStatus,
   type DropiConnectionStatus,
+  type WhatsAppConnectionStatus,
 } from "../services/integrations";
 
 
@@ -47,10 +53,22 @@ export default function StoreIntegrations({
   const [dropi, setDropi] =
     useState<DropiConnectionStatus | null>(null);
 
+  const [whatsapp, setWhatsApp] =
+    useState<WhatsAppConnectionStatus | null>(null);
+
   const [loading, setLoading] =
     useState(true);
 
   const [dropiToken, setDropiToken] =
+    useState("");
+
+  const [whatsappPhoneId, setWhatsAppPhoneId] =
+    useState("");
+
+  const [whatsappBizId, setWhatsAppBizId] =
+    useState("");
+
+  const [whatsappToken, setWhatsAppToken] =
     useState("");
 
   const [connectingShopify, setConnectingShopify] =
@@ -63,6 +81,12 @@ export default function StoreIntegrations({
     useState(false);
 
   const [disconnectingDropi, setDisconnectingDropi] =
+    useState(false);
+
+  const [connectingWhatsApp, setConnectingWhatsApp] =
+    useState(false);
+
+  const [disconnectingWhatsApp, setDisconnectingWhatsApp] =
     useState(false);
 
   const [copied, setCopied] =
@@ -83,13 +107,16 @@ export default function StoreIntegrations({
       const [
         commerceData,
         dropiData,
+        whatsappData,
       ] = await Promise.all([
         getCommerceStatus(storeId),
         getDropiStatus(storeId),
+        getWhatsAppStatus(storeId),
       ]);
 
       setCommerce(commerceData);
       setDropi(dropiData);
+      setWhatsApp(whatsappData);
     } catch (err) {
       console.error(err);
     } finally {
@@ -281,7 +308,103 @@ export default function StoreIntegrations({
   }
 
 
-  if (loading && !commerce && !dropi) {
+  async function handleConnectWhatsApp(
+    event: React.FormEvent,
+  ) {
+    event.preventDefault();
+
+    clearMessages();
+
+    const phoneId =
+      whatsappPhoneId.trim();
+
+    const bizId =
+      whatsappBizId.trim();
+
+    const token =
+      whatsappToken.trim();
+
+    if (!phoneId || !bizId || !token) {
+      setError(
+        t("integrationsWhatsAppFieldsRequired"),
+      );
+
+      return;
+    }
+
+    try {
+      setConnectingWhatsApp(true);
+
+      const result =
+        await connectWhatsApp(
+          storeId,
+          phoneId,
+          bizId,
+          token,
+        );
+
+      // Limpia el token inmediatamente.
+      setWhatsAppToken("");
+      setWhatsAppPhoneId("");
+      setWhatsAppBizId("");
+
+      setWhatsApp({
+        connected: true,
+        status: "connected",
+        phone_number_id:
+          result.phone_number_id,
+        business_account_id:
+          bizId,
+        connected_at: null,
+        last_error: null,
+      });
+
+      setSuccess(
+        t("integrationsWhatsAppConnected"),
+      );
+
+      await load();
+    } catch (err: any) {
+      console.error(err);
+
+      setError(
+        formatError(err)
+        || t("integrationsWhatsAppConnectError"),
+      );
+    } finally {
+      setConnectingWhatsApp(false);
+    }
+  }
+
+
+  async function handleDisconnectWhatsApp() {
+    clearMessages();
+
+    try {
+      setDisconnectingWhatsApp(true);
+
+      await disconnectWhatsApp(storeId);
+
+      setWhatsApp(null);
+      setSuccess(
+        t("integrationsWhatsAppDisconnected"),
+      );
+
+      await load();
+    } catch (err: any) {
+      console.error(err);
+
+      setError(
+        formatError(err)
+        || t("integrationsDisconnectError"),
+      );
+    } finally {
+      setDisconnectingWhatsApp(false);
+    }
+  }
+
+
+  if (loading && !commerce && !dropi && !whatsapp) {
     return (
       <div className="store-integrations loading">
         <Loader2
@@ -471,6 +594,116 @@ export default function StoreIntegrations({
               disabled={connectingDropi}
             >
               {connectingDropi
+                ? <Loader2 className="spin" size={15} />
+                : <Plug size={15} />}
+
+              {t("integrationsConnect")}
+            </button>
+          </form>
+        )}
+      </div>
+
+
+      <div className="store-integration-block whatsapp">
+        <div className="store-integration-header">
+          <div className="store-integration-title">
+            <MessageCircle size={17} />
+
+            <strong>
+              WhatsApp
+            </strong>
+
+            <span
+              className={
+                whatsapp?.connected
+                  ? "integration-status connected"
+                  : "integration-status disconnected"
+              }
+            >
+              {whatsapp?.connected
+                ? t("integrationsConnected")
+                : t("integrationsDisconnected")}
+            </span>
+          </div>
+        </div>
+
+        {whatsapp?.connected && whatsapp.phone_number_id ? (
+          <>
+            <div className="store-integration-detail">
+              <Phone size={14} />
+
+              <code>
+                {whatsapp.phone_number_id}
+              </code>
+            </div>
+
+            {canWrite && (
+              <div className="store-integration-actions">
+                <button
+                  type="button"
+                  className="store-integration-button danger"
+                  onClick={handleDisconnectWhatsApp}
+                  disabled={disconnectingWhatsApp}
+                >
+                  {disconnectingWhatsApp
+                    ? <Loader2 className="spin" size={15} />
+                    : <Trash2 size={15} />}
+
+                  {t("integrationsDisconnect")}
+                </button>
+              </div>
+            )}
+          </>
+        ) : null}
+
+
+        {canWrite && !whatsapp?.connected && (
+          <form
+            className="store-integration-whatsapp-form"
+            onSubmit={handleConnectWhatsApp}
+          >
+            <input
+              type="text"
+              value={whatsappPhoneId}
+              onChange={(event) =>
+                setWhatsAppPhoneId(
+                  event.target.value,
+                )
+              }
+              placeholder={t("integrationsWhatsAppPhonePlaceholder")}
+              autoComplete="off"
+            />
+
+            <input
+              type="text"
+              value={whatsappBizId}
+              onChange={(event) =>
+                setWhatsAppBizId(
+                  event.target.value,
+                )
+              }
+              placeholder={t("integrationsWhatsAppBizPlaceholder")}
+              autoComplete="off"
+            />
+
+            <input
+              type="password"
+              value={whatsappToken}
+              onChange={(event) =>
+                setWhatsAppToken(
+                  event.target.value,
+                )
+              }
+              placeholder={t("integrationsWhatsAppTokenPlaceholder")}
+              autoComplete="off"
+            />
+
+            <button
+              type="submit"
+              className="store-integration-button primary"
+              disabled={connectingWhatsApp}
+            >
+              {connectingWhatsApp
                 ? <Loader2 className="spin" size={15} />
                 : <Plug size={15} />}
 

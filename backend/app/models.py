@@ -862,6 +862,15 @@ class Conversation(Base):
 class Message(Base):
     __tablename__ = "messages"
 
+    __table_args__ = (
+        UniqueConstraint(
+            "conversation_id",
+            "provider",
+            "external_message_id",
+            name="uq_message_provider_external",
+        ),
+    )
+
     id: Mapped[int] = mapped_column(
         Integer,
         primary_key=True,
@@ -892,6 +901,23 @@ class Message(Base):
 
     text: Mapped[str] = mapped_column(
         Text,
+        nullable=False,
+    )
+
+    provider: Mapped[str] = mapped_column(
+        String(30),
+        default="internal",
+        nullable=False,
+    )
+
+    external_message_id: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    delivery_status: Mapped[str] = mapped_column(
+        String(30),
+        default="delivered",
         nullable=False,
     )
 
@@ -1347,6 +1373,109 @@ class DropiConnection(Base):
     last_sync_at: Mapped[datetime | None] = mapped_column(
         DateTime,
         nullable=True,
+    )
+
+    last_error: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False,
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False,
+    )
+
+    store = relationship(
+        "Store",
+    )
+
+    organization = relationship(
+        "Organization",
+    )
+
+
+# ============================================================
+# WHATSAPP CONNECTION
+# ============================================================
+
+class WhatsAppConnection(Base):
+    __tablename__ = "whatsapp_connections"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "store_id",
+            name="uq_whatsapp_connection_store",
+        ),
+        UniqueConstraint(
+            "phone_number_id",
+            name="uq_whatsapp_phone_number",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+    )
+
+    organization_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "organizations.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+        index=True,
+    )
+
+    store_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "stores.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+
+    phone_number_id: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+
+    business_account_id: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+    )
+
+    access_token_encrypted: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+
+    verify_token: Mapped[str] = mapped_column(
+        String(128),
+        nullable=False,
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(30),
+        default="connected",
+        nullable=False,
+        index=True,
+    )
+
+    connected_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False,
     )
 
     last_error: Mapped[str | None] = mapped_column(

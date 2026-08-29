@@ -922,10 +922,16 @@
 .chat-composer {
   padding: 12px;
   display: flex;
-  align-items: center;
-  gap: 9px;
+  flex-direction: column;
+  gap: 8px;
   border-top: 1px solid var(--border);
   background: var(--panel);
+}
+
+.chat-composer-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
 }
 
 .chat-composer input {
@@ -943,6 +949,35 @@
 
 .chat-composer input:focus {
   border-color: rgba(124, 108, 255, 0.5);
+}
+
+.send-channel-toggle {
+  display: flex;
+  gap: 4px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--control-bg);
+}
+
+.send-channel-toggle button {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: 11px;
+  cursor: pointer;
+  opacity: .6;
+  transition: opacity .15s;
+}
+
+.send-channel-toggle button.active {
+  opacity: 1;
+  background: var(--accent);
+  color: white;
 }
 
 .send-button {
@@ -2423,6 +2458,41 @@ button:disabled {
 
 .store-integration-dropi-form input::placeholder {
   opacity: .5;
+}
+
+.store-integration-whatsapp-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.store-integration-whatsapp-form input {
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: 9px;
+  border: 1px solid var(--border, rgba(255, 255, 255, .12));
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+}
+
+.store-integration-whatsapp-form input::placeholder {
+  opacity: .5;
+}
+
+.store-integration-detail {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  opacity: .6;
+}
+
+.store-integration-detail code {
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .stores-empty,

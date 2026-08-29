@@ -123,3 +123,68 @@ export async function disconnectDropi(
 
   return response.data;
 }
+
+
+export interface WhatsAppConnectionStatus {
+  connected: boolean;
+  status: string;
+  phone_number_id: string | null;
+  business_account_id: string | null;
+  connected_at: string | null;
+  last_error: string | null;
+}
+
+
+export async function getWhatsAppStatus(
+  storeId: number,
+) {
+  const response =
+    await api.get<WhatsAppConnectionStatus>(
+      `/api/stores/${storeId}/whatsapp`,
+    );
+
+  return response.data;
+}
+
+
+export async function connectWhatsApp(
+  storeId: number,
+  phoneNumberId: string,
+  businessAccountId: string,
+  accessToken: string,
+) {
+  const response =
+    await api.post<{
+      ok: boolean;
+      connected: boolean;
+      store_id: number;
+      status: string;
+      phone_number_id: string;
+      verify_token: string;
+    }>(
+      `/api/stores/${storeId}/whatsapp/connect`,
+      {
+        phone_number_id: phoneNumberId,
+        business_account_id: businessAccountId,
+        access_token: accessToken,
+      },
+    );
+
+  return response.data;
+}
+
+
+export async function disconnectWhatsApp(
+  storeId: number,
+) {
+  const response =
+    await api.delete<{
+      ok: boolean;
+      connected: boolean;
+      store_id: number;
+    }>(
+      `/api/stores/${storeId}/whatsapp/disconnect`,
+    );
+
+  return response.data;
+}
