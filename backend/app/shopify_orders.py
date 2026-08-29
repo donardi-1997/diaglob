@@ -20,6 +20,7 @@ from .shopify_client import (
     ShopifyUserError,
 )
 from .shopify_security import decrypt_shopify_secret
+from .automations import safe_emit_event
 
 
 def _sanitize_error(msg: str) -> str:
@@ -441,6 +442,28 @@ def create_shopify_draft_order(
             _sanitize_error(str(exc))
         )
         db.commit()
+
+        # Emit order.failed event for automations
+        safe_emit_event(
+            db=db,
+            organization_id=store.organization_id,
+            store_id=store.id,
+            event_type="order.failed",
+            payload={
+                "order": {
+                    "id": order.id,
+                    "store_id": store.id,
+                    "organization_id": store.organization_id,
+                    "source": order.source,
+                    "external_creation_status": "failed",
+                },
+                "error": {
+                    "type": "ShopifyUserError",
+                    "message": _sanitize_error(str(exc)),
+                },
+            },
+            event_id=f"order:{order.id}:failed",
+        )
         raise
 
     except ShopifyAuthError as exc:
@@ -451,6 +474,28 @@ def create_shopify_draft_order(
             _sanitize_error(str(exc))
         )
         db.commit()
+
+        # Emit order.failed event for automations
+        safe_emit_event(
+            db=db,
+            organization_id=store.organization_id,
+            store_id=store.id,
+            event_type="order.failed",
+            payload={
+                "order": {
+                    "id": order.id,
+                    "store_id": store.id,
+                    "organization_id": store.organization_id,
+                    "source": order.source,
+                    "external_creation_status": "failed",
+                },
+                "error": {
+                    "type": "ShopifyAuthError",
+                    "message": _sanitize_error(str(exc)),
+                },
+            },
+            event_id=f"order:{order.id}:failed",
+        )
         raise
 
     except (
@@ -493,6 +538,28 @@ def create_shopify_draft_order(
             _sanitize_error(error_msg)
         )
         db.commit()
+
+        # Emit order.failed event for automations
+        safe_emit_event(
+            db=db,
+            organization_id=store.organization_id,
+            store_id=store.id,
+            event_type="order.failed",
+            payload={
+                "order": {
+                    "id": order.id,
+                    "store_id": store.id,
+                    "organization_id": store.organization_id,
+                    "source": order.source,
+                    "external_creation_status": "failed",
+                },
+                "error": {
+                    "type": "ShopifyUserError",
+                    "message": _sanitize_error(error_msg),
+                },
+            },
+            event_id=f"order:{order.id}:failed",
+        )
 
         raise ShopifyUserError(error_msg)
 
@@ -545,6 +612,27 @@ def create_shopify_draft_order(
     order.external_last_error = None
 
     db.commit()
+
+    # Emit order.created event for automations
+    safe_emit_event(
+        db=db,
+        organization_id=store.organization_id,
+        store_id=store.id,
+        event_type="order.created",
+        payload={
+            "order": {
+                "id": order.id,
+                "store_id": store.id,
+                "organization_id": store.organization_id,
+                "source": order.source,
+                "total": float(order.total_amount),
+                "currency": order.currency,
+                "external_creation_status": "created",
+                "shopify_draft_order_id": order.shopify_draft_order_id,
+            }
+        },
+        event_id=f"order:{order.id}:created",
+    )
 
     return {
         "ok": True,

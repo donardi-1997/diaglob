@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import datetime
 from typing import Any
 
@@ -20,10 +21,40 @@ from sqlalchemy.orm import Session
 from .models import (
     Automation,
     AutomationExecution,
+    Customer,
     Order,
+    WhatsAppConnection,
 )
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================================
+# VARIABLE INTERPOLATION
+# ============================================================
+
+
+VAR_PATTERN = re.compile(r"\{\{(\w+(?:\.\w+)*)\}\}")
+
+
+def resolve_variables(
+    template: str,
+    payload: dict[str, Any],
+) -> str:
+    """
+    Safely resolve {{variable.path}} in a template string.
+
+    Only allows dotted access into the payload dict.
+    Missing keys resolve to empty string.
+    No eval, no arbitrary code execution.
+    """
+
+    def replace(match: re.Match) -> str:
+        path = match.group(1)
+        value = _resolve_field(payload, path)
+        return str(value) if value is not None else ""
+
+    return VAR_PATTERN.sub(replace, template)
 
 
 # ============================================================
@@ -301,10 +332,171 @@ def execute_add_order_note(
     }
 
 
+def execute_send_whatsapp_message(
+    db: Session,
+    organization_id: int,
+    store_id: int | None,
+    action: dict[str, Any],
+    payload: dict[str, Any],
+    execution: AutomationExecution,
+) -> dict[str, Any]:
+    """
+    Send a WhatsApp message using the existing WhatsApp integration.
+
+    Requires conversation_id in action or payload.
+    Validates store_id and organization_id.
+    Uses existing WhatsAppConnection for credentials.
+    """
+    conversation_id = action.get("conversation_id") or payload.get(
+        "conversation_id"
+    )
+
+    if not conversation_id:
+        return {
+            "action": "send_whatsapp_message",
+            "status": "skipped",
+            "reason": "No conversation_id provided",
+        }
+
+    from .models import Conversation, Customer
+    from .whatsapp_client import send_whatsapp_text_message
+    from .whatsapp_security import decrypt_whatsapp_secret
+
+    conversation = (
+        db.query(Conversation)
+        .filter(
+            Conversation.id == conversation_id,
+            Conversation.organization_id == organization_id,
+        )
+        .first()
+    )
+
+    if not conversation:
+        return {
+            "action": "send_whatsapp_message",
+            "status": "skipped",
+            "reason": "Conversation not found in organization",
+        }
+
+    if store_id and conversation.store_id != store_id:
+        return {
+            "action": "send_whatsapp_message",
+            "status": "skipped",
+            "reason": "Conversation belongs to a different store",
+        }
+
+    customer = (
+        db.query(Customer)
+        .filter(Customer.id == conversation.customer_id)
+        .first()
+    )
+
+    if not customer or not customer.phone:
+        return {
+            "action": "send_whatsapp_message",
+            "status": "skipped",
+            "reason": "Customer or phone not found",
+        }
+
+    connection = (
+        db.query(WhatsAppConnection)
+        .filter(
+            WhatsAppConnection.store_id == conversation.store_id,
+            WhatsAppConnection.organization_id == organization_id,
+            WhatsAppConnection.status == "connected",
+        )
+        .first()
+    )
+
+    if not connection:
+        return {
+            "action": "send_whatsapp_message",
+            "status": "skipped",
+            "reason": "WhatsApp not connected for this store",
+        }
+
+    message_template = action.get("message", "")
+    if not message_template:
+        return {
+            "action": "send_whatsapp_message",
+            "status": "skipped",
+            "reason": "No message template provided",
+        }
+
+    try:
+        message_text = resolve_variables(message_template, payload)
+    except Exception:
+        message_text = message_template
+
+    if not message_text.strip():
+        return {
+            "action": "send_whatsapp_message",
+            "status": "skipped",
+            "reason": "Resolved message is empty",
+        }
+
+    try:
+        token = decrypt_whatsapp_secret(connection.access_token_encrypted)
+
+        result = send_whatsapp_text_message(
+            phone_number_id=connection.phone_number_id,
+            access_token=token,
+            to=customer.phone,
+            text=message_text,
+        )
+
+        external_id = result.get("message_id")
+
+        return {
+            "action": "send_whatsapp_message",
+            "status": "applied",
+            "conversation_id": conversation.id,
+            "external_message_id": external_id,
+        }
+
+    except Exception as exc:
+        logger.error(
+            "WhatsApp send failed: %s",
+            _sanitize_error(exc),
+            exc_info=True,
+        )
+        return {
+            "action": "send_whatsapp_message",
+            "status": "failed",
+            "error": _sanitize_error(exc),
+        }
+
+
 ACTION_HANDLERS = {
     "log_event": execute_log_event,
     "add_order_note": execute_add_order_note,
+    "send_whatsapp_message": execute_send_whatsapp_message,
 }
+
+
+def _resolve_action_params(
+    action: dict[str, Any],
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    """
+    Recursively resolve {{variable}} templates in action parameters.
+
+    Only processes string values. Other types (int, bool, list, dict) are left as-is.
+    """
+    resolved = {}
+    for key, value in action.items():
+        if isinstance(value, str):
+            resolved[key] = resolve_variables(value, payload)
+        elif isinstance(value, dict):
+            resolved[key] = _resolve_action_params(value, payload)
+        elif isinstance(value, list):
+            resolved[key] = [
+                _resolve_action_params(item, payload) if isinstance(item, dict) else item
+                for item in value
+            ]
+        else:
+            resolved[key] = value
+    return resolved
 
 
 def execute_actions(
@@ -338,12 +530,14 @@ def execute_actions(
             )
             continue
 
+        resolved_action = _resolve_action_params(action, payload)
+
         try:
             result = handler(
                 db=db,
                 organization_id=organization_id,
                 store_id=store_id,
-                action=action,
+                action=resolved_action,
                 payload=payload,
                 execution=execution,
             )
@@ -521,6 +715,47 @@ def run_automations_for_event(
             )
 
     return executions
+
+
+# ============================================================
+# SAFE EVENT EMITTER
+# ============================================================
+
+
+def safe_emit_event(
+    db: Session,
+    organization_id: int,
+    store_id: int | None,
+    event_type: str,
+    payload: dict[str, Any],
+    event_id: str | None = None,
+) -> list[AutomationExecution] | None:
+    """
+    Safely emit an event for automation processing.
+
+    This wrapper ensures that automation failures NEVER propagate
+    to the calling business operation.
+
+    Returns list of executions on success, None on failure (logged).
+    """
+    try:
+        return emit_event(
+            db=db,
+            organization_id=organization_id,
+            store_id=store_id,
+            event_type=event_type,
+            payload=payload,
+            event_id=event_id,
+        )
+    except Exception as exc:
+        logger.error(
+            "safe_emit_event failed for %s (event_id=%s): %s",
+            event_type,
+            event_id,
+            _sanitize_error(exc),
+            exc_info=True,
+        )
+        return None
 
 
 def emit_event(

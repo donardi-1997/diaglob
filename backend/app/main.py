@@ -112,6 +112,7 @@ from .shopify_orders import (
 from .automations import (
     execute_automation,
     emit_event,
+    safe_emit_event,
     VALID_TRIGGER_TYPES,
 )
 
@@ -10277,6 +10278,8 @@ async def whatsapp_receive_webhook(
     )
 
     inbound_conversation_ids = []
+    new_conversations = []  # track (conversation, connection)
+    new_messages = []  # track (message, conversation, connection)
 
     for entry in entries:
         changes = (
@@ -10464,6 +10467,9 @@ async def whatsapp_receive_webhook(
                     db.add(conversation)
                     db.flush()
 
+                    # Track new conversation for event emission
+                    new_conversations.append((conversation, connection))
+
                 existing_msg = (
                     db.query(Message)
                     .filter(
@@ -10496,6 +10502,9 @@ async def whatsapp_receive_webhook(
                     )
 
                     db.add(message)
+
+                    # Track new message for event emission
+                    new_messages.append((message, conversation, connection))
 
                     conversation.preview = (
                         text_body
@@ -10576,6 +10585,49 @@ async def whatsapp_receive_webhook(
                         )
 
     db.commit()
+
+    # Emit conversation.created events
+    for conversation, connection in new_conversations:
+        safe_emit_event(
+            db=db,
+            organization_id=conversation.organization_id,
+            store_id=conversation.store_id,
+            event_type="conversation.created",
+            payload={
+                "conversation": {
+                    "id": conversation.id,
+                    "store_id": conversation.store_id,
+                    "organization_id": conversation.organization_id,
+                    "channel": conversation.channel,
+                    "mode": conversation.mode,
+                }
+            },
+            event_id=f"conversation:{conversation.id}:created",
+        )
+
+    # Emit message.received events
+    for message, conversation, connection in new_messages:
+        safe_emit_event(
+            db=db,
+            organization_id=conversation.organization_id,
+            store_id=conversation.store_id,
+            event_type="message.received",
+            payload={
+                "message": {
+                    "id": message.id,
+                    "conversation_id": conversation.id,
+                    "sender": message.sender,
+                    "channel": "whatsapp",
+                    "text": message.text,
+                },
+                "conversation": {
+                    "id": conversation.id,
+                    "store_id": conversation.store_id,
+                    "organization_id": conversation.organization_id,
+                },
+            },
+            event_id=f"whatsapp-message:{message.external_message_id}",
+        )
 
     for cid in inbound_conversation_ids:
         conv = (
