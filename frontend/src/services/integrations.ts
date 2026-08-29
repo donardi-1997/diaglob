@@ -118,6 +118,100 @@ export async function syncShopifyProducts(
 }
 
 
+export interface OrderItem {
+  id: number;
+  title: string;
+  sku: string | null;
+  quantity: number;
+  unit_price: number;
+  currency: string;
+  shopify_variant_id: string | null;
+}
+
+
+export interface Order {
+  id: number;
+  order_number: string;
+  total_amount: number;
+  currency: string;
+  financial_status: string | null;
+  fulfillment_status: string | null;
+  source: string | null;
+  invoice_url: string | null;
+  shopify_draft_order_id: string | null;
+  note: string | null;
+  created_at: string | null;
+  items: OrderItem[];
+}
+
+
+export interface OrderCreateResult {
+  ok: boolean;
+  idempotent: boolean;
+  order_id: number;
+  status: string;
+  shopify_draft_order_id: string | null;
+  invoice_url: string | null;
+  total_amount: number;
+  currency: string;
+  order_number: string;
+}
+
+
+export async function createShopifyOrder(
+  storeId: number,
+  items: {
+    variant_local_id: number;
+    quantity: number;
+  }[],
+  options?: {
+    customer_email?: string;
+    customer_name?: string;
+    note?: string;
+    idempotency_key?: string;
+  },
+) {
+  const response =
+    await api.post<OrderCreateResult>(
+      `/api/stores/${storeId}/shopify/orders`,
+      {
+        items,
+        ...options,
+      },
+    );
+
+  return response.data;
+}
+
+
+export async function listShopifyOrders(
+  storeId: number,
+) {
+  const response =
+    await api.get<{
+      items: Order[];
+      total: number;
+    }>(
+      `/api/stores/${storeId}/shopify/orders`,
+    );
+
+  return response.data;
+}
+
+
+export async function getShopifyOrder(
+  storeId: number,
+  orderId: number,
+) {
+  const response =
+    await api.get<Order>(
+      `/api/stores/${storeId}/shopify/orders/${orderId}`,
+    );
+
+  return response.data;
+}
+
+
 export async function getDropiStatus(
   storeId: number,
 ) {

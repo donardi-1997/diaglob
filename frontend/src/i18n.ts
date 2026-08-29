@@ -509,6 +509,20 @@ const resources = {
         "Productos sincronizados correctamente.",
       integrationsShopifySyncError:
         "No se pudieron sincronizar los productos.",
+      integrationsShopifyOrderCreate:
+        "Crear orden",
+      integrationsShopifyOrderCreateOk:
+        "Orden creada correctamente.",
+      integrationsShopifyOrderCreateError:
+        "No se pudo crear la orden.",
+      integrationsShopifyOrderNoVariants:
+        "Sincroniza productos primero para crear órdenes.",
+      integrationsShopifyOrderOpenInvoice:
+        "Abrir enlace de pago",
+      integrationsShopifyOrdersTitle:
+        "Órdenes",
+      integrationsShopifyOrderEmpty:
+        "No hay órdenes aún.",
       integrationsDisconnectError:
         "No se pudo desconectar.",
       integrationsDropiTokenRequired:
@@ -1292,6 +1306,20 @@ const resources = {
         "Products synced successfully.",
       integrationsShopifySyncError:
         "Could not sync products.",
+      integrationsShopifyOrderCreate:
+        "Create order",
+      integrationsShopifyOrderCreateOk:
+        "Order created successfully.",
+      integrationsShopifyOrderCreateError:
+        "Could not create the order.",
+      integrationsShopifyOrderNoVariants:
+        "Sync products first to create orders.",
+      integrationsShopifyOrderOpenInvoice:
+        "Open payment link",
+      integrationsShopifyOrdersTitle:
+        "Orders",
+      integrationsShopifyOrderEmpty:
+        "No orders yet.",
       integrationsDisconnectError:
         "Could not disconnect.",
       integrationsDropiTokenRequired:

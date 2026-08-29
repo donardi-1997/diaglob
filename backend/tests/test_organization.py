@@ -103,6 +103,10 @@ def membership(db, user, org):
 
 @pytest.fixture()
 def client(db, membership):
+    original_overrides = dict(
+        app.dependency_overrides
+    )
+
     def _override_get_db():
         try:
             yield db
@@ -128,12 +132,9 @@ def client(db, membership):
     with TestClient(app) as c:
         yield c
 
-    app.dependency_overrides.pop(get_db, None)
-    app.dependency_overrides.pop(
-        get_current_user, None
-    )
-    app.dependency_overrides.pop(
-        get_current_membership, None
+    app.dependency_overrides.clear()
+    app.dependency_overrides.update(
+        original_overrides
     )
 
 

@@ -50,9 +50,15 @@ def override_get_db():
         db.close()
 
 
-app.dependency_overrides[get_db] = (
-    override_get_db
-)
+@pytest.fixture(autouse=True)
+def _setup_overrides():
+    original = dict(app.dependency_overrides)
+    app.dependency_overrides[get_db] = (
+        override_get_db
+    )
+    yield
+    app.dependency_overrides.clear()
+    app.dependency_overrides.update(original)
 
 import app.ai_reply_service as _ai_svc
 

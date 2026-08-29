@@ -36,6 +36,8 @@ import {
   type ShopifySyncResult,
 } from "../services/integrations";
 
+import ShopifyOrders from "./ShopifyOrders";
+
 
 interface StoreIntegrationsProps {
   storeId: number;
@@ -714,6 +716,14 @@ export default function StoreIntegrations({
           </div>
         )}
       </div>
+
+
+      <ShopifyOrders
+        storeId={storeId}
+        canWrite={canWrite}
+        shopConnected={!!commerce?.connected}
+        syncedProducts={[]}
+      />
 
 
       <div className="store-integration-block dropi">

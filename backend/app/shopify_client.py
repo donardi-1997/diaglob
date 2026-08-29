@@ -169,3 +169,37 @@ class ShopifyUserError(
     ShopifyAPIError
 ):
     pass
+
+
+# ============================================================
+# DRAFT ORDER MUTATION
+# ============================================================
+
+DRAFT_ORDER_CREATE_MUTATION = """
+mutation draftOrderCreate($input: DraftOrderInput!) {
+  draftOrderCreate(input: $input) {
+    draftOrder {
+      id
+      name
+      totalPriceSet {
+        shopMoney {
+          amount
+          currencyCode
+        }
+      }
+      invoiceUrl
+      lineItems(first: 100) {
+        edges {
+          node {
+            id
+          }
+        }
+      }
+    }
+    userErrors {
+      field
+      message
+    }
+  }
+}
+"""

@@ -12,7 +12,8 @@ SHOPIFY_SCOPES = (
     "read_products,"
     "read_inventory,"
     "read_customers,"
-    "read_orders"
+    "read_orders,"
+    "write_draft_orders"
 )
 
 

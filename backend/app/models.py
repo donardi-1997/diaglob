@@ -7,6 +7,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     String,
@@ -351,12 +352,6 @@ class Store(Base):
         "KnowledgeBase",
         secondary=knowledge_base_stores,
         back_populates="stores",
-    )
-
-    products = relationship(
-        "Product",
-        back_populates="store",
-        cascade="all, delete-orphan",
     )
 
     products = relationship(
@@ -1783,6 +1778,20 @@ class Order(Base):
             "shopify_order_id",
             name="uq_order_store_shopify_id",
         ),
+        Index(
+            "uq_order_store_idempotency_key",
+            "store_id",
+            "idempotency_key",
+            unique=True,
+            postgresql_where="idempotency_key IS NOT NULL",
+        ),
+        Index(
+            "uq_order_store_shopify_draft_order_id",
+            "store_id",
+            "shopify_draft_order_id",
+            unique=True,
+            postgresql_where="shopify_draft_order_id IS NOT NULL",
+        ),
     )
 
     id: Mapped[int] = mapped_column(
@@ -1847,6 +1856,41 @@ class Order(Base):
         nullable=True,
     )
 
+    note: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    source: Mapped[str | None] = mapped_column(
+        String(30),
+        nullable=True,
+    )
+
+    invoice_url: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    shopify_draft_order_id: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    idempotency_key: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+
+    external_creation_status: Mapped[str | None] = mapped_column(
+        String(30),
+        nullable=True,
+    )
+
+    external_last_error: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=datetime.utcnow,
@@ -1857,6 +1901,109 @@ class Order(Base):
         DateTime,
         default=datetime.utcnow,
         nullable=False,
+    )
+
+    items = relationship(
+        "OrderItem",
+        back_populates="order",
+        cascade="all, delete-orphan",
+    )
+
+
+# ============================================================
+# ORDER ITEM
+# ============================================================
+
+class OrderItem(Base):
+    __tablename__ = "order_items"
+
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+    )
+
+    order_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "orders.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+        index=True,
+    )
+
+    organization_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "organizations.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+        index=True,
+    )
+
+    store_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "stores.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+        index=True,
+    )
+
+    product_id: Mapped[int | None] = mapped_column(
+        ForeignKey(
+            "products.id",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
+
+    variant_id: Mapped[int | None] = mapped_column(
+        ForeignKey(
+            "product_variants.id",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
+
+    shopify_variant_id: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    title: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+    )
+
+    sku: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    quantity: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+    )
+
+    unit_price: Mapped[float] = mapped_column(
+        Numeric(18, 4),
+        nullable=False,
+    )
+
+    currency: Mapped[str] = mapped_column(
+        String(3),
+        nullable=False,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False,
+    )
+
+    order = relationship(
+        "Order",
+        back_populates="items",
     )
 
 

@@ -101,10 +101,17 @@ from .shopify_sync import (
     sync_shopify_products,
 )
 
+from .shopify_orders import (
+    create_shopify_draft_order,
+    list_shopify_orders,
+    get_shopify_order,
+)
+
 from .shopify_client import (
     ShopifyAuthError,
     ShopifyAPIError,
     ShopifyGraphQLError,
+    ShopifyUserError,
 )
 
 from .dropi_security import (
@@ -10026,6 +10033,258 @@ def shopify_sync_products(
         ) from exc
 
     return result
+
+
+class ShopifyOrderItemRequest(BaseModel):
+    variant_local_id: int
+    quantity: int
+
+
+class ShopifyOrderCreateRequest(BaseModel):
+    items: list[ShopifyOrderItemRequest]
+    customer_email: str | None = None
+    customer_name: str | None = None
+    note: str | None = None
+    idempotency_key: str | None = None
+
+
+@app.post(
+    "/api/stores/{store_id}"
+    "/shopify/orders"
+)
+def create_shopify_order(
+    store_id: int,
+    payload: ShopifyOrderCreateRequest,
+    membership: OrganizationMembership = Depends(
+        require_permission(
+            "commerce.write"
+        )
+    ),
+    db: Session = Depends(get_db),
+):
+    store = (
+        db.query(Store)
+        .filter(
+            Store.id == store_id,
+            Store.organization_id
+            == membership.organization_id,
+            Store.deleted.is_(False),
+        )
+        .first()
+    )
+
+    if not store:
+        raise HTTPException(
+            status_code=404,
+            detail="Store not found",
+        )
+
+    connection = (
+        db.query(CommerceConnection)
+        .filter(
+            CommerceConnection.store_id
+            == store.id,
+            CommerceConnection.organization_id
+            == membership.organization_id,
+            CommerceConnection.provider
+            == "shopify",
+            CommerceConnection.status
+            == "connected",
+        )
+        .first()
+    )
+
+    if not connection:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code":
+                    "SHOPIFY_NOT_CONNECTED",
+                "message":
+                    (
+                        "Shopify no está "
+                        "conectado."
+                    ),
+            },
+        )
+
+    if not payload.items:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "At least one item is required"
+            ),
+        )
+
+    for item in payload.items:
+        if item.quantity <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Quantity must be > 0 for "
+                    f"variant "
+                    f"{item.variant_local_id}"
+                ),
+            )
+
+    try:
+        result = create_shopify_draft_order(
+            db=db,
+            store=store,
+            connection=connection,
+            items_payload=[
+                {
+                    "variant_local_id":
+                        item.variant_local_id,
+                    "quantity": item.quantity,
+                }
+                for item in payload.items
+            ],
+            customer_email=(
+                payload.customer_email
+            ),
+            customer_name=(
+                payload.customer_name
+            ),
+            note=payload.note,
+            idempotency_key=(
+                payload.idempotency_key
+            ),
+        )
+
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+
+    except ShopifyAuthError as exc:
+        connection.status = "error"
+        connection.last_error = str(exc)
+        db.commit()
+
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "ok": False,
+                "error": str(exc),
+            },
+        ) from exc
+
+    except ShopifyUserError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "ok": False,
+                "error": str(exc),
+            },
+        ) from exc
+
+    except (
+        ShopifyAPIError,
+        ShopifyGraphQLError,
+    ) as exc:
+        connection.last_error = str(exc)
+        db.commit()
+
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "ok": False,
+                "error": str(exc),
+            },
+        ) from exc
+
+    return result
+
+
+@app.get(
+    "/api/stores/{store_id}"
+    "/shopify/orders"
+)
+def list_orders(
+    store_id: int,
+    membership: OrganizationMembership = Depends(
+        require_permission(
+            "commerce.read"
+        )
+    ),
+    db: Session = Depends(get_db),
+):
+    store = (
+        db.query(Store)
+        .filter(
+            Store.id == store_id,
+            Store.organization_id
+            == membership.organization_id,
+            Store.deleted.is_(False),
+        )
+        .first()
+    )
+
+    if not store:
+        raise HTTPException(
+            status_code=404,
+            detail="Store not found",
+        )
+
+    orders = list_shopify_orders(
+        db=db,
+        store_id=store.id,
+        organization_id=store.organization_id,
+    )
+
+    return {
+        "items": orders,
+        "total": len(orders),
+    }
+
+
+@app.get(
+    "/api/stores/{store_id}"
+    "/shopify/orders/{order_id}"
+)
+def get_order(
+    store_id: int,
+    order_id: int,
+    membership: OrganizationMembership = Depends(
+        require_permission(
+            "commerce.read"
+        )
+    ),
+    db: Session = Depends(get_db),
+):
+    store = (
+        db.query(Store)
+        .filter(
+            Store.id == store_id,
+            Store.organization_id
+            == membership.organization_id,
+            Store.deleted.is_(False),
+        )
+        .first()
+    )
+
+    if not store:
+        raise HTTPException(
+            status_code=404,
+            detail="Store not found",
+        )
+
+    order = get_shopify_order(
+        db=db,
+        order_id=order_id,
+        store_id=store.id,
+        organization_id=store.organization_id,
+    )
+
+    if not order:
+        raise HTTPException(
+            status_code=404,
+            detail="Order not found",
+        )
+
+    return order
 
 
 @app.post("/api/stores")
