@@ -934,6 +934,73 @@ const resources = {
       autoExecInput: "Entrada",
       autoExecResult: "Resultado",
       autoClose: "Cerrar",
+
+      analyticsTabOverview: "General",
+      analyticsTabConversations: "Conversaciones",
+      analyticsTabCommerce: "Comercio",
+      analyticsTabAutomations: "Automatizaciones",
+      analyticsLoadError:
+        "No se pudieron cargar las analíticas.",
+      analyticsNoData:
+        "No hay datos disponibles.",
+      analyticsNoTimeseries:
+        "No hay datos para el periodo seleccionado.",
+      analyticsRangeAll: "Todo",
+      analyticsRangeToday: "Hoy",
+      analyticsRange7d: "7 días",
+      analyticsRange30d: "30 días",
+      analyticsRangeMonth: "Este mes",
+      analyticsDateFrom: "Desde",
+      analyticsDateTo: "Hasta",
+      analyticsStatConversations: "Conversaciones",
+      analyticsStatMessages: "Mensajes",
+      analyticsStatProducts: "Productos",
+      analyticsStatOrders: "Órdenes",
+      analyticsStatOrderValue: "Valor de órdenes",
+      analyticsStatActiveAutomations:
+        "Automatizaciones activas",
+      analyticsMessagesPerDay: "Mensajes por día",
+      analyticsOrdersPerDay: "Órdenes por día",
+      analyticsConversationsPerDay:
+        "Conversaciones por día",
+      analyticsExecutionsPerDay:
+        "Ejecuciones por día",
+      analyticsAvgMetrics: "Promedios",
+      analyticsAvgMessagesPerConv:
+        "Mensajes / conversación",
+      analyticsAvgOrderValue: "Ticket promedio",
+      analyticsAvgTicket: "Ticket promedio",
+      analyticsAutomationRate:
+        "Automatizaciones",
+      analyticsExecutions: "Ejecuciones",
+      analyticsSuccessRate: "Tasa de éxito",
+      analyticsByChannel: "Por canal",
+      analyticsByMode: "Por modo",
+      analyticsSenderDistribution:
+        "Distribución de remitentes",
+      analyticsOrdersByStatus: "Por estado",
+      analyticsOrdersBySource: "Por origen",
+      analyticsHistorical: "Histórica",
+      analyticsLocal: "Local",
+      analyticsTopProducts: "Top productos",
+      analyticsProduct: "Producto",
+      analyticsUnits: "Unidades",
+      analyticsValue: "Valor",
+      analyticsTotalAutomations:
+        "Total automatizaciones",
+      analyticsActive: "Activas",
+      analyticsExecutionsByStatus:
+        "Ejecuciones por estado",
+      analyticsExecutionsByTrigger:
+        "Ejecuciones por trigger",
+      analyticsAvgDuration:
+        "Duración promedio",
+      analyticsTopByExecutions:
+        "Más ejecutadas",
+      analyticsTopByFailures:
+        "Más fallos",
+      analyticsNoOrders:
+        "No hay órdenes en este periodo.",
     },
   },
 
@@ -1827,6 +1894,71 @@ const resources = {
       autoExecInput: "Input",
       autoExecResult: "Result",
       autoClose: "Close",
+
+      analyticsTabOverview: "Overview",
+      analyticsTabConversations: "Conversations",
+      analyticsTabCommerce: "Commerce",
+      analyticsTabAutomations: "Automations",
+      analyticsLoadError:
+        "Could not load analytics.",
+      analyticsNoData:
+        "No data available.",
+      analyticsNoTimeseries:
+        "No data for the selected period.",
+      analyticsRangeAll: "All",
+      analyticsRangeToday: "Today",
+      analyticsRange7d: "7 days",
+      analyticsRange30d: "30 days",
+      analyticsRangeMonth: "This month",
+      analyticsDateFrom: "From",
+      analyticsDateTo: "To",
+      analyticsStatConversations: "Conversations",
+      analyticsStatMessages: "Messages",
+      analyticsStatProducts: "Products",
+      analyticsStatOrders: "Orders",
+      analyticsStatOrderValue: "Order value",
+      analyticsStatActiveAutomations:
+        "Active automations",
+      analyticsMessagesPerDay: "Messages per day",
+      analyticsOrdersPerDay: "Orders per day",
+      analyticsConversationsPerDay:
+        "Conversations per day",
+      analyticsExecutionsPerDay:
+        "Executions per day",
+      analyticsAvgMetrics: "Averages",
+      analyticsAvgMessagesPerConv:
+        "Messages / conversation",
+      analyticsAvgOrderValue: "Avg order value",
+      analyticsAvgTicket: "Avg ticket",
+      analyticsAutomationRate: "Automations",
+      analyticsExecutions: "Executions",
+      analyticsSuccessRate: "Success rate",
+      analyticsByChannel: "By channel",
+      analyticsByMode: "By mode",
+      analyticsSenderDistribution:
+        "Sender distribution",
+      analyticsOrdersByStatus: "By status",
+      analyticsOrdersBySource: "By source",
+      analyticsHistorical: "Historical",
+      analyticsLocal: "Local",
+      analyticsTopProducts: "Top products",
+      analyticsProduct: "Product",
+      analyticsUnits: "Units",
+      analyticsValue: "Value",
+      analyticsTotalAutomations:
+        "Total automations",
+      analyticsActive: "Active",
+      analyticsExecutionsByStatus:
+        "Executions by status",
+      analyticsExecutionsByTrigger:
+        "Executions by trigger",
+      analyticsAvgDuration: "Avg duration",
+      analyticsTopByExecutions:
+        "Most executed",
+      analyticsTopByFailures:
+        "Most failures",
+      analyticsNoOrders:
+        "No orders in this period.",
     },
   },
 };

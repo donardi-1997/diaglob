@@ -115,6 +115,15 @@ from .automations import (
     VALID_TRIGGER_TYPES,
 )
 
+from .analytics import (
+    get_summary,
+    get_timeseries,
+    get_conversations_analytics,
+    get_commerce_analytics,
+    get_automations_analytics,
+    get_date_range,
+)
+
 from .shopify_client import (
     ShopifyAuthError,
     ShopifyAPIError,
@@ -9174,6 +9183,236 @@ def list_all_automation_executions(
         "items": items,
         "total": len(items),
     }
+
+
+# ============================================================
+# ANALYTICS ENDPOINTS
+# ============================================================
+
+
+@app.get(
+    "/api/stores/{store_id}"
+    "/analytics/summary"
+)
+def get_analytics_summary(
+    store_id: int,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    membership: OrganizationMembership = Depends(
+        require_permission(
+            "analytics.read"
+        )
+    ),
+    db: Session = Depends(get_db),
+):
+    store = (
+        db.query(Store)
+        .filter(
+            Store.id == store_id,
+            Store.organization_id
+            == membership.organization_id,
+            Store.deleted.is_(False),
+        )
+        .first()
+    )
+
+    if not store:
+        raise HTTPException(
+            status_code=404,
+            detail="Store not found",
+        )
+
+    d_from, d_to = get_date_range(
+        date_from, date_to
+    )
+
+    return get_summary(
+        db=db,
+        organization_id=membership.organization_id,
+        store_id=store_id,
+        date_from=d_from,
+        date_to=d_to,
+    )
+
+
+@app.get(
+    "/api/stores/{store_id}"
+    "/analytics/timeseries"
+)
+def get_analytics_timeseries(
+    store_id: int,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    membership: OrganizationMembership = Depends(
+        require_permission(
+            "analytics.read"
+        )
+    ),
+    db: Session = Depends(get_db),
+):
+    store = (
+        db.query(Store)
+        .filter(
+            Store.id == store_id,
+            Store.organization_id
+            == membership.organization_id,
+            Store.deleted.is_(False),
+        )
+        .first()
+    )
+
+    if not store:
+        raise HTTPException(
+            status_code=404,
+            detail="Store not found",
+        )
+
+    d_from, d_to = get_date_range(
+        date_from, date_to
+    )
+
+    return get_timeseries(
+        db=db,
+        organization_id=membership.organization_id,
+        store_id=store_id,
+        date_from=d_from,
+        date_to=d_to,
+    )
+
+
+@app.get(
+    "/api/stores/{store_id}"
+    "/analytics/conversations"
+)
+def get_analytics_conversations(
+    store_id: int,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    membership: OrganizationMembership = Depends(
+        require_permission(
+            "analytics.read"
+        )
+    ),
+    db: Session = Depends(get_db),
+):
+    store = (
+        db.query(Store)
+        .filter(
+            Store.id == store_id,
+            Store.organization_id
+            == membership.organization_id,
+            Store.deleted.is_(False),
+        )
+        .first()
+    )
+
+    if not store:
+        raise HTTPException(
+            status_code=404,
+            detail="Store not found",
+        )
+
+    d_from, d_to = get_date_range(
+        date_from, date_to
+    )
+
+    return get_conversations_analytics(
+        db=db,
+        organization_id=membership.organization_id,
+        store_id=store_id,
+        date_from=d_from,
+        date_to=d_to,
+    )
+
+
+@app.get(
+    "/api/stores/{store_id}"
+    "/analytics/commerce"
+)
+def get_analytics_commerce(
+    store_id: int,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    membership: OrganizationMembership = Depends(
+        require_permission(
+            "analytics.read"
+        )
+    ),
+    db: Session = Depends(get_db),
+):
+    store = (
+        db.query(Store)
+        .filter(
+            Store.id == store_id,
+            Store.organization_id
+            == membership.organization_id,
+            Store.deleted.is_(False),
+        )
+        .first()
+    )
+
+    if not store:
+        raise HTTPException(
+            status_code=404,
+            detail="Store not found",
+        )
+
+    d_from, d_to = get_date_range(
+        date_from, date_to
+    )
+
+    return get_commerce_analytics(
+        db=db,
+        organization_id=membership.organization_id,
+        store_id=store_id,
+        date_from=d_from,
+        date_to=d_to,
+    )
+
+
+@app.get(
+    "/api/stores/{store_id}"
+    "/analytics/automations"
+)
+def get_analytics_automations(
+    store_id: int,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    membership: OrganizationMembership = Depends(
+        require_permission(
+            "analytics.read"
+        )
+    ),
+    db: Session = Depends(get_db),
+):
+    store = (
+        db.query(Store)
+        .filter(
+            Store.id == store_id,
+            Store.organization_id
+            == membership.organization_id,
+            Store.deleted.is_(False),
+        )
+        .first()
+    )
+
+    if not store:
+        raise HTTPException(
+            status_code=404,
+            detail="Store not found",
+        )
+
+    d_from, d_to = get_date_range(
+        date_from, date_to
+    )
+
+    return get_automations_analytics(
+        db=db,
+        organization_id=membership.organization_id,
+        store_id=store_id,
+        date_from=d_from,
+        date_to=d_to,
+    )
 
 
 @app.get("/api/stores/{store_id}/dropi")
