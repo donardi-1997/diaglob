@@ -5668,7 +5668,8 @@ def get_organization(
     # ========================================================
     #
     # La fecha viene directamente de Paddle.
-    # Si Paddle no responde, no bloqueamos /api/organization:
+    # Si Paddle no está configurado o no responde,
+    # no bloqueamos /api/organization:
     # simplemente devolvemos next_billed_at = None.
     #
     next_billed_at = None
@@ -5677,7 +5678,9 @@ def get_organization(
         organization.billing_subscription_id
     )
 
-    if subscription_id:
+    paddle_api_key = os.getenv("PADDLE_API_KEY")
+
+    if subscription_id and paddle_api_key:
         try:
             paddle_response = httpx.get(
                 (
