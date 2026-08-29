@@ -489,6 +489,8 @@ const resources = {
         "Desconectar",
       integrationsCopyWebhook:
         "Copiar webhook",
+      integrationsCopyVerifyToken:
+        "Copiar verify token",
       integrationsShopifyNoDomain:
         "Sin dominio Shopify",
       integrationsShopifyConnectError:
@@ -1258,6 +1260,8 @@ const resources = {
         "Disconnect",
       integrationsCopyWebhook:
         "Copy webhook",
+      integrationsCopyVerifyToken:
+        "Copy verify token",
       integrationsShopifyNoDomain:
         "No Shopify domain",
       integrationsShopifyConnectError:

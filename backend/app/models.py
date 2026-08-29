@@ -786,7 +786,7 @@ class Conversation(Base):
 
     channel: Mapped[str] = mapped_column(
         String(50),
-        default="WhatsApp",
+        default="internal",
         nullable=False,
     )
 

@@ -130,6 +130,7 @@ export interface WhatsAppConnectionStatus {
   status: string;
   phone_number_id: string | null;
   business_account_id: string | null;
+  verify_token: string | null;
   connected_at: string | null;
   last_error: string | null;
 }

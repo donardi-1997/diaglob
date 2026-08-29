@@ -92,6 +92,9 @@ export default function StoreIntegrations({
   const [copied, setCopied] =
     useState(false);
 
+  const [whatsappCopied, setWhatsAppCopied] =
+    useState(false);
+
   const [error, setError] =
     useState("");
 
@@ -308,6 +311,55 @@ export default function StoreIntegrations({
   }
 
 
+  const WHATSAPP_WEBHOOK_URL =
+    "https://api.diaglob.tech/api/webhooks/whatsapp";
+
+
+  async function copyWhatsAppWebhook() {
+    try {
+      await navigator.clipboard.writeText(
+        WHATSAPP_WEBHOOK_URL,
+      );
+
+      setWhatsAppCopied(true);
+
+      setTimeout(
+        () => setWhatsAppCopied(false),
+        1800,
+      );
+    } catch {
+      setError(
+        t("integrationsCopyError"),
+      );
+    }
+  }
+
+
+  async function copyWhatsAppVerifyToken() {
+    const token =
+      whatsapp?.verify_token;
+
+    if (!token) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(token);
+
+      setWhatsAppCopied(true);
+
+      setTimeout(
+        () => setWhatsAppCopied(false),
+        1800,
+      );
+    } catch {
+      setError(
+        t("integrationsCopyError"),
+      );
+    }
+  }
+
+
   async function handleConnectWhatsApp(
     event: React.FormEvent,
   ) {
@@ -355,6 +407,8 @@ export default function StoreIntegrations({
           result.phone_number_id,
         business_account_id:
           bizId,
+        verify_token:
+          result.verify_token,
         connected_at: null,
         last_error: null,
       });
@@ -636,6 +690,50 @@ export default function StoreIntegrations({
                 {whatsapp.phone_number_id}
               </code>
             </div>
+
+            <div className="store-integration-webhook">
+              <code>
+                {WHATSAPP_WEBHOOK_URL}
+              </code>
+
+              {canWrite && (
+                <button
+                  type="button"
+                  className="store-integration-copy"
+                  onClick={copyWhatsAppWebhook}
+                  title={t("integrationsCopyWebhook")}
+                >
+                  {whatsappCopied
+                    ? <Check size={15} />
+                    : <Copy size={15} />}
+                </button>
+              )}
+            </div>
+
+            {whatsapp.verify_token && (
+              <div className="store-integration-detail">
+                <span style={{ fontSize: 11, opacity: .6 }}>
+                  Verify Token:
+                </span>
+
+                <code style={{ fontSize: 11 }}>
+                  {whatsapp.verify_token}
+                </code>
+
+                {canWrite && (
+                  <button
+                    type="button"
+                    className="store-integration-copy"
+                    onClick={copyWhatsAppVerifyToken}
+                    title={t("integrationsCopyVerifyToken")}
+                  >
+                    {whatsappCopied
+                      ? <Check size={13} />
+                      : <Copy size={13} />}
+                  </button>
+                )}
+              </div>
+            )}
 
             {canWrite && (
               <div className="store-integration-actions">

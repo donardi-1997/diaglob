@@ -76,6 +76,7 @@ def org(db):
         name="Test Org",
         slug="test-org",
         plan="pro",
+        subscription_status="active",
         active=True,
     )
     db.add(organization)
@@ -108,7 +109,7 @@ def membership(db, org):
     membership = OrganizationMembership(
         user_id=1,
         organization_id=org.id,
-        role="admin",
+        role="owner",
         all_stores=True,
         active=True,
     )
@@ -477,6 +478,7 @@ class TestStoreIsolation:
             name="Other Org",
             slug="other-org",
             plan="pro",
+            subscription_status="active",
             active=True,
         )
         db.add(other_org)
@@ -732,6 +734,7 @@ class TestSendEndpoint:
             name="Other Org",
             slug="other-send-org",
             plan="pro",
+            subscription_status="active",
             active=True,
         )
         db.add(other_org)
@@ -741,7 +744,7 @@ class TestSendEndpoint:
         other_membership = OrganizationMembership(
             user_id=99,
             organization_id=other_org.id,
-            role="admin",
+            role="owner",
             all_stores=True,
             active=True,
         )
@@ -789,3 +792,619 @@ class TestSendEndpoint:
             ] = original_overrides.get(
                 get_current_membership,
             )
+
+
+class TestWebhookVerify:
+    def test_verify_correct_token(
+        self,
+        wa_connection,
+    ):
+        client = TestClient(app)
+
+        response = client.get(
+            "/api/webhooks/whatsapp",
+            params={
+                "hub.mode": "subscribe",
+                "hub.verify_token":
+                    wa_connection.verify_token,
+                "hub.challenge":
+                    "CHALLENGE_VALUE",
+            },
+        )
+
+        assert response.status_code == 200
+        assert (
+            response.text == "CHALLENGE_VALUE"
+        )
+
+    def test_verify_incorrect_token(
+        self,
+        wa_connection,
+    ):
+        client = TestClient(app)
+
+        response = client.get(
+            "/api/webhooks/whatsapp",
+            params={
+                "hub.mode": "subscribe",
+                "hub.verify_token":
+                    "wrong_token_12345",
+                "hub.challenge":
+                    "CHALLENGE_VALUE",
+            },
+        )
+
+        assert response.status_code == 403
+
+    def test_verify_missing_mode(
+        self,
+        wa_connection,
+    ):
+        client = TestClient(app)
+
+        response = client.get(
+            "/api/webhooks/whatsapp",
+            params={
+                "hub.verify_token":
+                    wa_connection.verify_token,
+                "hub.challenge":
+                    "CHALLENGE_VALUE",
+            },
+        )
+
+        assert response.status_code == 400
+
+    def test_verify_missing_challenge(
+        self,
+        wa_connection,
+    ):
+        client = TestClient(app)
+
+        response = client.get(
+            "/api/webhooks/whatsapp",
+            params={
+                "hub.mode": "subscribe",
+                "hub.verify_token":
+                    wa_connection.verify_token,
+            },
+        )
+
+        assert response.status_code == 400
+
+
+class TestWebhookUnknownPhone:
+    def test_unknown_phone_number_ignored(
+        self,
+        wa_connection,
+        db,
+    ):
+        os.environ[
+            "WHATSAPP_APP_SECRET"
+        ] = TEST_APP_SECRET
+
+        body = json.dumps(
+            _webhook_payload(
+                "000000000",
+                "5210000000003",
+                "msg_unknown_001",
+                "Hello unknown",
+            )
+        ).encode()
+
+        client = TestClient(app)
+
+        response = client.post(
+            "/api/webhooks/whatsapp",
+            content=body,
+            headers={
+                "Content-Type":
+                    "application/json",
+                "X-Hub-Signature-256":
+                    _make_signature(body),
+            },
+        )
+
+        assert response.status_code == 200
+
+        msg = (
+            db.query(Message)
+            .filter(
+                Message.external_message_id
+                == "msg_unknown_001"
+            )
+            .first()
+        )
+
+        assert msg is None
+
+
+class TestConnectionPerStore:
+    def test_get_returns_verify_token(
+        self,
+        wa_connection,
+        membership,
+    ):
+        from app.main import (
+            get_current_membership,
+        )
+
+        client = TestClient(app)
+
+        original = dict(
+            app.dependency_overrides
+        )
+
+        app.dependency_overrides[
+            get_current_membership
+        ] = lambda: membership
+
+        try:
+            response = client.get(
+                f"/api/stores/{wa_connection.store_id}/whatsapp",
+            )
+
+            assert (
+                response.status_code == 200
+            )
+
+            data = response.json()
+
+            assert data["connected"] is True
+            assert (
+                data["phone_number_id"]
+                == "123456789"
+            )
+            assert (
+                data["verify_token"]
+                == wa_connection.verify_token
+            )
+            assert (
+                "access_token"
+                not in json.dumps(data)
+            )
+        finally:
+            app.dependency_overrides[
+                get_current_membership
+            ] = original.get(
+                get_current_membership,
+            )
+
+    def test_token_never_in_get_response(
+        self,
+        wa_connection,
+        membership,
+    ):
+        from app.main import (
+            get_current_membership,
+        )
+
+        client = TestClient(app)
+
+        original = dict(
+            app.dependency_overrides
+        )
+
+        app.dependency_overrides[
+            get_current_membership
+        ] = lambda: membership
+
+        try:
+            response = client.get(
+                f"/api/stores/{wa_connection.store_id}/whatsapp",
+            )
+
+            data = response.json()
+            raw = json.dumps(data)
+
+            assert (
+                "access_token" not in raw
+            )
+            assert (
+                "encrypted" not in raw
+            )
+        finally:
+            app.dependency_overrides[
+                get_current_membership
+            ] = original.get(
+                get_current_membership,
+            )
+
+
+class TestVerifyTokenAuthorization:
+    def test_read_only_role_no_verify_token(
+        self,
+        wa_connection,
+        org,
+        store,
+        db,
+    ):
+        from app.main import (
+            get_current_membership,
+        )
+
+        operator = OrganizationMembership(
+            user_id=2,
+            organization_id=org.id,
+            role="operator",
+            all_stores=True,
+            active=True,
+        )
+        db.add(operator)
+        db.commit()
+        db.refresh(operator)
+
+        client = TestClient(app)
+
+        original = dict(
+            app.dependency_overrides
+        )
+
+        app.dependency_overrides[
+            get_current_membership
+        ] = lambda: operator
+
+        try:
+            response = client.get(
+                f"/api/stores/{wa_connection.store_id}/whatsapp",
+            )
+
+            assert (
+                response.status_code == 200
+            )
+
+            data = response.json()
+
+            assert data["connected"] is True
+            assert (
+                data["phone_number_id"]
+                == "123456789"
+            )
+            assert (
+                data["verify_token"] is None
+            )
+            assert (
+                "access_token"
+                not in json.dumps(data)
+            )
+        finally:
+            app.dependency_overrides[
+                get_current_membership
+            ] = original.get(
+                get_current_membership,
+            )
+
+    def test_analyst_role_no_verify_token(
+        self,
+        wa_connection,
+        org,
+        store,
+        db,
+    ):
+        from app.main import (
+            get_current_membership,
+        )
+
+        analyst = OrganizationMembership(
+            user_id=3,
+            organization_id=org.id,
+            role="analyst",
+            all_stores=True,
+            active=True,
+        )
+        db.add(analyst)
+        db.commit()
+        db.refresh(analyst)
+
+        client = TestClient(app)
+
+        original = dict(
+            app.dependency_overrides
+        )
+
+        app.dependency_overrides[
+            get_current_membership
+        ] = lambda: analyst
+
+        try:
+            response = client.get(
+                f"/api/stores/{wa_connection.store_id}/whatsapp",
+            )
+
+            assert (
+                response.status_code == 200
+            )
+
+            data = response.json()
+
+            assert (
+                data["verify_token"] is None
+            )
+        finally:
+            app.dependency_overrides[
+                get_current_membership
+            ] = original.get(
+                get_current_membership,
+            )
+
+    def test_manager_role_sees_verify_token(
+        self,
+        wa_connection,
+        org,
+        store,
+        db,
+    ):
+        from app.main import (
+            get_current_membership,
+        )
+
+        manager = OrganizationMembership(
+            user_id=4,
+            organization_id=org.id,
+            role="manager",
+            all_stores=True,
+            active=True,
+        )
+        db.add(manager)
+        db.commit()
+        db.refresh(manager)
+
+        client = TestClient(app)
+
+        original = dict(
+            app.dependency_overrides
+        )
+
+        app.dependency_overrides[
+            get_current_membership
+        ] = lambda: manager
+
+        try:
+            response = client.get(
+                f"/api/stores/{wa_connection.store_id}/whatsapp",
+            )
+
+            assert (
+                response.status_code == 200
+            )
+
+            data = response.json()
+
+            assert (
+                data["verify_token"]
+                == wa_connection.verify_token
+            )
+        finally:
+            app.dependency_overrides[
+                get_current_membership
+            ] = original.get(
+                get_current_membership,
+            )
+
+
+class TestCrossTenantIsolation:
+    def test_webhook_cross_tenant_ignored(
+        self,
+        db,
+        org,
+        store,
+    ):
+        other_org = Organization(
+            name="Tenant B",
+            slug="tenant-b",
+            plan="pro",
+            subscription_status="active",
+            active=True,
+        )
+        db.add(other_org)
+        db.commit()
+        db.refresh(other_org)
+
+        other_store = Store(
+            organization_id=other_org.id,
+            name="Store B",
+            slug="store-b",
+            country_code="MX",
+            currency="MXN",
+            timezone="America/Mexico_City",
+            default_language="es",
+            active=True,
+            deleted=False,
+        )
+        db.add(other_store)
+        db.commit()
+        db.refresh(other_store)
+
+        other_conn = WhatsAppConnection(
+            organization_id=other_org.id,
+            store_id=other_store.id,
+            phone_number_id="555555555",
+            business_account_id="biz_555",
+            access_token_encrypted="enc",
+            verify_token=secrets.token_urlsafe(48),
+            status="connected",
+        )
+        db.add(other_conn)
+        db.commit()
+
+        os.environ[
+            "WHATSAPP_APP_SECRET"
+        ] = TEST_APP_SECRET
+
+        body = json.dumps(
+            _webhook_payload(
+                "555555555",
+                "5219999999999",
+                "msg_tenant_001",
+                "Cross tenant msg",
+            )
+        ).encode()
+
+        client = TestClient(app)
+
+        response = client.post(
+            "/api/webhooks/whatsapp",
+            content=body,
+            headers={
+                "Content-Type":
+                    "application/json",
+                "X-Hub-Signature-256":
+                    _make_signature(body),
+            },
+        )
+
+        assert response.status_code == 200
+
+        customer = (
+            db.query(Customer)
+            .filter(
+                Customer.organization_id
+                == org.id,
+                Customer.phone
+                == "5219999999999",
+            )
+            .first()
+        )
+
+        assert customer is None
+
+        other_customer = (
+            db.query(Customer)
+            .filter(
+                Customer.organization_id
+                == other_org.id,
+                Customer.phone
+                == "5219999999999",
+            )
+            .first()
+        )
+
+        assert other_customer is not None
+
+
+class TestDisconnection:
+    def test_disconnect_removes_connection(
+        self,
+        wa_connection,
+        membership,
+        db,
+    ):
+        from app.main import (
+            get_current_membership,
+        )
+
+        client = TestClient(app)
+
+        original = dict(
+            app.dependency_overrides
+        )
+
+        app.dependency_overrides[
+            get_current_membership
+        ] = lambda: membership
+
+        try:
+            response = client.delete(
+                f"/api/stores/{wa_connection.store_id}/whatsapp/disconnect",
+            )
+
+            assert (
+                response.status_code == 200
+            )
+            assert (
+                response.json()["connected"]
+                is False
+            )
+
+            remaining = (
+                db.query(WhatsAppConnection)
+                .filter(
+                    WhatsAppConnection.id
+                    == wa_connection.id
+                )
+                .first()
+            )
+
+            assert remaining is None
+        finally:
+            app.dependency_overrides[
+                get_current_membership
+            ] = original.get(
+                get_current_membership,
+            )
+
+
+class TestDuplicateMessages:
+    def test_same_wa_id_different_text_both_saved(
+        self,
+        wa_connection,
+        db,
+    ):
+        os.environ[
+            "WHATSAPP_APP_SECRET"
+        ] = TEST_APP_SECRET
+
+        client = TestClient(app)
+
+        body1 = json.dumps(
+            _webhook_payload(
+                "123456789",
+                "5210000000001",
+                "msg_dup_a",
+                "First message",
+            )
+        ).encode()
+
+        response1 = client.post(
+            "/api/webhooks/whatsapp",
+            content=body1,
+            headers={
+                "Content-Type":
+                    "application/json",
+                "X-Hub-Signature-256":
+                    _make_signature(body1),
+            },
+        )
+        assert response1.status_code == 200
+
+        body2 = json.dumps(
+            _webhook_payload(
+                "123456789",
+                "5210000000001",
+                "msg_dup_b",
+                "Second message",
+            )
+        ).encode()
+
+        response2 = client.post(
+            "/api/webhooks/whatsapp",
+            content=body2,
+            headers={
+                "Content-Type":
+                    "application/json",
+                "X-Hub-Signature-256":
+                    _make_signature(body2),
+            },
+        )
+        assert response2.status_code == 200
+
+        messages = (
+            db.query(Message)
+            .filter(
+                Message.provider
+                == "whatsapp",
+                Message.sender
+                == "customer",
+            )
+            .all()
+        )
+
+        assert len(messages) == 2
+
+        texts = {
+            m.text for m in messages
+        }
+
+        assert texts == {
+            "First message",
+            "Second message",
+        }

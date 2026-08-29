@@ -8395,7 +8395,7 @@ def get_whatsapp_connection(
             "last_error": None,
         }
 
-    return {
+    result = {
         "connected":
             connection.status
             == "connected",
@@ -8405,6 +8405,8 @@ def get_whatsapp_connection(
             connection.phone_number_id,
         "business_account_id":
             connection.business_account_id,
+        "verify_token":
+            None,
         "connected_at":
             (
                 connection.connected_at.isoformat()
@@ -8415,6 +8417,16 @@ def get_whatsapp_connection(
         "last_error":
             connection.last_error,
     }
+
+    if has_permission(
+        membership.role,
+        "stores.write",
+    ):
+        result["verify_token"] = (
+            connection.verify_token
+        )
+
+    return result
 
 
 @app.post(
