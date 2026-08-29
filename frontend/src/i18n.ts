@@ -497,6 +497,18 @@ const resources = {
         "No se pudo iniciar la conexión con Shopify.",
       integrationsShopifyDisconnected:
         "Shopify se desconectó.",
+      integrationsShopifyTest:
+        "Probar conexión",
+      integrationsShopifyTestOk:
+        "Conexión verificada correctamente.",
+      integrationsShopifyTestError:
+        "No se pudo verificar la conexión con Shopify.",
+      integrationsShopifySync:
+        "Sincronizar productos",
+      integrationsShopifySyncOk:
+        "Productos sincronizados correctamente.",
+      integrationsShopifySyncError:
+        "No se pudieron sincronizar los productos.",
       integrationsDisconnectError:
         "No se pudo desconectar.",
       integrationsDropiTokenRequired:
@@ -1268,6 +1280,18 @@ const resources = {
         "Could not start the Shopify connection.",
       integrationsShopifyDisconnected:
         "Shopify disconnected.",
+      integrationsShopifyTest:
+        "Test connection",
+      integrationsShopifyTestOk:
+        "Connection verified successfully.",
+      integrationsShopifyTestError:
+        "Could not verify Shopify connection.",
+      integrationsShopifySync:
+        "Sync products",
+      integrationsShopifySyncOk:
+        "Products synced successfully.",
+      integrationsShopifySyncError:
+        "Could not sync products.",
       integrationsDisconnectError:
         "Could not disconnect.",
       integrationsDropiTokenRequired:

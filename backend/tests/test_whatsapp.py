@@ -9,9 +9,10 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.db import Base, get_db
+from app.db import Base, get_db, SessionLocal as RealSessionLocal
 from app.main import app
 from app.models import (
+    Agent,
     Conversation,
     Customer,
     Message,
@@ -52,6 +53,11 @@ def override_get_db():
 app.dependency_overrides[get_db] = (
     override_get_db
 )
+
+import app.ai_reply_service as _ai_svc
+
+_ai_svc_orig_session = _ai_svc.SessionLocal
+_ai_svc.SessionLocal = TestingSessionLocal
 
 
 @pytest.fixture(autouse=True)
@@ -1408,3 +1414,931 @@ class TestDuplicateMessages:
             "First message",
             "Second message",
         }
+
+
+@pytest.fixture()
+def agent(db, org, store):
+    from app.models import agent_stores
+
+    agent = Agent(
+        organization_id=org.id,
+        name="Test Agent",
+        role="ventas",
+        active=True,
+    )
+    db.add(agent)
+    db.flush()
+
+    stmt = agent_stores.insert().values(
+        agent_id=agent.id,
+        store_id=store.id,
+    )
+    db.execute(stmt)
+    db.commit()
+    db.refresh(agent)
+    return agent
+
+
+class TestAutoReply:
+    def test_inbound_triggers_ai_reply(
+        self,
+        wa_connection,
+        agent,
+        db,
+    ):
+        from unittest.mock import patch
+
+        from app.main import (
+            get_current_membership,
+        )
+
+        os.environ[
+            "WHATSAPP_APP_SECRET"
+        ] = TEST_APP_SECRET
+
+        mock_answer = "Gracias por tu pregunta. Tenemos disponibilidad."
+
+        with patch(
+            "app.ai_reply_service.generate_grounded_answer",
+            return_value=mock_answer,
+        ), patch(
+            "app.ai_reply_service.retrieve_agent_knowledge",
+            return_value=[],
+        ), patch(
+            "app.ai_reply_service.search_products",
+            return_value=[],
+        ), patch(
+            "app.ai_reply_service.send_whatsapp_text_message",
+            return_value={
+                "message_id": "wamid.test123",
+                "response": {},
+            },
+        ), patch(
+            "app.ai_reply_service.decrypt_whatsapp_secret",
+            return_value="fake_token",
+        ):
+            client = TestClient(app)
+
+            body = json.dumps(
+                _webhook_payload(
+                    "123456789",
+                    "5210000000001",
+                    "msg_auto_001",
+                    "Hola, ¿tienen productos?",
+                )
+            ).encode()
+
+            response = client.post(
+                "/api/webhooks/whatsapp",
+                content=body,
+                headers={
+                    "Content-Type":
+                        "application/json",
+                    "X-Hub-Signature-256":
+                        _make_signature(body),
+                },
+            )
+
+            assert (
+                response.status_code == 200
+            )
+
+        conv = (
+            db.query(Conversation)
+            .filter(
+                Conversation.store_id
+                == wa_connection.store_id,
+            )
+            .first()
+        )
+
+        assert conv is not None
+        assert conv.agent_id == agent.id
+
+        ai_msgs = (
+            db.query(Message)
+            .filter(
+                Message.conversation_id
+                == conv.id,
+                Message.sender == "ai",
+            )
+            .all()
+        )
+
+        assert len(ai_msgs) == 1
+        assert (
+            ai_msgs[0].text == mock_answer
+        )
+        assert (
+            ai_msgs[0].provider == "whatsapp"
+        )
+        assert (
+            ai_msgs[0].delivery_status == "sent"
+        )
+        assert (
+            ai_msgs[0].external_message_id
+            == "wamid.test123"
+        )
+
+    def test_duplicate_inbound_no_second_reply(
+        self,
+        wa_connection,
+        agent,
+        db,
+    ):
+        from unittest.mock import patch
+
+        os.environ[
+            "WHATSAPP_APP_SECRET"
+        ] = TEST_APP_SECRET
+
+        call_count = 0
+
+        def counting_generate(**kwargs):
+            nonlocal call_count
+            call_count += 1
+            return "Reply"
+
+        with patch(
+            "app.ai_reply_service.generate_grounded_answer",
+            side_effect=counting_generate,
+        ), patch(
+            "app.ai_reply_service.retrieve_agent_knowledge",
+            return_value=[],
+        ), patch(
+            "app.ai_reply_service.search_products",
+            return_value=[],
+        ), patch(
+            "app.ai_reply_service.send_whatsapp_text_message",
+            return_value={
+                "message_id": "wamid.dup1",
+                "response": {},
+            },
+        ), patch(
+            "app.ai_reply_service.decrypt_whatsapp_secret",
+            return_value="fake_token",
+        ):
+            client = TestClient(app)
+
+            payload = _webhook_payload(
+                "123456789",
+                "5210000000001",
+                "msg_dup_test",
+                "Duplicate test",
+            )
+
+            body = json.dumps(payload).encode()
+
+            response1 = client.post(
+                "/api/webhooks/whatsapp",
+                content=body,
+                headers={
+                    "Content-Type":
+                        "application/json",
+                    "X-Hub-Signature-256":
+                        _make_signature(body),
+                },
+            )
+            assert (
+                response1.status_code == 200
+            )
+
+            response2 = client.post(
+                "/api/webhooks/whatsapp",
+                content=body,
+                headers={
+                    "Content-Type":
+                        "application/json",
+                    "X-Hub-Signature-256":
+                        _make_signature(body),
+                },
+            )
+            assert (
+                response2.status_code == 200
+            )
+
+        conv = (
+            db.query(Conversation)
+            .filter(
+                Conversation.store_id
+                == wa_connection.store_id,
+            )
+            .first()
+        )
+
+        ai_msgs = (
+            db.query(Message)
+            .filter(
+                Message.conversation_id
+                == conv.id,
+                Message.sender == "ai",
+            )
+            .all()
+        )
+
+        assert len(ai_msgs) == 1
+
+    def test_status_event_no_reply(
+        self,
+        wa_connection,
+        agent,
+        db,
+    ):
+        from unittest.mock import patch
+
+        os.environ[
+            "WHATSAPP_APP_SECRET"
+        ] = TEST_APP_SECRET
+
+        with patch(
+            "app.ai_reply_service.generate_grounded_answer",
+        ) as mock_gen:
+            client = TestClient(app)
+
+            body = json.dumps(
+                _status_payload(
+                    "wamid.status_test",
+                    "delivered",
+                )
+            ).encode()
+
+            response = client.post(
+                "/api/webhooks/whatsapp",
+                content=body,
+                headers={
+                    "Content-Type":
+                        "application/json",
+                    "X-Hub-Signature-256":
+                        _make_signature(body),
+                },
+            )
+
+            assert (
+                response.status_code == 200
+            )
+            mock_gen.assert_not_called()
+
+    def test_ai_response_saved_with_correct_provider(
+        self,
+        wa_connection,
+        agent,
+        db,
+    ):
+        from unittest.mock import patch
+
+        os.environ[
+            "WHATSAPP_APP_SECRET"
+        ] = TEST_APP_SECRET
+
+        with patch(
+            "app.ai_reply_service.generate_grounded_answer",
+            return_value="AI answer here",
+        ), patch(
+            "app.ai_reply_service.retrieve_agent_knowledge",
+            return_value=[],
+        ), patch(
+            "app.ai_reply_service.search_products",
+            return_value=[],
+        ), patch(
+            "app.ai_reply_service.send_whatsapp_text_message",
+            return_value={
+                "message_id": "wamid.provider_test",
+                "response": {},
+            },
+        ), patch(
+            "app.ai_reply_service.decrypt_whatsapp_secret",
+            return_value="fake_token",
+        ):
+            client = TestClient(app)
+
+            body = json.dumps(
+                _webhook_payload(
+                    "123456789",
+                    "5210000000001",
+                    "msg_provider_001",
+                    "What products do you have?",
+                )
+            ).encode()
+
+            response = client.post(
+                "/api/webhooks/whatsapp",
+                content=body,
+                headers={
+                    "Content-Type":
+                        "application/json",
+                    "X-Hub-Signature-256":
+                        _make_signature(body),
+                },
+            )
+
+            assert (
+                response.status_code == 200
+            )
+
+        conv = (
+            db.query(Conversation)
+            .filter(
+                Conversation.store_id
+                == wa_connection.store_id,
+            )
+            .first()
+        )
+
+        ai_msg = (
+            db.query(Message)
+            .filter(
+                Message.conversation_id
+                == conv.id,
+                Message.sender == "ai",
+            )
+            .first()
+        )
+
+        assert ai_msg is not None
+        assert (
+            ai_msg.sender == "ai"
+        )
+        assert (
+            ai_msg.provider == "whatsapp"
+        )
+        assert (
+            ai_msg.delivery_status == "sent"
+        )
+        assert (
+            ai_msg.external_message_id
+            == "wamid.provider_test"
+        )
+
+    def test_send_failure_controlled(
+        self,
+        wa_connection,
+        agent,
+        db,
+    ):
+        from unittest.mock import patch
+
+        os.environ[
+            "WHATSAPP_APP_SECRET"
+        ] = TEST_APP_SECRET
+
+        with patch(
+            "app.ai_reply_service.generate_grounded_answer",
+            return_value="AI answer",
+        ), patch(
+            "app.ai_reply_service.retrieve_agent_knowledge",
+            return_value=[],
+        ), patch(
+            "app.ai_reply_service.search_products",
+            return_value=[],
+        ), patch(
+            "app.ai_reply_service.send_whatsapp_text_message",
+            side_effect=RuntimeError(
+                "Graph API down"
+            ),
+        ), patch(
+            "app.ai_reply_service.decrypt_whatsapp_secret",
+            return_value="fake_token",
+        ):
+            client = TestClient(app)
+
+            body = json.dumps(
+                _webhook_payload(
+                    "123456789",
+                    "5210000000001",
+                    "msg_fail_001",
+                    "Test failure",
+                )
+            ).encode()
+
+            response = client.post(
+                "/api/webhooks/whatsapp",
+                content=body,
+                headers={
+                    "Content-Type":
+                        "application/json",
+                    "X-Hub-Signature-256":
+                        _make_signature(body),
+                },
+            )
+
+            assert (
+                response.status_code == 200
+            )
+
+        conv = (
+            db.query(Conversation)
+            .filter(
+                Conversation.store_id
+                == wa_connection.store_id,
+            )
+            .first()
+        )
+
+        ai_msg = (
+            db.query(Message)
+            .filter(
+                Message.conversation_id
+                == conv.id,
+                Message.sender == "ai",
+            )
+            .first()
+        )
+
+        assert ai_msg is not None
+        assert (
+            ai_msg.provider == "whatsapp"
+        )
+        assert (
+            ai_msg.delivery_status == "failed"
+        )
+        assert (
+            ai_msg.external_message_id is None
+        )
+
+    def test_ai_failure_no_webhook_break(
+        self,
+        wa_connection,
+        agent,
+        db,
+    ):
+        from unittest.mock import patch
+
+        os.environ[
+            "WHATSAPP_APP_SECRET"
+        ] = TEST_APP_SECRET
+
+        with patch(
+            "app.ai_reply_service.generate_grounded_answer",
+            side_effect=Exception(
+                "Bedrock timeout"
+            ),
+        ), patch(
+            "app.ai_reply_service.retrieve_agent_knowledge",
+            return_value=[],
+        ), patch(
+            "app.ai_reply_service.search_products",
+            return_value=[],
+        ):
+            client = TestClient(app)
+
+            body = json.dumps(
+                _webhook_payload(
+                    "123456789",
+                    "5210000000001",
+                    "msg_err_001",
+                    "AI error test",
+                )
+            ).encode()
+
+            response = client.post(
+                "/api/webhooks/whatsapp",
+                content=body,
+                headers={
+                    "Content-Type":
+                        "application/json",
+                    "X-Hub-Signature-256":
+                        _make_signature(body),
+                },
+            )
+
+            assert (
+                response.status_code == 200
+            )
+
+        conv = (
+            db.query(Conversation)
+            .filter(
+                Conversation.store_id
+                == wa_connection.store_id,
+            )
+            .first()
+        )
+
+        inbound = (
+            db.query(Message)
+            .filter(
+                Message.conversation_id
+                == conv.id,
+                Message.sender == "customer",
+            )
+            .first()
+        )
+
+        assert inbound is not None
+        assert (
+            inbound.text == "AI error test"
+        )
+
+    def test_handoff_keyword_skips_reply(
+        self,
+        wa_connection,
+        agent,
+        db,
+    ):
+        from unittest.mock import patch
+
+        os.environ[
+            "WHATSAPP_APP_SECRET"
+        ] = TEST_APP_SECRET
+
+        with patch(
+            "app.ai_reply_service.generate_grounded_answer",
+        ) as mock_gen:
+            client = TestClient(app)
+
+            body = json.dumps(
+                _webhook_payload(
+                    "123456789",
+                    "5210000000001",
+                    "msg_handoff_001",
+                    "Quiero hablar con un asesor",
+                )
+            ).encode()
+
+            response = client.post(
+                "/api/webhooks/whatsapp",
+                content=body,
+                headers={
+                    "Content-Type":
+                        "application/json",
+                    "X-Hub-Signature-256":
+                        _make_signature(body),
+                },
+            )
+
+            assert (
+                response.status_code == 200
+            )
+            mock_gen.assert_not_called()
+
+        conv = (
+            db.query(Conversation)
+            .filter(
+                Conversation.store_id
+                == wa_connection.store_id,
+            )
+            .first()
+        )
+
+        assert conv.mode == "human"
+
+        ai_msgs = (
+            db.query(Message)
+            .filter(
+                Message.conversation_id
+                == conv.id,
+                Message.sender == "ai",
+            )
+            .all()
+        )
+
+        assert len(ai_msgs) == 0
+
+    def test_english_handoff_skips_reply(
+        self,
+        wa_connection,
+        agent,
+        db,
+    ):
+        from unittest.mock import patch
+
+        os.environ[
+            "WHATSAPP_APP_SECRET"
+        ] = TEST_APP_SECRET
+
+        with patch(
+            "app.ai_reply_service.generate_grounded_answer",
+        ) as mock_gen:
+            client = TestClient(app)
+
+            body = json.dumps(
+                _webhook_payload(
+                    "123456789",
+                    "5210000000001",
+                    "msg_en_handoff",
+                    "I want to speak to a human",
+                )
+            ).encode()
+
+            response = client.post(
+                "/api/webhooks/whatsapp",
+                content=body,
+                headers={
+                    "Content-Type":
+                        "application/json",
+                    "X-Hub-Signature-256":
+                        _make_signature(body),
+                },
+            )
+
+            assert (
+                response.status_code == 200
+            )
+            mock_gen.assert_not_called()
+
+        conv = (
+            db.query(Conversation)
+            .filter(
+                Conversation.store_id
+                == wa_connection.store_id,
+            )
+            .first()
+        )
+
+        assert conv.mode == "human"
+
+    def test_mode_human_no_reply(
+        self,
+        wa_connection,
+        agent,
+        db,
+    ):
+        from unittest.mock import patch
+
+        os.environ[
+            "WHATSAPP_APP_SECRET"
+        ] = TEST_APP_SECRET
+
+        conv = (
+            db.query(Conversation)
+            .filter(
+                Conversation.store_id
+                == wa_connection.store_id,
+            )
+            .first()
+        )
+
+        if not conv:
+            from app.models import Customer
+
+            customer = Customer(
+                organization_id=
+                    wa_connection.organization_id,
+                name="Human Mode Customer",
+                phone="5210000000002",
+            )
+            db.add(customer)
+            db.flush()
+
+            conv = Conversation(
+                organization_id=
+                    wa_connection.organization_id,
+                store_id=
+                    wa_connection.store_id,
+                customer_id=customer.id,
+                channel="WhatsApp",
+                mode="human",
+                agent_id=agent.id,
+            )
+            db.add(conv)
+            db.commit()
+            db.refresh(conv)
+
+        conv.mode = "human"
+        db.commit()
+
+        with patch(
+            "app.ai_reply_service.generate_grounded_answer",
+        ) as mock_gen:
+            client = TestClient(app)
+
+            body = json.dumps(
+                _webhook_payload(
+                    "123456789",
+                    "5210000000002",
+                    "msg_human_mode",
+                    "Hello again",
+                )
+            ).encode()
+
+            response = client.post(
+                "/api/webhooks/whatsapp",
+                content=body,
+                headers={
+                    "Content-Type":
+                        "application/json",
+                    "X-Hub-Signature-256":
+                        _make_signature(body),
+                },
+            )
+
+            assert (
+                response.status_code == 200
+            )
+            mock_gen.assert_not_called()
+
+    def test_no_agent_no_reply(
+        self,
+        wa_connection,
+        db,
+    ):
+        from unittest.mock import patch
+
+        os.environ[
+            "WHATSAPP_APP_SECRET"
+        ] = TEST_APP_SECRET
+
+        with patch(
+            "app.ai_reply_service.generate_grounded_answer",
+        ) as mock_gen:
+            client = TestClient(app)
+
+            body = json.dumps(
+                _webhook_payload(
+                    "123456789",
+                    "5210000000001",
+                    "msg_no_agent",
+                    "No agent test",
+                )
+            ).encode()
+
+            response = client.post(
+                "/api/webhooks/whatsapp",
+                content=body,
+                headers={
+                    "Content-Type":
+                        "application/json",
+                    "X-Hub-Signature-256":
+                        _make_signature(body),
+                },
+            )
+
+            assert (
+                response.status_code == 200
+            )
+            mock_gen.assert_not_called()
+
+        conv = (
+            db.query(Conversation)
+            .filter(
+                Conversation.store_id
+                == wa_connection.store_id,
+            )
+            .first()
+        )
+
+        inbound = (
+            db.query(Message)
+            .filter(
+                Message.conversation_id
+                == conv.id,
+                Message.sender == "customer",
+            )
+            .first()
+        )
+
+        assert inbound is not None
+        assert (
+            inbound.text == "No agent test"
+        )
+
+    def test_history_limited_to_conversation(
+        self,
+        wa_connection,
+        agent,
+        db,
+    ):
+        from unittest.mock import patch
+
+        os.environ[
+            "WHATSAPP_APP_SECRET"
+        ] = TEST_APP_SECRET
+
+        captured_history = {}
+
+        def capture_generate(**kwargs):
+            captured_history["history"] = (
+                kwargs.get(
+                    "conversation_history"
+                )
+            )
+            return "Reply with history"
+
+        with patch(
+            "app.ai_reply_service.generate_grounded_answer",
+            side_effect=capture_generate,
+        ), patch(
+            "app.ai_reply_service.retrieve_agent_knowledge",
+            return_value=[],
+        ), patch(
+            "app.ai_reply_service.search_products",
+            return_value=[],
+        ), patch(
+            "app.ai_reply_service.send_whatsapp_text_message",
+            return_value={
+                "message_id": "wamid.hist1",
+                "response": {},
+            },
+        ), patch(
+            "app.ai_reply_service.decrypt_whatsapp_secret",
+            return_value="fake_token",
+        ):
+            client = TestClient(app)
+
+            body = json.dumps(
+                _webhook_payload(
+                    "123456789",
+                    "5210000000001",
+                    "msg_hist_first",
+                    "First question",
+                )
+            ).encode()
+
+            client.post(
+                "/api/webhooks/whatsapp",
+                content=body,
+                headers={
+                    "Content-Type":
+                        "application/json",
+                    "X-Hub-Signature-256":
+                        _make_signature(body),
+                },
+            )
+
+            body2 = json.dumps(
+                _webhook_payload(
+                    "123456789",
+                    "5210000000001",
+                    "msg_hist_second",
+                    "Follow up question",
+                )
+            ).encode()
+
+            client.post(
+                "/api/webhooks/whatsapp",
+                content=body2,
+                headers={
+                    "Content-Type":
+                        "application/json",
+                    "X-Hub-Signature-256":
+                        _make_signature(body2),
+                },
+            )
+
+        assert "history" in captured_history
+
+        history = captured_history["history"]
+        assert "First question" in history
+        assert (
+            "Follow up question" in history
+        )
+
+    def test_webhook_responds_200_with_background(
+        self,
+        wa_connection,
+        agent,
+        db,
+    ):
+        from unittest.mock import patch
+
+        os.environ[
+            "WHATSAPP_APP_SECRET"
+        ] = TEST_APP_SECRET
+
+        with patch(
+            "app.ai_reply_service.generate_grounded_answer",
+            return_value="Background reply",
+        ), patch(
+            "app.ai_reply_service.retrieve_agent_knowledge",
+            return_value=[],
+        ), patch(
+            "app.ai_reply_service.search_products",
+            return_value=[],
+        ), patch(
+            "app.ai_reply_service.send_whatsapp_text_message",
+            return_value={
+                "message_id": "wamid.bg1",
+                "response": {},
+            },
+        ), patch(
+            "app.ai_reply_service.decrypt_whatsapp_secret",
+            return_value="fake_token",
+        ):
+            client = TestClient(app)
+
+            body = json.dumps(
+                _webhook_payload(
+                    "123456789",
+                    "5210000000001",
+                    "msg_bg_001",
+                    "Background test",
+                )
+            ).encode()
+
+            response = client.post(
+                "/api/webhooks/whatsapp",
+                content=body,
+                headers={
+                    "Content-Type":
+                        "application/json",
+                    "X-Hub-Signature-256":
+                        _make_signature(body),
+                },
+            )
+
+            assert (
+                response.status_code == 200
+            )
+            assert (
+                response.json() == {"ok": True}
+            )

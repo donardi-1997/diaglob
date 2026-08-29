@@ -27,9 +27,13 @@ import {
   getCommerceStatus,
   getDropiStatus,
   getWhatsAppStatus,
+  testShopifyConnection,
+  syncShopifyProducts,
   type CommerceConnectionStatus,
   type DropiConnectionStatus,
   type WhatsAppConnectionStatus,
+  type ShopifyTestResult,
+  type ShopifySyncResult,
 } from "../services/integrations";
 
 
@@ -88,6 +92,18 @@ export default function StoreIntegrations({
 
   const [disconnectingWhatsApp, setDisconnectingWhatsApp] =
     useState(false);
+
+  const [testingShopify, setTestingShopify] =
+    useState(false);
+
+  const [syncingShopify, setSyncingShopify] =
+    useState(false);
+
+  const [shopifyTestResult, setShopifyTestResult] =
+    useState<ShopifyTestResult | null>(null);
+
+  const [shopifySyncResult, setShopifySyncResult] =
+    useState<ShopifySyncResult | null>(null);
 
   const [copied, setCopied] =
     useState(false);
@@ -194,6 +210,87 @@ export default function StoreIntegrations({
       );
     } finally {
       setDisconnectingShopify(false);
+    }
+  }
+
+
+  async function handleTestShopify() {
+    clearMessages();
+    setShopifyTestResult(null);
+
+    try {
+      setTestingShopify(true);
+
+      const result =
+        await testShopifyConnection(storeId);
+
+      setShopifyTestResult(result);
+
+      if (result.connected) {
+        setSuccess(
+          t("integrationsShopifyTestOk"),
+        );
+      }
+    } catch (err: any) {
+      console.error(err);
+
+      setShopifyTestResult({
+        connected: false,
+        shop_name: "",
+        shop_domain: "",
+        currency: "",
+        error:
+          formatError(err)
+          || t("integrationsShopifyTestError"),
+      });
+
+      setError(
+        formatError(err)
+        || t("integrationsShopifyTestError"),
+      );
+    } finally {
+      setTestingShopify(false);
+    }
+  }
+
+
+  async function handleSyncShopify() {
+    clearMessages();
+    setShopifySyncResult(null);
+
+    try {
+      setSyncingShopify(true);
+
+      const result =
+        await syncShopifyProducts(storeId);
+
+      setShopifySyncResult(result);
+
+      setSuccess(
+        t("integrationsShopifySyncOk"),
+      );
+
+      await load();
+    } catch (err: any) {
+      console.error(err);
+
+      setShopifySyncResult({
+        ok: false,
+        fetched: 0,
+        created: 0,
+        updated: 0,
+        failed: 0,
+        error:
+          formatError(err)
+          || t("integrationsShopifySyncError"),
+      });
+
+      setError(
+        formatError(err)
+        || t("integrationsShopifySyncError"),
+      );
+    } finally {
+      setSyncingShopify(false);
     }
   }
 
@@ -526,6 +623,64 @@ export default function StoreIntegrations({
             || t("integrationsShopifyNoDomain")
           }
         </div>
+
+        {commerce?.connected && (
+          <div className="store-integration-shopify-actions">
+            <button
+              type="button"
+              className="store-integration-button secondary"
+              onClick={handleTestShopify}
+              disabled={testingShopify}
+            >
+              {testingShopify
+                ? <Loader2 className="spin" size={14} />
+                : <Check size={14} />}
+
+              {t("integrationsShopifyTest")}
+            </button>
+
+            <button
+              type="button"
+              className="store-integration-button secondary"
+              onClick={handleSyncShopify}
+              disabled={syncingShopify}
+            >
+              {syncingShopify
+                ? <Loader2 className="spin" size={14} />
+                : <ShoppingBag size={14} />}
+
+              {t("integrationsShopifySync")}
+            </button>
+          </div>
+        )}
+
+        {shopifyTestResult && (
+          <div
+            className={
+              shopifyTestResult.connected
+                ? "store-integration-test-result ok"
+                : "store-integration-test-result error"
+            }
+          >
+            {shopifyTestResult.connected
+              ? `${shopifyTestResult.shop_name} — ${shopifyTestResult.currency}`
+              : shopifyTestResult.error}
+          </div>
+        )}
+
+        {shopifySyncResult && (
+          <div
+            className={
+              shopifySyncResult.ok
+                ? "store-integration-sync-result ok"
+                : "store-integration-sync-result error"
+            }
+          >
+            {shopifySyncResult.ok
+              ? `Fetched: ${shopifySyncResult.fetched} | Created: ${shopifySyncResult.created} | Updated: ${shopifySyncResult.updated} | Failed: ${shopifySyncResult.failed}`
+              : shopifySyncResult.error}
+          </div>
+        )}
 
         {canWrite && (
           <div className="store-integration-actions">

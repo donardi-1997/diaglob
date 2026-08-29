@@ -9,6 +9,7 @@ import httpx
 from datetime import datetime, timedelta
 
 from fastapi import (
+    BackgroundTasks,
     Depends,
     FastAPI,
     File,
@@ -50,6 +51,10 @@ from .plan_limits import (
     get_limits_for_plan,
 )
 from .rag import retrieve_agent_knowledge
+from .ai_reply_service import (
+    generate_auto_reply,
+    _detect_handoff,
+)
 from .permissions import (
     get_permissions_for_role,
     has_permission,
@@ -88,6 +93,18 @@ from .shopify_oauth import (
 
 from .shopify_security import (
     encrypt_shopify_secret,
+    decrypt_shopify_secret,
+)
+
+from .shopify_sync import (
+    test_shopify_connection,
+    sync_shopify_products,
+)
+
+from .shopify_client import (
+    ShopifyAuthError,
+    ShopifyAPIError,
+    ShopifyGraphQLError,
 )
 
 from .dropi_security import (
@@ -8789,6 +8806,7 @@ def whatsapp_verify_webhook(
 @app.post("/api/webhooks/whatsapp")
 async def whatsapp_receive_webhook(
     request: Request,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
     raw_body = await request.body()
@@ -8823,6 +8841,8 @@ async def whatsapp_receive_webhook(
         payload.get("entry")
         or []
     )
+
+    inbound_conversation_ids = []
 
     for entry in entries:
         changes = (
@@ -9053,6 +9073,14 @@ async def whatsapp_receive_webhook(
                         datetime.utcnow()
                     )
 
+                    if (
+                        conversation.id
+                        not in inbound_conversation_ids
+                    ):
+                        inbound_conversation_ids.append(
+                            conversation.id
+                        )
+
             for status_event in statuses:
                 ext_msg_id = (
                     status_event.get("id")
@@ -9114,6 +9142,42 @@ async def whatsapp_receive_webhook(
                         )
 
     db.commit()
+
+    for cid in inbound_conversation_ids:
+        conv = (
+            db.query(Conversation)
+            .filter(Conversation.id == cid)
+            .first()
+        )
+
+        if not conv:
+            continue
+
+        if conv.mode != "ai":
+            continue
+
+        last_msg = (
+            db.query(Message)
+            .filter(
+                Message.conversation_id == cid,
+            )
+            .order_by(Message.id.desc())
+            .first()
+        )
+
+        if not last_msg:
+            continue
+
+        if _detect_handoff(last_msg.text):
+            conv.mode = "human"
+            conv.updated_at = datetime.utcnow()
+            db.commit()
+            continue
+
+        background_tasks.add_task(
+            generate_auto_reply,
+            conversation_id=cid,
+        )
 
     return {"ok": True}
 
@@ -9762,6 +9826,203 @@ def disconnect_shopify(
         "connected": False,
         "store_id": store.id,
     }
+
+
+@app.post(
+    "/api/stores/{store_id}"
+    "/shopify/test"
+)
+def shopify_test_connection(
+    store_id: int,
+    membership: OrganizationMembership = Depends(
+        require_permission(
+            "stores.write"
+        )
+    ),
+    db: Session = Depends(get_db),
+):
+    store = (
+        db.query(Store)
+        .filter(
+            Store.id == store_id,
+            Store.organization_id
+            == membership.organization_id,
+            Store.deleted.is_(False),
+        )
+        .first()
+    )
+
+    if not store:
+        raise HTTPException(
+            status_code=404,
+            detail="Store not found",
+        )
+
+    connection = (
+        db.query(CommerceConnection)
+        .filter(
+            CommerceConnection.store_id
+            == store.id,
+            CommerceConnection.organization_id
+            == membership.organization_id,
+            CommerceConnection.provider
+            == "shopify",
+            CommerceConnection.status
+            == "connected",
+        )
+        .first()
+    )
+
+    if not connection:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code":
+                    "SHOPIFY_NOT_CONNECTED",
+                "message":
+                    (
+                        "Shopify no está "
+                        "conectado."
+                    ),
+            },
+        )
+
+    try:
+        result = (
+            test_shopify_connection(
+                connection
+            )
+        )
+
+    except ShopifyAuthError as exc:
+        connection.status = "error"
+        connection.last_error = str(exc)
+        db.commit()
+
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "connected": False,
+                "error": str(exc),
+            },
+        ) from exc
+
+    except (
+        ShopifyAPIError,
+        ShopifyGraphQLError,
+    ) as exc:
+        connection.status = "error"
+        connection.last_error = str(exc)
+        db.commit()
+
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "connected": False,
+                "error": str(exc),
+            },
+        ) from exc
+
+    connection.status = "connected"
+    connection.last_error = None
+    db.commit()
+
+    return result
+
+
+@app.post(
+    "/api/stores/{store_id}"
+    "/shopify/sync/products"
+)
+def shopify_sync_products(
+    store_id: int,
+    membership: OrganizationMembership = Depends(
+        require_permission(
+            "stores.write"
+        )
+    ),
+    db: Session = Depends(get_db),
+):
+    store = (
+        db.query(Store)
+        .filter(
+            Store.id == store_id,
+            Store.organization_id
+            == membership.organization_id,
+            Store.deleted.is_(False),
+        )
+        .first()
+    )
+
+    if not store:
+        raise HTTPException(
+            status_code=404,
+            detail="Store not found",
+        )
+
+    connection = (
+        db.query(CommerceConnection)
+        .filter(
+            CommerceConnection.store_id
+            == store.id,
+            CommerceConnection.organization_id
+            == membership.organization_id,
+            CommerceConnection.provider
+            == "shopify",
+            CommerceConnection.status
+            == "connected",
+        )
+        .first()
+    )
+
+    if not connection:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code":
+                    "SHOPIFY_NOT_CONNECTED",
+                "message":
+                    (
+                        "Shopify no está "
+                        "conectado."
+                    ),
+            },
+        )
+
+    try:
+        result = sync_shopify_products(
+            db, connection
+        )
+
+    except ShopifyAuthError as exc:
+        connection.status = "error"
+        connection.last_error = str(exc)
+        db.commit()
+
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "ok": False,
+                "error": str(exc),
+            },
+        ) from exc
+
+    except (
+        ShopifyAPIError,
+        ShopifyGraphQLError,
+    ) as exc:
+        connection.last_error = str(exc)
+        db.commit()
+
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "ok": False,
+                "error": str(exc),
+            },
+        ) from exc
+
+    return result
 
 
 @app.post("/api/stores")

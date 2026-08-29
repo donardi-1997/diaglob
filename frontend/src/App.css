@@ -2404,6 +2404,39 @@ button:disabled {
   background: rgba(255, 255, 255, .04);
 }
 
+.store-integration-button.secondary {
+  font-size: 11px;
+  min-height: 28px;
+  padding: 0 10px;
+  background: rgba(255, 255, 255, .04);
+}
+
+.store-integration-shopify-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.store-integration-test-result,
+.store-integration-sync-result {
+  font-size: 11px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  margin-top: 6px;
+}
+
+.store-integration-test-result.ok,
+.store-integration-sync-result.ok {
+  color: #6ade8a;
+  background: rgba(106, 222, 138, .08);
+}
+
+.store-integration-test-result.error,
+.store-integration-sync-result.error {
+  color: #f06a6a;
+  background: rgba(240, 106, 106, .08);
+}
+
 .store-integration-webhook {
   display: flex;
   align-items: center;

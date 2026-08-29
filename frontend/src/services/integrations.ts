@@ -75,6 +75,49 @@ export async function disconnectShopify(
 }
 
 
+export interface ShopifyTestResult {
+  connected: boolean;
+  shop_name: string;
+  shop_domain: string;
+  currency: string;
+  error?: string;
+}
+
+
+export async function testShopifyConnection(
+  storeId: number,
+) {
+  const response =
+    await api.post<ShopifyTestResult>(
+      `/api/stores/${storeId}/shopify/test`,
+    );
+
+  return response.data;
+}
+
+
+export interface ShopifySyncResult {
+  ok: boolean;
+  fetched: number;
+  created: number;
+  updated: number;
+  failed: number;
+  error?: string;
+}
+
+
+export async function syncShopifyProducts(
+  storeId: number,
+) {
+  const response =
+    await api.post<ShopifySyncResult>(
+      `/api/stores/${storeId}/shopify/sync/products`,
+    );
+
+  return response.data;
+}
+
+
 export async function getDropiStatus(
   storeId: number,
 ) {

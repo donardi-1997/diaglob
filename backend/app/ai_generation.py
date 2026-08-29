@@ -33,6 +33,7 @@ def generate_grounded_answer(
     timezone: str | None = None,
     language: str | None = None,
     commerce_results: list[dict] | None = None,
+    conversation_history: str | None = None,
 ):
     if not evidence and not commerce_results:
         if language == "en":
@@ -169,6 +170,14 @@ Reglas obligatorias:
 - No menciones detalles internos de AWS, Bedrock, vectores, RAG, data sources ni bases de conocimiento.
 """.strip()
 
+    history_section = ""
+
+    if conversation_history:
+        history_section = (
+            f"\nHISTORIAL DE LA CONVERSACIÓN:\n"
+            f"{conversation_history}\n"
+        )
+
     user_prompt = f"""
 PREGUNTA DEL CLIENTE:
 
@@ -177,7 +186,7 @@ PREGUNTA DEL CLIENTE:
 MERCADO ACTUAL:
 
 {market_context}
-
+{history_section}
 EVIDENCIA DE CONOCIMIENTO:
 
 {context}
