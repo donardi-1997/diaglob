@@ -3995,6 +3995,9 @@ def validate_plan_upgrade(
     organization: Organization,
     target_plan: str,
 ):
+    import logging as _vpu_log
+    logger = _vpu_log.getLogger(__name__)
+
     current_plan = (
         organization.plan
         or "none"
@@ -4003,16 +4006,27 @@ def validate_plan_upgrade(
     target_plan = target_plan.strip().lower()
 
     if target_plan not in BILLING_PLAN_ORDER:
+        logger.warning(
+            "billing.preview.rejected org=%s reason=invalid_target_plan current=%s target=%s",
+            organization.id,
+            current_plan,
+            target_plan,
+        )
         raise HTTPException(
             status_code=400,
             detail="Invalid target plan",
         )
 
     if current_plan not in BILLING_PLAN_ORDER:
+        logger.warning(
+            "billing.preview.rejected org=%s reason=no_active_subscription current=%s",
+            organization.id,
+            current_plan,
+        )
         raise HTTPException(
             status_code=409,
             detail=(
-                "No tienes una suscripción activa "
+                "No tienes una suscripcion activa "
                 "para actualizar. Usa el checkout normal."
             ),
         )
@@ -4021,6 +4035,12 @@ def validate_plan_upgrade(
         BILLING_PLAN_ORDER[target_plan]
         <= BILLING_PLAN_ORDER[current_plan]
     ):
+        logger.warning(
+            "billing.preview.rejected org=%s reason=not_upgrade current=%s target=%s",
+            organization.id,
+            current_plan,
+            target_plan,
+        )
         raise HTTPException(
             status_code=409,
             detail=(
@@ -4029,36 +4049,9 @@ def validate_plan_upgrade(
             ),
         )
 
-    if organization.subscription_status not in {
-        "active",
-        "trialing",
-    }:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "La suscripción debe estar activa "
-                "para realizar un upgrade."
-            ),
-        )
-
-    if not organization.billing_subscription_id:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "La organización no tiene una "
-                "suscripción de Paddle asociada."
-            ),
-        )
-
-    target_price_id = get_paddle_price_id(
-        target_plan,
-        organization.billing_period_months,
-    )
-
     return (
         current_plan,
         target_plan,
-        target_price_id,
     )
 
 
@@ -4099,7 +4092,6 @@ def preview_billing_upgrade(
         (
             current_plan,
             target_plan,
-            target_price_id,
         ) = validate_plan_upgrade(
             organization,
             payload.plan,
@@ -4110,192 +4102,234 @@ def preview_billing_upgrade(
             detail=str(e),
         )
 
+    import logging as _log
+    logger = _log.getLogger(__name__)
+    logger.info(
+        "billing.preview org=%s current=%s target=%s",
+        organization.id,
+        current_plan,
+        target_plan,
+    )
+
+    if (
+        organization.subscription_status
+        and organization.subscription_status
+        not in {"active", "trialing"}
+    ):
+        logger.warning(
+            "billing.preview.rejected org=%s reason=subscription_not_active status=%s",
+            organization.id,
+            organization.subscription_status,
+        )
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "La suscripcion debe estar activa "
+                "para realizar un upgrade."
+            ),
+        )
+
     paddle_api_key = os.getenv("PADDLE_API_KEY")
 
     if (
         paddle_api_key
         and organization.billing_subscription_id
     ):
-        body = {
-            "items": [
-                {
-                    "price_id": target_price_id,
-                    "quantity": 1,
-                }
-            ],
-            "proration_billing_mode":
-                "prorated_immediately",
-            "on_payment_failure":
-                "prevent_change",
-        }
-
         try:
-            response = httpx.patch(
-                (
-                    f"{get_paddle_base_url()}"
-                    f"/subscriptions/"
-                    f"{organization.billing_subscription_id}"
-                    f"/preview"
-                ),
-                headers=get_paddle_headers(),
-                json=body,
-                timeout=30,
+            target_price_id = get_paddle_price_id(
+                target_plan,
+                organization.billing_period_months,
             )
-        except httpx.RequestError:
-            response = None
-
-        if response is not None and response.status_code < 400:
-            paddle_data = (
-                response.json().get("data")
-                or {}
+        except ValueError:
+            _log.getLogger(__name__).warning(
+                "billing.preview paddle_price_unavailable org=%s plan=%s period=%s",
+                organization.id,
+                target_plan,
+                organization.billing_period_months,
             )
+            target_price_id = None
 
-            immediate_transaction = (
-                paddle_data.get(
-                    "immediate_transaction"
+        if target_price_id:
+            body = {
+                "items": [
+                    {
+                        "price_id": target_price_id,
+                        "quantity": 1,
+                    }
+                ],
+                "proration_billing_mode":
+                    "prorated_immediately",
+                "on_payment_failure":
+                    "prevent_change",
+            }
+
+            try:
+                response = httpx.patch(
+                    (
+                        f"{get_paddle_base_url()}"
+                        f"/subscriptions/"
+                        f"{organization.billing_subscription_id}"
+                        f"/preview"
+                    ),
+                    headers=get_paddle_headers(),
+                    json=body,
+                    timeout=30,
                 )
-                or {}
-            )
+            except httpx.RequestError:
+                response = None
 
-            details = (
-                immediate_transaction.get("details")
-                or {}
-            )
-
-            totals = (
-                details.get("totals")
-                or {}
-            )
-
-            line_items = (
-                details.get("line_items")
-                or []
-            )
-
-            charge_amount = 0
-            credit_amount = 0
-
-            for line_item in line_items:
-                line_totals = (
-                    line_item.get("totals")
+            if response is not None and response.status_code < 400:
+                paddle_data = (
+                    response.json().get("data")
                     or {}
                 )
 
+                immediate_transaction = (
+                    paddle_data.get(
+                        "immediate_transaction"
+                    )
+                    or {}
+                )
+
+                details = (
+                    immediate_transaction.get("details")
+                    or {}
+                )
+
+                totals = (
+                    details.get("totals")
+                    or {}
+                )
+
+                line_items = (
+                    details.get("line_items")
+                    or []
+                )
+
+                charge_amount = 0
+                credit_amount = 0
+
+                for line_item in line_items:
+                    line_totals = (
+                        line_item.get("totals")
+                        or {}
+                    )
+
+                    try:
+                        line_total = int(
+                            line_totals.get("total")
+                            or 0
+                        )
+                    except (
+                        TypeError,
+                        ValueError,
+                    ):
+                        line_total = 0
+
+                    if line_total > 0:
+                        charge_amount += line_total
+
+                    elif line_total < 0:
+                        credit_amount += abs(
+                            line_total
+                        )
+
                 try:
-                    line_total = int(
-                        line_totals.get("total")
+                    result_amount = int(
+                        totals.get("total")
                         or 0
                     )
                 except (
                     TypeError,
                     ValueError,
                 ):
-                    line_total = 0
+                    result_amount = 0
 
-                if line_total > 0:
-                    charge_amount += line_total
-
-                elif line_total < 0:
-                    credit_amount += abs(
-                        line_total
-                    )
-
-            try:
-                result_amount = int(
-                    totals.get("total")
-                    or 0
+                currency_code = (
+                    totals.get("currency_code")
+                    or "USD"
                 )
-            except (
-                TypeError,
-                ValueError,
-            ):
-                result_amount = 0
 
-            currency_code = (
-                totals.get("currency_code")
-                or "USD"
-            )
+                if result_amount > 0:
+                    result_action = "charge"
 
-            if result_amount > 0:
-                result_action = "charge"
+                elif result_amount < 0:
+                    result_action = "credit"
 
-            elif result_amount < 0:
-                result_action = "credit"
+                else:
+                    result_action = "none"
 
-            else:
-                result_action = "none"
+                normalized_update_summary = {
+                    "charge": {
+                        "amount": str(
+                            charge_amount
+                        ),
+                        "currency_code":
+                            currency_code,
+                    },
+                    "credit": {
+                        "amount": str(
+                            credit_amount
+                        ),
+                        "currency_code":
+                            currency_code,
+                    },
+                    "result": {
+                        "action":
+                            result_action,
+                        "amount": str(
+                            abs(result_amount)
+                        ),
+                        "currency_code":
+                            currency_code,
+                    },
+                }
 
-            normalized_update_summary = {
-                "charge": {
-                    "amount": str(
-                        charge_amount
-                    ),
-                    "currency_code":
-                        currency_code,
-                },
-                "credit": {
-                    "amount": str(
-                        credit_amount
-                    ),
-                    "currency_code":
-                        currency_code,
-                },
-                "result": {
-                    "action":
-                        result_action,
-                    "amount": str(
-                        abs(result_amount)
-                    ),
-                    "currency_code":
-                        currency_code,
-                },
-            }
-
-            next_transaction = (
-                paddle_data.get(
-                    "next_transaction"
-                )
-                or {}
-            )
-
-            next_billing_period = (
-                next_transaction.get(
-                    "billing_period"
-                )
-                or {}
-            )
-
-            return {
-                "current_plan": current_plan,
-                "target_plan": target_plan,
-                "subscription_id":
-                    organization.billing_subscription_id,
-                "next_billed_at":
-                    (
-                        paddle_data.get(
-                            "next_billed_at"
-                        )
-                        or next_billing_period.get(
-                            "starts_at"
-                        )
-                    ),
-                "currency_code":
-                    currency_code,
-                "amount_due":
-                    str(result_amount),
-                "subtotal":
-                    totals.get("subtotal"),
-                "tax":
-                    totals.get("tax"),
-                "update_summary":
-                    normalized_update_summary,
-                "immediate_transaction":
-                    immediate_transaction,
-                "next_transaction":
+                next_transaction = (
                     paddle_data.get(
                         "next_transaction"
-                    ),
-            }
+                    )
+                    or {}
+                )
+
+                next_billing_period = (
+                    next_transaction.get(
+                        "billing_period"
+                    )
+                    or {}
+                )
+
+                return {
+                    "current_plan": current_plan,
+                    "target_plan": target_plan,
+                    "subscription_id":
+                        organization.billing_subscription_id,
+                    "next_billed_at":
+                        (
+                            paddle_data.get(
+                                "next_billed_at"
+                            )
+                            or next_billing_period.get(
+                                "starts_at"
+                            )
+                        ),
+                    "currency_code":
+                        currency_code,
+                    "amount_due":
+                        str(result_amount),
+                    "subtotal":
+                        totals.get("subtotal"),
+                    "tax":
+                        totals.get("tax"),
+                    "update_summary":
+                        normalized_update_summary,
+                    "immediate_transaction":
+                        immediate_transaction,
+                    "next_transaction":
+                        paddle_data.get(
+                            "next_transaction"
+                        ),
+                }
 
     # ============================================================
     # FALLBACK: LOCAL PRORATION CALCULATION
@@ -4419,10 +4453,14 @@ def apply_billing_upgrade(
     (
         current_plan,
         target_plan,
-        target_price_id,
     ) = validate_plan_upgrade(
         organization,
         payload.plan,
+    )
+
+    target_price_id = get_paddle_price_id(
+        target_plan,
+        organization.billing_period_months,
     )
 
     body = {
