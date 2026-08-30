@@ -16,6 +16,7 @@ import {
   ShoppingBag,
   Store as StoreIcon,
   Trash2,
+  AlertTriangle,
   X,
 } from "lucide-react";
 
@@ -113,8 +114,52 @@ export default function StoresPage({
   const [planLimitMessage, setPlanLimitMessage] =
     useState<string | null>(null);
 
+  const [deleteConfirmOpen, setDeleteConfirmOpen] =
+    useState(false);
+
+  const [deleteConfirmText, setDeleteConfirmText] =
+    useState("");
+
+  const [deleting, setDeleting] =
+    useState(false);
+
+  const [deleteError, setDeleteError] =
+    useState("");
+
   const [form, setForm] =
     useState<StoreForm>(EMPTY_FORM);
+
+
+  async function handleDeleteAccount() {
+    const confirmLabel = t("landingCtaFinalButton") === "Create account" ? "DELETE" : "ELIMINAR";
+    if (deleteConfirmText.trim() !== confirmLabel) {
+      setDeleteError(
+        t("storesI18nDeleteAccountConfirmError") ||
+          `Escribe "${confirmLabel}" para confirmar.`
+      );
+      return;
+    }
+
+    try {
+      setDeleting(true);
+      setDeleteError("");
+
+      const { closeAccount } = await import("../services/account");
+      await closeAccount();
+
+      localStorage.clear();
+      window.location.href = "/";
+    } catch (err: any) {
+      setDeleting(false);
+      setDeleteError(
+        err?.response?.data?.detail?.message ||
+          err?.response?.data?.detail ||
+          err?.message ||
+          t("storesI18nDeleteAccountError") ||
+          "No pudimos cerrar tu cuenta. Intenta nuevamente."
+      );
+    }
+  }
 
 
   async function loadData() {
@@ -817,6 +862,102 @@ export default function StoresPage({
               </article>
             ),
           )}
+        </div>
+      )}
+
+
+      <section className="danger-zone">
+        <div className="danger-zone-header">
+          <AlertTriangle size={20} />
+          <h3>{t("storesI18nDangerZone") || "Zona de peligro"}</h3>
+        </div>
+        <p className="danger-zone-description">
+          {t("storesI18nDeleteAccountDescription") ||
+            "Cerrar tu cuenta desactivará tu acceso a todas las organizaciones y tiendas. Esta acción es irreversible."}
+        </p>
+        <button
+          className="danger-button"
+          onClick={() => {
+            setDeleteConfirmOpen(true);
+            setDeleteConfirmText("");
+            setDeleteError("");
+          }}
+        >
+          {t("storesI18nDeleteAccount") || "Cerrar cuenta"}
+        </button>
+      </section>
+
+      {deleteConfirmOpen && (
+        <div
+          className="stores-modal-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setDeleteConfirmOpen(false);
+            }
+          }}
+        >
+          <div className="management-modal" role="dialog" aria-modal="true">
+            <div className="management-modal-header">
+              <h2>{t("storesI18nDeleteAccount") || "Cerrar cuenta"}</h2>
+              <button
+                type="button"
+                className="modal-close"
+                onClick={() => setDeleteConfirmOpen(false)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="management-modal-body">
+              <p>
+                {t("storesI18nDeleteAccountWarning") ||
+                  "Esta acción es permanente. Se eliminará tu cuenta de usuario y se desactivará tu acceso."}
+              </p>
+              <ul className="danger-zone-list">
+                <li>{t("storesI18nDeleteAccountLoss1") || "Perderás acceso a todas tus organizaciones"}</li>
+                <li>{t("storesI18nDeleteAccountLoss2") || "Se desactivará tu sesión actual"}</li>
+                <li>{t("storesI18nDeleteAccountLoss3") || "No podrás recuperar tu cuenta"}</li>
+              </ul>
+
+              <label className="danger-zone-confirm-label">
+                {t("storesI18nDeleteAccountTypeConfirm") ||
+                  'Escribe ELIMINAR para confirmar:'}
+                <input
+                  type="text"
+                  value={deleteConfirmText}
+                  onChange={(e) => setDeleteConfirmText(e.target.value)}
+                  placeholder={t("landingCtaFinalButton") === "Create account" ? "DELETE" : "ELIMINAR"}
+                  className="danger-zone-confirm-input"
+                  autoFocus
+                />
+              </label>
+
+              {deleteError && (
+                <div className="login-error">{deleteError}</div>
+              )}
+            </div>
+
+            <div className="management-modal-actions">
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => setDeleteConfirmOpen(false)}
+                disabled={deleting}
+              >
+                {t("storesI18nCancel")}
+              </button>
+              <button
+                type="button"
+                className="danger-button"
+                onClick={handleDeleteAccount}
+                disabled={deleting || deleteConfirmText.trim() !== (t("landingCtaFinalButton") === "Create account" ? "DELETE" : "ELIMINAR")}
+              >
+                {deleting
+                  ? t("storesI18nSaving") || "Procesando..."
+                  : t("storesI18nDeleteAccount") || "Cerrar cuenta"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

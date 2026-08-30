@@ -246,11 +246,25 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             ]
 
             if len(_rate_limit_store[key]) >= max_requests:
-                return Response(
+                response = Response(
                     content='{"detail":"Rate limit exceeded"}',
                     status_code=429,
                     media_type="application/json",
                 )
+                origin = request.headers.get("origin", "")
+                allowed_origins = [
+                    "http://localhost:5173",
+                    "http://127.0.0.1:5173",
+                    "http://localhost:5174",
+                    "http://127.0.0.1:5174",
+                    "https://diaglob.tech",
+                    "https://www.diaglob.tech",
+                    "https://app.diaglob.tech",
+                ]
+                if origin in allowed_origins:
+                    response.headers["Access-Control-Allow-Origin"] = origin
+                    response.headers["Access-Control-Allow-Credentials"] = "true"
+                return response
 
             _rate_limit_store[key].append(now)
 
@@ -2651,6 +2665,83 @@ def get_me(
     }
 
 
+@app.delete("/api/account")
+def close_account(
+    user: User = Depends(
+        get_current_user
+    ),
+    db: Session = Depends(get_db),
+):
+    memberships = (
+        db.query(OrganizationMembership)
+        .filter(
+            OrganizationMembership.user_id
+            == user.id,
+            OrganizationMembership.active.is_(True),
+        )
+        .all()
+    )
+
+    is_owner_in_any = any(
+        m.role == "owner" for m in memberships
+    )
+
+    if is_owner_in_any:
+        for m in memberships:
+            if m.role == "owner":
+                other_members = (
+                    db.query(OrganizationMembership)
+                    .filter(
+                        OrganizationMembership.organization_id
+                        == m.organization_id,
+                        OrganizationMembership.active.is_(True),
+                        OrganizationMembership.user_id
+                        != user.id,
+                    )
+                    .count()
+                )
+                if other_members > 0:
+                    raise HTTPException(
+                        status_code=409,
+                        detail={
+                            "code": "OWNER_HAS_MEMBERS",
+                            "message": (
+                                "Cannot close account: you are the owner of an organization "
+                                "with other members. Transfer ownership or remove all members first."
+                            ),
+                        },
+                    )
+
+    for m in memberships:
+        m.active = False
+
+    user.active = False
+
+    db.commit()
+
+    import boto3
+    from app.auth import COGNITO_USER_POOL_ID
+
+    try:
+        region = (
+            os.getenv("AWS_REGION")
+            or os.getenv("AWS_DEFAULT_REGION")
+            or "us-east-2"
+        )
+        cognito = boto3.client(
+            "cognito-idp",
+            region_name=region,
+        )
+        cognito.admin_delete_user(
+            UserPoolId=COGNITO_USER_POOL_ID,
+            Username=user.email,
+        )
+    except Exception:
+        pass
+
+    return {"detail": "Account closed successfully"}
+
+
 @app.get("/api/me/organizations")
 def get_my_organizations(
     user: User = Depends(
@@ -4004,14 +4095,20 @@ def preview_billing_upgrade(
             detail="Organization not found",
         )
 
-    (
-        current_plan,
-        target_plan,
-        target_price_id,
-    ) = validate_plan_upgrade(
-        organization,
-        payload.plan,
-    )
+    try:
+        (
+            current_plan,
+            target_plan,
+            target_price_id,
+        ) = validate_plan_upgrade(
+            organization,
+            payload.plan,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=str(e),
+        )
 
     paddle_api_key = os.getenv("PADDLE_API_KEY")
 
@@ -4217,13 +4314,11 @@ def preview_billing_upgrade(
 
     now = datetime.utcnow()
 
-    period_end = organization.next_billed_at or (
+    period_end = (
         now + timedelta(days=30 * billing_period)
     )
 
-    period_start = organization.next_billed_at - timedelta(
-        days=30 * billing_period
-    ) if organization.next_billed_at else (
+    period_start = (
         now - timedelta(days=30 * billing_period)
     )
 

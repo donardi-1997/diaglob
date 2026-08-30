@@ -36,6 +36,7 @@ import StoresPage from "./pages/StoresPage";
 import PlansPage from "./pages/PlansPage";
 import LoginPage from "./pages/LoginPage";
 import PublicLandingPage from "./pages/PublicLandingPage";
+import DashboardPage from "./pages/DashboardPage";
 
 const CommercePage = lazy(() => import("./pages/CommercePage"));
 const AutomationsPage = lazy(() => import("./pages/AutomationsPage"));
@@ -576,6 +577,9 @@ function App() {
                   </div>
                 </div>
                 <div className="content">
+                  {activePage === "overview" && (
+                    <DashboardPage storeId={selectedStoreId ? Number(selectedStoreId) : null} />
+                  )}
                   {activePage === "plans" && <PlansPage />}
                   {activePage === "conversations" && <ConversationsPage canWrite={can("conversations.write")} />}
                   {activePage === "team" && <TeamPage canWrite={can("users.write")} />}
