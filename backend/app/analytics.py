@@ -14,6 +14,7 @@ from sqlalchemy import (
     case,
     cast,
     Date,
+    extract,
     func,
     Integer,
     Numeric,
@@ -1016,16 +1017,32 @@ def get_automations_analytics(
 
     avg_duration = None
 
+    # Portable duration calculation:
+    # PostgreSQL: EXTRACT(EPOCH FROM (completed_at - started_at))
+    # SQLite: (julianday(completed_at) - julianday(started_at)) * 86400
+    from sqlalchemy import inspect as sa_inspect
+
+    dialect_name = (
+        db.bind.dialect.name
+        if hasattr(db.bind, 'dialect')
+        else "sqlite"
+    )
+
+    if dialect_name == "sqlite":
+        duration_seconds = (
+            func.julianday(AutomationExecution.completed_at)
+            - func.julianday(AutomationExecution.started_at)
+        ) * 86400
+    else:
+        duration_seconds = extract(
+            "epoch",
+            AutomationExecution.completed_at
+            - AutomationExecution.started_at,
+        )
+
     duration_row = (
         db.query(
-            func.avg(
-                func.julianday(
-                    AutomationExecution.completed_at
-                )
-                - func.julianday(
-                    AutomationExecution.started_at
-                )
-            )
+            func.avg(duration_seconds)
         )
         .filter(
             AutomationExecution.organization_id
@@ -1052,11 +1069,11 @@ def get_automations_analytics(
             < date_to
         )
 
-    avg_days = duration_row.scalar()
+    avg_seconds = duration_row.scalar()
 
-    if avg_days is not None:
+    if avg_seconds is not None:
         avg_duration = round(
-            float(avg_days) * 86400, 1
+            float(avg_seconds), 1
         )
 
     return {

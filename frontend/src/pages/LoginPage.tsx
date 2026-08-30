@@ -31,6 +31,7 @@ import {
 
 interface LoginPageProps {
   onAuthenticated: () => void;
+  initialMode?: AuthMode;
 }
 
 
@@ -42,13 +43,14 @@ type AuthMode =
 
 export default function LoginPage({
   onAuthenticated,
+  initialMode,
 }: LoginPageProps) {
   const { t } = useTranslation();
   const [
     mode,
     setMode,
   ] = useState<AuthMode>(
-    "login"
+    initialMode || "login"
   );
 
   const [name, setName] =

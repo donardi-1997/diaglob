@@ -1,5 +1,7 @@
 import csv
 import os
+from datetime import datetime
+from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 
 
@@ -406,3 +408,121 @@ def get_subscription_price_id(
             return price_id
 
     return None
+
+
+# ============================================================
+# PLAN PRICES (monthly USD, source of truth)
+# ============================================================
+
+PLAN_MONTHLY_PRICES: dict[str, Decimal] = {
+    "starter": Decimal("19.00"),
+    "growth": Decimal("59.00"),
+    "pro": Decimal("99.00"),
+    "scale": Decimal("179.00"),
+}
+
+
+# ============================================================
+# LOCAL PRORATION CALCULATION
+# ============================================================
+
+def calculate_local_proration(
+    current_plan: str,
+    target_plan: str,
+    billing_period_months: int,
+    current_period_start: datetime,
+    current_period_end: datetime,
+    now: datetime | None = None,
+) -> dict:
+    """
+    Calculate proration locally when Paddle API is unavailable.
+
+    Uses Decimal arithmetic with ROUND_HALF_UP for financial accuracy.
+
+    Returns dict with:
+        current_plan, target_plan, currency, current_price,
+        target_price, days_elapsed, days_remaining, days_total,
+        credit_current, charge_new, net_proration_amount,
+        amount_due_now, next_full_charge, effective_date
+    """
+    if now is None:
+        now = datetime.utcnow()
+
+    total_days = max(
+        (current_period_end - current_period_start).days,
+        1,
+    )
+
+    elapsed_days = max(
+        min((now - current_period_start).days, total_days),
+        0,
+    )
+
+    remaining_days = max(total_days - elapsed_days, 0)
+
+    remaining_ratio = (
+        Decimal(str(remaining_days))
+        / Decimal(str(total_days))
+    )
+
+    current_monthly = PLAN_MONTHLY_PRICES.get(
+        current_plan, Decimal("0")
+    )
+
+    target_monthly = PLAN_MONTHLY_PRICES.get(
+        target_plan, Decimal("0")
+    )
+
+    current_period_total = (
+        current_monthly * billing_period_months
+    )
+
+    target_period_total = (
+        target_monthly * billing_period_months
+    )
+
+    credit_current = (
+        current_period_total * remaining_ratio
+    ).quantize(
+        Decimal("0.01"), rounding=ROUND_HALF_UP
+    )
+
+    charge_new = (
+        target_period_total * remaining_ratio
+    ).quantize(
+        Decimal("0.01"), rounding=ROUND_HALF_UP
+    )
+
+    net = charge_new - credit_current
+
+    amount_due_now = max(net, Decimal("0"))
+
+    return {
+        "current_plan": current_plan,
+        "target_plan": target_plan,
+        "currency": "USD",
+        "current_price": str(
+            current_monthly.quantize(Decimal("0.01"))
+        ),
+        "target_price": str(
+            target_monthly.quantize(Decimal("0.01"))
+        ),
+        "billing_period_months": billing_period_months,
+        "days_total": total_days,
+        "days_elapsed": elapsed_days,
+        "days_remaining": remaining_days,
+        "credit": str(credit_current),
+        "charge": str(charge_new),
+        "net_proration_amount": str(
+            net.quantize(Decimal("0.01"))
+        ),
+        "amount_due_now": str(amount_due_now),
+        "next_full_charge": str(
+            target_period_total.quantize(Decimal("0.01"))
+        ),
+        "next_billed_at": (
+            current_period_end.isoformat()
+        ),
+        "effective_date": now.isoformat(),
+        "source": "local",
+    }

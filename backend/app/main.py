@@ -24,6 +24,9 @@ from fastapi.security import (
     HTTPAuthorizationCredentials,
     HTTPBearer,
 )
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -36,6 +39,7 @@ from .ai_generation import generate_grounded_answer
 from .commerce import search_products
 from .markets import AMERICA_MARKETS, get_market
 from .billing import (
+    calculate_local_proration,
     get_billing_period_from_price_id,
     get_paddle_price_id,
     get_plan_from_price_id,
@@ -168,6 +172,92 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ============================================================
+# SECURITY HEADERS MIDDLEWARE
+# ============================================================
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(
+        self,
+        request: Request,
+        call_next,
+    ) -> Response:
+        response = await call_next(request)
+
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = (
+            "camera=(), microphone=(), geolocation=()"
+        )
+
+        return response
+
+
+app.add_middleware(SecurityHeadersMiddleware)
+
+
+# ============================================================
+# RATE LIMITING (simple in-memory)
+# ============================================================
+
+import time
+from collections import defaultdict
+
+_rate_limit_store: dict[str, list[float]] = defaultdict(list)
+
+RATE_LIMIT_RULES = {
+    "/api/auth/login": (10, 60),
+    "/api/auth/register": (5, 60),
+    "/api/billing/checkout": (10, 60),
+    "/api/billing/upgrade": (10, 60),
+    "/api/billing/upgrade/preview": (20, 60),
+    "/api/billing/downgrade": (10, 60),
+    "/webhooks/whatsapp": (100, 60),
+}
+
+
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    async def dispatch(
+        self,
+        request: Request,
+        call_next,
+    ) -> Response:
+        path = request.url.path
+        client_ip = (
+            request.client.host
+            if request.client
+            else "unknown"
+        )
+
+        rule = RATE_LIMIT_RULES.get(path)
+
+        if rule:
+            max_requests, window_seconds = rule
+            key = f"{path}:{client_ip}"
+            now = time.time()
+
+            _rate_limit_store[key] = [
+                t
+                for t in _rate_limit_store[key]
+                if now - t < window_seconds
+            ]
+
+            if len(_rate_limit_store[key]) >= max_requests:
+                return Response(
+                    content='{"detail":"Rate limit exceeded"}',
+                    status_code=429,
+                    media_type="application/json",
+                )
+
+            _rate_limit_store[key].append(now)
+
+        return await call_next(request)
+
+
+app.add_middleware(RateLimitMiddleware)
 
 
 class ProductVariantCreate(BaseModel):
@@ -1737,10 +1827,24 @@ def root():
 
 @app.get("/health")
 def health():
+    db_status = "disconnected"
+
+    try:
+        with engine.connect() as conn:
+            conn.execute(
+                __import__(
+                    "sqlalchemy",
+                    fromlist=["text"],
+                ).text("SELECT 1")
+            )
+            db_status = "connected"
+    except Exception:
+        db_status = "error"
+
     return {
-        "status": "ok",
+        "status": "ok" if db_status == "connected" else "degraded",
         "service": "diaglob-api",
-        "database": "connected",
+        "database": db_status,
         "multitenant": True,
         "multistore": True,
     }
@@ -3855,19 +3959,10 @@ def validate_plan_upgrade(
             ),
         )
 
-    target_price_id = get_billing_price_id(
+    target_price_id = get_paddle_price_id(
         target_plan,
         organization.billing_period_months,
     )
-
-    if not target_price_id:
-        raise HTTPException(
-            status_code=503,
-            detail=(
-                "Paddle price ID not configured "
-                f"for plan {target_plan}"
-            ),
-        )
 
     return (
         current_plan,
@@ -3918,182 +4013,239 @@ def preview_billing_upgrade(
         payload.plan,
     )
 
-    body = {
-        "items": [
-            {
-                "price_id": target_price_id,
-                "quantity": 1,
-            }
-        ],
-        "proration_billing_mode":
-            "prorated_immediately",
-        "on_payment_failure":
-            "prevent_change",
-    }
+    paddle_api_key = os.getenv("PADDLE_API_KEY")
 
-    try:
-        response = httpx.patch(
-            (
-                f"{get_paddle_base_url()}"
-                f"/subscriptions/"
-                f"{organization.billing_subscription_id}"
-                f"/preview"
-            ),
-            headers=get_paddle_headers(),
-            json=body,
-            timeout=30,
-        )
-    except httpx.RequestError as exc:
-        raise HTTPException(
-            status_code=502,
-            detail="Unable to contact Paddle",
-        ) from exc
-
-    if response.status_code >= 400:
-        raise HTTPException(
-            status_code=502,
-            detail={
-                "message":
-                    "Unable to preview Paddle upgrade",
-                "paddle_status":
-                    response.status_code,
-                "paddle_response":
-                    response.text,
-            },
-        )
-
-    paddle_data = (
-        response.json().get("data")
-        or {}
-    )
-
-    immediate_transaction = (
-        paddle_data.get(
-            "immediate_transaction"
-        )
-        or {}
-    )
-
-    details = (
-        immediate_transaction.get("details")
-        or {}
-    )
-
-    totals = (
-        details.get("totals")
-        or {}
-    )
-
-    # ========================================================
-    # NORMALIZAR PRORRATA DE PADDLE
-    # ========================================================
-    #
-    # Paddle representa el crédito del plan anterior como un
-    # line_item negativo. details.totals.credit NO representa
-    # necesariamente ese crédito de prorrata.
-    #
-    # Ejemplo:
-    # Growth  +5900
-    # Starter -1900
-    # Neto    +4000
-    # ========================================================
-
-    line_items = (
-        details.get("line_items")
-        or []
-    )
-
-    charge_amount = 0
-    credit_amount = 0
-
-    for line_item in line_items:
-        line_totals = (
-            line_item.get("totals")
-            or {}
-        )
+    if (
+        paddle_api_key
+        and organization.billing_subscription_id
+    ):
+        body = {
+            "items": [
+                {
+                    "price_id": target_price_id,
+                    "quantity": 1,
+                }
+            ],
+            "proration_billing_mode":
+                "prorated_immediately",
+            "on_payment_failure":
+                "prevent_change",
+        }
 
         try:
-            line_total = int(
-                line_totals.get("total")
-                or 0
+            response = httpx.patch(
+                (
+                    f"{get_paddle_base_url()}"
+                    f"/subscriptions/"
+                    f"{organization.billing_subscription_id}"
+                    f"/preview"
+                ),
+                headers=get_paddle_headers(),
+                json=body,
+                timeout=30,
             )
-        except (
-            TypeError,
-            ValueError,
-        ):
-            line_total = 0
+        except httpx.RequestError:
+            response = None
 
-        if line_total > 0:
-            charge_amount += line_total
-
-        elif line_total < 0:
-            credit_amount += abs(
-                line_total
+        if response is not None and response.status_code < 400:
+            paddle_data = (
+                response.json().get("data")
+                or {}
             )
 
-    try:
-        result_amount = int(
-            totals.get("total")
-            or 0
-        )
-    except (
-        TypeError,
-        ValueError,
-    ):
-        result_amount = 0
+            immediate_transaction = (
+                paddle_data.get(
+                    "immediate_transaction"
+                )
+                or {}
+            )
 
-    currency_code = (
-        totals.get("currency_code")
-        or "USD"
+            details = (
+                immediate_transaction.get("details")
+                or {}
+            )
+
+            totals = (
+                details.get("totals")
+                or {}
+            )
+
+            line_items = (
+                details.get("line_items")
+                or []
+            )
+
+            charge_amount = 0
+            credit_amount = 0
+
+            for line_item in line_items:
+                line_totals = (
+                    line_item.get("totals")
+                    or {}
+                )
+
+                try:
+                    line_total = int(
+                        line_totals.get("total")
+                        or 0
+                    )
+                except (
+                    TypeError,
+                    ValueError,
+                ):
+                    line_total = 0
+
+                if line_total > 0:
+                    charge_amount += line_total
+
+                elif line_total < 0:
+                    credit_amount += abs(
+                        line_total
+                    )
+
+            try:
+                result_amount = int(
+                    totals.get("total")
+                    or 0
+                )
+            except (
+                TypeError,
+                ValueError,
+            ):
+                result_amount = 0
+
+            currency_code = (
+                totals.get("currency_code")
+                or "USD"
+            )
+
+            if result_amount > 0:
+                result_action = "charge"
+
+            elif result_amount < 0:
+                result_action = "credit"
+
+            else:
+                result_action = "none"
+
+            normalized_update_summary = {
+                "charge": {
+                    "amount": str(
+                        charge_amount
+                    ),
+                    "currency_code":
+                        currency_code,
+                },
+                "credit": {
+                    "amount": str(
+                        credit_amount
+                    ),
+                    "currency_code":
+                        currency_code,
+                },
+                "result": {
+                    "action":
+                        result_action,
+                    "amount": str(
+                        abs(result_amount)
+                    ),
+                    "currency_code":
+                        currency_code,
+                },
+            }
+
+            next_transaction = (
+                paddle_data.get(
+                    "next_transaction"
+                )
+                or {}
+            )
+
+            next_billing_period = (
+                next_transaction.get(
+                    "billing_period"
+                )
+                or {}
+            )
+
+            return {
+                "current_plan": current_plan,
+                "target_plan": target_plan,
+                "subscription_id":
+                    organization.billing_subscription_id,
+                "next_billed_at":
+                    (
+                        paddle_data.get(
+                            "next_billed_at"
+                        )
+                        or next_billing_period.get(
+                            "starts_at"
+                        )
+                    ),
+                "currency_code":
+                    currency_code,
+                "amount_due":
+                    str(result_amount),
+                "subtotal":
+                    totals.get("subtotal"),
+                "tax":
+                    totals.get("tax"),
+                "update_summary":
+                    normalized_update_summary,
+                "immediate_transaction":
+                    immediate_transaction,
+                "next_transaction":
+                    paddle_data.get(
+                        "next_transaction"
+                    ),
+            }
+
+    # ============================================================
+    # FALLBACK: LOCAL PRORATION CALCULATION
+    # ============================================================
+    # Used when:
+    #   - Paddle API key not configured
+    #   - No billing subscription yet
+    #   - Paddle API unreachable
+    # ============================================================
+
+    from datetime import timedelta
+
+    billing_period = (
+        organization.billing_period_months or 1
     )
 
-    if result_amount > 0:
-        result_action = "charge"
+    now = datetime.utcnow()
 
-    elif result_amount < 0:
-        result_action = "credit"
-
-    else:
-        result_action = "none"
-
-    normalized_update_summary = {
-        "charge": {
-            "amount": str(
-                charge_amount
-            ),
-            "currency_code":
-                currency_code,
-        },
-        "credit": {
-            "amount": str(
-                credit_amount
-            ),
-            "currency_code":
-                currency_code,
-        },
-        "result": {
-            "action":
-                result_action,
-            "amount": str(
-                abs(result_amount)
-            ),
-            "currency_code":
-                currency_code,
-        },
-    }
-
-    next_transaction = (
-        paddle_data.get(
-            "next_transaction"
-        )
-        or {}
+    period_end = organization.next_billed_at or (
+        now + timedelta(days=30 * billing_period)
     )
 
-    next_billing_period = (
-        next_transaction.get(
-            "billing_period"
-        )
-        or {}
+    period_start = organization.next_billed_at - timedelta(
+        days=30 * billing_period
+    ) if organization.next_billed_at else (
+        now - timedelta(days=30 * billing_period)
+    )
+
+    local_preview = calculate_local_proration(
+        current_plan=current_plan,
+        target_plan=target_plan,
+        billing_period_months=billing_period,
+        current_period_start=period_start,
+        current_period_end=period_end,
+        now=now,
+    )
+
+    amount_cents = int(
+        float(local_preview["amount_due_now"]) * 100
+    )
+
+    credit_cents = int(
+        float(local_preview["credit"]) * 100
+    )
+
+    charge_cents = int(
+        float(local_preview["charge"]) * 100
     )
 
     return {
@@ -4102,30 +4254,38 @@ def preview_billing_upgrade(
         "subscription_id":
             organization.billing_subscription_id,
         "next_billed_at":
-            (
-                paddle_data.get(
-                    "next_billed_at"
-                )
-                or next_billing_period.get(
-                    "starts_at"
-                )
-            ),
+            local_preview["next_billed_at"],
         "currency_code":
-            currency_code,
+            local_preview["currency"],
         "amount_due":
-            str(result_amount),
-        "subtotal":
-            totals.get("subtotal"),
-        "tax":
-            totals.get("tax"),
-        "update_summary":
-            normalized_update_summary,
-        "immediate_transaction":
-            immediate_transaction,
-        "next_transaction":
-            paddle_data.get(
-                "next_transaction"
-            ),
+            str(amount_cents),
+        "subtotal": None,
+        "tax": None,
+        "update_summary": {
+            "charge": {
+                "amount": str(charge_cents),
+                "currency_code":
+                    local_preview["currency"],
+            },
+            "credit": {
+                "amount": str(credit_cents),
+                "currency_code":
+                    local_preview["currency"],
+            },
+            "result": {
+                "action": (
+                    "charge"
+                    if amount_cents > 0
+                    else "none"
+                ),
+                "amount": str(abs(amount_cents)),
+                "currency_code":
+                    local_preview["currency"],
+            },
+        },
+        "immediate_transaction": None,
+        "next_transaction": None,
+        "_source": "local",
     }
 
 
@@ -9413,6 +9573,44 @@ def get_analytics_automations(
         store_id=store_id,
         date_from=d_from,
         date_to=d_to,
+    )
+
+
+@app.get(
+    "/api/stores/{store_id}/operations/summary"
+)
+def get_operations_center_summary(
+    store_id: int,
+    membership: OrganizationMembership = Depends(
+        require_permission(
+            "analytics.read"
+        )
+    ),
+    db: Session = Depends(get_db),
+):
+    from .operations import get_operations_summary
+
+    store = (
+        db.query(Store)
+        .filter(
+            Store.id == store_id,
+            Store.organization_id
+            == membership.organization_id,
+            Store.deleted.is_(False),
+        )
+        .first()
+    )
+
+    if not store:
+        raise HTTPException(
+            status_code=404,
+            detail="Store not found",
+        )
+
+    return get_operations_summary(
+        db=db,
+        organization_id=membership.organization_id,
+        store_id=store_id,
     )
 
 
