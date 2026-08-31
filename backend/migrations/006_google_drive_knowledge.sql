@@ -40,22 +40,32 @@ CREATE INDEX IF NOT EXISTS
     ON knowledge_sources(external_modified_at)
     WHERE external_modified_at IS NOT NULL;
 
--- Prevent the same active Drive item from being attached twice to one KB.
--- Sheets keep their migration 005 tab-specific uniqueness rule.
+-- Prevent the same active Drive/Docs file from being attached twice to one KB.
+-- Google Docs and Drive files share the same external_id space (Drive object ID).
+-- A google_doc and a google_drive_file with the same external_id in the same KB must conflict.
 CREATE UNIQUE INDEX IF NOT EXISTS
-    uq_knowledge_source_kb_drive_item
+    uq_knowledge_source_kb_drive_file
     ON knowledge_sources(
         knowledge_base_id,
-        external_id,
-        source_type
+        external_id
     )
     WHERE active IS TRUE
       AND external_id IS NOT NULL
       AND source_type IN (
           'google_doc',
-          'google_drive_file',
-          'google_drive_folder'
+          'google_drive_file'
       );
+
+-- Folders are distinct from files and have their own uniqueness constraint.
+CREATE UNIQUE INDEX IF NOT EXISTS
+    uq_knowledge_source_kb_drive_folder
+    ON knowledge_sources(
+        knowledge_base_id,
+        external_id
+    )
+    WHERE active IS TRUE
+      AND external_id IS NOT NULL
+      AND source_type = 'google_drive_folder';
 
 -- ============================================================
 -- google_connections: store granted scopes for
