@@ -1311,7 +1311,7 @@ const resources = {
       landingKnowledgeHighlight: "Tu IA es tan buena como el conocimiento que tiene.",
 
       landingSourceGoogleSheets: "Google Sheets",
-      landingSourceGoogleSheetsStatus: "Próximamente",
+      landingSourceGoogleSheetsStatus: "Disponible",
       landingSourceGoogleSheetsDesc: "Conecta información que cambia constantemente.",
       landingSourceExcel: "Excel / CSV",
       landingSourceExcelStatus: "Disponible",
@@ -2617,7 +2617,7 @@ const resources = {
       landingKnowledgeHighlight: "Your AI is only as good as the knowledge it has.",
 
       landingSourceGoogleSheets: "Google Sheets",
-      landingSourceGoogleSheetsStatus: "Coming soon",
+      landingSourceGoogleSheetsStatus: "Available",
       landingSourceGoogleSheetsDesc: "Connect information that changes constantly.",
       landingSourceExcel: "Excel / CSV",
       landingSourceExcelStatus: "Available",
