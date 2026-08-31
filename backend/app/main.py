@@ -73,6 +73,8 @@ from .models import (
     Customer,
     CustomerStoreProfile,
     DropiConnection,
+    GoogleConnection,
+    GoogleOAuthState,
     KnowledgeBase,
     KnowledgeSource,
     Order,
@@ -147,6 +149,27 @@ from .whatsapp_security import (
 
 from .whatsapp_client import (
     send_whatsapp_text_message,
+)
+
+from .google_security import (
+    encrypt_google_secret,
+    decrypt_google_secret,
+)
+
+from .google_sheets_client import (
+    extract_spreadsheet_id,
+    get_spreadsheet_metadata,
+    fetch_sheet_values,
+    normalize_to_csv,
+)
+
+from .bedrock_ingestion import (
+    start_ingestion_job,
+    get_ingestion_status,
+    map_google_api_error,
+    STATUS_INDEXING,
+    STATUS_SYNCED,
+    STATUS_FAILED,
 )
 
 Base.metadata.create_all(bind=engine)
@@ -12494,5 +12517,1221 @@ def delete_store(
         "store_id": store.id,
         "name": store.name,
         "active": store.active,
+    }
+
+
+# ============================================================
+# GOOGLE SHEETS INTEGRATION
+# ============================================================
+
+GOOGLE_SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets.readonly",
+    "https://www.googleapis.com/auth/drive.metadata.readonly",
+]
+
+GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+GOOGLE_REVOKE_URL = "https://oauth2.googleapis.com/revoke"
+
+
+def _get_google_client_id() -> str:
+    val = os.getenv("GOOGLE_CLIENT_ID", "")
+    if not val:
+        raise RuntimeError(
+            "GOOGLE_CLIENT_ID is not configured"
+        )
+    return val
+
+
+def _get_google_client_secret() -> str:
+    val = os.getenv("GOOGLE_CLIENT_SECRET", "")
+    if not val:
+        raise RuntimeError(
+            "GOOGLE_CLIENT_SECRET is not configured"
+        )
+    return val
+
+
+def _get_google_redirect_uri() -> str:
+    return os.getenv(
+        "GOOGLE_REDIRECT_URI",
+        "https://api.diaglob.tech"
+        "/api/integrations/google/oauth/callback",
+    )
+
+
+def _google_connect_frontend_url(
+    status: str,
+) -> str:
+    base_url = os.getenv(
+        "FRONTEND_URL",
+        "https://diaglob.tech",
+    ).strip().rstrip("/")
+    return f"{base_url}?google={status}"
+
+
+# --- Google OAuth: State model ---
+
+class GoogleOAuthStartResponse(BaseModel):
+    authorization_url: str
+
+
+class GoogleSheetSourceRequest(BaseModel):
+    spreadsheet_id: str
+    spreadsheet_name: str = ""
+    sheet_name: str
+
+
+class GoogleSyncResponse(BaseModel):
+    source_id: int
+    sync_status: str
+    ingestion_job_id: str | None = None
+    message: str = ""
+
+
+# --- Google Status ---
+
+@app.get("/api/integrations/google/status")
+def get_google_status(
+    membership: OrganizationMembership = Depends(
+        require_permission("knowledge.read")
+    ),
+    db: Session = Depends(get_db),
+):
+    connection = (
+        db.query(GoogleConnection)
+        .filter(
+            GoogleConnection.organization_id
+            == membership.organization_id,
+            GoogleConnection.status
+            != "revoked",
+        )
+        .first()
+    )
+
+    if not connection:
+        return {
+            "connected": False,
+            "email": None,
+            "status": None,
+        }
+
+    return {
+        "connected": connection.status == "connected",
+        "email": connection.email,
+        "status": connection.status,
+        "connected_at": (
+            connection.connected_at.isoformat()
+            if connection.connected_at
+            else None
+        ),
+    }
+
+
+# --- Google OAuth: Start ---
+
+@app.get(
+    "/api/integrations/google/oauth/start"
+)
+def start_google_oauth(
+    membership: OrganizationMembership = Depends(
+        require_permission("knowledge.write")
+    ),
+    db: Session = Depends(get_db),
+):
+    try:
+        client_id = _get_google_client_id()
+        redirect_uri = _get_google_redirect_uri()
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "GOOGLE_NOT_CONFIGURED",
+                "message": str(exc),
+            },
+        ) from exc
+
+    # Clean up old unused states for this org
+    (
+        db.query(GoogleOAuthState)
+        .filter(
+            GoogleOAuthState.organization_id
+            == membership.organization_id,
+            GoogleOAuthState.used.is_(False),
+        )
+        .update({"used": True})
+    )
+
+    state_token = secrets.token_urlsafe(32)
+    scopes_str = " ".join(GOOGLE_SCOPES)
+
+    oauth_state = GoogleOAuthState(
+        state_token=state_token,
+        organization_id=membership.organization_id,
+        user_id=membership.user_id,
+        scopes=scopes_str,
+        expires_at=datetime.utcnow()
+        + timedelta(minutes=10),
+        used=False,
+    )
+    db.add(oauth_state)
+    db.commit()
+
+    params = {
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
+        "response_type": "code",
+        "scope": scopes_str,
+        "state": state_token,
+        "access_type": "offline",
+        "prompt": "consent",
+        "include_granted_scopes": "true",
+    }
+
+    query_string = "&".join(
+        f"{k}={v}" for k, v in params.items()
+    )
+    auth_url = (
+        f"{GOOGLE_AUTH_URL}?{query_string}"
+    )
+
+    return {
+        "authorization_url": auth_url,
+    }
+
+
+# --- Google OAuth: Callback ---
+
+@app.get(
+    "/api/integrations/google/oauth/callback"
+)
+def google_oauth_callback(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    params = dict(request.query_params)
+
+    code = params.get("code", "")
+    state_token = params.get("state", "")
+    error = params.get("error", "")
+
+    if error:
+        frontend_url = (
+            _google_connect_frontend_url("error")
+        )
+        return RedirectResponse(
+            url=frontend_url, status_code=302
+        )
+
+    if not code or not state_token:
+        raise HTTPException(
+            status_code=400,
+            detail="Missing code or state",
+        )
+
+    oauth_state = (
+        db.query(GoogleOAuthState)
+        .filter(
+            GoogleOAuthState.state_token
+            == state_token,
+            GoogleOAuthState.used.is_(False),
+        )
+        .first()
+    )
+
+    if not oauth_state:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid or used OAuth state",
+        )
+
+    if (
+        oauth_state.expires_at
+        < datetime.utcnow()
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="OAuth state expired",
+        )
+
+    # Mark state as used
+    oauth_state.used = True
+    db.flush()
+
+    # Exchange code for tokens
+    try:
+        client_id = _get_google_client_id()
+        client_secret = _get_google_client_secret()
+        redirect_uri = _get_google_redirect_uri()
+
+        token_response = httpx.post(
+            GOOGLE_TOKEN_URL,
+            data={
+                "code": code,
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "redirect_uri": redirect_uri,
+                "grant_type": "authorization_code",
+            },
+            timeout=30,
+        )
+        token_response.raise_for_status()
+        token_data = token_response.json()
+
+    except Exception as exc:
+        db.rollback()
+        frontend_url = (
+            _google_connect_frontend_url("error")
+        )
+        return RedirectResponse(
+            url=frontend_url, status_code=302
+        )
+
+    access_token = token_data.get("access_token", "")
+    refresh_token = token_data.get("refresh_token", "")
+    expires_in = token_data.get("expires_in", 3600)
+    granted_scopes = token_data.get("scope", "")
+
+    if not access_token:
+        frontend_url = (
+            _google_connect_frontend_url("error")
+        )
+        return RedirectResponse(
+            url=frontend_url, status_code=302
+        )
+
+    # Get user email (best effort, not critical)
+    user_email = None
+    try:
+        user_info_resp = httpx.get(
+            "https://www.googleapis.com/"
+            "oauth2/v3/userinfo",
+            headers={
+                "Authorization": (
+                    f"Bearer {access_token}"
+                ),
+            },
+            timeout=10,
+        )
+        if user_info_resp.status_code == 200:
+            user_info = user_info_resp.json()
+            user_email = user_info.get("email")
+    except Exception:
+        pass
+
+    # Encrypt tokens
+    encrypted_access = encrypt_google_secret(
+        access_token
+    )
+    encrypted_refresh = (
+        encrypt_google_secret(refresh_token)
+        if refresh_token
+        else None
+    )
+
+    # Upsert GoogleConnection
+    existing = (
+        db.query(GoogleConnection)
+        .filter(
+            GoogleConnection.organization_id
+            == oauth_state.organization_id,
+        )
+        .first()
+    )
+
+    token_expiry = (
+        datetime.utcnow()
+        + timedelta(seconds=expires_in)
+    )
+
+    if existing:
+        existing.access_token_encrypted = (
+            encrypted_access
+        )
+        # Only overwrite refresh token if Google
+        # returned a new one
+        if refresh_token:
+            existing.refresh_token_encrypted = (
+                encrypted_refresh
+            )
+        existing.token_expiry = token_expiry
+        existing.scopes = granted_scopes
+        existing.email = (
+            user_email or existing.email
+        )
+        existing.status = "connected"
+        existing.connected_at = datetime.utcnow()
+        existing.revoked_at = None
+        existing.updated_at = datetime.utcnow()
+    else:
+        connection = GoogleConnection(
+            organization_id=(
+                oauth_state.organization_id
+            ),
+            user_id=oauth_state.user_id,
+            email=user_email,
+            access_token_encrypted=encrypted_access,
+            refresh_token_encrypted=encrypted_refresh,
+            token_expiry=token_expiry,
+            scopes=granted_scopes,
+            status="connected",
+            connected_at=datetime.utcnow(),
+        )
+        db.add(connection)
+
+    db.commit()
+
+    frontend_url = (
+        _google_connect_frontend_url("connected")
+    )
+    return RedirectResponse(
+        url=frontend_url, status_code=302
+    )
+
+
+# --- Google Disconnect ---
+
+@app.delete("/api/integrations/google")
+def disconnect_google(
+    membership: OrganizationMembership = Depends(
+        require_permission("knowledge.write")
+    ),
+    db: Session = Depends(get_db),
+):
+    connection = (
+        db.query(GoogleConnection)
+        .filter(
+            GoogleConnection.organization_id
+            == membership.organization_id,
+            GoogleConnection.status
+            != "revoked",
+        )
+        .first()
+    )
+
+    if not connection:
+        raise HTTPException(
+            status_code=404,
+            detail="No Google connection found",
+        )
+
+    # Try to revoke at Google (best effort)
+    try:
+        access_token = decrypt_google_secret(
+            connection.access_token_encrypted
+        )
+        httpx.post(
+            GOOGLE_REVOKE_URL,
+            params={"token": access_token},
+            timeout=10,
+        )
+    except Exception:
+        pass
+
+    connection.status = "revoked"
+    connection.revoked_at = datetime.utcnow()
+    connection.updated_at = datetime.utcnow()
+    db.commit()
+
+    return {"ok": True, "status": "revoked"}
+
+
+# --- Google: Refresh token helper ---
+
+def _refresh_google_token(
+    connection: GoogleConnection,
+    db: Session,
+) -> bool:
+    """Attempt to refresh an expired Google token.
+
+    Returns True if refresh succeeded.
+    Updates connection in-place.
+    """
+    if not connection.refresh_token_encrypted:
+        return False
+
+    try:
+        refresh_token = decrypt_google_secret(
+            connection.refresh_token_encrypted
+        )
+        client_id = _get_google_client_id()
+        client_secret = _get_google_client_secret()
+
+        resp = httpx.post(
+            GOOGLE_TOKEN_URL,
+            data={
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "refresh_token": refresh_token,
+                "grant_type": "refresh_token",
+            },
+            timeout=30,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+        new_access = data.get("access_token", "")
+        expires_in = data.get("expires_in", 3600)
+        new_refresh = data.get("refresh_token")
+
+        if not new_access:
+            return False
+
+        connection.access_token_encrypted = (
+            encrypt_google_secret(new_access)
+        )
+        connection.token_expiry = (
+            datetime.utcnow()
+            + timedelta(seconds=expires_in)
+        )
+        # Only overwrite if Google returned a new
+        # refresh token
+        if new_refresh:
+            connection.refresh_token_encrypted = (
+                encrypt_google_secret(new_refresh)
+            )
+        connection.status = "connected"
+        connection.updated_at = datetime.utcnow()
+        db.commit()
+        return True
+
+    except Exception:
+        connection.status = "token_expired"
+        connection.updated_at = datetime.utcnow()
+        db.commit()
+        return False
+
+
+def _get_valid_google_token(
+    connection: GoogleConnection,
+    db: Session,
+) -> str | None:
+    """Get a valid access token, refreshing if needed.
+
+    Returns decrypted access token or None.
+    """
+    if not connection.access_token_encrypted:
+        return None
+
+    # Check if token is still valid (with 5min buffer)
+    if (
+        connection.token_expiry
+        and connection.token_expiry
+        > datetime.utcnow()
+        + timedelta(minutes=5)
+    ):
+        return decrypt_google_secret(
+            connection.access_token_encrypted
+        )
+
+    # Try refresh
+    refreshed = _refresh_google_token(
+        connection, db
+    )
+    if refreshed:
+        return decrypt_google_secret(
+            connection.access_token_encrypted
+        )
+
+    return None
+
+
+# --- Google: List Sheets ---
+
+@app.get("/api/integrations/google/sheets")
+async def list_google_sheets(
+    membership: OrganizationMembership = Depends(
+        require_permission("knowledge.read")
+    ),
+    db: Session = Depends(get_db),
+):
+    connection = (
+        db.query(GoogleConnection)
+        .filter(
+            GoogleConnection.organization_id
+            == membership.organization_id,
+            GoogleConnection.status
+            == "connected",
+        )
+        .first()
+    )
+
+    if not connection:
+        raise HTTPException(
+            status_code=404,
+            detail="Google not connected",
+        )
+
+    access_token = _get_valid_google_token(
+        connection, db
+    )
+    if not access_token:
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "code": "GOOGLE_TOKEN_EXPIRED",
+                "message": (
+                    "Google connection expired. "
+                    "Please reconnect."
+                ),
+            },
+        )
+
+    try:
+        async with httpx.AsyncClient(
+            timeout=30
+        ) as client:
+            resp = await client.get(
+                "https://www.googleapis.com/"
+                "drive/v3/files",
+                headers={
+                    "Authorization": (
+                        f"Bearer {access_token}"
+                    ),
+                },
+                params={
+                    "q": (
+                        "mimeType="
+                        "'application/"
+                        "vnd.google-apps.spreadsheet'"
+                    ),
+                    "fields": (
+                        "files(id,name,"
+                        "modifiedTime)"
+                    ),
+                    "pageSize": "100",
+                    "orderBy": "modifiedTime desc",
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+        sheets = [
+            {
+                "spreadsheet_id": f["id"],
+                "name": f.get("name", "Untitled"),
+                "modified_time": f.get(
+                    "modifiedTime"
+                ),
+            }
+            for f in data.get("files", [])
+        ]
+
+        return {"sheets": sheets}
+
+    except httpx.HTTPStatusError as exc:
+        code, msg = map_google_api_error(
+            exc.response.status_code
+        )
+        if code == "reconnect_required":
+            connection.status = "token_expired"
+            db.commit()
+        raise HTTPException(
+            status_code=exc.response.status_code,
+            detail={"code": code, "message": msg},
+        ) from exc
+
+
+# --- Google: List Tabs ---
+
+@app.get(
+    "/api/integrations/google/sheets/"
+    "{spreadsheet_id}/tabs"
+)
+async def list_google_sheet_tabs(
+    spreadsheet_id: str,
+    membership: OrganizationMembership = Depends(
+        require_permission("knowledge.read")
+    ),
+    db: Session = Depends(get_db),
+):
+    connection = (
+        db.query(GoogleConnection)
+        .filter(
+            GoogleConnection.organization_id
+            == membership.organization_id,
+            GoogleConnection.status
+            == "connected",
+        )
+        .first()
+    )
+
+    if not connection:
+        raise HTTPException(
+            status_code=404,
+            detail="Google not connected",
+        )
+
+    access_token = _get_valid_google_token(
+        connection, db
+    )
+    if not access_token:
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "code": "GOOGLE_TOKEN_EXPIRED",
+                "message": (
+                    "Google connection expired. "
+                    "Please reconnect."
+                ),
+            },
+        )
+
+    try:
+        metadata = await get_spreadsheet_metadata(
+            access_token, spreadsheet_id
+        )
+        return {
+            "title": metadata["title"],
+            "tabs": metadata["sheets"],
+        }
+
+    except httpx.HTTPStatusError as exc:
+        code, msg = map_google_api_error(
+            exc.response.status_code
+        )
+        if code == "reconnect_required":
+            connection.status = "token_expired"
+            db.commit()
+        raise HTTPException(
+            status_code=exc.response.status_code,
+            detail={"code": code, "message": msg},
+        ) from exc
+
+
+# --- Google: Add Sheet Source to KB ---
+
+@app.post(
+    "/api/knowledge-bases/"
+    "{knowledge_base_id}/sources/google-sheet"
+)
+async def add_google_sheet_source(
+    knowledge_base_id: int,
+    payload: GoogleSheetSourceRequest,
+    membership: OrganizationMembership = Depends(
+        require_permission("knowledge.write")
+    ),
+    db: Session = Depends(get_db),
+):
+    org_id = membership.organization_id
+
+    kb = (
+        db.query(KnowledgeBase)
+        .filter(
+            KnowledgeBase.id
+            == knowledge_base_id,
+            KnowledgeBase.organization_id
+            == org_id,
+        )
+        .first()
+    )
+
+    if not kb:
+        raise HTTPException(
+            status_code=404,
+            detail="Knowledge Base not found",
+        )
+
+    # Validate spreadsheet ID
+    sheet_id = extract_spreadsheet_id(
+        payload.spreadsheet_id
+    )
+    if not sheet_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid spreadsheet ID or URL",
+        )
+
+    # Check for duplicate source in same KB
+    existing = (
+        db.query(KnowledgeSource)
+        .filter(
+            KnowledgeSource.knowledge_base_id
+            == knowledge_base_id,
+            KnowledgeSource.external_id == sheet_id,
+            KnowledgeSource.sheet_name
+            == payload.sheet_name,
+            KnowledgeSource.active.is_(True),
+        )
+        .first()
+    )
+
+    if existing:
+        return {
+            "source_id": existing.id,
+            "sync_status": existing.sync_status
+            or "synced",
+            "message": "Source already exists",
+        }
+
+    # Get Google connection
+    connection = (
+        db.query(GoogleConnection)
+        .filter(
+            GoogleConnection.organization_id
+            == org_id,
+            GoogleConnection.status
+            == "connected",
+        )
+        .first()
+    )
+
+    if not connection:
+        raise HTTPException(
+            status_code=400,
+            detail="Google not connected",
+        )
+
+    access_token = _get_valid_google_token(
+        connection, db
+    )
+    if not access_token:
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "code": "GOOGLE_TOKEN_EXPIRED",
+                "message": (
+                    "Google connection expired. "
+                    "Please reconnect."
+                ),
+            },
+        )
+
+    # Fetch spreadsheet metadata for name
+    spreadsheet_title = (
+        payload.spreadsheet_name or sheet_id
+    )
+    try:
+        metadata = await get_spreadsheet_metadata(
+            access_token, sheet_id
+        )
+        spreadsheet_title = metadata.get(
+            "title", spreadsheet_title
+        )
+    except Exception:
+        pass
+
+    # Fetch sheet values
+    try:
+        values = await fetch_sheet_values(
+            access_token,
+            sheet_id,
+            payload.sheet_name,
+        )
+    except httpx.HTTPStatusError as exc:
+        code, msg = map_google_api_error(
+            exc.response.status_code
+        )
+        raise HTTPException(
+            status_code=exc.response.status_code,
+            detail={"code": code, "message": msg},
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+
+    # Normalize to CSV
+    csv_content = normalize_to_csv(
+        values,
+        spreadsheet_title,
+        payload.sheet_name,
+    )
+
+    if not csv_content.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Sheet is empty",
+        )
+
+    # Upload to S3
+    filename = (
+        f"{sheet_id}_{payload.sheet_name}.csv"
+    )
+    try:
+        s3_result = upload_knowledge_file(
+            org_id=org_id,
+            kb_id=knowledge_base_id,
+            filename=filename,
+            content=csv_content.encode("utf-8"),
+            content_type="text/csv",
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"S3 upload failed: {exc}",
+        ) from exc
+
+    # Create KnowledgeSource
+    source = KnowledgeSource(
+        organization_id=org_id,
+        knowledge_base_id=knowledge_base_id,
+        name=f"{spreadsheet_title} — "
+        f"{payload.sheet_name}",
+        source_type="google_sheet",
+        content_type="text/csv",
+        s3_bucket=s3_result["bucket"],
+        s3_key=s3_result["key"],
+        size_bytes=len(csv_content.encode("utf-8")),
+        status="uploaded",
+        external_id=sheet_id,
+        external_name=spreadsheet_title,
+        sheet_name=payload.sheet_name,
+        sync_status="uploaded",
+    )
+    db.add(source)
+    db.flush()
+
+    # Start Bedrock ingestion
+    ingestion_job_id = None
+    sync_status = "uploaded"
+
+    if kb.external_id and kb.external_data_source_id:
+        ingestion_job_id = start_ingestion_job(
+            kb.external_id,
+            kb.external_data_source_id,
+        )
+        if ingestion_job_id:
+            sync_status = "indexing"
+            source.ingestion_job_id = (
+                ingestion_job_id
+            )
+            source.sync_status = "indexing"
+        else:
+            sync_status = "uploaded"
+            source.sync_status = "uploaded"
+
+    db.commit()
+    db.refresh(source)
+
+    return {
+        "source_id": source.id,
+        "sync_status": sync_status,
+        "ingestion_job_id": ingestion_job_id,
+        "name": source.name,
+    }
+
+
+# --- Google: Sync Sheet Source ---
+
+@app.post(
+    "/api/knowledge-bases/"
+    "{knowledge_base_id}/sources/"
+    "{source_id}/sync"
+)
+async def sync_google_sheet_source(
+    knowledge_base_id: int,
+    source_id: int,
+    membership: OrganizationMembership = Depends(
+        require_permission("knowledge.write")
+    ),
+    db: Session = Depends(get_db),
+):
+    org_id = membership.organization_id
+
+    kb = (
+        db.query(KnowledgeBase)
+        .filter(
+            KnowledgeBase.id
+            == knowledge_base_id,
+            KnowledgeBase.organization_id
+            == org_id,
+        )
+        .first()
+    )
+
+    if not kb:
+        raise HTTPException(
+            status_code=404,
+            detail="Knowledge Base not found",
+        )
+
+    source = (
+        db.query(KnowledgeSource)
+        .filter(
+            KnowledgeSource.id == source_id,
+            KnowledgeSource.knowledge_base_id
+            == knowledge_base_id,
+            KnowledgeSource.organization_id
+            == org_id,
+            KnowledgeSource.source_type
+            == "google_sheet",
+        )
+        .first()
+    )
+
+    if not source:
+        raise HTTPException(
+            status_code=404,
+            detail="Google Sheet source not found",
+        )
+
+    # Idempotency: don't re-sync if already syncing
+    if source.sync_status in ("syncing", "indexing"):
+        return {
+            "source_id": source.id,
+            "sync_status": source.sync_status,
+            "ingestion_job_id": (
+                source.ingestion_job_id
+            ),
+            "message": "Sync already in progress",
+        }
+
+    # Get Google connection
+    connection = (
+        db.query(GoogleConnection)
+        .filter(
+            GoogleConnection.organization_id
+            == org_id,
+            GoogleConnection.status
+            == "connected",
+        )
+        .first()
+    )
+
+    if not connection:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "GOOGLE_DISCONNECTED",
+                "message": (
+                    "Google not connected. "
+                    "Please reconnect."
+                ),
+            },
+        )
+
+    access_token = _get_valid_google_token(
+        connection, db
+    )
+    if not access_token:
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "code": "GOOGLE_TOKEN_EXPIRED",
+                "message": (
+                    "Google connection expired. "
+                    "Please reconnect."
+                ),
+            },
+        )
+
+    # Mark as syncing
+    source.sync_status = "syncing"
+    source.sync_error = None
+    db.flush()
+
+    # Fetch sheet values
+    try:
+        values = await fetch_sheet_values(
+            access_token,
+            source.external_id,
+            source.sheet_name,
+        )
+    except httpx.HTTPStatusError as exc:
+        code, msg = map_google_api_error(
+            exc.response.status_code
+        )
+        source.sync_status = "failed"
+        source.sync_error = msg
+        db.commit()
+        raise HTTPException(
+            status_code=exc.response.status_code,
+            detail={"code": code, "message": msg},
+        ) from exc
+    except ValueError as exc:
+        source.sync_status = "failed"
+        source.sync_error = str(exc)
+        db.commit()
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+
+    # Normalize to CSV
+    csv_content = normalize_to_csv(
+        values,
+        source.external_name or "",
+        source.sheet_name or "",
+    )
+
+    if not csv_content.strip():
+        source.sync_status = "failed"
+        source.sync_error = "Sheet is empty"
+        db.commit()
+        raise HTTPException(
+            status_code=400,
+            detail="Sheet is empty",
+        )
+
+    # Upload to S3
+    filename = (
+        f"{source.external_id}"
+        f"_{source.sheet_name}.csv"
+    )
+    try:
+        s3_result = upload_knowledge_file(
+            org_id=org_id,
+            kb_id=knowledge_base_id,
+            filename=filename,
+            content=csv_content.encode("utf-8"),
+            content_type="text/csv",
+        )
+    except Exception as exc:
+        source.sync_status = "failed"
+        source.sync_error = f"S3 upload failed: {exc}"
+        db.commit()
+        raise HTTPException(
+            status_code=500,
+            detail=f"S3 upload failed: {exc}",
+        ) from exc
+
+    # Update source
+    source.s3_bucket = s3_result["bucket"]
+    source.s3_key = s3_result["key"]
+    source.size_bytes = len(
+        csv_content.encode("utf-8")
+    )
+    source.status = "uploaded"
+    source.last_synced_at = datetime.utcnow()
+
+    # Start Bedrock ingestion
+    ingestion_job_id = None
+    sync_status = "uploaded"
+
+    if kb.external_id and kb.external_data_source_id:
+        ingestion_job_id = start_ingestion_job(
+            kb.external_id,
+            kb.external_data_source_id,
+        )
+        if ingestion_job_id:
+            sync_status = "indexing"
+            source.ingestion_job_id = (
+                ingestion_job_id
+            )
+            source.sync_status = "indexing"
+        else:
+            sync_status = "uploaded"
+            source.sync_status = "uploaded"
+
+    db.commit()
+    db.refresh(source)
+
+    return {
+        "source_id": source.id,
+        "sync_status": sync_status,
+        "ingestion_job_id": ingestion_job_id,
+    }
+
+
+# --- Google: Check ingestion status ---
+
+@app.get(
+    "/api/knowledge-bases/"
+    "{knowledge_base_id}/sources/"
+    "{source_id}/ingestion-status"
+)
+def check_ingestion_status(
+    knowledge_base_id: int,
+    source_id: int,
+    membership: OrganizationMembership = Depends(
+        require_permission("knowledge.read")
+    ),
+    db: Session = Depends(get_db),
+):
+    org_id = membership.organization_id
+
+    kb = (
+        db.query(KnowledgeBase)
+        .filter(
+            KnowledgeBase.id
+            == knowledge_base_id,
+            KnowledgeBase.organization_id
+            == org_id,
+        )
+        .first()
+    )
+
+    if not kb:
+        raise HTTPException(
+            status_code=404,
+            detail="Knowledge Base not found",
+        )
+
+    source = (
+        db.query(KnowledgeSource)
+        .filter(
+            KnowledgeSource.id == source_id,
+            KnowledgeSource.knowledge_base_id
+            == knowledge_base_id,
+            KnowledgeSource.organization_id
+            == org_id,
+        )
+        .first()
+    )
+
+    if not source:
+        raise HTTPException(
+            status_code=404,
+            detail="Source not found",
+        )
+
+    # If not in indexing state, return current status
+    if source.sync_status != "indexing":
+        return {
+            "source_id": source.id,
+            "sync_status": source.sync_status,
+            "last_synced_at": (
+                source.last_synced_at.isoformat()
+                if source.last_synced_at
+                else None
+            ),
+            "sync_error": source.sync_error,
+        }
+
+    # Check Bedrock ingestion status
+    if (
+        not source.ingestion_job_id
+        or not kb.external_id
+        or not kb.external_data_source_id
+    ):
+        return {
+            "source_id": source.id,
+            "sync_status": source.sync_status,
+            "last_synced_at": (
+                source.last_synced_at.isoformat()
+                if source.last_synced_at
+                else None
+            ),
+        }
+
+    new_status = get_ingestion_status(
+        kb.external_id,
+        kb.external_data_source_id,
+        source.ingestion_job_id,
+    )
+
+    if new_status != source.sync_status:
+        source.sync_status = new_status
+        if new_status == STATUS_SYNCED:
+            source.last_synced_at = (
+                datetime.utcnow()
+            )
+        elif new_status == STATUS_FAILED:
+            source.sync_error = (
+                "Bedrock ingestion failed"
+            )
+        db.commit()
+
+    return {
+        "source_id": source.id,
+        "sync_status": source.sync_status,
+        "last_synced_at": (
+            source.last_synced_at.isoformat()
+            if source.last_synced_at
+            else None
+        ),
+        "sync_error": source.sync_error,
     }
 

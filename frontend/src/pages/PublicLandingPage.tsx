@@ -15,6 +15,13 @@ import {
   Users,
   Globe,
   Check,
+  Database,
+  BrainCircuit,
+  FileSpreadsheet,
+  Table,
+  Package,
+  ArrowRight,
+  LayoutDashboard,
 } from "lucide-react";
 
 interface PublicLandingPageProps {
@@ -476,6 +483,182 @@ export default function PublicLandingPage({
                   <p>{t(f.description)}</p>
                 </div>
               ))}
+            </div>
+          </div>
+        </section>
+
+        {/* CONNECTED KNOWLEDGE + MULTI-COUNTRY */}
+        <section className="landing-section landing-built" id="built">
+          <div className="landing-container">
+            <h2 className="landing-section-title">{t("landingBuiltTitle")}</h2>
+            <p className="landing-section-subtitle">{t("landingBuiltSubtitle")}</p>
+
+            <div className="landing-built-grid">
+              {/* LEFT: Knowledge Flow */}
+              <div className="landing-built-panel">
+                <div className="landing-built-panel-label">{t("landingKnowledgeLabel")}</div>
+                <div className="landing-knowledge-diagram">
+                  {/* Sources column */}
+                  <div className="landing-kb-sources">
+                    <div className="landing-kb-source">
+                      <div className="landing-kb-source-icon"><Table size={16} /></div>
+                      <div className="landing-kb-source-info">
+                        <span className="landing-kb-source-name">{t("landingSourceGoogleSheets")}</span>
+                        <span className="landing-kb-badge coming-soon">{t("landingSourceGoogleSheetsStatus")}</span>
+                      </div>
+                    </div>
+                    <div className="landing-kb-source">
+                      <div className="landing-kb-source-icon"><FileSpreadsheet size={16} /></div>
+                      <div className="landing-kb-source-info">
+                        <span className="landing-kb-source-name">{t("landingSourceExcel")}</span>
+                        <span className="landing-kb-badge available">{t("landingSourceExcelStatus")}</span>
+                      </div>
+                    </div>
+                    <div className="landing-kb-source">
+                      <div className="landing-kb-source-icon"><ShoppingBag size={16} /></div>
+                      <div className="landing-kb-source-info">
+                        <span className="landing-kb-source-name">{t("landingSourceShopify")}</span>
+                        <span className="landing-kb-badge available">{t("landingSourceShopifyStatus")}</span>
+                      </div>
+                    </div>
+                    <div className="landing-kb-source">
+                      <div className="landing-kb-source-icon"><Package size={16} /></div>
+                      <div className="landing-kb-source-info">
+                        <span className="landing-kb-source-name">{t("landingSourceDropi")}</span>
+                        <span className="landing-kb-badge coming-soon">{t("landingSourceDropiStatus")}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Connector */}
+                  <div className="landing-kb-connector">
+                    <div className="landing-kb-connector-line" />
+                    <ArrowRight size={16} className="landing-kb-connector-arrow" />
+                  </div>
+
+                  {/* Knowledge Base node */}
+                  <div className="landing-kb-central">
+                    <div className="landing-kb-node">
+                      <Database size={20} />
+                      <span>Diaglob</span>
+                    </div>
+                    <p className="landing-kb-node-desc">{t("landingKnowledgeDesc")}</p>
+                  </div>
+
+                  {/* Connector */}
+                  <div className="landing-kb-connector">
+                    <div className="landing-kb-connector-line" />
+                    <ArrowRight size={16} className="landing-kb-connector-arrow" />
+                  </div>
+
+                  {/* AI Agent */}
+                  <div className="landing-kb-agent">
+                    <div className="landing-kb-agent-icon">
+                      <BrainCircuit size={20} />
+                    </div>
+                    <span className="landing-kb-agent-label">{t("landingAgentLabel")}</span>
+                    <p className="landing-kb-agent-desc">{t("landingAgentDesc")}</p>
+                  </div>
+                </div>
+
+                {/* Results row */}
+                <div className="landing-kb-results">
+                  <div className="landing-kb-result">
+                    <Check size={14} />
+                    <div>
+                      <strong>{t("landingResultRespond")}</strong>
+                      <span>{t("landingResultRespondDesc")}</span>
+                    </div>
+                  </div>
+                  <div className="landing-kb-result">
+                    <Check size={14} />
+                    <div>
+                      <strong>{t("landingResultRecommend")}</strong>
+                      <span>{t("landingResultRecommendDesc")}</span>
+                    </div>
+                  </div>
+                  <div className="landing-kb-result">
+                    <Check size={14} />
+                    <div>
+                      <strong>{t("landingResultAutomate")}</strong>
+                      <span>{t("landingResultAutomateDesc")}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <p className="landing-kb-highlight">{t("landingKnowledgeHighlight")}</p>
+              </div>
+
+              {/* RIGHT: Multi-country */}
+              <div className="landing-built-panel">
+                <div className="landing-built-panel-label">{t("landingBuiltMultiTitle")}</div>
+                <p className="landing-built-multi-sub">{t("landingBuiltMultiSubtitle")}</p>
+
+                <div className="landing-country-diagram">
+                  <div className="landing-country-stores">
+                    <div className="landing-country-card">
+                      <span className="landing-country-flag">🇨🇴</span>
+                      <div className="landing-country-info">
+                        <span className="landing-country-name">{t("landingStoreColombia")}</span>
+                        <div className="landing-country-badges">
+                          <span className="landing-country-badge">{t("landingStoreCurrencyCOP")}</span>
+                          <span className="landing-country-badge">{t("landingStoreLangEs")}</span>
+                        </div>
+                        <div className="landing-country-integrations">
+                          <span className="landing-ci"><MessageSquare size={12} /> WhatsApp</span>
+                          <span className="landing-ci"><ShoppingBag size={12} /> Shopify</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="landing-country-card">
+                      <span className="landing-country-flag">🇲🇽</span>
+                      <div className="landing-country-info">
+                        <span className="landing-country-name">{t("landingStoreMexico")}</span>
+                        <div className="landing-country-badges">
+                          <span className="landing-country-badge">{t("landingStoreCurrencyMXN")}</span>
+                          <span className="landing-country-badge">{t("landingStoreLangEs")}</span>
+                        </div>
+                        <div className="landing-country-integrations">
+                          <span className="landing-ci"><MessageSquare size={12} /> WhatsApp</span>
+                          <span className="landing-ci"><ShoppingBag size={12} /> Shopify</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="landing-country-card">
+                      <span className="landing-country-flag">🇺🇸</span>
+                      <div className="landing-country-info">
+                        <span className="landing-country-name">{t("landingStoreUsa")}</span>
+                        <div className="landing-country-badges">
+                          <span className="landing-country-badge">{t("landingStoreCurrencyUSD")}</span>
+                          <span className="landing-country-badge">{t("landingStoreLangEn")}</span>
+                        </div>
+                        <div className="landing-country-integrations">
+                          <span className="landing-ci"><MessageSquare size={12} /> WhatsApp</span>
+                          <span className="landing-ci"><ShoppingBag size={12} /> Shopify</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Connector down to ops center */}
+                  <div className="landing-country-connector">
+                    <div className="landing-country-connector-lines" />
+                  </div>
+
+                  {/* Operations Center */}
+                  <div className="landing-ops-node">
+                    <LayoutDashboard size={18} />
+                    <div>
+                      <strong>{t("landingOpsCenter")}</strong>
+                      <span>{t("landingOpsCenterDesc")}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <p className="landing-built-each-store">{t("landingBuiltEachStore")}</p>
+              </div>
             </div>
           </div>
         </section>

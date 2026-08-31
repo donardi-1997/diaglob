@@ -1,5 +1,6 @@
 import { useTranslation } from "react-i18next";
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -9,10 +10,13 @@ import {
 import {
   BrainCircuit,
   Database,
+  FileSpreadsheet,
   FileText,
+  Link2,
   LoaderCircle,
   Pencil,
   Plus,
+  RefreshCw,
   Store as StoreIcon,
   Trash2,
   Upload,
@@ -33,6 +37,20 @@ import {
   uploadKnowledgeSource,
   type KnowledgeSource,
 } from "../services/knowledgeSources";
+
+import {
+  addGoogleSheetSource,
+  disconnectGoogle,
+  getGoogleStatus,
+  getIngestionStatus,
+  listGoogleSheets,
+  listGoogleSheetTabs,
+  startGoogleOAuth,
+  syncGoogleSheetSource,
+  type GoogleSheetItem,
+  type GoogleStatus,
+  type GoogleTabItem,
+} from "../services/knowledgeGoogle";
 
 import {
   getStores,
@@ -161,6 +179,73 @@ export default function KnowledgeBasesPage({
     useRef<HTMLInputElement | null>(
       null,
     );
+
+
+  // =========================================================
+  // GOOGLE SHEETS
+  // =========================================================
+
+  const [
+    googleStatus,
+    setGoogleStatus,
+  ] = useState<GoogleStatus | null>(
+    null,
+  );
+
+  const [
+    googleSheetsOpen,
+    setGoogleSheetsOpen,
+  ] = useState(false);
+
+  const [
+    googleSheets,
+    setGoogleSheets,
+  ] = useState<GoogleSheetItem[]>([]);
+
+  const [
+    googleSheetsLoading,
+    setGoogleSheetsLoading,
+  ] = useState(false);
+
+  const [
+    selectedGoogleSheet,
+    setSelectedGoogleSheet,
+  ] = useState<GoogleSheetItem | null>(
+    null,
+  );
+
+  const [
+    googleTabsOpen,
+    setGoogleTabsOpen,
+  ] = useState(false);
+
+  const [
+    googleTabs,
+    setGoogleTabs,
+  ] = useState<GoogleTabItem[]>([]);
+
+  const [
+    googleTabsLoading,
+    setGoogleTabsLoading,
+  ] = useState(false);
+
+  const [
+    googleConnecting,
+    setGoogleConnecting,
+  ] = useState(false);
+
+  const [
+    googleAdding,
+    setGoogleAdding,
+  ] = useState(false);
+
+  const pollingRef =
+    useRef<number | null>(null);
+
+  const [
+    syncPollingSourceId,
+    setSyncPollingSourceId,
+  ] = useState<number | null>(null);
 
 
   useEffect(() => {
@@ -404,9 +489,12 @@ export default function KnowledgeBasesPage({
 
     setSourcesOpen(true);
 
-    await loadSources(
-      knowledgeBase.id,
-    );
+    await Promise.all([
+      loadSources(
+        knowledgeBase.id,
+      ),
+      loadGoogleStatus(),
+    ]);
   }
 
 
@@ -435,6 +523,249 @@ export default function KnowledgeBasesPage({
       setSourcesLoading(false);
     }
   }
+
+
+  async function loadGoogleStatus() {
+    try {
+      const status =
+        await getGoogleStatus();
+
+      setGoogleStatus(status);
+    } catch {
+      setGoogleStatus({
+        connected: false,
+        email: null,
+        status: null,
+        connected_at: null,
+      });
+    }
+  }
+
+
+  async function handleConnectGoogle() {
+    try {
+      setGoogleConnecting(true);
+      setError("");
+
+      const { authorization_url } =
+        await startGoogleOAuth();
+
+      window.open(
+        authorization_url,
+        "_blank",
+      );
+    } catch (err) {
+      console.error(err);
+      setGoogleConnecting(false);
+      setError(
+        t("knowledgeGoogleConnectionError"),
+      );
+    }
+  }
+
+
+  async function handleDisconnectGoogle() {
+    const confirmed = window.confirm(
+      t("knowledgeGoogleDisconnectConfirm"),
+    );
+
+    if (!confirmed) return;
+
+    try {
+      await disconnectGoogle();
+      await loadGoogleStatus();
+    } catch (err) {
+      console.error(err);
+      setError(
+        t("knowledgeGoogleDisconnectError"),
+      );
+    }
+  }
+
+
+  async function handleOpenGoogleSheets() {
+    if (!selectedKnowledgeBase) return;
+
+    try {
+      setGoogleSheetsOpen(true);
+      setGoogleSheetsLoading(true);
+      setError("");
+
+      const response =
+        await listGoogleSheets();
+
+      setGoogleSheets(response.sheets);
+    } catch (err) {
+      console.error(err);
+      setError(
+        t("knowledgeGoogleSheetsLoadError"),
+      );
+      setGoogleSheetsOpen(false);
+    } finally {
+      setGoogleSheetsLoading(false);
+    }
+  }
+
+
+  async function handleSelectGoogleSheet(
+    sheet: GoogleSheetItem,
+  ) {
+    try {
+      setSelectedGoogleSheet(sheet);
+      setGoogleTabsOpen(true);
+      setGoogleTabsLoading(true);
+      setError("");
+
+      const response =
+        await listGoogleSheetTabs(
+          sheet.spreadsheet_id,
+        );
+
+      setGoogleTabs(response.tabs);
+    } catch (err) {
+      console.error(err);
+      setError(
+        t("knowledgeGoogleTabsLoadError"),
+      );
+      setGoogleTabsOpen(false);
+    } finally {
+      setGoogleTabsLoading(false);
+    }
+  }
+
+
+  async function handleAddGoogleSheetSource(
+    tab: GoogleTabItem,
+  ) {
+    if (
+      !selectedKnowledgeBase ||
+      !selectedGoogleSheet
+    )
+      return;
+
+    try {
+      setGoogleAdding(true);
+      setError("");
+
+      const result =
+        await addGoogleSheetSource(
+          selectedKnowledgeBase.id,
+          selectedGoogleSheet.spreadsheet_id,
+          selectedGoogleSheet.name,
+          tab.title,
+        );
+
+      setGoogleTabsOpen(false);
+      setSelectedGoogleSheet(null);
+      setGoogleSheetsOpen(false);
+
+      await loadSources(
+        selectedKnowledgeBase.id,
+      );
+
+      if (result.sync_status === "indexing") {
+        startPollingIngestion(
+          selectedKnowledgeBase.id,
+          result.source_id,
+        );
+      }
+    } catch (err) {
+      console.error(err);
+      setError(
+        t("knowledgeGoogleAddSourceError"),
+      );
+    } finally {
+      setGoogleAdding(false);
+    }
+  }
+
+
+  async function handleSyncGoogleSource(
+    source: KnowledgeSource,
+  ) {
+    if (!selectedKnowledgeBase) return;
+
+    try {
+      setError("");
+
+      const result =
+        await syncGoogleSheetSource(
+          selectedKnowledgeBase.id,
+          source.id,
+        );
+
+      await loadSources(
+        selectedKnowledgeBase.id,
+      );
+
+      if (result.sync_status === "indexing") {
+        startPollingIngestion(
+          selectedKnowledgeBase.id,
+          source.id,
+        );
+      }
+    } catch (err) {
+      console.error(err);
+      setError(
+        t("knowledgeGoogleSyncError"),
+      );
+    }
+  }
+
+
+  function startPollingIngestion(
+    kbId: number,
+    sourceId: number,
+  ) {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+    }
+
+    setSyncPollingSourceId(sourceId);
+
+    pollingRef.current = window.setInterval(
+      async () => {
+        try {
+          const result =
+            await getIngestionStatus(
+              kbId,
+              sourceId,
+            );
+
+          if (
+            result.sync_status !== "indexing"
+          ) {
+            if (pollingRef.current) {
+              clearInterval(
+                pollingRef.current,
+              );
+              pollingRef.current = null;
+            }
+            setSyncPollingSourceId(null);
+            await loadSources(kbId);
+          }
+        } catch {
+          if (pollingRef.current) {
+            clearInterval(
+              pollingRef.current,
+            );
+            pollingRef.current = null;
+          }
+          setSyncPollingSourceId(null);
+        }
+      },
+      5000,
+    );
+  }
+
+
+  useEffect(() => {
+    return () => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+      }
+    };
+  }, []);
 
 
   async function handleFileChange(
@@ -1066,7 +1397,7 @@ export default function KnowledgeBasesPage({
               <header className="management-modal-header">
                 <div>
                   <span className="eyebrow">
-                    DOCUMENTOS
+                    {t("knowledgeGoogleDocuments")}
                   </span>
 
                   <h2>
@@ -1091,6 +1422,56 @@ export default function KnowledgeBasesPage({
                 </button>
               </header>
 
+              {canWrite && (
+                <div className="knowledge-google-banner">
+                  {googleStatus?.connected ? (
+                    <>
+                      <Link2 size={14} />
+                      <span>
+                        {t("knowledgeGoogleConnected")}{" "}
+                        <strong>
+                          {googleStatus.email}
+                        </strong>
+                      </span>
+                      <button
+                        className="text-button danger"
+                        onClick={() =>
+                          void handleDisconnectGoogle()
+                        }
+                      >
+                        {t("knowledgeGoogleDisconnect")}
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <Link2 size={14} />
+                      <span>
+                        {t("knowledgeGoogleNotConnected")}
+                      </span>
+                      <button
+                        className="primary-button google-button"
+                        onClick={() =>
+                          void handleConnectGoogle()
+                        }
+                        disabled={
+                          googleConnecting
+                        }
+                      >
+                        {googleConnecting ? (
+                          <LoaderCircle
+                            className="spin"
+                            size={14}
+                          />
+                        ) : (
+                          <Link2 size={14} />
+                        )}
+                        {t("knowledgeGoogleConnect")}
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+
 
               <div className="management-form">
                 {canWrite && (
@@ -1101,13 +1482,11 @@ export default function KnowledgeBasesPage({
 
                     <div>
                       <strong>
-                        Añadir documento
+                        {t("knowledgeGoogleAddDocument")}
                       </strong>
 
                       <span>
-                        PDF, TXT, MD,
-                        HTML, DOC, DOCX,
-                        CSV o XLSX.
+                        {t("knowledgeGoogleAddDocumentFormats")}
                       </span>
                     </div>
 
@@ -1131,7 +1510,7 @@ export default function KnowledgeBasesPage({
                         />
                       )}
 
-                      Subir archivo
+                      {t("knowledgeGoogleUploadFile")}
                     </button>
 
                     <input
@@ -1148,6 +1527,47 @@ export default function KnowledgeBasesPage({
                   </div>
                 )}
 
+                {canWrite && googleStatus?.connected && (
+                  <div className="knowledge-google-connect-box">
+                    <FileSpreadsheet
+                      size={22}
+                    />
+
+                    <div>
+                      <strong>
+                        {t("knowledgeGoogleSheetTitle")}
+                      </strong>
+
+                      <span>
+                        {t("knowledgeGoogleSheetDescription")}
+                      </span>
+                    </div>
+
+                    <button
+                      className="google-button"
+                      onClick={() =>
+                        void handleOpenGoogleSheets()
+                      }
+                      disabled={
+                        googleSheetsLoading
+                      }
+                    >
+                      {googleSheetsLoading ? (
+                        <LoaderCircle
+                          className="spin"
+                          size={16}
+                        />
+                      ) : (
+                        <FileSpreadsheet
+                          size={16}
+                        />
+                      )}
+
+                      {t("knowledgeGoogleSelectSheet")}
+                    </button>
+                  </div>
+                )}
+
 
                 {sourcesLoading ? (
                   <div className="conversation-loading">
@@ -1159,59 +1579,138 @@ export default function KnowledgeBasesPage({
                 ) : (
                   <div className="knowledge-source-list">
                     {sources.map(
-                      (source) => (
-                        <div
-                          key={
-                            source.id
-                          }
-                          className="knowledge-source-row"
-                        >
-                          <div className="management-icon">
-                            <FileText
-                              size={18}
-                            />
+                      (source) => {
+                        const isGoogleSheets =
+                          source.source_type ===
+                          "google_sheet";
+
+                        const isSyncing =
+                          syncPollingSourceId ===
+                          source.id;
+
+                        const syncLabel =
+                          source.sync_status ===
+                          "indexing" || isSyncing
+                            ? t("knowledgeGoogleSyncing")
+                            : source.sync_status ===
+                              "synced"
+                              ? t("knowledgeGoogleSynced")
+                              : source.sync_status ===
+                                "error"
+                                ? t("knowledgeGoogleSyncError")
+                                : null;
+
+                        return (
+                          <div
+                            key={
+                              source.id
+                            }
+                            className={`
+                              knowledge-source-row
+                              ${isGoogleSheets ? "google-source-row" : ""}
+                            `}
+                          >
+                            <div className="management-icon">
+                              {isGoogleSheets ? (
+                                <FileSpreadsheet
+                                  size={18}
+                                />
+                              ) : (
+                                <FileText
+                                  size={18}
+                                />
+                              )}
+                            </div>
+
+                            <div className="knowledge-source-info">
+                              <strong>
+                                {
+                                  source.name
+                                }
+                              </strong>
+
+                              <span>
+                                {isGoogleSheets ? (
+                                  <>
+                                    {source.sheet_name && (
+                                      <>
+                                        {source.sheet_name}
+                                        {" · "}
+                                      </>
+                                    )}
+                                    {syncLabel || t("knowledgeGoogleSyncPending")}
+                                    {source.last_synced_at && (
+                                      <>
+                                        {" · "}
+                                        {new Date(
+                                          source.last_synced_at,
+                                        ).toLocaleDateString()}
+                                      </>
+                                    )}
+                                  </>
+                                ) : (
+                                  <>
+                                    {
+                                      formatFileSize(
+                                        source.size_bytes,
+                                      )
+                                    }
+                                    {" · "}
+                                    {
+                                      source.status
+                                    }
+                                  </>
+                                )}
+                              </span>
+                            </div>
+
+                            {canWrite && isGoogleSheets && (
+                              <button
+                                className="icon-button google-sync-button"
+                                onClick={() =>
+                                  void handleSyncGoogleSource(
+                                    source,
+                                  )
+                                }
+                                disabled={
+                                  isSyncing ||
+                                  source.sync_status ===
+                                    "indexing"
+                                }
+                                title={t("knowledgeGoogleSync")}
+                              >
+                                <RefreshCw
+                                  size={16}
+                                  className={
+                                    isSyncing
+                                      ? "spin"
+                                      : ""
+                                  }
+                                />
+                              </button>
+                            )}
+
+                            {canWrite && (
+                              <button
+                                className="
+                                  icon-button
+                                  danger-button
+                                "
+                                onClick={() =>
+                                  void handleDeleteSource(
+                                    source,
+                                  )
+                                }
+                                title={t("knowledgeI18nDeleteDocument")}
+                              >
+                                <Trash2
+                                  size={16}
+                                />
+                              </button>
+                            )}
                           </div>
-
-                          <div className="knowledge-source-info">
-                            <strong>
-                              {
-                                source.name
-                              }
-                            </strong>
-
-                            <span>
-                              {
-                                formatFileSize(
-                                  source.size_bytes,
-                                )
-                              }
-                              {" · "}
-                              {
-                                source.status
-                              }
-                            </span>
-                          </div>
-
-                          {canWrite && (
-                            <button
-                              className="
-                                icon-button
-                                danger-button
-                              "
-                              onClick={() =>
-                                void handleDeleteSource(
-                                  source,
-                                )
-                              }
-                              title={t("knowledgeI18nDeleteDocument")}
-                            >
-                              <Trash2
-                                size={16}
-                              />
-                            </button>
-                          )}
-                        </div>
-                      ),
+                        );
+                      },
                     )}
 
 
@@ -1222,14 +1721,194 @@ export default function KnowledgeBasesPage({
                         />
 
                         <strong>
-                          Sin documentos
+                          {t("knowledgeGoogleNoDocuments")}
                         </strong>
 
                         <span>
-                          Esta Knowledge Base
-                          todavía no tiene
-                          fuentes cargadas.
+                          {t("knowledgeGoogleNoDocumentsDescription")}
                         </span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )
+      }
+
+
+      {/* ===================================================
+          GOOGLE SHEETS PICKER
+          =================================================== */}
+
+      {
+        googleSheetsOpen && (
+          <div
+            className="management-modal-backdrop"
+            onMouseDown={() => {
+              if (!googleAdding) {
+                setGoogleSheetsOpen(false);
+                setSelectedGoogleSheet(null);
+              }
+            }}
+          >
+            <div
+              className="management-modal knowledge-source-modal"
+              onMouseDown={(event) =>
+                event.stopPropagation()
+              }
+            >
+              <header className="management-modal-header">
+                <div>
+                  <span className="eyebrow">
+                    {t("knowledgeGoogleSheetTitle")}
+                  </span>
+
+                  <h2>
+                    {t("knowledgeGoogleSelectSpreadsheet")}
+                  </h2>
+                </div>
+
+                <button
+                  className="icon-button"
+                  onClick={() => {
+                    setGoogleSheetsOpen(false);
+                    setSelectedGoogleSheet(null);
+                  }}
+                  disabled={googleAdding}
+                >
+                  <X size={18} />
+                </button>
+              </header>
+
+              <div className="management-form">
+                {googleSheetsLoading ? (
+                  <div className="conversation-loading">
+                    <LoaderCircle className="spin" size={24} />
+                  </div>
+                ) : (
+                  <div className="knowledge-source-list">
+                    {googleSheets.map((sheet) => (
+                      <div
+                        key={sheet.spreadsheet_id}
+                        className="knowledge-source-row google-source-row"
+                        onClick={() => {
+                          if (!googleAdding) {
+                            void handleSelectGoogleSheet(sheet);
+                          }
+                        }}
+                        style={{ cursor: "pointer" }}
+                      >
+                        <div className="management-icon">
+                          <FileSpreadsheet size={18} />
+                        </div>
+
+                        <div className="knowledge-source-info">
+                          <strong>{sheet.name}</strong>
+
+                          <span>{sheet.spreadsheet_id}</span>
+                        </div>
+                      </div>
+                    ))}
+
+                    {!googleSheets.length && (
+                      <div className="empty-management">
+                        <FileSpreadsheet size={30} />
+
+                        <strong>{t("knowledgeGoogleNoSheets")}</strong>
+
+                        <span>{t("knowledgeGoogleNoSheetsDescription")}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )
+      }
+
+
+      {/* ===================================================
+          GOOGLE SHEET TABS PICKER
+          =================================================== */}
+
+      {
+        googleTabsOpen && (
+          <div
+            className="management-modal-backdrop"
+            onMouseDown={() => {
+              if (!googleAdding) {
+                setGoogleTabsOpen(false);
+                setSelectedGoogleSheet(null);
+              }
+            }}
+          >
+            <div
+              className="management-modal knowledge-source-modal"
+              onMouseDown={(event) =>
+                event.stopPropagation()
+              }
+            >
+              <header className="management-modal-header">
+                <div>
+                  <span className="eyebrow">
+                    {selectedGoogleSheet?.name}
+                  </span>
+
+                  <h2>
+                    {t("knowledgeGoogleSelectTab")}
+                  </h2>
+                </div>
+
+                <button
+                  className="icon-button"
+                  onClick={() => {
+                    setGoogleTabsOpen(false);
+                    setSelectedGoogleSheet(null);
+                  }}
+                  disabled={googleAdding}
+                >
+                  <X size={18} />
+                </button>
+              </header>
+
+              <div className="management-form">
+                {googleTabsLoading ? (
+                  <div className="conversation-loading">
+                    <LoaderCircle className="spin" size={24} />
+                  </div>
+                ) : (
+                  <div className="knowledge-source-list">
+                    {googleTabs.map((tab) => (
+                      <div
+                        key={tab.sheetId}
+                        className="knowledge-source-row google-source-row"
+                        onClick={() => {
+                          if (!googleAdding) {
+                            void handleAddGoogleSheetSource(tab);
+                          }
+                        }}
+                        style={{ cursor: "pointer" }}
+                      >
+                        <div className="management-icon">
+                          <FileText size={18} />
+                        </div>
+
+                        <div className="knowledge-source-info">
+                          <strong>{tab.title}</strong>
+                        </div>
+                      </div>
+                    ))}
+
+                    {!googleTabs.length && (
+                      <div className="empty-management">
+                        <FileText size={30} />
+
+                        <strong>{t("knowledgeGoogleNoTabs")}</strong>
+
+                        <span>{t("knowledgeGoogleNoTabsDescription")}</span>
                       </div>
                     )}
                   </div>

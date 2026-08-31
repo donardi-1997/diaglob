@@ -33,6 +33,30 @@ export interface KnowledgeSource {
   created_at:
     | string
     | null;
+
+  external_id?:
+    | string
+    | null;
+
+  external_name?:
+    | string
+    | null;
+
+  sheet_name?:
+    | string
+    | null;
+
+  last_synced_at?:
+    | string
+    | null;
+
+  sync_status?:
+    | string
+    | null;
+
+  sync_error?:
+    | string
+    | null;
 }
 
 

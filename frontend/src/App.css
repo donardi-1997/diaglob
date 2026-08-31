@@ -8447,14 +8447,125 @@ button:disabled {
 
 .dashboard-alert-item {
   display: flex;
+   align-items: center;
+   gap: 8px;
+   padding: 12px 16px;
+   background: rgba(234, 179, 8, 0.1);
+   border: 1px solid rgba(234, 179, 8, 0.2);
+   border-radius: 8px;
+   font-size: 14px;
+   color: #eab308;
+   margin-bottom: 8px;
+}
+
+
+/* ============================================================
+   GOOGLE SHEETS INTEGRATION
+   ============================================================ */
+
+.knowledge-google-connect-box {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 12px;
+}
+
+.knowledge-google-connect-box div {
+  flex: 1;
+}
+
+.knowledge-google-connect-box strong {
+  display: block;
+  font-size: 14px;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+
+.knowledge-google-connect-box span {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.google-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: #4285f4;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+
+.google-button:hover {
+  background: #3367d6;
+}
+
+.google-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.google-source-row {
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.google-source-row:hover {
+  background: var(--hover);
+}
+
+.google-sync-button {
+  color: var(--muted);
+}
+
+.google-sync-button:hover {
+  color: #4285f4;
+  background: rgba(66, 133, 244, 0.1);
+}
+
+.knowledge-google-banner {
+  display: flex;
   align-items: center;
   gap: 8px;
-  padding: 12px 16px;
-  background: rgba(234, 179, 8, 0.1);
-  border: 1px solid rgba(234, 179, 8, 0.2);
+  padding: 10px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: 8px;
-  font-size: 14px;
-  color: #eab308;
-  margin-bottom: 8px;
+  font-size: 13px;
+  color: var(--text);
+  margin-bottom: 16px;
+}
+
+.knowledge-google-banner span {
+  flex: 1;
+}
+
+.knowledge-google-banner .text-button.danger {
+  font-size: 12px;
+  color: var(--danger);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 8px;
+}
+
+.knowledge-google-banner .text-button.danger:hover {
+  background: rgba(239, 68, 68, 0.1);
+  border-radius: 4px;
+}
+
+.knowledge-google-banner .primary-button {
+  font-size: 12px;
+  padding: 6px 12px;
 }
 

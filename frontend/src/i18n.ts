@@ -368,6 +368,71 @@ const resources = {
       knowledgeI18nDeleteDocument:
         "Eliminar documento",
 
+      knowledgeGoogleDocuments:
+        "DOCUMENTOS",
+      knowledgeGoogleAddDocument:
+        "Añadir documento",
+      knowledgeGoogleAddDocumentFormats:
+        "PDF, TXT, MD, HTML, DOC, DOCX, CSV, XLSX o Google Sheets.",
+      knowledgeGoogleUploadFile:
+        "Subir archivo",
+      knowledgeGoogleNoDocuments:
+        "Sin documentos",
+      knowledgeGoogleNoDocumentsDescription:
+        "Esta Knowledge Base todavía no tiene fuentes cargadas.",
+      knowledgeGoogleConnected:
+        "Conectado como",
+      knowledgeGoogleNotConnected:
+        "Conecta tu cuenta de Google para sincronizar hojas de cálculo.",
+      knowledgeGoogleConnect:
+        "Conectar Google",
+      knowledgeGoogleDisconnect:
+        "Desconectar",
+      knowledgeGoogleDisconnectConfirm:
+        "¿Desconectar tu cuenta de Google? Las fuentes existentes seguirán disponibles pero no se sincronizarán automáticamente.",
+      knowledgeGoogleDisconnectError:
+        "No fue posible desconectar la cuenta de Google.",
+      knowledgeGoogleConnectionError:
+        "No fue posible iniciar la conexión con Google.",
+      knowledgeGoogleSheetTitle:
+        "Google Sheets",
+      knowledgeGoogleSheetDescription:
+        "Sincroniza hojas de cálculo de Google como fuentes de conocimiento.",
+      knowledgeGoogleSelectSheet:
+        "Seleccionar hoja",
+      knowledgeGoogleSelectSpreadsheet:
+        "Selecciona una hoja de cálculo",
+      knowledgeGoogleSheetsLoadError:
+        "No fue posible cargar las hojas de cálculo.",
+      knowledgeGoogleTabsLoadError:
+        "No fue posible cargar las pestañas.",
+      knowledgeGoogleSelectTab:
+        "Selecciona una pestaña",
+      knowledgeGoogleNoSheets:
+        "Sin hojas de cálculo",
+      knowledgeGoogleNoSheetsDescription:
+        "No se encontraron hojas de cálculo accesibles en tu cuenta de Google.",
+      knowledgeGoogleNoTabs:
+        "Sin pestañas",
+      knowledgeGoogleNoTabsDescription:
+        "Esta hoja de cálculo no tiene pestañas disponibles.",
+      knowledgeGoogleAddSourceError:
+        "No fue posible agregar la fuente de Google Sheets.",
+      knowledgeGoogleSync:
+        "Sincronizar",
+      knowledgeGoogleSyncing:
+        "Sincronizando…",
+      knowledgeGoogleSynced:
+        "Sincronizado",
+      knowledgeGoogleSyncError:
+        "Error de sincronización",
+      knowledgeGoogleSyncPending:
+        "Pendiente",
+      knowledgeGoogleSyncConfirm:
+        "¿Solicitar una nueva sincronización de esta fuente?",
+      knowledgeGoogleSyncSuccess:
+        "Sincronización iniciada correctamente.",
+
       storesI18nLoadError:
         "No fue posible cargar las tiendas y mercados.",
       storesI18nDeletedSuccess:
@@ -1237,6 +1302,53 @@ const resources = {
       landingFooterPricing: "Precios",
       landingFooterLogin: "Iniciar sesión",
       landingFooterRegister: "Crear cuenta",
+
+      landingBuiltTitle: "Conocimiento conectado. Operación multi-país.",
+      landingBuiltSubtitle: "Diaglob une la información de tu negocio con una arquitectura preparada para múltiples tiendas y mercados.",
+
+      landingKnowledgeLabel: "BASE DE CONOCIMIENTO",
+      landingKnowledgeDesc: "Información centralizada y contextual para tus agentes.",
+      landingKnowledgeHighlight: "Tu IA es tan buena como el conocimiento que tiene.",
+
+      landingSourceGoogleSheets: "Google Sheets",
+      landingSourceGoogleSheetsStatus: "Próximamente",
+      landingSourceGoogleSheetsDesc: "Conecta información que cambia constantemente.",
+      landingSourceExcel: "Excel / CSV",
+      landingSourceExcelStatus: "Disponible",
+      landingSourceExcelDesc: "Sube archivos con productos, políticas o información de tu negocio.",
+      landingSourceShopify: "Shopify",
+      landingSourceShopifyStatus: "Disponible",
+      landingSourceShopifyDesc: "Conecta los datos de productos de tu tienda con tu operación.",
+      landingSourceDropi: "Dropi",
+      landingSourceDropiStatus: "Próximamente",
+      landingSourceDropiDesc: "Integración de catálogo y operación Dropi en preparación.",
+
+      landingAgentLabel: "AGENTE DE IA",
+      landingAgentDesc: "Responde usando el contexto real de tu negocio.",
+
+      landingResultRespond: "Responde",
+      landingResultRespondDesc: "Respuestas más relevantes con contexto.",
+      landingResultRecommend: "Recomienda",
+      landingResultRecommendDesc: "Productos con contexto real.",
+      landingResultAutomate: "Automatiza",
+      landingResultAutomateDesc: "Acciones basadas en información del negocio.",
+
+      landingBuiltMultiTitle: "Varias tiendas. Varios mercados. Una sola operación.",
+      landingBuiltMultiSubtitle: "Administra diferentes tiendas, mercados, monedas, idiomas e integraciones desde una sola plataforma.",
+
+      landingStoreColombia: "Colombia",
+      landingStoreMexico: "México",
+      landingStoreUsa: "USA",
+      landingStoreCurrencyCOP: "COP",
+      landingStoreCurrencyMXN: "MXN",
+      landingStoreCurrencyUSD: "USD",
+      landingStoreLangEs: "ES",
+      landingStoreLangEn: "EN",
+
+      landingOpsCenter: "Operations Center",
+      landingOpsCenterDesc: "Analytics, automatizations y equipo centralizados.",
+
+      landingBuiltEachStore: "Cada tienda opera con su propio contexto, configuración e integraciones, mientras tú mantienes una visión central.",
     },
   },
 
@@ -1586,6 +1698,71 @@ const resources = {
         "Create Knowledge Base",
       knowledgeI18nDeleteDocument:
         "Delete document",
+
+      knowledgeGoogleDocuments:
+        "DOCUMENTS",
+      knowledgeGoogleAddDocument:
+        "Add document",
+      knowledgeGoogleAddDocumentFormats:
+        "PDF, TXT, MD, HTML, DOC, DOCX, CSV, XLSX or Google Sheets.",
+      knowledgeGoogleUploadFile:
+        "Upload file",
+      knowledgeGoogleNoDocuments:
+        "No documents",
+      knowledgeGoogleNoDocumentsDescription:
+        "This Knowledge Base has no sources uploaded yet.",
+      knowledgeGoogleConnected:
+        "Connected as",
+      knowledgeGoogleNotConnected:
+        "Connect your Google account to sync spreadsheets.",
+      knowledgeGoogleConnect:
+        "Connect Google",
+      knowledgeGoogleDisconnect:
+        "Disconnect",
+      knowledgeGoogleDisconnectConfirm:
+        "Disconnect your Google account? Existing sources will remain available but won't sync automatically.",
+      knowledgeGoogleDisconnectError:
+        "We couldn't disconnect your Google account.",
+      knowledgeGoogleConnectionError:
+        "We couldn't start the Google connection.",
+      knowledgeGoogleSheetTitle:
+        "Google Sheets",
+      knowledgeGoogleSheetDescription:
+        "Sync Google spreadsheets as knowledge sources.",
+      knowledgeGoogleSelectSheet:
+        "Select sheet",
+      knowledgeGoogleSelectSpreadsheet:
+        "Select a spreadsheet",
+      knowledgeGoogleSheetsLoadError:
+        "We couldn't load the spreadsheets.",
+      knowledgeGoogleTabsLoadError:
+        "We couldn't load the tabs.",
+      knowledgeGoogleSelectTab:
+        "Select a tab",
+      knowledgeGoogleNoSheets:
+        "No spreadsheets",
+      knowledgeGoogleNoSheetsDescription:
+        "No accessible spreadsheets found in your Google account.",
+      knowledgeGoogleNoTabs:
+        "No tabs",
+      knowledgeGoogleNoTabsDescription:
+        "This spreadsheet has no available tabs.",
+      knowledgeGoogleAddSourceError:
+        "We couldn't add the Google Sheets source.",
+      knowledgeGoogleSync:
+        "Sync",
+      knowledgeGoogleSyncing:
+        "Syncing…",
+      knowledgeGoogleSynced:
+        "Synced",
+      knowledgeGoogleSyncError:
+        "Sync error",
+      knowledgeGoogleSyncPending:
+        "Pending",
+      knowledgeGoogleSyncConfirm:
+        "Request a new sync for this source?",
+      knowledgeGoogleSyncSuccess:
+        "Sync started successfully.",
 
       storesI18nLoadError:
         "We couldn't load the stores and markets.",
@@ -2431,6 +2608,53 @@ const resources = {
       landingFooterPricing: "Pricing",
       landingFooterLogin: "Sign in",
       landingFooterRegister: "Create account",
+
+      landingBuiltTitle: "Connected knowledge. Multi-country operations.",
+      landingBuiltSubtitle: "Bring your business data together with an architecture built for multiple stores and markets.",
+
+      landingKnowledgeLabel: "KNOWLEDGE BASE",
+      landingKnowledgeDesc: "Centralized, contextual information for your agents.",
+      landingKnowledgeHighlight: "Your AI is only as good as the knowledge it has.",
+
+      landingSourceGoogleSheets: "Google Sheets",
+      landingSourceGoogleSheetsStatus: "Coming soon",
+      landingSourceGoogleSheetsDesc: "Connect information that changes constantly.",
+      landingSourceExcel: "Excel / CSV",
+      landingSourceExcelStatus: "Available",
+      landingSourceExcelDesc: "Upload files with products, policies or business information.",
+      landingSourceShopify: "Shopify",
+      landingSourceShopifyStatus: "Available",
+      landingSourceShopifyDesc: "Connect your store product data with your Diaglob operation.",
+      landingSourceDropi: "Dropi",
+      landingSourceDropiStatus: "Coming soon",
+      landingSourceDropiDesc: "Dropi catalog and operation integration in preparation.",
+
+      landingAgentLabel: "AI AGENT",
+      landingAgentDesc: "Responds using real context from your business.",
+
+      landingResultRespond: "Respond",
+      landingResultRespondDesc: "More relevant answers with context.",
+      landingResultRecommend: "Recommend",
+      landingResultRecommendDesc: "Products with real context.",
+      landingResultAutomate: "Automate",
+      landingResultAutomateDesc: "Actions based on business information.",
+
+      landingBuiltMultiTitle: "Multiple stores. Multiple markets. One operation.",
+      landingBuiltMultiSubtitle: "Manage different stores, markets, currencies, languages and integrations from a single platform.",
+
+      landingStoreColombia: "Colombia",
+      landingStoreMexico: "Mexico",
+      landingStoreUsa: "USA",
+      landingStoreCurrencyCOP: "COP",
+      landingStoreCurrencyMXN: "MXN",
+      landingStoreCurrencyUSD: "USD",
+      landingStoreLangEs: "ES",
+      landingStoreLangEn: "EN",
+
+      landingOpsCenter: "Operations Center",
+      landingOpsCenterDesc: "Analytics, automations and team centralized.",
+
+      landingBuiltEachStore: "Each store operates with its own context, settings and integrations while you keep centralized visibility.",
     },
   },
 };
