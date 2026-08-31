@@ -10,6 +10,14 @@
   <meta property="og:title" content="Diaglob — Conversaciones, comercio y automatización para ecommerce" />
   <meta property="og:description" content="Centraliza WhatsApp, automatiza procesos, gestiona pedidos y analiza tus tiendas desde una sola plataforma." />
   <meta property="og:type" content="website" />
+  <script>
+    (function() {
+      var t = localStorage.getItem("diaglob-theme");
+      if (t) document.documentElement.setAttribute("data-theme", t);
+      var l = localStorage.getItem("diaglob-language");
+      if (l) document.documentElement.setAttribute("lang", l);
+    })();
+  </script>
 </head>
 
 <body>
