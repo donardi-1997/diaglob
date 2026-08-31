@@ -6610,6 +6610,7 @@ def delete_knowledge_source(
             detail="Knowledge source not found",
         )
 
+    # Delete S3 artifact
     try:
         delete_knowledge_file(
             source.s3_bucket,
@@ -6624,14 +6625,49 @@ def delete_knowledge_source(
             ),
         ) from exc
 
+    # Mark source as deleted
     source.active = False
     source.status = "deleted"
+    db.flush()
+
+    # Trigger Bedrock reindex to remove
+    # deleted content from vector index
+    kb = (
+        db.query(KnowledgeBase)
+        .filter(
+            KnowledgeBase.id
+            == knowledge_base_id,
+            KnowledgeBase.organization_id
+            == membership.organization_id,
+        )
+        .first()
+    )
+
+    ingestion_job_id = None
+    reindex_status = "not_configured"
+
+    if (
+        kb
+        and kb.external_id
+        and kb.external_data_source_id
+    ):
+        job_id = start_ingestion_job(
+            kb.external_id,
+            kb.external_data_source_id,
+        )
+        if job_id:
+            ingestion_job_id = job_id
+            reindex_status = "indexing"
+        else:
+            reindex_status = "reindex_failed"
 
     db.commit()
 
     return {
         "id": source.id,
         "deleted": True,
+        "reindex_status": reindex_status,
+        "ingestion_job_id": ingestion_job_id,
     }
 
 

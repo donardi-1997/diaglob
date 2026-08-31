@@ -84,6 +84,9 @@ ALTER TABLE knowledge_sources
 ALTER TABLE knowledge_sources
     ADD COLUMN IF NOT EXISTS metadata_json TEXT;
 
+ALTER TABLE knowledge_sources
+    ADD COLUMN IF NOT EXISTS ingestion_job_id VARCHAR(255);
+
 -- Prevent duplicate same sheet+tab within same KB
 CREATE UNIQUE INDEX IF NOT EXISTS
     uq_knowledge_source_kb_sheet_tab

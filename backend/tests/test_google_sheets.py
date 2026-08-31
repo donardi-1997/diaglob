@@ -1387,3 +1387,243 @@ class TestTenantIsolation:
         )
 
         assert resp.status_code == 404
+
+
+# =========================================================
+# DELETE + BEDROCK REINDEX TESTS
+# =========================================================
+
+
+class TestDeleteSourceBedrockReindex:
+    def test_google_source_delete_triggers_reindex(
+        self, client_factory, db
+    ):
+        """A. Google source delete → S3 delete + StartIngestionJob"""
+        org = _make_org(db)
+        user, _ = _make_user(db, org)
+        kb = _make_kb(db, org)
+
+        source = KnowledgeSource(
+            knowledge_base_id=kb.id,
+            organization_id=org.id,
+            name="Test Sheet - Sheet1",
+            source_type="google_sheet",
+            s3_bucket="diaglob-bucket",
+            s3_key="google/sheet-123/Sheet1.csv",
+            status="active",
+            external_id="1AbCdEfGhIjKlMnOpQrStUvWxYz",
+            external_name="Test Sheet",
+            sheet_name="Sheet1",
+            sync_status="synced",
+        )
+        db.add(source)
+        db.commit()
+
+        client = client_factory(org)
+
+        with patch(
+            "app.main.delete_knowledge_file"
+        ) as mock_delete, patch(
+            "app.main.start_ingestion_job",
+            return_value="job-cleanup-123",
+        ) as mock_ingest:
+            resp = client.delete(
+                f"/api/knowledge-bases/{kb.id}/sources/{source.id}",
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["deleted"] is True
+        assert data["reindex_status"] == "indexing"
+        assert data["ingestion_job_id"] == "job-cleanup-123"
+        mock_delete.assert_called_once_with(
+            "diaglob-bucket",
+            "google/sheet-123/Sheet1.csv",
+        )
+        mock_ingest.assert_called_once_with(
+            "bedrock-kb-123",
+            "bedrock-ds-456",
+        )
+
+    def test_delete_kb_without_bedrock_ids(
+        self, client_factory, db
+    ):
+        """B. KB without Bedrock IDs → S3 deleted, no ingestion, not_configured"""
+        org = _make_org(db)
+        user, _ = _make_user(db, org)
+
+        kb_no_bedrock = KnowledgeBase(
+            organization_id=org.id,
+            name="No Bedrock KB",
+            scope="selected_stores",
+            external_id=None,
+            external_data_source_id=None,
+        )
+        db.add(kb_no_bedrock)
+        db.flush()
+
+        source = KnowledgeSource(
+            knowledge_base_id=kb_no_bedrock.id,
+            organization_id=org.id,
+            name="Test Sheet - Sheet1",
+            source_type="google_sheet",
+            s3_bucket="diaglob-bucket",
+            s3_key="google/sheet-123/Sheet1.csv",
+            status="active",
+            external_id="1AbCdEfGhIjKlMnOpQrStUvWxYz",
+            sheet_name="Sheet1",
+            sync_status="synced",
+        )
+        db.add(source)
+        db.commit()
+
+        client = client_factory(org)
+
+        with patch(
+            "app.main.delete_knowledge_file"
+        ) as mock_delete, patch(
+            "app.main.start_ingestion_job"
+        ) as mock_ingest:
+            resp = client.delete(
+                f"/api/knowledge-bases/{kb_no_bedrock.id}/sources/{source.id}",
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["deleted"] is True
+        assert data["reindex_status"] == "not_configured"
+        assert data["ingestion_job_id"] is None
+        mock_delete.assert_called_once()
+        mock_ingest.assert_not_called()
+
+    def test_delete_ingestion_failure(
+        self, client_factory, db
+    ):
+        """C. StartIngestionJob fails after S3 delete → source still deleted"""
+        org = _make_org(db)
+        user, _ = _make_user(db, org)
+        kb = _make_kb(db, org)
+
+        source = KnowledgeSource(
+            knowledge_base_id=kb.id,
+            organization_id=org.id,
+            name="Test Sheet - Sheet1",
+            source_type="google_sheet",
+            s3_bucket="diaglob-bucket",
+            s3_key="google/sheet-123/Sheet1.csv",
+            status="active",
+            external_id="1AbCdEfGhIjKlMnOpQrStUvWxYz",
+            sheet_name="Sheet1",
+            sync_status="synced",
+        )
+        db.add(source)
+        db.commit()
+
+        client = client_factory(org)
+
+        with patch(
+            "app.main.delete_knowledge_file"
+        ), patch(
+            "app.main.start_ingestion_job",
+            return_value=None,
+        ):
+            resp = client.delete(
+                f"/api/knowledge-bases/{kb.id}/sources/{source.id}",
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["deleted"] is True
+        assert data["reindex_status"] == "reindex_failed"
+        assert data["ingestion_job_id"] is None
+
+        db.refresh(source)
+        assert source.active is False
+        assert source.status == "deleted"
+
+    def test_cross_tenant_delete_blocked(
+        self, client_factory, db
+    ):
+        """D. Cross-tenant delete → 404, no S3 delete, no Bedrock"""
+        org_a = _make_org(db)
+        org_b = _make_org(db)
+
+        user_b, _ = _make_user(db, org_b)
+        kb_b = _make_kb(db, org_b)
+
+        source_b = KnowledgeSource(
+            knowledge_base_id=kb_b.id,
+            organization_id=org_b.id,
+            name="Org B Sheet",
+            source_type="google_sheet",
+            s3_bucket="diaglob-bucket",
+            s3_key="google/sheet-b/Sheet1.csv",
+            status="active",
+            external_id="1AbCdEfGhIjKlMnOpQrStUvWxYz",
+            sheet_name="Sheet1",
+            sync_status="synced",
+        )
+        db.add(source_b)
+        db.commit()
+
+        client_a = client_factory(org_a)
+
+        with patch(
+            "app.main.delete_knowledge_file"
+        ) as mock_delete, patch(
+            "app.main.start_ingestion_job"
+        ) as mock_ingest:
+            resp = client_a.delete(
+                f"/api/knowledge-bases/{kb_b.id}/sources/{source_b.id}",
+            )
+
+        assert resp.status_code == 404
+        mock_delete.assert_not_called()
+        mock_ingest.assert_not_called()
+
+    def test_file_source_delete_also_reindexes(
+        self, client_factory, db
+    ):
+        """E. Normal file source delete also triggers Bedrock reindex"""
+        org = _make_org(db)
+        user, _ = _make_user(db, org)
+        kb = _make_kb(db, org)
+
+        source = KnowledgeSource(
+            knowledge_base_id=kb.id,
+            organization_id=org.id,
+            name="document.pdf",
+            source_type="file",
+            s3_bucket="diaglob-bucket",
+            s3_key="uploads/doc.pdf",
+            status="active",
+            sync_status=None,
+        )
+        db.add(source)
+        db.commit()
+
+        client = client_factory(org)
+
+        with patch(
+            "app.main.delete_knowledge_file"
+        ) as mock_delete, patch(
+            "app.main.start_ingestion_job",
+            return_value="job-file-cleanup",
+        ) as mock_ingest:
+            resp = client.delete(
+                f"/api/knowledge-bases/{kb.id}/sources/{source.id}",
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["deleted"] is True
+        assert data["reindex_status"] == "indexing"
+        assert data["ingestion_job_id"] == "job-file-cleanup"
+        mock_delete.assert_called_once_with(
+            "diaglob-bucket",
+            "uploads/doc.pdf",
+        )
+        mock_ingest.assert_called_once_with(
+            "bedrock-kb-123",
+            "bedrock-ds-456",
+        )
