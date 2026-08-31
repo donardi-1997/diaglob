@@ -12,6 +12,7 @@ Handles:
 
 import logging
 import os
+import re
 
 import httpx
 
@@ -19,15 +20,33 @@ logger = logging.getLogger(__name__)
 
 DRIVE_API_BASE = "https://www.googleapis.com/drive/v3"
 
-MAX_FILE_SIZE_MB = int(
-    os.getenv("GOOGLE_DRIVE_MAX_FILE_SIZE_MB", "25")
+DEFAULT_MAX_FILE_SIZE_MB = 25
+DEFAULT_MAX_FILES_PER_FOLDER = 100
+DEFAULT_MAX_TOTAL_SYNC_MB = 100
+
+
+def _positive_int_env(name: str, default: int) -> int:
+    try:
+        value = int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+    return value if value > 0 else default
+
+
+MAX_FILE_SIZE_MB = _positive_int_env(
+    "GOOGLE_DRIVE_MAX_FILE_SIZE_MB",
+    DEFAULT_MAX_FILE_SIZE_MB,
 )
-MAX_FILES_PER_FOLDER = int(
-    os.getenv("GOOGLE_DRIVE_MAX_FILES_PER_FOLDER", "100")
+MAX_FILES_PER_FOLDER = _positive_int_env(
+    "GOOGLE_DRIVE_MAX_FILES_PER_FOLDER",
+    DEFAULT_MAX_FILES_PER_FOLDER,
 )
-MAX_TOTAL_SYNC_MB = int(
-    os.getenv("GOOGLE_DRIVE_MAX_TOTAL_SYNC_MB", "100")
+MAX_TOTAL_SYNC_MB = _positive_int_env(
+    "GOOGLE_DRIVE_MAX_TOTAL_SYNC_MB",
+    DEFAULT_MAX_TOTAL_SYNC_MB,
 )
+MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
+MAX_TOTAL_SYNC_BYTES = MAX_TOTAL_SYNC_MB * 1024 * 1024
 
 SUPPORTED_MIME_TYPES = {
     "application/pdf": True,
@@ -53,6 +72,40 @@ SUPPORTED_MIME_QUERY = " or ".join(
 FOLDER_MIME_TYPE = (
     "application/vnd.google-apps.folder"
 )
+
+DRIVE_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]+")
+
+
+class GoogleDriveFileTooLarge(ValueError):
+    """Raised when downloaded Drive content exceeds the size limit."""
+
+
+def _escape_query_literal(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("'", "\\'")
+
+
+def _validate_drive_id(drive_id: str) -> None:
+    if (
+        not isinstance(drive_id, str)
+        or not DRIVE_ID_PATTERN.fullmatch(drive_id)
+    ):
+        raise ValueError("Invalid Google Drive file or folder ID")
+
+
+async def _read_limited_response(
+    response: httpx.Response,
+    max_bytes: int,
+) -> bytes:
+    content = bytearray()
+    total_bytes = 0
+    async for chunk in response.aiter_bytes():
+        total_bytes += len(chunk)
+        if total_bytes > max_bytes:
+            raise GoogleDriveFileTooLarge(
+                f"File content exceeds limit of {max_bytes} bytes"
+            )
+        content.extend(chunk)
+    return bytes(content)
 
 
 def _get_headers(access_token: str) -> dict:
@@ -106,18 +159,22 @@ async def list_drive_files(
     """
     q_parts = ["trashed=false"]
     if search:
-        escaped_search = search.replace("'", "\\'")
+        escaped_search = _escape_query_literal(search)
         q_parts.append(
             f"name contains '{escaped_search}'"
         )
-    if folder_id:
+    if folder_id is not None:
+        _validate_drive_id(folder_id)
         q_parts.append(f"'{folder_id}' in parents")
 
     allowed_mimes = mime_types or set(SUPPORTED_MIME_TYPES)
+    unsupported_mimes = allowed_mimes - SUPPORTED_MIME_TYPES.keys()
+    if unsupported_mimes:
+        unsupported = ", ".join(sorted(unsupported_mimes))
+        raise ValueError(f"Unsupported MIME type filter: {unsupported}")
     mime_query = " or ".join(
         f"mimeType='{mime}'"
         for mime in sorted(allowed_mimes)
-        if mime in SUPPORTED_MIME_TYPES
     )
     q_parts.append(f"({mime_query})")
 
@@ -168,7 +225,7 @@ async def list_drive_folders(
         f"mimeType='{FOLDER_MIME_TYPE}'",
     ]
     if search:
-        escaped_search = search.replace("'", "\\'")
+        escaped_search = _escape_query_literal(search)
         q_parts.append(
             f"name contains '{escaped_search}'"
         )
@@ -224,6 +281,7 @@ async def list_folder_children(
             "limit_exceeded": bool
         }
     """
+    _validate_drive_id(folder_id)
     q_parts = [
         "trashed=false",
         f"'{folder_id}' in parents",
@@ -234,6 +292,7 @@ async def list_folder_children(
 
     all_files = []
     token = page_token
+    seen_tokens = {page_token} if page_token else set()
 
     while True:
         params: dict = {
@@ -260,7 +319,15 @@ async def list_folder_children(
 
         batch = data.get("files", [])
         all_files.extend(batch)
-        token = data.get("nextPageToken")
+        next_token = data.get("nextPageToken")
+
+        if next_token and next_token in seen_tokens:
+            raise RuntimeError(
+                "Google Drive pagination returned a repeated page token"
+            )
+        if next_token:
+            seen_tokens.add(next_token)
+        token = next_token
 
         if not token or len(all_files) >= MAX_FILES_PER_FOLDER:
             break
@@ -285,6 +352,7 @@ async def get_file_metadata(
         {"id", "name", "mimeType", "modifiedTime",
          "size", "parents"}
     """
+    _validate_drive_id(file_id)
     params = {
         "fields": (
             "id,name,mimeType,modifiedTime,size,parents"
@@ -314,33 +382,36 @@ async def download_drive_file(
         Raw file content as bytes.
 
     Raises:
-        ValueError if file is too large.
+        GoogleDriveFileTooLarge if file is too large.
         httpx.HTTPStatusError on API errors.
     """
+    _validate_drive_id(file_id)
     metadata = await get_file_metadata(
         access_token, file_id
     )
 
     file_size = int(metadata.get("size", 0))
-    max_bytes = MAX_FILE_SIZE_MB * 1024 * 1024
 
-    if file_size > max_bytes:
-        raise ValueError(
+    if file_size > MAX_FILE_SIZE_BYTES:
+        raise GoogleDriveFileTooLarge(
             f"File size {file_size} bytes exceeds "
-            f"limit of {max_bytes} bytes "
+            f"limit of {MAX_FILE_SIZE_BYTES} bytes "
             f"({MAX_FILE_SIZE_MB}MB)"
         )
 
     async with httpx.AsyncClient(timeout=60) as client:
-        resp = await client.get(
+        async with client.stream(
+            "GET",
             (
                 f"{DRIVE_API_BASE}/files/{file_id}"
                 f"?alt=media"
             ),
             headers=_get_headers(access_token),
-        )
-        resp.raise_for_status()
-        return resp.content
+        ) as resp:
+            resp.raise_for_status()
+            return await _read_limited_response(
+                resp, MAX_FILE_SIZE_BYTES
+            )
 
 
 async def export_google_doc(
@@ -363,23 +434,28 @@ async def export_google_doc(
         Exported content as bytes.
 
     Raises:
+        GoogleDriveFileTooLarge if exported content is too large.
         httpx.HTTPStatusError on API errors.
     """
+    _validate_drive_id(file_id)
     params = {
         "mimeType": export_mime_type,
     }
 
     async with httpx.AsyncClient(timeout=60) as client:
-        resp = await client.get(
+        async with client.stream(
+            "GET",
             (
                 f"{DRIVE_API_BASE}/files/{file_id}"
                 f"/export"
             ),
             headers=_get_headers(access_token),
             params=params,
-        )
-        resp.raise_for_status()
-        return resp.content
+        ) as resp:
+            resp.raise_for_status()
+            return await _read_limited_response(
+                resp, MAX_FILE_SIZE_BYTES
+            )
 
 
 def get_supported_extensions() -> dict[str, str]:
@@ -440,26 +516,24 @@ def validate_folder_sync_limits(
         )
 
     total_bytes = 0
-    max_bytes = MAX_TOTAL_SYNC_MB * 1024 * 1024
 
     for f in files:
         size = int(f.get("size", 0))
-        file_max = MAX_FILE_SIZE_MB * 1024 * 1024
 
-        if size > file_max:
+        if size > MAX_FILE_SIZE_BYTES:
             return (
                 f"File '{f.get('name', 'unknown')}' "
                 f"size {size} bytes exceeds "
-                f"limit of {file_max} bytes "
+                f"limit of {MAX_FILE_SIZE_BYTES} bytes "
                 f"({MAX_FILE_SIZE_MB}MB)"
             )
 
         total_bytes += size
 
-        if total_bytes > max_bytes:
+        if total_bytes > MAX_TOTAL_SYNC_BYTES:
             return (
                 f"Total sync size {total_bytes} bytes "
-                f"exceeds limit of {max_bytes} bytes "
+                f"exceeds limit of {MAX_TOTAL_SYNC_BYTES} bytes "
                 f"({MAX_TOTAL_SYNC_MB}MB)"
             )
 

@@ -422,6 +422,14 @@ const resources = {
         "Sincronizar",
       knowledgeGoogleSyncing:
         "Sincronizando…",
+      knowledgeGoogleIndexing:
+        "Indexando…",
+      knowledgeGooglePartialFailed:
+        "Sincronización parcial",
+      knowledgeGoogleUploaded:
+        "Cargado",
+      knowledgeGoogleFailed:
+        "Fallido",
       knowledgeGoogleSynced:
         "Sincronizado",
       knowledgeGoogleSyncError:
@@ -442,6 +450,11 @@ const resources = {
       knowledgeGoogleSelectFile: "Selecciona un archivo",
       knowledgeGoogleSelectFolder: "Selecciona una carpeta",
       knowledgeGoogleSearchDrive: "Buscar en Google Drive",
+      knowledgeGoogleDriveFilesLoadError:
+        "No fue posible cargar los archivos de Google Drive.",
+      knowledgeGoogleDriveFoldersLoadError:
+        "No fue posible cargar las carpetas de Google Drive.",
+      knowledgeGoogleLoadMore: "Cargar más",
       knowledgeGoogleNoDriveFiles: "Sin archivos compatibles",
       knowledgeGoogleNoDriveFolders: "Sin carpetas",
       knowledgeGoogleAddDoc: "Agregar documento",
@@ -1781,6 +1794,14 @@ const resources = {
         "Sync",
       knowledgeGoogleSyncing:
         "Syncing…",
+      knowledgeGoogleIndexing:
+        "Indexing…",
+      knowledgeGooglePartialFailed:
+        "Partially failed",
+      knowledgeGoogleUploaded:
+        "Uploaded",
+      knowledgeGoogleFailed:
+        "Failed",
       knowledgeGoogleSynced:
         "Synced",
       knowledgeGoogleSyncError:
@@ -1801,6 +1822,11 @@ const resources = {
       knowledgeGoogleSelectFile: "Select a file",
       knowledgeGoogleSelectFolder: "Select a folder",
       knowledgeGoogleSearchDrive: "Search Google Drive",
+      knowledgeGoogleDriveFilesLoadError:
+        "We couldn't load the Google Drive files.",
+      knowledgeGoogleDriveFoldersLoadError:
+        "We couldn't load the Google Drive folders.",
+      knowledgeGoogleLoadMore: "Load more",
       knowledgeGoogleNoDriveFiles: "No compatible files",
       knowledgeGoogleNoDriveFolders: "No folders",
       knowledgeGoogleAddDoc: "Add document",

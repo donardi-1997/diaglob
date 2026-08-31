@@ -23,6 +23,25 @@ export interface GoogleTabItem {
 }
 
 
+export type GoogleSyncStatus =
+  | "syncing"
+  | "indexing"
+  | "partial_failed"
+  | "uploaded"
+  | "failed"
+  | "disconnected"
+  | "synced";
+
+
+export type GoogleFreshnessStatus =
+  | "syncing"
+  | "failed"
+  | "disconnected"
+  | "fresh"
+  | "changed"
+  | "static";
+
+
 export async function getGoogleStatus() {
   const response =
     await api.get<GoogleStatus>(
@@ -91,7 +110,7 @@ export async function addGoogleSheetSource(
   const response =
     await api.post<{
       source_id: number;
-      sync_status: string;
+      sync_status: GoogleSyncStatus;
       ingestion_job_id: string | null;
       name: string;
       message?: string;
@@ -115,7 +134,7 @@ export async function syncGoogleSheetSource(
   const response =
     await api.post<{
       source_id: number;
-      sync_status: string;
+      sync_status: GoogleSyncStatus;
       ingestion_job_id: string | null;
       message?: string;
     }>(
@@ -133,7 +152,7 @@ export async function getIngestionStatus(
   const response =
     await api.get<{
       source_id: number;
-      sync_status: string;
+      sync_status: GoogleSyncStatus;
       last_synced_at: string | null;
       sync_error: string | null;
     }>(
@@ -173,12 +192,24 @@ export interface GoogleDriveFolderItem {
 }
 
 
+export interface GoogleDriveFilesPage {
+  files: GoogleDriveFileItem[];
+  next_page_token: string | null;
+}
+
+
+export interface GoogleDriveFoldersPage {
+  folders: GoogleDriveFolderItem[];
+  next_page_token: string | null;
+}
+
+
 export interface GoogleSourceFreshness {
   source_id: number;
-  freshness: string;
+  freshness: GoogleFreshnessStatus;
   last_synced_at: string | null;
   external_modified_at: string | null;
-  sync_status: string;
+  sync_status: GoogleSyncStatus;
   source_type: string;
 }
 
@@ -211,10 +242,7 @@ export async function listGoogleDriveFiles(
   mimeType?: string,
 ) {
   const response =
-    await api.get<{
-      files: GoogleDriveFileItem[];
-      next_page_token: string | null;
-    }>(
+    await api.get<GoogleDriveFilesPage>(
       "/api/integrations/google/drive/files",
       { params: { query, page_token: pageToken, mime_type: mimeType } },
     );
@@ -228,10 +256,7 @@ export async function listGoogleDriveFolders(
   pageToken?: string,
 ) {
   const response =
-    await api.get<{
-      folders: GoogleDriveFolderItem[];
-      next_page_token: string | null;
-    }>(
+    await api.get<GoogleDriveFoldersPage>(
       "/api/integrations/google/drive/folders",
       { params: { query, page_token: pageToken } },
     );
@@ -248,7 +273,7 @@ export async function addGoogleDocSource(
   const response =
     await api.post<{
       source_id: number;
-      sync_status: string;
+      sync_status: GoogleSyncStatus;
       ingestion_job_id: string | null;
       name: string;
       message?: string;
@@ -275,7 +300,7 @@ export async function addGoogleDriveFileSource(
   const response =
     await api.post<{
       source_id: number;
-      sync_status: string;
+      sync_status: GoogleSyncStatus;
       ingestion_job_id: string | null;
       name: string;
       message?: string;
@@ -300,7 +325,7 @@ export async function addGoogleDriveFolderSource(
   const response =
     await api.post<{
       source_id: number;
-      sync_status: string;
+      sync_status: GoogleSyncStatus;
       ingestion_job_id: string | null;
       name: string;
       child_count: number;
@@ -324,7 +349,7 @@ export async function syncDriveFolder(
   const response =
     await api.post<{
       source_id: number;
-      sync_status: string;
+      sync_status: GoogleSyncStatus;
       ingestion_job_id: string | null;
       new_files: number;
       modified_files: number;
@@ -345,7 +370,7 @@ export async function syncDriveFileSource(
   const response =
     await api.post<{
       source_id: number;
-      sync_status: string;
+      sync_status: GoogleSyncStatus;
       ingestion_job_id: string | null;
       message?: string;
     }>(

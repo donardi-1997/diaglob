@@ -3,6 +3,7 @@ import json
 import os
 import hmac
 import hashlib
+import logging
 import re
 import httpx
 
@@ -165,6 +166,8 @@ from .google_sheets_client import (
 )
 
 from .google_drive_client import (
+    GoogleDriveFileTooLarge,
+    MAX_TOTAL_SYNC_BYTES,
     list_drive_files,
     list_drive_folders,
     list_folder_children,
@@ -186,6 +189,8 @@ from .bedrock_ingestion import (
 )
 
 Base.metadata.create_all(bind=engine)
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Diaglob API",
@@ -6664,6 +6669,8 @@ def delete_knowledge_source(
                 == source.id,
                 KnowledgeSource.organization_id
                 == membership.organization_id,
+                KnowledgeSource.knowledge_base_id
+                == knowledge_base_id,
                 KnowledgeSource.active.is_(True),
             )
             .all()
@@ -6678,6 +6685,7 @@ def delete_knowledge_source(
                     item.s3_key,
                 )
     except Exception as exc:
+        db.rollback()
         raise HTTPException(
             status_code=502,
             detail=(
@@ -12858,9 +12866,10 @@ def google_oauth_callback(
             detail="OAuth state expired",
         )
 
-    # Mark state as used
+    # Consume the state before the external exchange so a failed exchange
+    # cannot make the state reusable through a transaction rollback.
     oauth_state.used = True
-    db.flush()
+    db.commit()
 
     # Exchange code for tokens
     try:
@@ -12883,7 +12892,6 @@ def google_oauth_callback(
         token_data = token_response.json()
 
     except Exception as exc:
-        db.rollback()
         frontend_url = (
             _google_connect_frontend_url("error")
         )
@@ -12959,7 +12967,10 @@ def google_oauth_callback(
                 encrypted_refresh
             )
         existing.token_expiry = token_expiry
-        existing.scopes = granted_scopes
+        existing.scopes = " ".join(sorted(
+            set((existing.scopes or "").split())
+            | set(granted_scopes.split())
+        ))
         existing.email = (
             user_email or existing.email
         )
@@ -13859,6 +13870,323 @@ class GoogleDriveFolderRequest(BaseModel):
     folder_name: str
 
 
+DRIVE_SOURCE_TYPES = (
+    "google_doc",
+    "google_drive_file",
+    "google_drive_folder",
+)
+
+
+def _find_active_drive_source(
+    db: Session,
+    organization_id: int,
+    knowledge_base_id: int,
+    external_id: str,
+) -> KnowledgeSource | None:
+    return (
+        db.query(KnowledgeSource)
+        .filter(
+            KnowledgeSource.organization_id
+            == organization_id,
+            KnowledgeSource.knowledge_base_id
+            == knowledge_base_id,
+            KnowledgeSource.external_id == external_id,
+            KnowledgeSource.source_type.in_(
+                DRIVE_SOURCE_TYPES
+            ),
+            KnowledgeSource.active.is_(True),
+        )
+        .first()
+    )
+
+
+def _standalone_drive_duplicate_response(
+    existing: KnowledgeSource,
+) -> dict:
+    if (
+        existing.parent_source_id is not None
+        or existing.source_type == "google_drive_folder"
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "DRIVE_SOURCE_CONFLICT",
+                "message": (
+                    "Drive object already exists in this "
+                    "knowledge base with a conflicting "
+                    "folder relationship."
+                ),
+                "source_id": existing.id,
+            },
+        )
+    return {
+        "source_id": existing.id,
+        "name": existing.name,
+        "sync_status": existing.sync_status or "synced",
+        "message": "Source already exists",
+    }
+
+
+def _drive_conflict_reason(
+    existing: KnowledgeSource,
+) -> str:
+    if existing.source_type == "google_drive_folder":
+        return "Drive object already exists as a folder source"
+    if existing.parent_source_id is not None:
+        return "File already belongs to another folder source"
+    return "File already exists as a standalone Drive source"
+
+
+def _delete_artifact_best_effort(
+    bucket: str | None,
+    key: str | None,
+    context: str,
+) -> str | None:
+    if not bucket or not key:
+        return None
+    try:
+        delete_knowledge_file(bucket, key)
+    except Exception as exc:
+        warning = f"{context}: {exc}"
+        logger.warning("%s", warning, exc_info=True)
+        return warning
+    return None
+
+
+def _persist_new_drive_source(
+    db: Session,
+    source: KnowledgeSource,
+    uploaded: dict,
+) -> None:
+    """Persist a new source or remove its just-uploaded artifact."""
+    try:
+        db.add(source)
+        db.commit()
+        db.refresh(source)
+    except Exception:
+        db.rollback()
+        _delete_artifact_best_effort(
+            uploaded.get("bucket"),
+            uploaded.get("key"),
+            "Failed to clean artifact after DB persistence failure",
+        )
+        raise
+
+
+async def _download_drive_child(
+    access_token: str,
+    file_id: str,
+    mime_type: str,
+) -> tuple[bytes, str, str]:
+    if is_google_doc(mime_type):
+        return (
+            await export_google_doc(
+                access_token,
+                file_id,
+                "text/plain",
+            ),
+            "text/plain",
+            "google_doc",
+        )
+    return (
+        await download_drive_file(access_token, file_id),
+        mime_type,
+        "google_drive_file",
+    )
+
+
+def _folder_file_record(file_meta: dict) -> dict:
+    return {
+        "id": file_meta["id"],
+        "name": file_meta.get("name", ""),
+        "modifiedTime": file_meta.get(
+            "modifiedTime", ""
+        ),
+        "size": file_meta.get("size", "0"),
+    }
+
+
+def _folder_summary() -> dict:
+    return {
+        "new": 0,
+        "modified": 0,
+        "removed": 0,
+        "unchanged": 0,
+        "failed": [],
+        "ignored": [],
+        "successful_delta": False,
+    }
+
+
+def _folder_sync_error(
+    summary: dict,
+    warnings: list[dict],
+    ingestion_error: str | None = None,
+) -> str | None:
+    errors = [
+        (
+            f"{item['action']} {item.get('name') or item['id']}: "
+            f"{item['error']}"
+        )
+        for item in summary["failed"]
+    ]
+    errors.extend(
+        f"{item['action']} {item.get('name') or item['id']}: "
+        f"{item['warning']}"
+        for item in warnings
+    )
+    if ingestion_error:
+        errors.append(ingestion_error)
+    return "; ".join(errors) or None
+
+
+def _finish_folder_operation(
+    db: Session,
+    source: KnowledgeSource,
+    kb: KnowledgeBase,
+    remote_files: list[dict],
+    summary: dict,
+    warnings: list[dict],
+) -> tuple[str, str | None]:
+    summary["successful_delta"] = bool(
+        summary["new"]
+        + summary["modified"]
+        + summary["removed"]
+    )
+
+    if summary["failed"] and not summary["successful_delta"]:
+        sync_status = "failed"
+    elif summary["failed"]:
+        sync_status = "partial_failed"
+    elif summary["successful_delta"]:
+        sync_status = "uploaded"
+    else:
+        sync_status = "synced"
+
+    source.sync_status = sync_status
+    source.sync_error = _folder_sync_error(summary, warnings)
+    source.ingestion_job_id = None
+    source.sync_generation = (source.sync_generation or 0) + 1
+    source.last_synced_at = datetime.utcnow()
+    source.metadata_json = json.dumps({
+        "file_count": len(remote_files),
+        "new": summary["new"],
+        "modified": summary["modified"],
+        "removed": summary["removed"],
+        "unchanged": summary["unchanged"],
+        "last_synced_files": [
+            _folder_file_record(file_meta)
+            for file_meta in remote_files
+        ],
+        "summary": summary,
+        "warnings": warnings,
+    })
+    db.commit()
+
+    ingestion_job_id = None
+    ingestion_error = None
+    if (
+        summary["successful_delta"]
+        and kb.external_id
+        and kb.external_data_source_id
+    ):
+        try:
+            ingestion_job_id = start_ingestion_job(
+                kb.external_id,
+                kb.external_data_source_id,
+            )
+            if not ingestion_job_id:
+                ingestion_error = (
+                    "Bedrock ingestion failed to start"
+                )
+        except Exception as exc:
+            ingestion_error = (
+                f"Bedrock ingestion failed to start: {exc}"
+            )
+            logger.exception(
+                "Failed to start folder ingestion for source %s",
+                source.id,
+            )
+
+        if ingestion_job_id:
+            source.ingestion_job_id = ingestion_job_id
+            if not summary["failed"]:
+                sync_status = "indexing"
+        else:
+            ingestion_job_id = None
+            if not summary["failed"]:
+                sync_status = "uploaded"
+
+        source.sync_status = sync_status
+        source.sync_error = _folder_sync_error(
+            summary,
+            warnings,
+            ingestion_error,
+        )
+        db.commit()
+
+    return sync_status, ingestion_job_id
+
+
+def _start_drive_source_ingestion(
+    db: Session,
+    source: KnowledgeSource,
+    kb: KnowledgeBase,
+    prior_warning: str | None = None,
+) -> tuple[str, str | None]:
+    sync_status = "uploaded"
+    ingestion_job_id = None
+    ingestion_error = None
+
+    if kb.external_id and kb.external_data_source_id:
+        try:
+            ingestion_job_id = start_ingestion_job(
+                kb.external_id,
+                kb.external_data_source_id,
+            )
+            if ingestion_job_id:
+                sync_status = "indexing"
+            else:
+                ingestion_error = (
+                    "Bedrock ingestion failed to start"
+                )
+        except Exception as exc:
+            ingestion_error = (
+                f"Bedrock ingestion failed to start: {exc}"
+            )
+            logger.exception(
+                "Failed to start Drive ingestion for source %s",
+                source.id,
+            )
+
+    source.sync_status = sync_status
+    source.ingestion_job_id = ingestion_job_id
+    source.sync_error = "; ".join(
+        message
+        for message in (prior_warning, ingestion_error)
+        if message
+    ) or None
+    db.commit()
+    return sync_status, ingestion_job_id
+
+
+def _mark_drive_source_failed(
+    db: Session,
+    source: KnowledgeSource,
+    error: str,
+) -> None:
+    source.sync_status = "failed"
+    source.sync_error = error
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception(
+            "Failed to persist Drive source failure for %s",
+            source.id,
+        )
+
+
 # --- Scope helpers ---
 
 
@@ -14319,27 +14647,17 @@ async def add_google_doc_source(
 
     _require_drive_scope(connection)
 
-    # Check duplicate
-    existing = (
-        db.query(KnowledgeSource)
-        .filter(
-            KnowledgeSource.knowledge_base_id
-            == knowledge_base_id,
-            KnowledgeSource.external_id
-            == request.file_id,
-            KnowledgeSource.active.is_(True),
-        )
-        .first()
+    existing = _find_active_drive_source(
+        db,
+        org_id,
+        knowledge_base_id,
+        request.file_id,
     )
 
     if existing:
-        return {
-            "source_id": existing.id,
-            "name": existing.name,
-            "sync_status": existing.sync_status
-            or "synced",
-            "message": "Source already exists",
-        }
+        return _standalone_drive_duplicate_response(
+            existing
+        )
 
     access_token = _get_valid_google_token(
         connection, db
@@ -14369,6 +14687,22 @@ async def add_google_doc_source(
         raise HTTPException(
             status_code=exc.response.status_code,
             detail={"code": code, "message": msg},
+        ) from exc
+    except (GoogleDriveFileTooLarge, ValueError) as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "FILE_TOO_LARGE",
+                "message": str(exc),
+            },
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "code": "GOOGLE_DOWNLOAD_FAILED",
+                "message": str(exc),
+            },
         ) from exc
 
     if not content:
@@ -14402,18 +14736,11 @@ async def add_google_doc_source(
     except Exception:
         pass
 
-    modified_at = None
-    if remote_meta and remote_meta.get(
-        "modifiedTime"
-    ):
-        try:
-            modified_at = datetime.fromisoformat(
-                remote_meta[
-                    "modifiedTime"
-                ].replace("Z", "+00:00")
-            )
-        except Exception:
-            pass
+    modified_at = _parse_google_modified_at(
+        remote_meta.get("modifiedTime")
+        if remote_meta
+        else None
+    )
 
     source = KnowledgeSource(
         knowledge_base_id=knowledge_base_id,
@@ -14433,27 +14760,24 @@ async def add_google_doc_source(
         last_synced_at=datetime.utcnow(),
         sync_status="uploaded",
     )
-    db.add(source)
-    db.flush()
-
-    # Start Bedrock ingestion
-    ingestion_job_id = None
-    sync_status = "uploaded"
-
-    if kb.external_id and kb.external_data_source_id:
-        ingestion_job_id = start_ingestion_job(
-            kb.external_id,
-            kb.external_data_source_id,
+    try:
+        _persist_new_drive_source(
+            db, source, s3_result
         )
-        if ingestion_job_id:
-            sync_status = "indexing"
-            source.ingestion_job_id = (
-                ingestion_job_id
-            )
-            source.sync_status = "indexing"
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "SOURCE_PERSISTENCE_FAILED",
+                "message": str(exc),
+            },
+        ) from exc
 
-    db.commit()
-    db.refresh(source)
+    sync_status, ingestion_job_id = (
+        _start_drive_source_ingestion(
+            db, source, kb
+        )
+    )
 
     return {
         "source_id": source.id,
@@ -14537,27 +14861,17 @@ async def add_google_drive_file_source(
             },
         )
 
-    # Check duplicate
-    existing = (
-        db.query(KnowledgeSource)
-        .filter(
-            KnowledgeSource.knowledge_base_id
-            == knowledge_base_id,
-            KnowledgeSource.external_id
-            == request.file_id,
-            KnowledgeSource.active.is_(True),
-        )
-        .first()
+    existing = _find_active_drive_source(
+        db,
+        org_id,
+        knowledge_base_id,
+        request.file_id,
     )
 
     if existing:
-        return {
-            "source_id": existing.id,
-            "name": existing.name,
-            "sync_status": existing.sync_status
-            or "synced",
-            "message": "Source already exists",
-        }
+        return _standalone_drive_duplicate_response(
+            existing
+        )
 
     access_token = _get_valid_google_token(
         connection, db
@@ -14578,7 +14892,7 @@ async def add_google_drive_file_source(
         content = await download_drive_file(
             access_token, request.file_id
         )
-    except ValueError as exc:
+    except (GoogleDriveFileTooLarge, ValueError) as exc:
         raise HTTPException(
             status_code=400,
             detail={
@@ -14593,6 +14907,14 @@ async def add_google_drive_file_source(
         raise HTTPException(
             status_code=exc.response.status_code,
             detail={"code": code, "message": msg},
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "code": "GOOGLE_DOWNLOAD_FAILED",
+                "message": str(exc),
+            },
         ) from exc
 
     if not content:
@@ -14631,20 +14953,18 @@ async def add_google_drive_file_source(
     except Exception:
         pass
 
-    modified_at = None
+    modified_at = _parse_google_modified_at(
+        remote_meta.get("modifiedTime")
+        if remote_meta
+        else None
+    )
     ext_size = None
     if remote_meta:
-        if remote_meta.get("modifiedTime"):
-            try:
-                modified_at = datetime.fromisoformat(
-                    remote_meta[
-                        "modifiedTime"
-                    ].replace("Z", "+00:00")
-                )
-            except Exception:
-                pass
         if remote_meta.get("size"):
-            ext_size = int(remote_meta["size"])
+            try:
+                ext_size = int(remote_meta["size"])
+            except (TypeError, ValueError):
+                pass
 
     source = KnowledgeSource(
         knowledge_base_id=knowledge_base_id,
@@ -14664,27 +14984,24 @@ async def add_google_drive_file_source(
         last_synced_at=datetime.utcnow(),
         sync_status="uploaded",
     )
-    db.add(source)
-    db.flush()
-
-    # Start Bedrock ingestion
-    ingestion_job_id = None
-    sync_status = "uploaded"
-
-    if kb.external_id and kb.external_data_source_id:
-        ingestion_job_id = start_ingestion_job(
-            kb.external_id,
-            kb.external_data_source_id,
+    try:
+        _persist_new_drive_source(
+            db, source, s3_result
         )
-        if ingestion_job_id:
-            sync_status = "indexing"
-            source.ingestion_job_id = (
-                ingestion_job_id
-            )
-            source.sync_status = "indexing"
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "SOURCE_PERSISTENCE_FAILED",
+                "message": str(exc),
+            },
+        ) from exc
 
-    db.commit()
-    db.refresh(source)
+    sync_status, ingestion_job_id = (
+        _start_drive_source_ingestion(
+            db, source, kb
+        )
+    )
 
     return {
         "source_id": source.id,
@@ -14753,22 +15070,25 @@ async def add_google_drive_folder_source(
 
     _require_drive_scope(connection)
 
-    # Check duplicate folder
-    existing = (
-        db.query(KnowledgeSource)
-        .filter(
-            KnowledgeSource.knowledge_base_id
-            == knowledge_base_id,
-            KnowledgeSource.external_id
-            == request.folder_id,
-            KnowledgeSource.source_type
-            == "google_drive_folder",
-            KnowledgeSource.active.is_(True),
-        )
-        .first()
+    existing = _find_active_drive_source(
+        db,
+        org_id,
+        knowledge_base_id,
+        request.folder_id,
     )
 
     if existing:
+        if existing.source_type != "google_drive_folder":
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "DRIVE_SOURCE_CONFLICT",
+                    "message": _drive_conflict_reason(
+                        existing
+                    ),
+                    "source_id": existing.id,
+                },
+            )
         return {
             "source_id": existing.id,
             "name": existing.name,
@@ -14804,6 +15124,14 @@ async def add_google_drive_folder_source(
             status_code=exc.response.status_code,
             detail={"code": code, "message": msg},
         ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "code": "GOOGLE_FOLDER_LIST_FAILED",
+                "message": str(exc),
+            },
+        ) from exc
 
     files = result.get("files", [])
 
@@ -14832,7 +15160,10 @@ async def add_google_drive_folder_source(
             },
         )
 
-    # Create folder source (no S3 artifact yet)
+    summary = _folder_summary()
+    warnings = []
+
+    # Persist the metadata-only parent before creating child artifacts.
     source = KnowledgeSource(
         knowledge_base_id=knowledge_base_id,
         organization_id=org_id,
@@ -14843,79 +15174,93 @@ async def add_google_drive_folder_source(
         status="uploaded",
         external_id=request.folder_id,
         external_name=request.folder_name,
-        sync_status="synced",
+        sync_status="uploaded",
         metadata_json=json.dumps(
             {
                 "file_count": len(files),
                 "last_synced_files": [
-                    {
-                        "id": f["id"],
-                        "name": f.get("name", ""),
-                        "modifiedTime": f.get(
-                            "modifiedTime", ""
-                        ),
-                        "size": f.get("size", "0"),
-                    }
+                    _folder_file_record(f)
                     for f in files
                 ],
+                "summary": summary,
             }
         ),
     )
-    db.add(source)
-    db.flush()
+    try:
+        db.add(source)
+        db.commit()
+        db.refresh(source)
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "SOURCE_PERSISTENCE_FAILED",
+                "message": str(exc),
+            },
+        ) from exc
 
-    # Create child sources for each file
-    child_ids = []
+    downloaded_bytes = 0
     for f in files:
         file_id = f["id"]
         file_name = f.get("name", "Untitled")
         mime_type = f.get("mimeType", "")
 
-        # Skip if child already exists
-        child_existing = (
-            db.query(KnowledgeSource)
-            .filter(
-                KnowledgeSource.knowledge_base_id
-                == knowledge_base_id,
-                KnowledgeSource.external_id
-                == file_id,
-                KnowledgeSource.active.is_(True),
-            )
-            .first()
+        child_existing = _find_active_drive_source(
+            db,
+            org_id,
+            knowledge_base_id,
+            file_id,
         )
 
         if child_existing:
-            child_ids.append(child_existing.id)
+            summary["ignored"].append({
+                "id": file_id,
+                "name": file_name,
+                "reason": _drive_conflict_reason(
+                    child_existing
+                ),
+            })
             continue
 
-        # Download file content
         try:
-            if is_google_doc(mime_type):
-                content = await export_google_doc(
+            content, child_mime, child_type = (
+                await _download_drive_child(
                     access_token,
                     file_id,
-                    "text/plain",
+                    mime_type,
                 )
-                child_mime = "text/plain"
-                child_type = "google_doc"
-            else:
-                content = (
-                    await download_drive_file(
-                        access_token, file_id
-                    )
-                )
-                child_mime = mime_type
-                child_type = "google_drive_file"
-        except Exception:
-            logger.warning(
-                "Failed to download file %s "
-                "from folder %s",
-                file_id,
-                request.folder_id,
             )
+        except Exception as exc:
+            summary["failed"].append({
+                "id": file_id,
+                "name": file_name,
+                "action": "new",
+                "error": str(exc),
+            })
             continue
 
         if not content:
+            summary["failed"].append({
+                "id": file_id,
+                "name": file_name,
+                "action": "new",
+                "error": "File is empty",
+            })
+            continue
+
+        downloaded_bytes += len(content)
+        if downloaded_bytes > MAX_TOTAL_SYNC_BYTES:
+            summary["failed"].append({
+                "id": file_id,
+                "name": file_name,
+                "action": "new",
+                "error": (
+                    "Actual downloaded content exceeds "
+                    f"the {MAX_TOTAL_SYNC_BYTES} byte "
+                    "folder sync limit"
+                ),
+            })
             continue
 
         safe_name = re.sub(
@@ -14933,26 +15278,24 @@ async def add_google_drive_folder_source(
                 content=content,
                 content_type=child_mime,
             )
-        except Exception:
-            logger.warning(
-                "Failed to upload %s to S3",
-                file_id,
-            )
+        except Exception as exc:
+            summary["failed"].append({
+                "id": file_id,
+                "name": file_name,
+                "action": "new",
+                "error": f"S3 upload failed: {exc}",
+            })
             continue
 
-        modified_at = None
+        modified_at = _parse_google_modified_at(
+            f.get("modifiedTime")
+        )
         ext_size = None
-        if f.get("modifiedTime"):
-            try:
-                modified_at = datetime.fromisoformat(
-                    f["modifiedTime"].replace(
-                        "Z", "+00:00"
-                    )
-                )
-            except Exception:
-                pass
         if f.get("size"):
-            ext_size = int(f["size"])
+            try:
+                ext_size = int(f["size"])
+            except (TypeError, ValueError):
+                pass
 
         child_source = KnowledgeSource(
             knowledge_base_id=knowledge_base_id,
@@ -14973,33 +15316,71 @@ async def add_google_drive_folder_source(
             last_synced_at=datetime.utcnow(),
             sync_status="uploaded",
         )
-        db.add(child_source)
-        db.flush()
-        child_ids.append(child_source.id)
+        try:
+            _persist_new_drive_source(
+                db, child_source, s3_result
+            )
+        except Exception as exc:
+            summary["failed"].append({
+                "id": file_id,
+                "name": file_name,
+                "action": "new",
+                "error": (
+                    f"DB persistence failed: {exc}"
+                ),
+            })
+            continue
+        summary["new"] += 1
 
-    # ONE Bedrock ingestion for entire folder
-    ingestion_job_id = None
-    sync_status = "synced"
-
-    if kb.external_id and kb.external_data_source_id:
-        ingestion_job_id = start_ingestion_job(
-            kb.external_id,
-            kb.external_data_source_id,
+    try:
+        sync_status, ingestion_job_id = (
+            _finish_folder_operation(
+                db,
+                source,
+                kb,
+                files,
+                summary,
+                warnings,
+            )
         )
-        if ingestion_job_id:
-            sync_status = "indexing"
-            source.sync_status = "indexing"
-            source.ingestion_job_id = ingestion_job_id
-
-    db.commit()
-    db.refresh(source)
+        db.refresh(source)
+    except Exception as exc:
+        db.rollback()
+        persisted_source = (
+            db.query(KnowledgeSource)
+            .filter(
+                KnowledgeSource.id == source.id,
+                KnowledgeSource.organization_id == org_id,
+                KnowledgeSource.knowledge_base_id
+                == knowledge_base_id,
+            )
+            .first()
+        )
+        if persisted_source:
+            _mark_drive_source_failed(
+                db,
+                persisted_source,
+                f"Folder finalization failed: {exc}",
+            )
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "FOLDER_FINALIZATION_FAILED",
+                "message": str(exc),
+            },
+        ) from exc
 
     return {
         "source_id": source.id,
         "name": source.name,
         "sync_status": sync_status,
         "ingestion_job_id": ingestion_job_id,
-        "child_count": len(child_ids),
+        "child_count": summary["new"],
+        "new_files": summary["new"],
+        "modified_files": summary["modified"],
+        "removed_files": summary["removed"],
+        "summary": summary,
+        "warnings": warnings,
     }
 
 
@@ -15048,6 +15429,7 @@ async def sync_drive_folder(
             == org_id,
             KnowledgeSource.source_type
             == "google_drive_folder",
+            KnowledgeSource.active.is_(True),
         )
         .first()
     )
@@ -15106,7 +15488,17 @@ async def sync_drive_folder(
 
     source.sync_status = "syncing"
     source.sync_error = None
-    db.flush()
+    try:
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "SYNC_STATE_PERSISTENCE_FAILED",
+                "message": str(exc),
+            },
+        ) from exc
 
     # List current folder children
     try:
@@ -15117,12 +15509,20 @@ async def sync_drive_folder(
         code, msg = map_google_api_error(
             exc.response.status_code
         )
-        source.sync_status = "failed"
-        source.sync_error = msg
-        db.commit()
+        _mark_drive_source_failed(db, source, msg)
         raise HTTPException(
             status_code=exc.response.status_code,
             detail={"code": code, "message": msg},
+        ) from exc
+    except Exception as exc:
+        error = f"Unable to list Google Drive folder: {exc}"
+        _mark_drive_source_failed(db, source, error)
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "code": "GOOGLE_FOLDER_LIST_FAILED",
+                "message": error,
+            },
         ) from exc
 
     remote_files = result.get("files", [])
@@ -15163,6 +15563,12 @@ async def sync_drive_folder(
         .filter(
             KnowledgeSource.parent_source_id
             == source.id,
+            KnowledgeSource.organization_id == org_id,
+            KnowledgeSource.knowledge_base_id
+            == knowledge_base_id,
+            KnowledgeSource.source_type.in_(
+                DRIVE_SOURCE_TYPES
+            ),
             KnowledgeSource.active.is_(True),
         )
         .all()
@@ -15177,13 +15583,29 @@ async def sync_drive_folder(
         if c.external_id
     }
 
+    summary = _folder_summary()
+    warnings = []
     new_files = []
     modified_files = []
     removed_children = []
 
-    # Detect new and modified
     for fid, fmeta in remote_by_id.items():
         if fid not in local_by_ext_id:
+            conflict = _find_active_drive_source(
+                db,
+                org_id,
+                knowledge_base_id,
+                fid,
+            )
+            if conflict:
+                summary["ignored"].append({
+                    "id": fid,
+                    "name": fmeta.get("name", "Untitled"),
+                    "reason": _drive_conflict_reason(
+                        conflict
+                    ),
+                })
+                continue
             new_files.append(fmeta)
         else:
             child = local_by_ext_id[fid]
@@ -15192,42 +15614,59 @@ async def sync_drive_folder(
                 fmeta.get("modifiedTime"),
             ):
                 modified_files.append(fmeta)
+            else:
+                summary["unchanged"] += 1
 
     # Detect removed
     for fid, child in local_by_ext_id.items():
         if fid not in remote_by_id:
             removed_children.append(child)
 
-    s3_changed = False
+    downloaded_bytes = 0
 
-    # Process new files
     for fmeta in new_files:
         fid = fmeta["id"]
         fname = fmeta.get("name", "Untitled")
         fmime = fmeta.get("mimeType", "")
 
         try:
-            if is_google_doc(fmime):
-                content = await export_google_doc(
+            content, child_mime, child_type = (
+                await _download_drive_child(
                     access_token,
                     fid,
-                    "text/plain",
+                    fmime,
                 )
-                child_mime = "text/plain"
-                child_type = "google_doc"
-            else:
-                content = await download_drive_file(
-                    access_token, fid
-                )
-                child_mime = fmime
-                child_type = "google_drive_file"
-        except Exception:
-            logger.warning(
-                "Failed to download new file %s", fid
             )
+        except Exception as exc:
+            summary["failed"].append({
+                "id": fid,
+                "name": fname,
+                "action": "new",
+                "error": str(exc),
+            })
             continue
 
         if not content:
+            summary["failed"].append({
+                "id": fid,
+                "name": fname,
+                "action": "new",
+                "error": "File is empty",
+            })
+            continue
+
+        downloaded_bytes += len(content)
+        if downloaded_bytes > MAX_TOTAL_SYNC_BYTES:
+            summary["failed"].append({
+                "id": fid,
+                "name": fname,
+                "action": "new",
+                "error": (
+                    "Actual downloaded content exceeds "
+                    f"the {MAX_TOTAL_SYNC_BYTES} byte "
+                    "folder sync limit"
+                ),
+            })
             continue
 
         safe_name = re.sub(
@@ -15241,22 +15680,24 @@ async def sync_drive_folder(
                 content=content,
                 content_type=child_mime,
             )
-        except Exception:
+        except Exception as exc:
+            summary["failed"].append({
+                "id": fid,
+                "name": fname,
+                "action": "new",
+                "error": f"S3 upload failed: {exc}",
+            })
             continue
 
-        modified_at = None
+        modified_at = _parse_google_modified_at(
+            fmeta.get("modifiedTime")
+        )
         ext_size = None
-        if fmeta.get("modifiedTime"):
-            try:
-                modified_at = datetime.fromisoformat(
-                    fmeta["modifiedTime"].replace(
-                        "Z", "+00:00"
-                    )
-                )
-            except Exception:
-                pass
         if fmeta.get("size"):
-            ext_size = int(fmeta["size"])
+            try:
+                ext_size = int(fmeta["size"])
+            except (TypeError, ValueError):
+                pass
 
         child_source = KnowledgeSource(
             knowledge_base_id=knowledge_base_id,
@@ -15277,10 +15718,20 @@ async def sync_drive_folder(
             last_synced_at=datetime.utcnow(),
             sync_status="uploaded",
         )
-        db.add(child_source)
-        s3_changed = True
+        try:
+            _persist_new_drive_source(
+                db, child_source, s3_result
+            )
+        except Exception as exc:
+            summary["failed"].append({
+                "id": fid,
+                "name": fname,
+                "action": "new",
+                "error": f"DB persistence failed: {exc}",
+            })
+            continue
+        summary["new"] += 1
 
-    # Process modified files
     for fmeta in modified_files:
         fid = fmeta["id"]
         fname = fmeta.get("name", "Untitled")
@@ -15288,37 +15739,49 @@ async def sync_drive_folder(
         child = local_by_ext_id[fid]
 
         try:
-            if is_google_doc(fmime):
-                content = await export_google_doc(
+            content, child_mime, child_type = (
+                await _download_drive_child(
                     access_token,
                     fid,
-                    "text/plain",
+                    fmime,
                 )
-                child_mime = "text/plain"
-                child_type = "google_doc"
-            else:
-                content = await download_drive_file(
-                    access_token, fid
-                )
-                child_mime = fmime
-                child_type = "google_drive_file"
-        except Exception:
-            logger.warning(
-                "Failed to download modified %s", fid
             )
+        except Exception as exc:
+            summary["failed"].append({
+                "id": fid,
+                "name": fname,
+                "action": "modified",
+                "error": str(exc),
+            })
             continue
 
         if not content:
+            summary["failed"].append({
+                "id": fid,
+                "name": fname,
+                "action": "modified",
+                "error": "File is empty",
+            })
             continue
 
-        # Replace S3 artifact
+        downloaded_bytes += len(content)
+        if downloaded_bytes > MAX_TOTAL_SYNC_BYTES:
+            summary["failed"].append({
+                "id": fid,
+                "name": fname,
+                "action": "modified",
+                "error": (
+                    "Actual downloaded content exceeds "
+                    f"the {MAX_TOTAL_SYNC_BYTES} byte "
+                    "folder sync limit"
+                ),
+            })
+            continue
+
+        safe_name = re.sub(
+            r"[^A-Za-z0-9._-]+", "-", fname
+        )
         try:
-            delete_knowledge_file(
-                child.s3_bucket, child.s3_key
-            )
-            safe_name = re.sub(
-                r"[^A-Za-z0-9._-]+", "-", fname
-            )
             s3_result = upload_knowledge_file(
                 organization_id=org_id,
                 knowledge_base_id=knowledge_base_id,
@@ -15326,108 +15789,171 @@ async def sync_drive_folder(
                 content=content,
                 content_type=child_mime,
             )
-        except Exception:
+        except Exception as exc:
+            summary["failed"].append({
+                "id": fid,
+                "name": fname,
+                "action": "modified",
+                "error": f"S3 upload failed: {exc}",
+            })
             continue
 
-        modified_at = None
+        modified_at = _parse_google_modified_at(
+            fmeta.get("modifiedTime")
+        )
         ext_size = None
-        if fmeta.get("modifiedTime"):
-            try:
-                modified_at = datetime.fromisoformat(
-                    fmeta["modifiedTime"].replace(
-                        "Z", "+00:00"
-                    )
-                )
-            except Exception:
-                pass
         if fmeta.get("size"):
-            ext_size = int(fmeta["size"])
+            try:
+                ext_size = int(fmeta["size"])
+            except (TypeError, ValueError):
+                pass
 
+        old_bucket = child.s3_bucket
+        old_key = child.s3_key
+        child.name = fname
+        child.source_type = child_type
+        child.content_type = child_mime
         child.s3_bucket = s3_result["bucket"]
         child.s3_key = s3_result["key"]
         child.size_bytes = len(content)
+        child.status = "uploaded"
+        child.external_name = fname
+        child.external_mime_type = fmime
         child.external_modified_at = modified_at
         child.external_size = ext_size
         child.last_synced_at = datetime.utcnow()
         child.sync_status = "uploaded"
-        s3_changed = True
+        child.sync_error = None
+        try:
+            db.commit()
+        except Exception as exc:
+            db.rollback()
+            _delete_artifact_best_effort(
+                s3_result.get("bucket"),
+                s3_result.get("key"),
+                "Failed to clean new modified artifact",
+            )
+            summary["failed"].append({
+                "id": fid,
+                "name": fname,
+                "action": "modified",
+                "error": f"DB persistence failed: {exc}",
+            })
+            continue
 
-    # Process removed files
+        summary["modified"] += 1
+        if (
+            old_bucket,
+            old_key,
+        ) != (
+            s3_result.get("bucket"),
+            s3_result.get("key"),
+        ):
+            cleanup_warning = _delete_artifact_best_effort(
+                old_bucket,
+                old_key,
+                "Failed to delete replaced artifact",
+            )
+            if cleanup_warning:
+                warnings.append({
+                    "id": fid,
+                    "name": fname,
+                    "action": "modified_cleanup",
+                    "warning": cleanup_warning,
+                })
+
     for child in removed_children:
         try:
-            delete_knowledge_file(
-                child.s3_bucket, child.s3_key
-            )
-        except Exception:
-            pass
+            if child.s3_bucket and child.s3_key:
+                delete_knowledge_file(
+                    child.s3_bucket, child.s3_key
+                )
+        except Exception as exc:
+            error = f"S3 delete failed: {exc}"
+            child.sync_status = "failed"
+            child.sync_error = error
+            try:
+                db.commit()
+            except Exception:
+                db.rollback()
+                logger.exception(
+                    "Failed to persist removal failure for %s",
+                    child.id,
+                )
+            summary["failed"].append({
+                "id": child.external_id or str(child.id),
+                "name": child.name,
+                "action": "removed",
+                "error": error,
+            })
+            continue
 
         child.active = False
         child.status = "deleted"
-        s3_changed = True
+        child.sync_status = "synced"
+        child.sync_error = None
+        try:
+            db.commit()
+        except Exception as exc:
+            db.rollback()
+            summary["failed"].append({
+                "id": child.external_id or str(child.id),
+                "name": child.name,
+                "action": "removed",
+                "error": f"DB persistence failed: {exc}",
+            })
+            continue
+        summary["removed"] += 1
 
-    # ONE Bedrock ingestion if any S3 changed
-    ingestion_job_id = None
-    sync_status = "synced"
-
-    if s3_changed and kb.external_id and kb.external_data_source_id:
-        ingestion_job_id = start_ingestion_job(
-            kb.external_id,
-            kb.external_data_source_id,
-        )
-        if ingestion_job_id:
-            sync_status = "indexing"
-            source.sync_status = "indexing"
-            source.ingestion_job_id = ingestion_job_id
-        else:
-            source.sync_status = "failed"
-            source.sync_error = (
-                "Bedrock ingestion failed to start"
+    try:
+        sync_status, ingestion_job_id = (
+            _finish_folder_operation(
+                db,
+                source,
+                kb,
+                remote_files,
+                summary,
+                warnings,
             )
-    else:
-        source.sync_status = "synced"
-
-    # Update metadata
-    source.sync_generation = (
-        source.sync_generation + 1
-    )
-    source.last_synced_at = datetime.utcnow()
-    source.external_modified_at = datetime.utcnow()
-
-    source.metadata_json = json.dumps(
-        {
-            "file_count": len(remote_files),
-            "new": len(new_files),
-            "modified": len(modified_files),
-            "removed": len(removed_children),
-            "unchanged": (
-                len(remote_files)
-                - len(new_files)
-                - len(modified_files)
-            ),
-            "last_synced_files": [
-                {
-                    "id": f["id"],
-                    "name": f.get("name", ""),
-                    "modifiedTime": f.get(
-                        "modifiedTime", ""
-                    ),
-                    "size": f.get("size", "0"),
-                }
-                for f in remote_files
-            ],
-        }
-    )
-
-    db.commit()
-    db.refresh(source)
+        )
+        db.refresh(source)
+    except Exception as exc:
+        db.rollback()
+        persisted_source = (
+            db.query(KnowledgeSource)
+            .filter(
+                KnowledgeSource.id == source_id,
+                KnowledgeSource.organization_id == org_id,
+                KnowledgeSource.knowledge_base_id
+                == knowledge_base_id,
+                KnowledgeSource.source_type
+                == "google_drive_folder",
+            )
+            .first()
+        )
+        if persisted_source:
+            _mark_drive_source_failed(
+                db,
+                persisted_source,
+                f"Folder finalization failed: {exc}",
+            )
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "FOLDER_FINALIZATION_FAILED",
+                "message": str(exc),
+            },
+        ) from exc
 
     return {
         "source_id": source.id,
         "sync_status": sync_status,
         "ingestion_job_id": ingestion_job_id,
-        "new_files": len(new_files),
-        "modified_files": len(modified_files),
-        "removed_files": len(removed_children),
+        "new_files": summary["new"],
+        "modified_files": summary["modified"],
+        "removed_files": summary["removed"],
+        "summary": summary,
+        "warnings": warnings,
     }
 
 
@@ -15480,6 +16006,7 @@ async def sync_drive_file_source(
                     "google_drive_file",
                 ]
             ),
+            KnowledgeSource.active.is_(True),
         )
         .first()
     )
@@ -15489,6 +16016,27 @@ async def sync_drive_file_source(
             status_code=404,
             detail="Drive source not found",
         )
+
+    if source.parent_source_id is not None:
+        parent = (
+            db.query(KnowledgeSource)
+            .filter(
+                KnowledgeSource.id
+                == source.parent_source_id,
+                KnowledgeSource.organization_id == org_id,
+                KnowledgeSource.knowledge_base_id
+                == knowledge_base_id,
+                KnowledgeSource.source_type
+                == "google_drive_folder",
+                KnowledgeSource.active.is_(True),
+            )
+            .first()
+        )
+        if not parent:
+            raise HTTPException(
+                status_code=404,
+                detail="Drive source parent not found",
+            )
 
     # Idempotency
     if source.sync_status in ("syncing", "indexing"):
@@ -15534,7 +16082,17 @@ async def sync_drive_file_source(
 
     source.sync_status = "syncing"
     source.sync_error = None
-    db.flush()
+    try:
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "SYNC_STATE_PERSISTENCE_FAILED",
+                "message": str(exc),
+            },
+        ) from exc
 
     # Re-download content
     try:
@@ -15558,34 +16116,50 @@ async def sync_drive_file_source(
         code, msg = map_google_api_error(
             exc.response.status_code
         )
-        source.sync_status = "failed"
-        source.sync_error = msg
-        db.commit()
+        _mark_drive_source_failed(db, source, msg)
         raise HTTPException(
             status_code=exc.response.status_code,
             detail={"code": code, "message": msg},
         ) from exc
+    except (GoogleDriveFileTooLarge, ValueError) as exc:
+        error = str(exc)
+        _mark_drive_source_failed(db, source, error)
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "FILE_TOO_LARGE",
+                "message": error,
+            },
+        ) from exc
+    except Exception as exc:
+        error = f"Google Drive download failed: {exc}"
+        _mark_drive_source_failed(db, source, error)
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "code": "GOOGLE_DOWNLOAD_FAILED",
+                "message": error,
+            },
+        ) from exc
 
     if not content:
-        source.sync_status = "failed"
-        source.sync_error = "File is empty"
-        db.commit()
+        _mark_drive_source_failed(
+            db, source, "File is empty"
+        )
         raise HTTPException(
             status_code=400,
             detail="File is empty",
         )
 
-    # Replace S3 artifact
+    # Upload and durably repoint before deleting the old artifact.
+    old_bucket = source.s3_bucket
+    old_key = source.s3_key
+    safe_name = re.sub(
+        r"[^A-Za-z0-9._-]+",
+        "-",
+        source.external_name or source.name,
+    )
     try:
-        delete_knowledge_file(
-            source.s3_bucket, source.s3_key
-        )
-        safe_name = re.sub(
-            r"[^A-Za-z0-9._-]+",
-            "-",
-            source.external_name
-            or source.name,
-        )
         s3_result = upload_knowledge_file(
             organization_id=org_id,
             knowledge_base_id=knowledge_base_id,
@@ -15594,12 +16168,11 @@ async def sync_drive_file_source(
             content_type=new_mime,
         )
     except Exception as exc:
-        source.sync_status = "failed"
-        source.sync_error = f"S3 failed: {exc}"
-        db.commit()
+        error = f"S3 upload failed: {exc}"
+        _mark_drive_source_failed(db, source, error)
         raise HTTPException(
             status_code=500,
-            detail=f"S3 upload failed: {exc}",
+            detail=error,
         ) from exc
 
     # Get remote metadata
@@ -15611,48 +16184,116 @@ async def sync_drive_file_source(
     except Exception:
         pass
 
-    if remote_meta and remote_meta.get(
-        "modifiedTime"
-    ):
-        try:
-            source.external_modified_at = (
-                datetime.fromisoformat(
-                    remote_meta[
-                        "modifiedTime"
-                    ].replace("Z", "+00:00")
-                )
+    if remote_meta:
+        source.external_modified_at = (
+            _parse_google_modified_at(
+                remote_meta.get("modifiedTime")
             )
-        except Exception:
-            pass
+            or source.external_modified_at
+        )
 
     source.s3_bucket = s3_result["bucket"]
     source.s3_key = s3_result["key"]
     source.size_bytes = len(content)
+    source.content_type = new_mime
+    source.status = "uploaded"
     source.last_synced_at = datetime.utcnow()
-
-    # Bedrock ingestion
-    ingestion_job_id = None
-    sync_status = "uploaded"
-
-    if kb.external_id and kb.external_data_source_id:
-        ingestion_job_id = start_ingestion_job(
-            kb.external_id,
-            kb.external_data_source_id,
+    source.sync_status = "uploaded"
+    source.sync_error = None
+    source.ingestion_job_id = None
+    try:
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        _delete_artifact_best_effort(
+            s3_result.get("bucket"),
+            s3_result.get("key"),
+            "Failed to clean new Drive sync artifact",
         )
-        if ingestion_job_id:
-            sync_status = "indexing"
-            source.ingestion_job_id = (
-                ingestion_job_id
+        persisted_source = (
+            db.query(KnowledgeSource)
+            .filter(
+                KnowledgeSource.id == source_id,
+                KnowledgeSource.organization_id == org_id,
+                KnowledgeSource.knowledge_base_id
+                == knowledge_base_id,
             )
-            source.sync_status = "indexing"
+            .first()
+        )
+        if persisted_source:
+            _mark_drive_source_failed(
+                db,
+                persisted_source,
+                f"DB persistence failed: {exc}",
+            )
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "SOURCE_PERSISTENCE_FAILED",
+                "message": str(exc),
+            },
+        ) from exc
 
-    db.commit()
-    db.refresh(source)
+    cleanup_warning = None
+    if (
+        old_bucket,
+        old_key,
+    ) != (
+        s3_result.get("bucket"),
+        s3_result.get("key"),
+    ):
+        cleanup_warning = _delete_artifact_best_effort(
+            old_bucket,
+            old_key,
+            "Failed to delete replaced artifact",
+        )
+
+    try:
+        sync_status, ingestion_job_id = (
+            _start_drive_source_ingestion(
+                db,
+                source,
+                kb,
+                cleanup_warning,
+            )
+        )
+        db.refresh(source)
+    except Exception as exc:
+        db.rollback()
+        persisted_source = (
+            db.query(KnowledgeSource)
+            .filter(
+                KnowledgeSource.id == source_id,
+                KnowledgeSource.organization_id == org_id,
+                KnowledgeSource.knowledge_base_id
+                == knowledge_base_id,
+            )
+            .first()
+        )
+        if persisted_source:
+            persisted_source.sync_status = "uploaded"
+            persisted_source.sync_error = (
+                "Ingestion state persistence failed: "
+                f"{exc}"
+            )
+            try:
+                db.commit()
+            except Exception:
+                db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "INGESTION_STATE_FAILED",
+                "message": str(exc),
+            },
+        ) from exc
 
     return {
         "source_id": source.id,
         "sync_status": sync_status,
         "ingestion_job_id": ingestion_job_id,
+        "sync_error": source.sync_error,
+        "warning": cleanup_warning,
     }
 
 

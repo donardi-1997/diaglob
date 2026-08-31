@@ -15,6 +15,9 @@
 
   --green: #3ddc97;
 
+  --google-button-bg: #1f5fbf;
+  --google-button-hover: #184c99;
+
   --topbar-bg: rgba(7, 9, 15, 0.75);
   --sidebar-bg: rgba(9, 12, 19, 0.96);
   --control-bg: rgba(255, 255, 255, 0.025);
@@ -37,6 +40,9 @@
   --accent-soft: rgba(109, 93, 252, 0.1);
 
   --green: #159b68;
+
+  --google-button-bg: #185abc;
+  --google-button-hover: #154f9f;
 
   --topbar-bg: rgba(255, 255, 255, 0.86);
   --sidebar-bg: rgba(255, 255, 255, 0.96);
@@ -8491,23 +8497,27 @@ button:disabled {
 }
 
 .google-button {
+  max-width: 100%;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
   gap: 6px;
   padding: 8px 14px;
-  background: #4285f4;
+  background: var(--google-button-bg);
   color: #fff;
   border: none;
   border-radius: 8px;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
-  white-space: nowrap;
+  text-align: center;
+  white-space: normal;
   transition: background 0.15s;
 }
 
 .google-button:hover {
-  background: #3367d6;
+  background: var(--google-button-hover);
 }
 
 .google-button:disabled {
@@ -8521,7 +8531,56 @@ button:disabled {
 }
 
 .google-source-row:hover {
-  background: var(--hover);
+  background: var(--control-hover);
+}
+
+.knowledge-source-modal,
+.knowledge-source-list,
+.knowledge-source-row,
+.knowledge-source-info {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.knowledge-source-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-x: hidden;
+}
+
+.knowledge-source-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.knowledge-source-row .management-icon {
+  flex-shrink: 0;
+}
+
+.knowledge-source-info {
+  flex: 1 1 180px;
+}
+
+.knowledge-source-info strong,
+.knowledge-source-info span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.knowledge-source-info span {
+  margin-top: 3px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.knowledge-drive-load-more {
+  align-self: center;
+  margin-top: 4px;
 }
 
 .google-sync-button {
@@ -8544,6 +8603,7 @@ button:disabled {
   font-size: 13px;
   color: var(--text);
   margin-bottom: 16px;
+  flex-wrap: wrap;
 }
 
 .knowledge-google-banner span {
@@ -8616,6 +8676,20 @@ button:disabled {
 
   .knowledge-google-source-buttons {
     width: 100%;
+  }
+
+  .knowledge-google-source-buttons .google-button {
+    flex: 1 1 180px;
+  }
+
+  .knowledge-source-row {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .knowledge-source-row > .google-button,
+  .knowledge-drive-load-more {
+    flex: 1 1 100%;
   }
 
   .knowledge-drive-permissions {

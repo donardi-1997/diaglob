@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 import {
   useEffect,
+  useEffectEvent,
   useRef,
   useState,
   type ChangeEvent,
@@ -99,6 +100,20 @@ const EMPTY_FORM: KnowledgeFormState = {
   active: true,
   store_ids: [],
 };
+
+
+const GOOGLE_DOC_MIME_TYPE =
+  "application/vnd.google-apps.document";
+
+
+function isSyncInProgress(
+  status: string | null | undefined,
+) {
+  return (
+    status === "syncing" ||
+    status === "indexing"
+  );
+}
 
 
 function formatFileSize(
@@ -289,6 +304,16 @@ export default function KnowledgeBasesPage({
   ] = useState(false);
 
   const [
+    driveFilesLoadingMore,
+    setDriveFilesLoadingMore,
+  ] = useState(false);
+
+  const [
+    driveFilesNextPageToken,
+    setDriveFilesNextPageToken,
+  ] = useState<string | null>(null);
+
+  const [
     driveFoldersOpen,
     setDriveFoldersOpen,
   ] = useState(false);
@@ -304,6 +329,16 @@ export default function KnowledgeBasesPage({
   ] = useState(false);
 
   const [
+    driveFoldersLoadingMore,
+    setDriveFoldersLoadingMore,
+  ] = useState(false);
+
+  const [
+    driveFoldersNextPageToken,
+    setDriveFoldersNextPageToken,
+  ] = useState<string | null>(null);
+
+  const [
     addSourceMode,
     setAddSourceMode,
   ] = useState<
@@ -315,10 +350,158 @@ export default function KnowledgeBasesPage({
     setDriveSearchQuery,
   ] = useState("");
 
+  const driveFilesSearchRef =
+    useRef<HTMLInputElement | null>(null);
+
+  const driveFoldersSearchRef =
+    useRef<HTMLInputElement | null>(null);
+
+  const driveFilesTriggerRef =
+    useRef<HTMLElement | null>(null);
+
+  const driveFoldersTriggerRef =
+    useRef<HTMLElement | null>(null);
+
+  const driveFilesRequestRef =
+    useRef(0);
+
+  const driveFoldersRequestRef =
+    useRef(0);
+
+
+  const refreshAfterWindowFocus =
+    useEffectEvent(() => {
+      setGoogleConnecting(false);
+
+      const requests: Promise<unknown>[] = [
+        loadGoogleStatus(),
+        loadDriveScopeStatus(),
+      ];
+
+      if (
+        sourcesOpen &&
+        selectedKnowledgeBase
+      ) {
+        requests.push(
+          loadSources(
+            selectedKnowledgeBase.id,
+          ),
+        );
+      }
+
+      void Promise.all(requests);
+    });
+
 
   useEffect(() => {
     void loadData();
   }, []);
+
+
+  function getSyncStatusLabel(
+    status: string | null | undefined,
+  ) {
+    switch (status) {
+      case "syncing":
+        return t("knowledgeGoogleSyncing");
+      case "indexing":
+        return t("knowledgeGoogleIndexing");
+      case "partial_failed":
+        return t("knowledgeGooglePartialFailed");
+      case "uploaded":
+        return t("knowledgeGoogleUploaded");
+      case "failed":
+        return t("knowledgeGoogleFailed");
+      case "disconnected":
+        return t("knowledgeGoogleDisconnected");
+      case "synced":
+        return t("knowledgeGoogleSynced");
+      default:
+        return null;
+    }
+  }
+
+
+  function getFreshnessLabel(
+    freshness: string | null | undefined,
+  ) {
+    switch (freshness) {
+      case "syncing":
+        return t("knowledgeGoogleSyncing");
+      case "failed":
+        return t("knowledgeGoogleFailed");
+      case "disconnected":
+        return t("knowledgeGoogleDisconnected");
+      case "fresh":
+        return t("knowledgeGoogleFresh");
+      case "changed":
+        return t("knowledgeGoogleChanged");
+      case "static":
+        return t("knowledgeGoogleStatic");
+      default:
+        return null;
+    }
+  }
+
+
+  useEffect(() => {
+    const handleWindowFocus = () => {
+      refreshAfterWindowFocus();
+    };
+
+    window.addEventListener(
+      "focus",
+      handleWindowFocus,
+    );
+
+    return () => {
+      window.removeEventListener(
+        "focus",
+        handleWindowFocus,
+      );
+    };
+  }, []);
+
+
+  useEffect(() => {
+    if (
+      !driveFilesOpen &&
+      !driveFoldersOpen
+    ) {
+      return;
+    }
+
+    const handleKeyDown = (
+      event: KeyboardEvent,
+    ) => {
+      if (event.key !== "Escape") {
+        return;
+      }
+
+      event.preventDefault();
+
+      if (driveFilesOpen) {
+        closeDriveFilesPicker();
+      } else {
+        closeDriveFoldersPicker();
+      }
+    };
+
+    window.addEventListener(
+      "keydown",
+      handleKeyDown,
+    );
+
+    return () => {
+      window.removeEventListener(
+        "keydown",
+        handleKeyDown,
+      );
+    };
+  }, [
+    driveFilesOpen,
+    driveFoldersOpen,
+  ]);
 
 
   async function loadData() {
@@ -643,6 +826,7 @@ export default function KnowledgeBasesPage({
 
     try {
       await disconnectGoogle();
+      clearDriveState();
       await loadGoogleStatus();
     } catch (err) {
       console.error(err);
@@ -733,7 +917,11 @@ export default function KnowledgeBasesPage({
         selectedKnowledgeBase.id,
       );
 
-      if (result.sync_status === "indexing") {
+      if (
+        isSyncInProgress(
+          result.sync_status,
+        )
+      ) {
         startPollingIngestion(
           selectedKnowledgeBase.id,
           result.source_id,
@@ -768,7 +956,11 @@ export default function KnowledgeBasesPage({
         selectedKnowledgeBase.id,
       );
 
-      if (result.sync_status === "indexing") {
+      if (
+        isSyncInProgress(
+          result.sync_status,
+        )
+      ) {
         startPollingIngestion(
           selectedKnowledgeBase.id,
           source.id,
@@ -786,6 +978,49 @@ export default function KnowledgeBasesPage({
   // =========================================================
   // DRIVE / DOCS HANDLERS
   // =========================================================
+
+  function restoreDriveTrigger(
+    trigger: HTMLElement | null,
+  ) {
+    window.requestAnimationFrame(() => {
+      trigger?.focus();
+    });
+  }
+
+
+  function closeDriveFilesPicker() {
+    setDriveFilesOpen(false);
+    restoreDriveTrigger(
+      driveFilesTriggerRef.current,
+    );
+  }
+
+
+  function closeDriveFoldersPicker() {
+    setDriveFoldersOpen(false);
+    restoreDriveTrigger(
+      driveFoldersTriggerRef.current,
+    );
+  }
+
+
+  function clearDriveState() {
+    driveFilesRequestRef.current += 1;
+    driveFoldersRequestRef.current += 1;
+    setDriveScopeStatus(null);
+    setDriveFilesOpen(false);
+    setDriveFoldersOpen(false);
+    setDriveFiles([]);
+    setDriveFolders([]);
+    setDriveFilesNextPageToken(null);
+    setDriveFoldersNextPageToken(null);
+    setDriveFilesLoading(false);
+    setDriveFoldersLoading(false);
+    setDriveFilesLoadingMore(false);
+    setDriveFoldersLoadingMore(false);
+    setDriveSearchQuery("");
+    setAddSourceMode("menu");
+  }
 
   async function loadDriveScopeStatus() {
     try {
@@ -815,29 +1050,136 @@ export default function KnowledgeBasesPage({
     }
   }
 
-  async function handleOpenDriveFiles() {
+  async function loadDriveFiles(
+    query: string,
+    mode: "docs" | "drive-file",
+    pageToken?: string,
+  ) {
+    const append = Boolean(pageToken);
+    const requestId =
+      ++driveFilesRequestRef.current;
+
+    try {
+      if (append) {
+        setDriveFilesLoadingMore(true);
+      } else {
+        setDriveFilesLoading(true);
+      }
+
+      setError("");
+
+      const result =
+        await listGoogleDriveFiles(
+          query,
+          pageToken,
+          mode === "docs"
+            ? GOOGLE_DOC_MIME_TYPE
+            : undefined,
+        );
+
+      if (
+        requestId !==
+        driveFilesRequestRef.current
+      ) {
+        return;
+      }
+
+      setDriveFiles((current) =>
+        append
+          ? [
+              ...current,
+              ...result.files,
+            ]
+          : result.files,
+      );
+      setDriveFilesNextPageToken(
+        result.next_page_token,
+      );
+    } catch (err) {
+      if (
+        requestId !==
+        driveFilesRequestRef.current
+      ) {
+        return;
+      }
+
+      console.error(err);
+      setError(
+        t("knowledgeGoogleDriveFilesLoadError"),
+      );
+    } finally {
+      if (
+        requestId !==
+        driveFilesRequestRef.current
+      ) {
+        return;
+      }
+
+      if (append) {
+        setDriveFilesLoadingMore(false);
+      } else {
+        setDriveFilesLoading(false);
+      }
+    }
+  }
+
+
+  async function handleOpenDriveFiles(
+    mode: "docs" | "drive-file",
+    trigger: HTMLElement,
+  ) {
     if (
       !driveScopeStatus?.has_drive_scope
     ) {
       await handleExpandScopes();
       return;
     }
-    try {
-      setDriveFilesOpen(true);
-      setDriveFilesLoading(true);
-      setError("");
-      const result =
-        await listGoogleDriveFiles(
-          driveSearchQuery,
-        );
-      setDriveFiles(result.files);
-    } catch {
-      setError(
-        t("knowledgeGoogleSheetsLoadError"),
-      );
-    } finally {
-      setDriveFilesLoading(false);
+
+    driveFilesTriggerRef.current =
+      trigger;
+    setAddSourceMode(mode);
+    setDriveSearchQuery("");
+    setDriveFiles([]);
+    setDriveFilesNextPageToken(null);
+    setDriveFilesOpen(true);
+
+    await loadDriveFiles("", mode);
+  }
+
+
+  async function handleSearchDriveFiles(
+    query: string,
+  ) {
+    if (
+      addSourceMode !== "docs" &&
+      addSourceMode !== "drive-file"
+    ) {
+      return;
     }
+
+    setDriveFiles([]);
+    setDriveFilesNextPageToken(null);
+    await loadDriveFiles(
+      query,
+      addSourceMode,
+    );
+  }
+
+
+  async function handleLoadMoreDriveFiles() {
+    if (
+      !driveFilesNextPageToken ||
+      (addSourceMode !== "docs" &&
+        addSourceMode !== "drive-file")
+    ) {
+      return;
+    }
+
+    await loadDriveFiles(
+      driveSearchQuery,
+      addSourceMode,
+      driveFilesNextPageToken,
+    );
   }
 
   async function handleAddGoogleDoc(
@@ -847,16 +1189,28 @@ export default function KnowledgeBasesPage({
     try {
       setGoogleAdding(true);
       setError("");
-      await addGoogleDocSource(
-        selectedKnowledgeBase.id,
-        file.id,
-        file.name,
-      );
-      setDriveFilesOpen(false);
+      const result =
+        await addGoogleDocSource(
+          selectedKnowledgeBase.id,
+          file.id,
+          file.name,
+        );
+      closeDriveFilesPicker();
       setAddSourceMode("menu");
       await loadSources(
         selectedKnowledgeBase.id,
       );
+
+      if (
+        isSyncInProgress(
+          result.sync_status,
+        )
+      ) {
+        startPollingIngestion(
+          selectedKnowledgeBase.id,
+          result.source_id,
+        );
+      }
     } catch {
       setError(
         t("knowledgeGoogleAddSourceError"),
@@ -873,17 +1227,29 @@ export default function KnowledgeBasesPage({
     try {
       setGoogleAdding(true);
       setError("");
-      await addGoogleDriveFileSource(
-        selectedKnowledgeBase.id,
-        file.id,
-        file.name,
-        file.mime_type,
-      );
-      setDriveFilesOpen(false);
+      const result =
+        await addGoogleDriveFileSource(
+          selectedKnowledgeBase.id,
+          file.id,
+          file.name,
+          file.mime_type,
+        );
+      closeDriveFilesPicker();
       setAddSourceMode("menu");
       await loadSources(
         selectedKnowledgeBase.id,
       );
+
+      if (
+        isSyncInProgress(
+          result.sync_status,
+        )
+      ) {
+        startPollingIngestion(
+          selectedKnowledgeBase.id,
+          result.source_id,
+        );
+      }
     } catch {
       setError(
         t("knowledgeGoogleAddSourceError"),
@@ -893,29 +1259,116 @@ export default function KnowledgeBasesPage({
     }
   }
 
-  async function handleOpenDriveFolders() {
+  async function loadDriveFolders(
+    query: string,
+    pageToken?: string,
+  ) {
+    const append = Boolean(pageToken);
+    const requestId =
+      ++driveFoldersRequestRef.current;
+
+    try {
+      if (append) {
+        setDriveFoldersLoadingMore(true);
+      } else {
+        setDriveFoldersLoading(true);
+      }
+
+      setError("");
+
+      const result =
+        await listGoogleDriveFolders(
+          query,
+          pageToken,
+        );
+
+      if (
+        requestId !==
+        driveFoldersRequestRef.current
+      ) {
+        return;
+      }
+
+      setDriveFolders((current) =>
+        append
+          ? [
+              ...current,
+              ...result.folders,
+            ]
+          : result.folders,
+      );
+      setDriveFoldersNextPageToken(
+        result.next_page_token,
+      );
+    } catch (err) {
+      if (
+        requestId !==
+        driveFoldersRequestRef.current
+      ) {
+        return;
+      }
+
+      console.error(err);
+      setError(
+        t("knowledgeGoogleDriveFoldersLoadError"),
+      );
+    } finally {
+      if (
+        requestId !==
+        driveFoldersRequestRef.current
+      ) {
+        return;
+      }
+
+      if (append) {
+        setDriveFoldersLoadingMore(false);
+      } else {
+        setDriveFoldersLoading(false);
+      }
+    }
+  }
+
+
+  async function handleOpenDriveFolders(
+    trigger: HTMLElement,
+  ) {
     if (
       !driveScopeStatus?.has_drive_scope
     ) {
       await handleExpandScopes();
       return;
     }
-    try {
-      setDriveFoldersOpen(true);
-      setDriveFoldersLoading(true);
-      setError("");
-      const result =
-        await listGoogleDriveFolders(
-          driveSearchQuery,
-        );
-      setDriveFolders(result.folders);
-    } catch {
-      setError(
-        t("knowledgeGoogleSheetsLoadError"),
-      );
-    } finally {
-      setDriveFoldersLoading(false);
+
+    driveFoldersTriggerRef.current =
+      trigger;
+    setAddSourceMode("drive-folder");
+    setDriveSearchQuery("");
+    setDriveFolders([]);
+    setDriveFoldersNextPageToken(null);
+    setDriveFoldersOpen(true);
+
+    await loadDriveFolders("");
+  }
+
+
+  async function handleSearchDriveFolders(
+    query: string,
+  ) {
+    setDriveFolders([]);
+    setDriveFoldersNextPageToken(null);
+    await loadDriveFolders(query);
+  }
+
+
+  async function handleLoadMoreDriveFolders() {
+    if (!driveFoldersNextPageToken) {
+      return;
     }
+
+    await loadDriveFolders(
+      driveSearchQuery,
+      driveFoldersNextPageToken,
+    );
   }
 
   async function handleAddDriveFolder(
@@ -925,16 +1378,28 @@ export default function KnowledgeBasesPage({
     try {
       setGoogleAdding(true);
       setError("");
-      await addGoogleDriveFolderSource(
-        selectedKnowledgeBase.id,
-        folder.id,
-        folder.name,
-      );
-      setDriveFoldersOpen(false);
+      const result =
+        await addGoogleDriveFolderSource(
+          selectedKnowledgeBase.id,
+          folder.id,
+          folder.name,
+        );
+      closeDriveFoldersPicker();
       setAddSourceMode("menu");
       await loadSources(
         selectedKnowledgeBase.id,
       );
+
+      if (
+        isSyncInProgress(
+          result.sync_status,
+        )
+      ) {
+        startPollingIngestion(
+          selectedKnowledgeBase.id,
+          result.source_id,
+        );
+      }
     } catch {
       setError(
         t("knowledgeGoogleAddSourceError"),
@@ -951,14 +1416,22 @@ export default function KnowledgeBasesPage({
     try {
       setGoogleAdding(true);
       setError("");
-      await syncDriveFolder(
+      const result = await syncDriveFolder(
         selectedKnowledgeBase.id,
         source.id,
       );
-      startPollingIngestion(
-        selectedKnowledgeBase.id,
-        source.id,
-      );
+
+      if (
+        isSyncInProgress(
+          result.sync_status,
+        )
+      ) {
+        startPollingIngestion(
+          selectedKnowledgeBase.id,
+          source.id,
+        );
+      }
+
       await loadSources(
         selectedKnowledgeBase.id,
       );
@@ -978,14 +1451,23 @@ export default function KnowledgeBasesPage({
     try {
       setGoogleAdding(true);
       setError("");
-      await syncDriveFileSource(
-        selectedKnowledgeBase.id,
-        source.id,
-      );
-      startPollingIngestion(
-        selectedKnowledgeBase.id,
-        source.id,
-      );
+      const result =
+        await syncDriveFileSource(
+          selectedKnowledgeBase.id,
+          source.id,
+        );
+
+      if (
+        isSyncInProgress(
+          result.sync_status,
+        )
+      ) {
+        startPollingIngestion(
+          selectedKnowledgeBase.id,
+          source.id,
+        );
+      }
+
       await loadSources(
         selectedKnowledgeBase.id,
       );
@@ -1019,7 +1501,9 @@ export default function KnowledgeBasesPage({
             );
 
           if (
-            result.sync_status !== "indexing"
+            !isSyncInProgress(
+              result.sync_status,
+            )
           ) {
             if (pollingRef.current) {
               clearInterval(
@@ -1848,9 +2332,11 @@ export default function KnowledgeBasesPage({
 
                       <button
                         className="google-button"
-                        onClick={() => {
-                          setAddSourceMode("docs");
-                          void handleOpenDriveFiles();
+                        onClick={(event) => {
+                          void handleOpenDriveFiles(
+                            "docs",
+                            event.currentTarget,
+                          );
                         }}
                         disabled={driveFilesLoading}
                       >
@@ -1864,9 +2350,11 @@ export default function KnowledgeBasesPage({
 
                       <button
                         className="google-button"
-                        onClick={() => {
-                          setAddSourceMode("drive-file");
-                          void handleOpenDriveFiles();
+                        onClick={(event) => {
+                          void handleOpenDriveFiles(
+                            "drive-file",
+                            event.currentTarget,
+                          );
                         }}
                         disabled={driveFilesLoading}
                       >
@@ -1880,9 +2368,10 @@ export default function KnowledgeBasesPage({
 
                       <button
                         className="google-button"
-                        onClick={() => {
-                          setAddSourceMode("drive-folder");
-                          void handleOpenDriveFolders();
+                        onClick={(event) => {
+                          void handleOpenDriveFolders(
+                            event.currentTarget,
+                          );
                         }}
                         disabled={driveFoldersLoading}
                       >
@@ -1942,32 +2431,40 @@ export default function KnowledgeBasesPage({
                             "google_drive_file" ||
                           isDriveFolder;
 
-                        const isSyncing =
+                        const isPolling =
                           syncPollingSourceId ===
                           source.id;
 
-                        const syncLabel =
-                          source.sync_status ===
-                          "indexing" || isSyncing
-                            ? t("knowledgeGoogleSyncing")
-                            : source.sync_status ===
-                              "synced"
-                              ? t("knowledgeGoogleSynced")
-                              : source.sync_status ===
-                                "failed"
-                                ? t("knowledgeGoogleSyncError")
-                                : null;
+                        const syncInProgress =
+                          isPolling ||
+                          isSyncInProgress(
+                            source.sync_status,
+                          );
+
+                        const syncLabel = isPolling
+                          ? t("knowledgeGoogleSyncing")
+                          : getSyncStatusLabel(
+                              source.sync_status,
+                            ) ||
+                            getSyncStatusLabel(
+                              source.status,
+                            );
 
                         const freshnessLabel =
-                          source.freshness === "fresh"
-                            ? t("knowledgeGoogleFresh")
-                            : source.freshness === "changed"
-                              ? t("knowledgeGoogleChanged")
-                              : source.freshness === "disconnected"
-                                ? t("knowledgeGoogleDisconnected")
-                                : source.freshness === "static"
-                                  ? t("knowledgeGoogleStatic")
-                                  : null;
+                          getFreshnessLabel(
+                            source.freshness,
+                          );
+
+                        const prefersFreshness =
+                          source.freshness ===
+                            "disconnected" ||
+                          source.sync_status ===
+                            "synced";
+
+                        const driveStatusLabel =
+                          prefersFreshness
+                            ? freshnessLabel || syncLabel
+                            : syncLabel || freshnessLabel;
 
                         return (
                           <div
@@ -2023,7 +2520,7 @@ export default function KnowledgeBasesPage({
                                   </>
                                 ) : isGoogleDriveSource ? (
                                   <>
-                                    {freshnessLabel || syncLabel || t("knowledgeGoogleSyncPending")}
+                                    {driveStatusLabel || t("knowledgeGoogleSyncPending")}
                                     {source.last_synced_at && (
                                       <>
                                         {" · "}
@@ -2042,7 +2539,8 @@ export default function KnowledgeBasesPage({
                                     }
                                     {" · "}
                                     {
-                                      source.status
+                                      syncLabel ||
+                                        source.status
                                     }
                                   </>
                                 )}
@@ -2058,16 +2556,14 @@ export default function KnowledgeBasesPage({
                                   )
                                 }
                                 disabled={
-                                  isSyncing ||
-                                  source.sync_status ===
-                                    "indexing"
+                                  syncInProgress
                                 }
                                 title={t("knowledgeGoogleSync")}
                               >
                                 <RefreshCw
                                   size={16}
                                   className={
-                                    isSyncing
+                                    syncInProgress
                                       ? "spin"
                                       : ""
                                   }
@@ -2082,14 +2578,13 @@ export default function KnowledgeBasesPage({
                                   void handleSyncDriveFolder(source)
                                 }
                                 disabled={
-                                  isSyncing ||
-                                  source.sync_status === "indexing"
+                                  syncInProgress
                                 }
                                 title={t("knowledgeGoogleSyncFolder")}
                               >
                                 <RefreshCw
                                   size={16}
-                                  className={isSyncing ? "spin" : ""}
+                                  className={syncInProgress ? "spin" : ""}
                                 />
                               </button>
                             )}
@@ -2103,14 +2598,13 @@ export default function KnowledgeBasesPage({
                                     void handleSyncDriveFile(source)
                                   }
                                   disabled={
-                                    isSyncing ||
-                                    source.sync_status === "indexing"
+                                    syncInProgress
                                   }
                                   title={t("knowledgeGoogleSync")}
                                 >
                                   <RefreshCw
                                     size={16}
-                                    className={isSyncing ? "spin" : ""}
+                                    className={syncInProgress ? "spin" : ""}
                                   />
                                 </button>
                               )}
@@ -2349,7 +2843,7 @@ export default function KnowledgeBasesPage({
           className="management-modal-backdrop"
           onMouseDown={() => {
             if (!googleAdding) {
-              setDriveFilesOpen(false);
+              closeDriveFilesPicker();
             }
           }}
         >
@@ -2372,7 +2866,7 @@ export default function KnowledgeBasesPage({
               <button
                 className="icon-button"
                 aria-label={t("knowledgeGoogleClose")}
-                onClick={() => setDriveFilesOpen(false)}
+                onClick={closeDriveFilesPicker}
                 disabled={googleAdding}
               >
                 <X size={18} />
@@ -2382,15 +2876,27 @@ export default function KnowledgeBasesPage({
               <label className="knowledge-drive-search">
                 <Search size={16} />
                 <input
+                  ref={driveFilesSearchRef}
+                  autoFocus
+                  aria-label={t("knowledgeGoogleSearchDrive")}
                   value={driveSearchQuery}
                   placeholder={t("knowledgeGoogleSearchDrive")}
-                  onChange={(event) =>
-                    setDriveSearchQuery(event.target.value)
-                  }
+                  onChange={(event) => {
+                    driveFilesRequestRef.current += 1;
+                    setDriveSearchQuery(
+                      event.target.value,
+                    );
+                    setDriveFiles([]);
+                    setDriveFilesNextPageToken(null);
+                    setDriveFilesLoading(false);
+                    setDriveFilesLoadingMore(false);
+                  }}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") {
                       event.preventDefault();
-                      void handleOpenDriveFiles();
+                      void handleSearchDriveFiles(
+                        event.currentTarget.value,
+                      );
                     }
                   }}
                 />
@@ -2405,11 +2911,11 @@ export default function KnowledgeBasesPage({
                     .filter((file) =>
                       addSourceMode !== "docs" ||
                       file.mime_type ===
-                        "application/vnd.google-apps.document",
+                        GOOGLE_DOC_MIME_TYPE,
                     )
                     .map((file) => {
                       const isDoc = file.mime_type ===
-                        "application/vnd.google-apps.document";
+                        GOOGLE_DOC_MIME_TYPE;
                       return (
                         <div
                           key={file.id}
@@ -2443,12 +2949,29 @@ export default function KnowledgeBasesPage({
                   {!driveFiles.filter((file) =>
                     addSourceMode !== "docs" ||
                     file.mime_type ===
-                      "application/vnd.google-apps.document",
+                      GOOGLE_DOC_MIME_TYPE,
                   ).length && (
                     <div className="empty-management">
                       <FileText size={30} />
                       <strong>{t("knowledgeGoogleNoDriveFiles")}</strong>
                     </div>
+                  )}
+                  {driveFilesNextPageToken && (
+                    <button
+                      className="secondary-button knowledge-drive-load-more"
+                      onClick={() =>
+                        void handleLoadMoreDriveFiles()
+                      }
+                      disabled={driveFilesLoadingMore}
+                    >
+                      {driveFilesLoadingMore && (
+                        <LoaderCircle
+                          className="spin"
+                          size={16}
+                        />
+                      )}
+                      {t("knowledgeGoogleLoadMore")}
+                    </button>
                   )}
                 </div>
               )}
@@ -2462,7 +2985,7 @@ export default function KnowledgeBasesPage({
           className="management-modal-backdrop"
           onMouseDown={() => {
             if (!googleAdding) {
-              setDriveFoldersOpen(false);
+              closeDriveFoldersPicker();
             }
           }}
         >
@@ -2483,7 +3006,7 @@ export default function KnowledgeBasesPage({
               <button
                 className="icon-button"
                 aria-label={t("knowledgeGoogleClose")}
-                onClick={() => setDriveFoldersOpen(false)}
+                onClick={closeDriveFoldersPicker}
                 disabled={googleAdding}
               >
                 <X size={18} />
@@ -2493,15 +3016,27 @@ export default function KnowledgeBasesPage({
               <label className="knowledge-drive-search">
                 <Search size={16} />
                 <input
+                  ref={driveFoldersSearchRef}
+                  autoFocus
+                  aria-label={t("knowledgeGoogleSearchDrive")}
                   value={driveSearchQuery}
                   placeholder={t("knowledgeGoogleSearchDrive")}
-                  onChange={(event) =>
-                    setDriveSearchQuery(event.target.value)
-                  }
+                  onChange={(event) => {
+                    driveFoldersRequestRef.current += 1;
+                    setDriveSearchQuery(
+                      event.target.value,
+                    );
+                    setDriveFolders([]);
+                    setDriveFoldersNextPageToken(null);
+                    setDriveFoldersLoading(false);
+                    setDriveFoldersLoadingMore(false);
+                  }}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") {
                       event.preventDefault();
-                      void handleOpenDriveFolders();
+                      void handleSearchDriveFolders(
+                        event.currentTarget.value,
+                      );
                     }
                   }}
                 />
@@ -2540,6 +3075,23 @@ export default function KnowledgeBasesPage({
                       <Folder size={30} />
                       <strong>{t("knowledgeGoogleNoDriveFolders")}</strong>
                     </div>
+                  )}
+                  {driveFoldersNextPageToken && (
+                    <button
+                      className="secondary-button knowledge-drive-load-more"
+                      onClick={() =>
+                        void handleLoadMoreDriveFolders()
+                      }
+                      disabled={driveFoldersLoadingMore}
+                    >
+                      {driveFoldersLoadingMore && (
+                        <LoaderCircle
+                          className="spin"
+                          size={16}
+                        />
+                      )}
+                      {t("knowledgeGoogleLoadMore")}
+                    </button>
                   )}
                 </div>
               )}

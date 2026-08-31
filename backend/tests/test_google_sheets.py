@@ -1395,6 +1395,20 @@ class TestTenantIsolation:
 
 
 class TestDeleteSourceBedrockReindex:
+    def _connection(self, db, org, user, scopes):
+        connection = GoogleConnection(
+            organization_id=org.id,
+            user_id=user.id,
+            access_token_encrypted="enc-access",
+            refresh_token_encrypted="enc-refresh",
+            token_expiry=datetime.utcnow() + timedelta(hours=1),
+            scopes=scopes,
+            status="connected",
+        )
+        db.add(connection)
+        db.commit()
+        return connection
+
     def test_google_source_delete_triggers_reindex(
         self, client_factory, db
     ):
@@ -1444,6 +1458,917 @@ class TestDeleteSourceBedrockReindex:
             "bedrock-kb-123",
             "bedrock-ds-456",
         )
+
+    def test_modified_upload_failure_preserves_old_artifact(
+        self, client_factory, db
+    ):
+        org = _make_org(db)
+        user, _ = _make_user(db, org)
+        kb = _make_kb(db, org)
+        self._connection(
+            db, org, user,
+            "https://www.googleapis.com/auth/drive.readonly",
+        )
+        source = KnowledgeSource(
+            organization_id=org.id,
+            knowledge_base_id=kb.id,
+            name="Policies.pdf",
+            source_type="google_drive_file",
+            content_type="application/pdf",
+            s3_bucket="bucket",
+            s3_key="old-key",
+            external_id="file-1",
+            external_name="Policies.pdf",
+            external_mime_type="application/pdf",
+            status="uploaded",
+            sync_status="synced",
+        )
+        db.add(source)
+        db.commit()
+        client = client_factory(org)
+
+        with patch(
+            "app.main._get_valid_google_token",
+            return_value="token",
+        ), patch(
+            "app.main.download_drive_file",
+            return_value=b"new-content",
+        ), patch(
+            "app.main.upload_knowledge_file",
+            side_effect=RuntimeError("upload unavailable"),
+        ), patch(
+            "app.main.delete_knowledge_file"
+        ) as delete_file:
+            response = client.post(
+                f"/api/knowledge-bases/{kb.id}/sources/"
+                f"{source.id}/sync-drive-file"
+            )
+
+        assert response.status_code == 500
+        delete_file.assert_not_called()
+        db.refresh(source)
+        assert source.s3_bucket == "bucket"
+        assert source.s3_key == "old-key"
+        assert source.sync_status == "failed"
+
+    def test_new_artifact_cleaned_on_db_persistence_failure(
+        self,
+    ):
+        from app.main import _persist_new_drive_source
+
+        fake_db = MagicMock()
+        fake_db.commit.side_effect = RuntimeError("db down")
+        source = MagicMock()
+        uploaded = {"bucket": "bucket", "key": "new-key"}
+
+        with patch(
+            "app.main.delete_knowledge_file"
+        ) as delete_file:
+            with pytest.raises(RuntimeError, match="db down"):
+                _persist_new_drive_source(
+                    fake_db, source, uploaded
+                )
+
+        fake_db.rollback.assert_called_once()
+        delete_file.assert_called_once_with(
+            "bucket", "new-key"
+        )
+
+    def test_folder_partial_failure_summary_and_status(
+        self, client_factory, db
+    ):
+        org = _make_org(db)
+        user, _ = _make_user(db, org)
+        kb = _make_kb(db, org)
+        self._connection(
+            db, org, user,
+            "https://www.googleapis.com/auth/drive.readonly",
+        )
+        folder = KnowledgeSource(
+            organization_id=org.id,
+            knowledge_base_id=kb.id,
+            name="Folder",
+            source_type="google_drive_folder",
+            s3_bucket="",
+            s3_key="",
+            external_id="folder-1",
+            status="uploaded",
+            sync_status="synced",
+        )
+        db.add(folder)
+        db.commit()
+        client = client_factory(org)
+        files = [
+            {
+                "id": "new-1", "name": "One.pdf",
+                "mimeType": "application/pdf", "size": "3",
+                "modifiedTime": "2026-08-31T10:00:00Z",
+            },
+            {
+                "id": "new-2", "name": "Two.pdf",
+                "mimeType": "application/pdf", "size": "3",
+                "modifiedTime": "2026-08-31T10:00:00Z",
+            },
+        ]
+
+        with patch(
+            "app.main._get_valid_google_token",
+            return_value="token",
+        ), patch(
+            "app.main.list_folder_children",
+            return_value={"files": files},
+        ), patch(
+            "app.main._download_drive_child",
+            side_effect=[
+                (b"one", "application/pdf", "google_drive_file"),
+                RuntimeError("download failed"),
+            ],
+        ), patch(
+            "app.main.upload_knowledge_file",
+            return_value={"bucket": "bucket", "key": "new-1"},
+        ), patch(
+            "app.main.start_ingestion_job",
+            return_value="job-1",
+        ) as start_job:
+            response = client.post(
+                f"/api/knowledge-bases/{kb.id}/sources/"
+                f"{folder.id}/sync-folder"
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["sync_status"] == "partial_failed"
+        assert data["summary"]["new"] == 1
+        assert data["summary"]["successful_delta"] is True
+        assert data["summary"]["failed"][0]["id"] == "new-2"
+        start_job.assert_called_once()
+
+    def test_removed_delete_failure_stays_active_without_delta(
+        self, client_factory, db
+    ):
+        org = _make_org(db)
+        user, _ = _make_user(db, org)
+        kb = _make_kb(db, org)
+        self._connection(
+            db, org, user,
+            "https://www.googleapis.com/auth/drive.readonly",
+        )
+        folder = KnowledgeSource(
+            organization_id=org.id,
+            knowledge_base_id=kb.id,
+            name="Folder",
+            source_type="google_drive_folder",
+            s3_bucket="", s3_key="", external_id="folder-1",
+            status="uploaded", sync_status="synced",
+        )
+        db.add(folder)
+        db.flush()
+        child = KnowledgeSource(
+            organization_id=org.id,
+            knowledge_base_id=kb.id,
+            parent_source_id=folder.id,
+            name="Gone.pdf",
+            source_type="google_drive_file",
+            s3_bucket="bucket", s3_key="old-key",
+            external_id="gone-1", status="uploaded",
+            sync_status="synced",
+        )
+        db.add(child)
+        db.commit()
+        client = client_factory(org)
+
+        with patch(
+            "app.main._get_valid_google_token",
+            return_value="token",
+        ), patch(
+            "app.main.list_folder_children",
+            return_value={"files": []},
+        ), patch(
+            "app.main.delete_knowledge_file",
+            side_effect=RuntimeError("delete denied"),
+        ), patch(
+            "app.main.start_ingestion_job"
+        ) as start_job:
+            response = client.post(
+                f"/api/knowledge-bases/{kb.id}/sources/"
+                f"{folder.id}/sync-folder"
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["sync_status"] == "failed"
+        assert data["summary"]["removed"] == 0
+        assert data["summary"]["successful_delta"] is False
+        start_job.assert_not_called()
+        db.refresh(child)
+        assert child.active is True
+        assert child.sync_status == "failed"
+
+    def test_single_sync_without_bedrock_ids_stays_uploaded(
+        self, client_factory, db
+    ):
+        org = _make_org(db)
+        user, _ = _make_user(db, org)
+        kb = KnowledgeBase(
+            organization_id=org.id,
+            name="No Bedrock",
+            scope="selected_stores",
+            external_id=None,
+            external_data_source_id=None,
+        )
+        db.add(kb)
+        db.flush()
+        self._connection(
+            db, org, user,
+            "https://www.googleapis.com/auth/drive.readonly",
+        )
+        source = KnowledgeSource(
+            organization_id=org.id,
+            knowledge_base_id=kb.id,
+            name="File.pdf",
+            source_type="google_drive_file",
+            content_type="application/pdf",
+            s3_bucket="bucket", s3_key="old-key",
+            external_id="file-1", external_name="File.pdf",
+            external_mime_type="application/pdf",
+            status="uploaded", sync_status="synced",
+        )
+        db.add(source)
+        db.commit()
+        client = client_factory(org)
+
+        with patch(
+            "app.main._get_valid_google_token",
+            return_value="token",
+        ), patch(
+            "app.main.download_drive_file",
+            return_value=b"new",
+        ), patch(
+            "app.main.get_file_metadata",
+            return_value={},
+        ), patch(
+            "app.main.upload_knowledge_file",
+            return_value={"bucket": "bucket", "key": "new-key"},
+        ), patch(
+            "app.main.delete_knowledge_file"
+        ), patch(
+            "app.main.start_ingestion_job"
+        ) as start_job:
+            response = client.post(
+                f"/api/knowledge-bases/{kb.id}/sources/"
+                f"{source.id}/sync-drive-file"
+            )
+
+        assert response.status_code == 200
+        assert response.json()["sync_status"] == "uploaded"
+        start_job.assert_not_called()
+        db.refresh(source)
+        assert source.s3_key == "new-key"
+        assert source.sync_status == "uploaded"
+
+    @pytest.mark.parametrize(
+        "start_error",
+        [None, RuntimeError("bedrock unavailable")],
+    )
+    def test_single_ingestion_start_failure_stays_uploaded(
+        self, start_error, client_factory, db
+    ):
+        org = _make_org(db)
+        user, _ = _make_user(db, org)
+        kb = _make_kb(db, org)
+        self._connection(
+            db, org, user,
+            "https://www.googleapis.com/auth/drive.readonly",
+        )
+        source = KnowledgeSource(
+            organization_id=org.id,
+            knowledge_base_id=kb.id,
+            name="File.pdf", source_type="google_drive_file",
+            content_type="application/pdf",
+            s3_bucket="bucket", s3_key="old-key",
+            external_id="file-1", external_name="File.pdf",
+            external_mime_type="application/pdf",
+            status="uploaded", sync_status="synced",
+        )
+        db.add(source)
+        db.commit()
+        client = client_factory(org)
+
+        with patch(
+            "app.main._get_valid_google_token", return_value="token"
+        ), patch(
+            "app.main.download_drive_file", return_value=b"new"
+        ), patch(
+            "app.main.get_file_metadata", return_value={}
+        ), patch(
+            "app.main.upload_knowledge_file",
+            return_value={"bucket": "bucket", "key": "new-key"},
+        ), patch(
+            "app.main.delete_knowledge_file"
+        ), patch(
+            "app.main.start_ingestion_job"
+        ) as start_job:
+            if start_error is None:
+                start_job.return_value = None
+            else:
+                start_job.side_effect = start_error
+            response = client.post(
+                f"/api/knowledge-bases/{kb.id}/sources/"
+                f"{source.id}/sync-drive-file"
+            )
+
+        assert response.status_code == 200
+        assert response.json()["sync_status"] == "uploaded"
+        assert "failed to start" in response.json()[
+            "sync_error"
+        ].lower()
+        db.refresh(source)
+        assert source.sync_status == "uploaded"
+        assert source.sync_error
+
+    def test_folder_zero_delta_starts_no_ingestion(
+        self, client_factory, db
+    ):
+        org = _make_org(db)
+        user, _ = _make_user(db, org)
+        kb = _make_kb(db, org)
+        self._connection(
+            db, org, user,
+            "https://www.googleapis.com/auth/drive.readonly",
+        )
+        folder = KnowledgeSource(
+            organization_id=org.id,
+            knowledge_base_id=kb.id,
+            name="Folder", source_type="google_drive_folder",
+            s3_bucket="", s3_key="", external_id="folder-1",
+            status="uploaded", sync_status="synced",
+        )
+        db.add(folder)
+        db.flush()
+        modified = datetime(2026, 8, 31, 10, 0, 0)
+        child = KnowledgeSource(
+            organization_id=org.id,
+            knowledge_base_id=kb.id,
+            parent_source_id=folder.id,
+            name="Same.pdf", source_type="google_drive_file",
+            s3_bucket="bucket", s3_key="same-key",
+            external_id="same-1", status="uploaded",
+            sync_status="synced", external_modified_at=modified,
+        )
+        db.add(child)
+        db.commit()
+        client = client_factory(org)
+        files = [{
+            "id": "same-1", "name": "Same.pdf",
+            "mimeType": "application/pdf", "size": "3",
+            "modifiedTime": "2026-08-31T10:00:00Z",
+        }]
+
+        with patch(
+            "app.main._get_valid_google_token", return_value="token"
+        ), patch(
+            "app.main.list_folder_children",
+            return_value={"files": files},
+        ), patch(
+            "app.main.start_ingestion_job"
+        ) as start_job, patch(
+            "app.main._download_drive_child"
+        ) as download:
+            response = client.post(
+                f"/api/knowledge-bases/{kb.id}/sources/"
+                f"{folder.id}/sync-folder"
+            )
+
+        assert response.status_code == 200
+        assert response.json()["sync_status"] == "synced"
+        assert response.json()["summary"]["unchanged"] == 1
+        assert response.json()["summary"]["successful_delta"] is False
+        start_job.assert_not_called()
+        download.assert_not_called()
+
+    def test_mixed_folder_delta_starts_exactly_one_job(
+        self, client_factory, db
+    ):
+        org = _make_org(db)
+        user, _ = _make_user(db, org)
+        kb = _make_kb(db, org)
+        self._connection(
+            db, org, user,
+            "https://www.googleapis.com/auth/drive.readonly",
+        )
+        folder = KnowledgeSource(
+            organization_id=org.id,
+            knowledge_base_id=kb.id,
+            name="Folder", source_type="google_drive_folder",
+            s3_bucket="", s3_key="", external_id="folder-1",
+            status="uploaded", sync_status="synced",
+        )
+        db.add(folder)
+        db.flush()
+        modified_child = KnowledgeSource(
+            organization_id=org.id,
+            knowledge_base_id=kb.id,
+            parent_source_id=folder.id,
+            name="Changed.pdf", source_type="google_drive_file",
+            s3_bucket="bucket", s3_key="modified-old",
+            external_id="modified-1", status="uploaded",
+            sync_status="synced",
+            external_modified_at=datetime(2026, 8, 30),
+        )
+        removed_child = KnowledgeSource(
+            organization_id=org.id,
+            knowledge_base_id=kb.id,
+            parent_source_id=folder.id,
+            name="Removed.pdf", source_type="google_drive_file",
+            s3_bucket="bucket", s3_key="removed-old",
+            external_id="removed-1", status="uploaded",
+            sync_status="synced",
+        )
+        db.add_all([modified_child, removed_child])
+        db.commit()
+        client = client_factory(org)
+        files = [
+            {
+                "id": "new-1", "name": "New.pdf",
+                "mimeType": "application/pdf", "size": "3",
+                "modifiedTime": "2026-08-31T10:00:00Z",
+            },
+            {
+                "id": "modified-1", "name": "Changed.pdf",
+                "mimeType": "application/pdf", "size": "4",
+                "modifiedTime": "2026-08-31T10:00:00Z",
+            },
+        ]
+
+        with patch(
+            "app.main._get_valid_google_token", return_value="token"
+        ), patch(
+            "app.main.list_folder_children",
+            return_value={"files": files},
+        ), patch(
+            "app.main._download_drive_child",
+            side_effect=[
+                (b"new", "application/pdf", "google_drive_file"),
+                (b"changed", "application/pdf", "google_drive_file"),
+            ],
+        ), patch(
+            "app.main.upload_knowledge_file",
+            side_effect=[
+                {"bucket": "bucket", "key": "new-key"},
+                {"bucket": "bucket", "key": "modified-new"},
+            ],
+        ), patch(
+            "app.main.delete_knowledge_file"
+        ), patch(
+            "app.main.start_ingestion_job",
+            return_value="job-mixed",
+        ) as start_job:
+            response = client.post(
+                f"/api/knowledge-bases/{kb.id}/sources/"
+                f"{folder.id}/sync-folder"
+            )
+
+        assert response.status_code == 200
+        summary = response.json()["summary"]
+        assert summary["new"] == 1
+        assert summary["modified"] == 1
+        assert summary["removed"] == 1
+        assert response.json()["sync_status"] == "indexing"
+        start_job.assert_called_once_with(
+            "bedrock-kb-123", "bedrock-ds-456"
+        )
+
+    def test_folder_conflicts_are_detected_before_download(
+        self, client_factory, db
+    ):
+        org = _make_org(db)
+        user, _ = _make_user(db, org)
+        kb = _make_kb(db, org)
+        self._connection(
+            db, org, user,
+            "https://www.googleapis.com/auth/drive.readonly",
+        )
+        old_folder = KnowledgeSource(
+            organization_id=org.id,
+            knowledge_base_id=kb.id,
+            name="Old", source_type="google_drive_folder",
+            s3_bucket="", s3_key="", external_id="old-folder",
+            status="uploaded", sync_status="synced",
+        )
+        db.add(old_folder)
+        db.flush()
+        existing_child = KnowledgeSource(
+            organization_id=org.id,
+            knowledge_base_id=kb.id,
+            parent_source_id=old_folder.id,
+            name="Duplicate.pdf", source_type="google_drive_file",
+            s3_bucket="bucket", s3_key="existing-key",
+            external_id="duplicate-1", status="uploaded",
+            sync_status="synced",
+        )
+        db.add(existing_child)
+        db.commit()
+        client = client_factory(org)
+
+        with patch(
+            "app.main.download_drive_file"
+        ) as download, patch(
+            "app.main.upload_knowledge_file"
+        ) as upload:
+            standalone = client.post(
+                f"/api/knowledge-bases/{kb.id}/sources/"
+                "google-drive-file",
+                json={
+                    "file_id": "duplicate-1",
+                    "file_name": "Duplicate.pdf",
+                    "mime_type": "application/pdf",
+                },
+            )
+        assert standalone.status_code == 409
+        download.assert_not_called()
+        upload.assert_not_called()
+
+        files = [{
+            "id": "duplicate-1", "name": "Duplicate.pdf",
+            "mimeType": "application/pdf", "size": "3",
+        }]
+        with patch(
+            "app.main._get_valid_google_token", return_value="token"
+        ), patch(
+            "app.main.list_folder_children",
+            return_value={"files": files},
+        ), patch(
+            "app.main._download_drive_child"
+        ) as download, patch(
+            "app.main.upload_knowledge_file"
+        ) as upload, patch(
+            "app.main.start_ingestion_job"
+        ) as start_job:
+            folder_response = client.post(
+                f"/api/knowledge-bases/{kb.id}/sources/"
+                "google-drive-folder",
+                json={
+                    "folder_id": "new-folder",
+                    "folder_name": "New",
+                },
+            )
+
+        assert folder_response.status_code == 200
+        assert folder_response.json()["summary"]["ignored"][0][
+            "id"
+        ] == "duplicate-1"
+        download.assert_not_called()
+        upload.assert_not_called()
+        start_job.assert_not_called()
+
+    def test_folder_listing_failure_performs_no_removals(
+        self, client_factory, db
+    ):
+        org = _make_org(db)
+        user, _ = _make_user(db, org)
+        kb = _make_kb(db, org)
+        self._connection(
+            db, org, user,
+            "https://www.googleapis.com/auth/drive.readonly",
+        )
+        folder = KnowledgeSource(
+            organization_id=org.id,
+            knowledge_base_id=kb.id,
+            name="Folder", source_type="google_drive_folder",
+            s3_bucket="", s3_key="", external_id="folder-1",
+            status="uploaded", sync_status="synced",
+        )
+        db.add(folder)
+        db.flush()
+        child = KnowledgeSource(
+            organization_id=org.id,
+            knowledge_base_id=kb.id,
+            parent_source_id=folder.id,
+            name="Keep.pdf", source_type="google_drive_file",
+            s3_bucket="bucket", s3_key="keep-key",
+            external_id="keep-1", status="uploaded",
+            sync_status="synced",
+        )
+        db.add(child)
+        db.commit()
+        client = client_factory(org)
+
+        with patch(
+            "app.main._get_valid_google_token", return_value="token"
+        ), patch(
+            "app.main.list_folder_children",
+            side_effect=RuntimeError("repeated page token"),
+        ), patch(
+            "app.main.delete_knowledge_file"
+        ) as delete_file, patch(
+            "app.main.start_ingestion_job"
+        ) as start_job:
+            response = client.post(
+                f"/api/knowledge-bases/{kb.id}/sources/"
+                f"{folder.id}/sync-folder"
+            )
+
+        assert response.status_code == 502
+        delete_file.assert_not_called()
+        start_job.assert_not_called()
+        db.refresh(folder)
+        db.refresh(child)
+        assert folder.sync_status == "failed"
+        assert child.active is True
+
+    def test_actual_cumulative_bytes_include_google_docs(
+        self, client_factory, db
+    ):
+        org = _make_org(db)
+        user, _ = _make_user(db, org)
+        kb = _make_kb(db, org)
+        self._connection(
+            db, org, user,
+            "https://www.googleapis.com/auth/drive.readonly",
+        )
+        client = client_factory(org)
+        files = [
+            {
+                "id": "doc-1", "name": "Doc",
+                "mimeType": "application/vnd.google-apps.document",
+                "size": "0",
+            },
+            {
+                "id": "file-1", "name": "File.pdf",
+                "mimeType": "application/pdf", "size": "1",
+            },
+        ]
+
+        with patch(
+            "app.main.MAX_TOTAL_SYNC_BYTES", 5
+        ), patch(
+            "app.main._get_valid_google_token", return_value="token"
+        ), patch(
+            "app.main.list_folder_children",
+            return_value={"files": files},
+        ), patch(
+            "app.main.export_google_doc", return_value=b"1234"
+        ) as export_doc, patch(
+            "app.main.download_drive_file", return_value=b"5678"
+        ), patch(
+            "app.main.upload_knowledge_file",
+            return_value={"bucket": "bucket", "key": "doc-key"},
+        ) as upload, patch(
+            "app.main.start_ingestion_job", return_value="job-1"
+        ):
+            response = client.post(
+                f"/api/knowledge-bases/{kb.id}/sources/"
+                "google-drive-folder",
+                json={"folder_id": "folder-1", "folder_name": "Folder"},
+            )
+
+        assert response.status_code == 200
+        summary = response.json()["summary"]
+        assert summary["new"] == 1
+        assert summary["failed"][0]["id"] == "file-1"
+        assert "Actual downloaded" in summary["failed"][0]["error"]
+        export_doc.assert_awaited_once()
+        upload.assert_called_once()
+
+    def test_folder_delete_failure_leaves_all_sources_active(
+        self, client_factory, db
+    ):
+        org = _make_org(db)
+        user, _ = _make_user(db, org)
+        kb = _make_kb(db, org)
+        folder = KnowledgeSource(
+            organization_id=org.id,
+            knowledge_base_id=kb.id,
+            name="Folder", source_type="google_drive_folder",
+            s3_bucket="", s3_key="", external_id="folder-1",
+            status="uploaded", sync_status="synced",
+        )
+        db.add(folder)
+        db.flush()
+        children = [
+            KnowledgeSource(
+                organization_id=org.id,
+                knowledge_base_id=kb.id,
+                parent_source_id=folder.id,
+                name=f"Child {index}",
+                source_type="google_drive_file",
+                s3_bucket="bucket", s3_key=f"key-{index}",
+                external_id=f"file-{index}", status="uploaded",
+                sync_status="synced",
+            )
+            for index in range(2)
+        ]
+        db.add_all(children)
+        db.commit()
+        client = client_factory(org)
+
+        with patch(
+            "app.main.delete_knowledge_file",
+            side_effect=[None, RuntimeError("delete failed")],
+        ), patch(
+            "app.main.start_ingestion_job"
+        ) as start_job:
+            response = client.delete(
+                f"/api/knowledge-bases/{kb.id}/sources/{folder.id}"
+            )
+
+        assert response.status_code == 502
+        start_job.assert_not_called()
+        db.expire_all()
+        assert db.get(KnowledgeSource, folder.id).active is True
+        assert all(
+            db.get(KnowledgeSource, child.id).active is True
+            for child in children
+        )
+
+    def test_cross_tenant_drive_syncs_have_no_side_effects(
+        self, client_factory, db
+    ):
+        org_a = _make_org(db)
+        org_b = _make_org(db)
+        kb_b = _make_kb(db, org_b)
+        folder = KnowledgeSource(
+            organization_id=org_b.id,
+            knowledge_base_id=kb_b.id,
+            name="Folder", source_type="google_drive_folder",
+            s3_bucket="", s3_key="", external_id="folder-b",
+            status="uploaded", sync_status="synced",
+        )
+        file_source = KnowledgeSource(
+            organization_id=org_b.id,
+            knowledge_base_id=kb_b.id,
+            name="File.pdf", source_type="google_drive_file",
+            content_type="application/pdf",
+            s3_bucket="bucket", s3_key="key-b",
+            external_id="file-b", status="uploaded",
+            sync_status="synced",
+        )
+        db.add_all([folder, file_source])
+        db.commit()
+        client = client_factory(org_a)
+
+        with patch(
+            "app.main.list_folder_children"
+        ) as list_children, patch(
+            "app.main.download_drive_file"
+        ) as download, patch(
+            "app.main.upload_knowledge_file"
+        ) as upload, patch(
+            "app.main.start_ingestion_job"
+        ) as start_job:
+            folder_response = client.post(
+                f"/api/knowledge-bases/{kb_b.id}/sources/"
+                f"{folder.id}/sync-folder"
+            )
+            file_response = client.post(
+                f"/api/knowledge-bases/{kb_b.id}/sources/"
+                f"{file_source.id}/sync-drive-file"
+            )
+
+        assert folder_response.status_code == 404
+        assert file_response.status_code == 404
+        list_children.assert_not_called()
+        download.assert_not_called()
+        upload.assert_not_called()
+        start_job.assert_not_called()
+
+
+class TestGoogleOAuthCallbackCorrectness:
+    def test_failed_exchange_consumes_state(
+        self, client_factory, db
+    ):
+        org = _make_org(db)
+        user, _ = _make_user(db, org)
+        state = GoogleOAuthState(
+            state_token="state-failed-exchange",
+            organization_id=org.id,
+            user_id=user.id,
+            scopes="scope-a",
+            expires_at=datetime.utcnow() + timedelta(minutes=5),
+            used=False,
+        )
+        db.add(state)
+        db.commit()
+        client = client_factory(org)
+
+        with patch.dict(os.environ, {
+            "GOOGLE_CLIENT_ID": "client-id",
+            "GOOGLE_CLIENT_SECRET": "client-secret",
+        }), patch(
+            "app.main.httpx.post",
+            side_effect=RuntimeError("exchange failed"),
+        ):
+            first = client.get(
+                "/api/integrations/google/oauth/callback",
+                params={
+                    "code": "bad-code",
+                    "state": state.state_token,
+                },
+                follow_redirects=False,
+            )
+            second = client.get(
+                "/api/integrations/google/oauth/callback",
+                params={
+                    "code": "bad-code",
+                    "state": state.state_token,
+                },
+                follow_redirects=False,
+            )
+
+        assert first.status_code == 302
+        assert second.status_code == 400
+        db.refresh(state)
+        assert state.used is True
+
+    def test_incremental_callback_uses_state_org_and_merges_scopes(
+        self, client_factory, db
+    ):
+        org_a = _make_org(db)
+        org_b = _make_org(db)
+        user_a, _ = _make_user(db, org_a)
+        user_b, _ = _make_user(db, org_b)
+        sheets_scope = (
+            "https://www.googleapis.com/auth/"
+            "spreadsheets.readonly"
+        )
+        drive_scope = (
+            "https://www.googleapis.com/auth/drive.readonly"
+        )
+        connection_a = GoogleConnection(
+            organization_id=org_a.id,
+            user_id=user_a.id,
+            access_token_encrypted="old-a",
+            refresh_token_encrypted="refresh-a",
+            token_expiry=datetime.utcnow() + timedelta(hours=1),
+            scopes=sheets_scope,
+            status="connected",
+        )
+        connection_b = GoogleConnection(
+            organization_id=org_b.id,
+            user_id=user_b.id,
+            access_token_encrypted="old-b",
+            refresh_token_encrypted="refresh-b",
+            token_expiry=datetime.utcnow() + timedelta(hours=1),
+            scopes="org-b-scope",
+            status="connected",
+        )
+        state = GoogleOAuthState(
+            state_token="state-org-a",
+            organization_id=org_a.id,
+            user_id=user_a.id,
+            scopes=f"{sheets_scope} {drive_scope}",
+            expires_at=datetime.utcnow() + timedelta(minutes=5),
+            used=False,
+        )
+        db.add_all([connection_a, connection_b, state])
+        db.commit()
+        client = client_factory(org_b)
+        token_response = MagicMock()
+        token_response.raise_for_status = MagicMock()
+        token_response.json.return_value = {
+            "access_token": "new-access",
+            "expires_in": 3600,
+            "scope": drive_scope,
+        }
+        user_response = MagicMock(
+            status_code=200
+        )
+        user_response.json.return_value = {
+            "email": "orga@example.com"
+        }
+
+        with patch.dict(os.environ, {
+            "GOOGLE_CLIENT_ID": "client-id",
+            "GOOGLE_CLIENT_SECRET": "client-secret",
+        }), patch(
+            "app.main.httpx.post",
+            return_value=token_response,
+        ), patch(
+            "app.main.httpx.get",
+            return_value=user_response,
+        ), patch(
+            "app.main.encrypt_google_secret",
+            side_effect=lambda value: f"encrypted-{value}",
+        ):
+            response = client.get(
+                "/api/integrations/google/oauth/callback",
+                params={"code": "code-a", "state": state.state_token},
+                follow_redirects=False,
+            )
+
+        assert response.status_code == 302
+        db.refresh(connection_a)
+        db.refresh(connection_b)
+        assert connection_a.organization_id == org_a.id
+        assert set(connection_a.scopes.split()) == {
+            sheets_scope, drive_scope
+        }
+        assert connection_a.access_token_encrypted == (
+            "encrypted-new-access"
+        )
+        assert connection_b.organization_id == org_b.id
+        assert connection_b.access_token_encrypted == "old-b"
+        assert connection_b.scopes == "org-b-scope"
 
 
 # =========================================================
