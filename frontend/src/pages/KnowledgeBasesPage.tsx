@@ -9,13 +9,16 @@ import {
 import {
   BrainCircuit,
   Database,
+  File,
   FileSpreadsheet,
   FileText,
+  Folder,
   Link2,
   LoaderCircle,
   Pencil,
   Plus,
   RefreshCw,
+  Search,
   Store as StoreIcon,
   Trash2,
   Upload,
@@ -38,14 +41,26 @@ import {
 } from "../services/knowledgeSources";
 
 import {
+  addGoogleDocSource,
+  addGoogleDriveFileSource,
+  addGoogleDriveFolderSource,
   addGoogleSheetSource,
+  checkGoogleDriveScopes,
   disconnectGoogle,
+  expandGoogleScopes,
   getGoogleStatus,
   getIngestionStatus,
+  listGoogleDriveFiles,
+  listGoogleDriveFolders,
   listGoogleSheets,
   listGoogleSheetTabs,
   startGoogleOAuth,
+  syncDriveFileSource,
+  syncDriveFolder,
   syncGoogleSheetSource,
+  type GoogleDriveFileItem,
+  type GoogleDriveFolderItem,
+  type GoogleDriveScopeStatus,
   type GoogleSheetItem,
   type GoogleStatus,
   type GoogleTabItem,
@@ -245,6 +260,60 @@ export default function KnowledgeBasesPage({
     syncPollingSourceId,
     setSyncPollingSourceId,
   ] = useState<number | null>(null);
+
+
+  // =========================================================
+  // DRIVE / DOCS STATE
+  // =========================================================
+
+  const [
+    driveScopeStatus,
+    setDriveScopeStatus,
+  ] = useState<GoogleDriveScopeStatus | null>(
+    null,
+  );
+
+  const [
+    driveFilesOpen,
+    setDriveFilesOpen,
+  ] = useState(false);
+
+  const [
+    driveFiles,
+    setDriveFiles,
+  ] = useState<GoogleDriveFileItem[]>([]);
+
+  const [
+    driveFilesLoading,
+    setDriveFilesLoading,
+  ] = useState(false);
+
+  const [
+    driveFoldersOpen,
+    setDriveFoldersOpen,
+  ] = useState(false);
+
+  const [
+    driveFolders,
+    setDriveFolders,
+  ] = useState<GoogleDriveFolderItem[]>([]);
+
+  const [
+    driveFoldersLoading,
+    setDriveFoldersLoading,
+  ] = useState(false);
+
+  const [
+    addSourceMode,
+    setAddSourceMode,
+  ] = useState<
+    "menu" | "sheets" | "docs" | "drive-file" | "drive-folder"
+  >("menu");
+
+  const [
+    driveSearchQuery,
+    setDriveSearchQuery,
+  ] = useState("");
 
 
   useEffect(() => {
@@ -487,12 +556,14 @@ export default function KnowledgeBasesPage({
     );
 
     setSourcesOpen(true);
+    setAddSourceMode("menu");
 
     await Promise.all([
       loadSources(
         knowledgeBase.id,
       ),
       loadGoogleStatus(),
+      loadDriveScopeStatus(),
     ]);
   }
 
@@ -708,6 +779,222 @@ export default function KnowledgeBasesPage({
       setError(
         t("knowledgeGoogleSyncError"),
       );
+    }
+  }
+
+
+  // =========================================================
+  // DRIVE / DOCS HANDLERS
+  // =========================================================
+
+  async function loadDriveScopeStatus() {
+    try {
+      const status =
+        await checkGoogleDriveScopes();
+      setDriveScopeStatus(status);
+    } catch {
+      setDriveScopeStatus(null);
+    }
+  }
+
+  async function handleExpandScopes() {
+    try {
+      setGoogleConnecting(true);
+      const result =
+        await expandGoogleScopes();
+      window.open(
+        result.authorization_url,
+        "_blank",
+      );
+    } catch {
+      setError(
+        t("knowledgeGoogleConnectionError"),
+      );
+    } finally {
+      setGoogleConnecting(false);
+    }
+  }
+
+  async function handleOpenDriveFiles() {
+    if (
+      !driveScopeStatus?.has_drive_scope
+    ) {
+      await handleExpandScopes();
+      return;
+    }
+    try {
+      setDriveFilesOpen(true);
+      setDriveFilesLoading(true);
+      setError("");
+      const result =
+        await listGoogleDriveFiles(
+          driveSearchQuery,
+        );
+      setDriveFiles(result.files);
+    } catch {
+      setError(
+        t("knowledgeGoogleSheetsLoadError"),
+      );
+    } finally {
+      setDriveFilesLoading(false);
+    }
+  }
+
+  async function handleAddGoogleDoc(
+    file: GoogleDriveFileItem,
+  ) {
+    if (!selectedKnowledgeBase) return;
+    try {
+      setGoogleAdding(true);
+      setError("");
+      await addGoogleDocSource(
+        selectedKnowledgeBase.id,
+        file.id,
+        file.name,
+      );
+      setDriveFilesOpen(false);
+      setAddSourceMode("menu");
+      await loadSources(
+        selectedKnowledgeBase.id,
+      );
+    } catch {
+      setError(
+        t("knowledgeGoogleAddSourceError"),
+      );
+    } finally {
+      setGoogleAdding(false);
+    }
+  }
+
+  async function handleAddDriveFile(
+    file: GoogleDriveFileItem,
+  ) {
+    if (!selectedKnowledgeBase) return;
+    try {
+      setGoogleAdding(true);
+      setError("");
+      await addGoogleDriveFileSource(
+        selectedKnowledgeBase.id,
+        file.id,
+        file.name,
+        file.mime_type,
+      );
+      setDriveFilesOpen(false);
+      setAddSourceMode("menu");
+      await loadSources(
+        selectedKnowledgeBase.id,
+      );
+    } catch {
+      setError(
+        t("knowledgeGoogleAddSourceError"),
+      );
+    } finally {
+      setGoogleAdding(false);
+    }
+  }
+
+  async function handleOpenDriveFolders() {
+    if (
+      !driveScopeStatus?.has_drive_scope
+    ) {
+      await handleExpandScopes();
+      return;
+    }
+    try {
+      setDriveFoldersOpen(true);
+      setDriveFoldersLoading(true);
+      setError("");
+      const result =
+        await listGoogleDriveFolders(
+          driveSearchQuery,
+        );
+      setDriveFolders(result.folders);
+    } catch {
+      setError(
+        t("knowledgeGoogleSheetsLoadError"),
+      );
+    } finally {
+      setDriveFoldersLoading(false);
+    }
+  }
+
+  async function handleAddDriveFolder(
+    folder: GoogleDriveFolderItem,
+  ) {
+    if (!selectedKnowledgeBase) return;
+    try {
+      setGoogleAdding(true);
+      setError("");
+      await addGoogleDriveFolderSource(
+        selectedKnowledgeBase.id,
+        folder.id,
+        folder.name,
+      );
+      setDriveFoldersOpen(false);
+      setAddSourceMode("menu");
+      await loadSources(
+        selectedKnowledgeBase.id,
+      );
+    } catch {
+      setError(
+        t("knowledgeGoogleAddSourceError"),
+      );
+    } finally {
+      setGoogleAdding(false);
+    }
+  }
+
+  async function handleSyncDriveFolder(
+    source: KnowledgeSource,
+  ) {
+    if (!selectedKnowledgeBase) return;
+    try {
+      setGoogleAdding(true);
+      setError("");
+      await syncDriveFolder(
+        selectedKnowledgeBase.id,
+        source.id,
+      );
+      startPollingIngestion(
+        selectedKnowledgeBase.id,
+        source.id,
+      );
+      await loadSources(
+        selectedKnowledgeBase.id,
+      );
+    } catch {
+      setError(
+        t("knowledgeGoogleAddSourceError"),
+      );
+    } finally {
+      setGoogleAdding(false);
+    }
+  }
+
+  async function handleSyncDriveFile(
+    source: KnowledgeSource,
+  ) {
+    if (!selectedKnowledgeBase) return;
+    try {
+      setGoogleAdding(true);
+      setError("");
+      await syncDriveFileSource(
+        selectedKnowledgeBase.id,
+        source.id,
+      );
+      startPollingIngestion(
+        selectedKnowledgeBase.id,
+        source.id,
+      );
+      await loadSources(
+        selectedKnowledgeBase.id,
+      );
+    } catch {
+      setError(
+        t("knowledgeGoogleAddSourceError"),
+      );
+    } finally {
+      setGoogleAdding(false);
     }
   }
 
@@ -1534,36 +1821,97 @@ export default function KnowledgeBasesPage({
 
                     <div>
                       <strong>
-                        {t("knowledgeGoogleSheetTitle")}
+                        {t("knowledgeGoogleWorkspaceTitle")}
                       </strong>
 
                       <span>
-                        {t("knowledgeGoogleSheetDescription")}
+                        {t("knowledgeGoogleWorkspaceDescription")}
                       </span>
                     </div>
 
-                    <button
-                      className="google-button"
-                      onClick={() =>
-                        void handleOpenGoogleSheets()
-                      }
-                      disabled={
-                        googleSheetsLoading
-                      }
-                    >
-                      {googleSheetsLoading ? (
-                        <LoaderCircle
-                          className="spin"
-                          size={16}
-                        />
-                      ) : (
-                        <FileSpreadsheet
-                          size={16}
-                        />
-                      )}
+                    <div className="knowledge-google-source-buttons">
+                      <button
+                        className="google-button"
+                        onClick={() => {
+                          setAddSourceMode("sheets");
+                          void handleOpenGoogleSheets();
+                        }}
+                        disabled={googleSheetsLoading}
+                      >
+                        {googleSheetsLoading ? (
+                          <LoaderCircle className="spin" size={16} />
+                        ) : (
+                          <FileSpreadsheet size={16} />
+                        )}
+                        {t("knowledgeGoogleSelectSheet")}
+                      </button>
 
-                      {t("knowledgeGoogleSelectSheet")}
-                    </button>
+                      <button
+                        className="google-button"
+                        onClick={() => {
+                          setAddSourceMode("docs");
+                          void handleOpenDriveFiles();
+                        }}
+                        disabled={driveFilesLoading}
+                      >
+                        {driveFilesLoading ? (
+                          <LoaderCircle className="spin" size={16} />
+                        ) : (
+                          <FileText size={16} />
+                        )}
+                        {t("knowledgeGoogleDocs")}
+                      </button>
+
+                      <button
+                        className="google-button"
+                        onClick={() => {
+                          setAddSourceMode("drive-file");
+                          void handleOpenDriveFiles();
+                        }}
+                        disabled={driveFilesLoading}
+                      >
+                        {driveFilesLoading ? (
+                          <LoaderCircle className="spin" size={16} />
+                        ) : (
+                          <File size={16} />
+                        )}
+                        {t("knowledgeGoogleDriveFile")}
+                      </button>
+
+                      <button
+                        className="google-button"
+                        onClick={() => {
+                          setAddSourceMode("drive-folder");
+                          void handleOpenDriveFolders();
+                        }}
+                        disabled={driveFoldersLoading}
+                      >
+                        {driveFoldersLoading ? (
+                          <LoaderCircle className="spin" size={16} />
+                        ) : (
+                          <Folder size={16} />
+                        )}
+                        {t("knowledgeGoogleDriveFolder")}
+                      </button>
+                    </div>
+
+                    {driveScopeStatus &&
+                      !driveScopeStatus.has_drive_scope && (
+                        <div className="knowledge-drive-permissions">
+                          <span>
+                            {t("knowledgeGoogleAdditionalPermissions")}
+                          </span>
+                          <button
+                            className="secondary-button"
+                            onClick={() =>
+                              void handleExpandScopes()
+                            }
+                            disabled={googleConnecting}
+                          >
+                            {t("knowledgeGoogleExpandPermissions")}
+                          </button>
+                        </div>
+                      )}
                   </div>
                 )}
 
@@ -1583,6 +1931,17 @@ export default function KnowledgeBasesPage({
                           source.source_type ===
                           "google_sheet";
 
+                        const isDriveFolder =
+                          source.source_type ===
+                          "google_drive_folder";
+
+                        const isGoogleDriveSource =
+                          source.source_type ===
+                            "google_doc" ||
+                          source.source_type ===
+                            "google_drive_file" ||
+                          isDriveFolder;
+
                         const isSyncing =
                           syncPollingSourceId ===
                           source.id;
@@ -1595,9 +1954,20 @@ export default function KnowledgeBasesPage({
                               "synced"
                               ? t("knowledgeGoogleSynced")
                               : source.sync_status ===
-                                "error"
+                                "failed"
                                 ? t("knowledgeGoogleSyncError")
                                 : null;
+
+                        const freshnessLabel =
+                          source.freshness === "fresh"
+                            ? t("knowledgeGoogleFresh")
+                            : source.freshness === "changed"
+                              ? t("knowledgeGoogleChanged")
+                              : source.freshness === "disconnected"
+                                ? t("knowledgeGoogleDisconnected")
+                                : source.freshness === "static"
+                                  ? t("knowledgeGoogleStatic")
+                                  : null;
 
                         return (
                           <div
@@ -1606,7 +1976,7 @@ export default function KnowledgeBasesPage({
                             }
                             className={`
                               knowledge-source-row
-                              ${isGoogleSheets ? "google-source-row" : ""}
+                              ${isGoogleDriveSource ? "google-source-row" : ""}
                             `}
                           >
                             <div className="management-icon">
@@ -1614,6 +1984,10 @@ export default function KnowledgeBasesPage({
                                 <FileSpreadsheet
                                   size={18}
                                 />
+                              ) : isDriveFolder ? (
+                                <Folder size={18} />
+                              ) : source.source_type === "google_doc" ? (
+                                <FileText size={18} />
                               ) : (
                                 <FileText
                                   size={18}
@@ -1638,6 +2012,18 @@ export default function KnowledgeBasesPage({
                                       </>
                                     )}
                                     {syncLabel || t("knowledgeGoogleSyncPending")}
+                                    {source.last_synced_at && (
+                                      <>
+                                        {" · "}
+                                        {new Date(
+                                          source.last_synced_at,
+                                        ).toLocaleDateString()}
+                                      </>
+                                    )}
+                                  </>
+                                ) : isGoogleDriveSource ? (
+                                  <>
+                                    {freshnessLabel || syncLabel || t("knowledgeGoogleSyncPending")}
                                     {source.last_synced_at && (
                                       <>
                                         {" · "}
@@ -1688,6 +2074,46 @@ export default function KnowledgeBasesPage({
                                 />
                               </button>
                             )}
+
+                            {canWrite && isDriveFolder && (
+                              <button
+                                className="icon-button google-sync-button"
+                                onClick={() =>
+                                  void handleSyncDriveFolder(source)
+                                }
+                                disabled={
+                                  isSyncing ||
+                                  source.sync_status === "indexing"
+                                }
+                                title={t("knowledgeGoogleSyncFolder")}
+                              >
+                                <RefreshCw
+                                  size={16}
+                                  className={isSyncing ? "spin" : ""}
+                                />
+                              </button>
+                            )}
+
+                            {canWrite &&
+                              isGoogleDriveSource &&
+                              !isDriveFolder && (
+                                <button
+                                  className="icon-button google-sync-button"
+                                  onClick={() =>
+                                    void handleSyncDriveFile(source)
+                                  }
+                                  disabled={
+                                    isSyncing ||
+                                    source.sync_status === "indexing"
+                                  }
+                                  title={t("knowledgeGoogleSync")}
+                                >
+                                  <RefreshCw
+                                    size={16}
+                                    className={isSyncing ? "spin" : ""}
+                                  />
+                                </button>
+                              )}
 
                             {canWrite && (
                               <button
@@ -1917,6 +2343,210 @@ export default function KnowledgeBasesPage({
           </div>
         )
       }
+
+      {driveFilesOpen && (
+        <div
+          className="management-modal-backdrop"
+          onMouseDown={() => {
+            if (!googleAdding) {
+              setDriveFilesOpen(false);
+            }
+          }}
+        >
+          <div
+            className="management-modal knowledge-source-modal"
+            onMouseDown={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label={t("knowledgeGoogleSelectFile")}
+          >
+            <header className="management-modal-header">
+              <div>
+                <span className="eyebrow">
+                  {addSourceMode === "docs"
+                    ? t("knowledgeGoogleDocs")
+                    : t("knowledgeGoogleDriveFile")}
+                </span>
+                <h2>{t("knowledgeGoogleSelectFile")}</h2>
+              </div>
+              <button
+                className="icon-button"
+                aria-label={t("knowledgeGoogleClose")}
+                onClick={() => setDriveFilesOpen(false)}
+                disabled={googleAdding}
+              >
+                <X size={18} />
+              </button>
+            </header>
+            <div className="management-form">
+              <label className="knowledge-drive-search">
+                <Search size={16} />
+                <input
+                  value={driveSearchQuery}
+                  placeholder={t("knowledgeGoogleSearchDrive")}
+                  onChange={(event) =>
+                    setDriveSearchQuery(event.target.value)
+                  }
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      void handleOpenDriveFiles();
+                    }
+                  }}
+                />
+              </label>
+              {driveFilesLoading ? (
+                <div className="conversation-loading">
+                  <LoaderCircle className="spin" size={24} />
+                </div>
+              ) : (
+                <div className="knowledge-source-list">
+                  {driveFiles
+                    .filter((file) =>
+                      addSourceMode !== "docs" ||
+                      file.mime_type ===
+                        "application/vnd.google-apps.document",
+                    )
+                    .map((file) => {
+                      const isDoc = file.mime_type ===
+                        "application/vnd.google-apps.document";
+                      return (
+                        <div
+                          key={file.id}
+                          className="knowledge-source-row google-source-row"
+                        >
+                          <div className="management-icon">
+                            <FileText size={18} />
+                          </div>
+                          <div className="knowledge-source-info">
+                            <strong>{file.name}</strong>
+                            <span>{file.modified_time || ""}</span>
+                          </div>
+                          <button
+                            className="google-button"
+                            disabled={googleAdding}
+                            onClick={() => {
+                              if (isDoc) {
+                                void handleAddGoogleDoc(file);
+                              } else {
+                                void handleAddDriveFile(file);
+                              }
+                            }}
+                          >
+                            {isDoc
+                              ? t("knowledgeGoogleAddDoc")
+                              : t("knowledgeGoogleAddFile")}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  {!driveFiles.filter((file) =>
+                    addSourceMode !== "docs" ||
+                    file.mime_type ===
+                      "application/vnd.google-apps.document",
+                  ).length && (
+                    <div className="empty-management">
+                      <FileText size={30} />
+                      <strong>{t("knowledgeGoogleNoDriveFiles")}</strong>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {driveFoldersOpen && (
+        <div
+          className="management-modal-backdrop"
+          onMouseDown={() => {
+            if (!googleAdding) {
+              setDriveFoldersOpen(false);
+            }
+          }}
+        >
+          <div
+            className="management-modal knowledge-source-modal"
+            onMouseDown={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label={t("knowledgeGoogleSelectFolder")}
+          >
+            <header className="management-modal-header">
+              <div>
+                <span className="eyebrow">
+                  {t("knowledgeGoogleDriveFolder")}
+                </span>
+                <h2>{t("knowledgeGoogleSelectFolder")}</h2>
+              </div>
+              <button
+                className="icon-button"
+                aria-label={t("knowledgeGoogleClose")}
+                onClick={() => setDriveFoldersOpen(false)}
+                disabled={googleAdding}
+              >
+                <X size={18} />
+              </button>
+            </header>
+            <div className="management-form">
+              <label className="knowledge-drive-search">
+                <Search size={16} />
+                <input
+                  value={driveSearchQuery}
+                  placeholder={t("knowledgeGoogleSearchDrive")}
+                  onChange={(event) =>
+                    setDriveSearchQuery(event.target.value)
+                  }
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      void handleOpenDriveFolders();
+                    }
+                  }}
+                />
+              </label>
+              {driveFoldersLoading ? (
+                <div className="conversation-loading">
+                  <LoaderCircle className="spin" size={24} />
+                </div>
+              ) : (
+                <div className="knowledge-source-list">
+                  {driveFolders.map((folder) => (
+                    <div
+                      key={folder.id}
+                      className="knowledge-source-row google-source-row"
+                    >
+                      <div className="management-icon">
+                        <Folder size={18} />
+                      </div>
+                      <div className="knowledge-source-info">
+                        <strong>{folder.name}</strong>
+                        <span>{folder.modified_time || ""}</span>
+                      </div>
+                      <button
+                        className="google-button"
+                        disabled={googleAdding}
+                        onClick={() =>
+                          void handleAddDriveFolder(folder)
+                        }
+                      >
+                        {t("knowledgeGoogleAddFolder")}
+                      </button>
+                    </div>
+                  ))}
+                  {!driveFolders.length && (
+                    <div className="empty-management">
+                      <Folder size={30} />
+                      <strong>{t("knowledgeGoogleNoDriveFolders")}</strong>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

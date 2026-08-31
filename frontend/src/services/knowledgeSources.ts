@@ -57,6 +57,26 @@ export interface KnowledgeSource {
   sync_error?:
     | string
     | null;
+
+  external_mime_type?:
+    | string
+    | null;
+
+  external_modified_at?:
+    | string
+    | null;
+
+  parent_source_id?:
+    | number
+    | null;
+
+  external_size?:
+    | number
+    | null;
+
+  sync_generation?: number;
+
+  freshness?: string;
 }
 
 

@@ -3,6 +3,7 @@ from sqlalchemy import inspect as sa_inspect
 from datetime import datetime
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     Column,
     DateTime,
@@ -759,6 +760,38 @@ class KnowledgeSource(Base):
     metadata_json: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
+    )
+
+    external_mime_type: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    external_modified_at: Mapped[datetime | None] = (
+        mapped_column(
+            DateTime,
+            nullable=True,
+        )
+    )
+
+    parent_source_id: Mapped[int | None] = mapped_column(
+        ForeignKey(
+            "knowledge_sources.id",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+        index=True,
+    )
+
+    external_size: Mapped[int | None] = mapped_column(
+        BigInteger,
+        nullable=True,
+    )
+
+    sync_generation: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
     )
 
     knowledge_base = relationship(

@@ -8569,3 +8569,62 @@ button:disabled {
   padding: 6px 12px;
 }
 
+.knowledge-google-source-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.knowledge-drive-permissions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-basis: 100%;
+  margin-top: 4px;
+}
+
+.knowledge-drive-permissions .secondary-button {
+  margin-left: auto;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.knowledge-drive-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+}
+
+.knowledge-drive-search input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  color: var(--text);
+  background: transparent;
+}
+
+@media (max-width: 640px) {
+  .knowledge-google-connect-box {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .knowledge-google-source-buttons {
+    width: 100%;
+  }
+
+  .knowledge-drive-permissions {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .knowledge-drive-permissions .secondary-button {
+    margin-left: 0;
+  }
+}
+

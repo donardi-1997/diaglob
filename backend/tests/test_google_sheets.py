@@ -1445,6 +1445,186 @@ class TestDeleteSourceBedrockReindex:
             "bedrock-ds-456",
         )
 
+
+# =========================================================
+# GOOGLE DRIVE / DOCS PHASE 2
+# =========================================================
+
+
+class TestGoogleDrivePhase2:
+    def _connection(self, db, org, user, scopes):
+        connection = GoogleConnection(
+            organization_id=org.id,
+            user_id=user.id,
+            access_token_encrypted="enc-access",
+            refresh_token_encrypted="enc-refresh",
+            token_expiry=datetime.utcnow() + timedelta(hours=1),
+            scopes=scopes,
+            status="connected",
+        )
+        db.add(connection)
+        db.commit()
+        return connection
+
+    def test_sheets_oauth_stays_minimal(self, client_factory, db):
+        org = _make_org(db)
+        client = client_factory(org)
+
+        with patch.dict(os.environ, {
+            "GOOGLE_CLIENT_ID": "test-client-id",
+            "GOOGLE_CLIENT_SECRET": "test-secret",
+        }):
+            response = client.get(
+                "/api/integrations/google/oauth/start"
+            )
+
+        assert response.status_code == 200
+        url = response.json()["authorization_url"]
+        assert "drive.metadata.readonly" in url
+        assert "drive.readonly" not in url
+
+    def test_expand_scopes_requests_drive_readonly(
+        self, client_factory, db
+    ):
+        org = _make_org(db)
+        client = client_factory(org)
+
+        with patch.dict(os.environ, {
+            "GOOGLE_CLIENT_ID": "test-client-id",
+            "GOOGLE_CLIENT_SECRET": "test-secret",
+        }):
+            response = client.get(
+                "/api/integrations/google/oauth/expand-scopes"
+            )
+
+        assert response.status_code == 200
+        url = response.json()["authorization_url"]
+        assert "drive.readonly" in url
+
+    def test_drive_files_requires_incremental_scope(
+        self, client_factory, db
+    ):
+        org = _make_org(db)
+        user, _ = _make_user(db, org)
+        self._connection(
+            db,
+            org,
+            user,
+            "https://www.googleapis.com/auth/spreadsheets.readonly "
+            "https://www.googleapis.com/auth/drive.metadata.readonly",
+        )
+        client = client_factory(org)
+
+        response = client.get(
+            "/api/integrations/google/drive/files"
+        )
+
+        assert response.status_code == 403
+        assert response.json()["detail"]["code"] == (
+            "INSUFFICIENT_SCOPES"
+        )
+
+    def test_drive_files_returns_sanitized_metadata(
+        self, client_factory, db
+    ):
+        org = _make_org(db)
+        user, _ = _make_user(db, org)
+        self._connection(
+            db,
+            org,
+            user,
+            "https://www.googleapis.com/auth/drive.readonly",
+        )
+        client = client_factory(org)
+
+        with patch(
+            "app.main._get_valid_google_token",
+            return_value="token",
+        ), patch(
+            "app.main.list_drive_files",
+            return_value={
+                "files": [{
+                    "id": "file-1",
+                    "name": "Policies.pdf",
+                    "mimeType": "application/pdf",
+                    "modifiedTime": "2026-08-31T12:00:00Z",
+                    "size": "20",
+                    "parents": ["folder-1"],
+                    "owners": [{"emailAddress": "hidden@test.com"}],
+                }],
+                "nextPageToken": "next",
+            },
+        ) as mocked_list:
+            response = client.get(
+                "/api/integrations/google/drive/files",
+                params={"query": "Policies", "page_token": "p1"},
+            )
+
+        assert response.status_code == 200
+        assert response.json()["files"] == [{
+            "id": "file-1",
+            "name": "Policies.pdf",
+            "mime_type": "application/pdf",
+            "modified_time": "2026-08-31T12:00:00Z",
+            "size": "20",
+            "parents": ["folder-1"],
+        }]
+        assert response.json()["next_page_token"] == "next"
+        assert mocked_list.await_args.kwargs["page_token"] == "p1"
+
+    def test_delete_folder_deactivates_children_once(
+        self, client_factory, db
+    ):
+        org = _make_org(db)
+        user, _ = _make_user(db, org)
+        kb = _make_kb(db, org)
+        folder = KnowledgeSource(
+            organization_id=org.id,
+            knowledge_base_id=kb.id,
+            name="Knowledge",
+            source_type="google_drive_folder",
+            s3_bucket="",
+            s3_key="",
+            external_id="folder-1",
+            status="uploaded",
+        )
+        db.add(folder)
+        db.flush()
+        child = KnowledgeSource(
+            organization_id=org.id,
+            knowledge_base_id=kb.id,
+            name="Policies.pdf",
+            source_type="google_drive_file",
+            s3_bucket="bucket",
+            s3_key="key",
+            parent_source_id=folder.id,
+            external_id="file-1",
+            status="uploaded",
+        )
+        db.add(child)
+        db.commit()
+        client = client_factory(org)
+
+        with patch(
+            "app.main.delete_knowledge_file"
+        ) as delete_file, patch(
+            "app.main.start_ingestion_job",
+            return_value="job-1",
+        ) as start_job:
+            response = client.delete(
+                f"/api/knowledge-bases/{kb.id}/sources/{folder.id}"
+            )
+
+        assert response.status_code == 200
+        delete_file.assert_called_once_with("bucket", "key")
+        start_job.assert_called_once_with(
+            "bedrock-kb-123", "bedrock-ds-456"
+        )
+        db.refresh(folder)
+        db.refresh(child)
+        assert folder.active is False
+        assert child.active is False
+
     def test_delete_kb_without_bedrock_ids(
         self, client_factory, db
     ):

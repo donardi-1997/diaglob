@@ -432,6 +432,34 @@ const resources = {
         "¿Solicitar una nueva sincronización de esta fuente?",
       knowledgeGoogleSyncSuccess:
         "Sincronización iniciada correctamente.",
+      knowledgeGoogleWorkspaceTitle:
+        "Google Workspace",
+      knowledgeGoogleWorkspaceDescription:
+        "Conecta documentos y archivos que tu equipo ya utiliza.",
+      knowledgeGoogleDocs: "Google Docs",
+      knowledgeGoogleDriveFile: "Archivo de Google Drive",
+      knowledgeGoogleDriveFolder: "Carpeta de Google Drive",
+      knowledgeGoogleSelectFile: "Selecciona un archivo",
+      knowledgeGoogleSelectFolder: "Selecciona una carpeta",
+      knowledgeGoogleSearchDrive: "Buscar en Google Drive",
+      knowledgeGoogleNoDriveFiles: "Sin archivos compatibles",
+      knowledgeGoogleNoDriveFolders: "Sin carpetas",
+      knowledgeGoogleAddDoc: "Agregar documento",
+      knowledgeGoogleAddFile: "Agregar archivo",
+      knowledgeGoogleAddFolder: "Agregar carpeta",
+      knowledgeGoogleSyncFolder: "Sincronizar carpeta",
+      knowledgeGoogleAdditionalPermissions:
+        "Se necesitan permisos adicionales para usar Google Drive.",
+      knowledgeGoogleExpandPermissions:
+        "Ampliar permisos",
+      knowledgeGoogleFresh: "Actualizado",
+      knowledgeGoogleChanged: "Cambió",
+      knowledgeGoogleStatic: "Estático",
+      knowledgeGoogleDisconnected: "Desconectado",
+      knowledgeGoogleLastModified: "Última modificación",
+      knowledgeGoogleLastSynced: "Última sincronización",
+      knowledgeGoogleFileCount: "{{count}} archivos",
+      knowledgeGoogleClose: "Cerrar",
 
       storesI18nLoadError:
         "No fue posible cargar las tiendas y mercados.",
@@ -1763,6 +1791,34 @@ const resources = {
         "Request a new sync for this source?",
       knowledgeGoogleSyncSuccess:
         "Sync started successfully.",
+      knowledgeGoogleWorkspaceTitle:
+        "Google Workspace",
+      knowledgeGoogleWorkspaceDescription:
+        "Connect documents and files your team already uses.",
+      knowledgeGoogleDocs: "Google Docs",
+      knowledgeGoogleDriveFile: "Google Drive File",
+      knowledgeGoogleDriveFolder: "Google Drive Folder",
+      knowledgeGoogleSelectFile: "Select a file",
+      knowledgeGoogleSelectFolder: "Select a folder",
+      knowledgeGoogleSearchDrive: "Search Google Drive",
+      knowledgeGoogleNoDriveFiles: "No compatible files",
+      knowledgeGoogleNoDriveFolders: "No folders",
+      knowledgeGoogleAddDoc: "Add document",
+      knowledgeGoogleAddFile: "Add file",
+      knowledgeGoogleAddFolder: "Add folder",
+      knowledgeGoogleSyncFolder: "Sync folder",
+      knowledgeGoogleAdditionalPermissions:
+        "Additional permissions are required to use Google Drive.",
+      knowledgeGoogleExpandPermissions:
+        "Expand permissions",
+      knowledgeGoogleFresh: "Fresh",
+      knowledgeGoogleChanged: "Changed",
+      knowledgeGoogleStatic: "Static",
+      knowledgeGoogleDisconnected: "Disconnected",
+      knowledgeGoogleLastModified: "Last modified",
+      knowledgeGoogleLastSynced: "Last synced",
+      knowledgeGoogleFileCount: "{{count}} files",
+      knowledgeGoogleClose: "Close",
 
       storesI18nLoadError:
         "We couldn't load the stores and markets.",

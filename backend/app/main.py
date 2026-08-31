@@ -3,10 +3,11 @@ import json
 import os
 import hmac
 import hashlib
+import re
 import httpx
 
 import httpx
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import (
     BackgroundTasks,
@@ -161,6 +162,18 @@ from .google_sheets_client import (
     get_spreadsheet_metadata,
     fetch_sheet_values,
     normalize_to_csv,
+)
+
+from .google_drive_client import (
+    list_drive_files,
+    list_drive_folders,
+    list_folder_children,
+    get_file_metadata,
+    download_drive_file,
+    export_google_doc,
+    is_supported_mime_type,
+    is_google_doc,
+    validate_folder_sync_limits,
 )
 
 from .bedrock_ingestion import (
@@ -1569,6 +1582,25 @@ def serialize_knowledge_source(
             if source.created_at
             else None
         ),
+        "external_id": source.external_id,
+        "external_name": source.external_name,
+        "sheet_name": source.sheet_name,
+        "last_synced_at": (
+            source.last_synced_at.isoformat()
+            if source.last_synced_at
+            else None
+        ),
+        "sync_status": source.sync_status,
+        "sync_error": source.sync_error,
+        "external_mime_type": source.external_mime_type,
+        "external_modified_at": (
+            source.external_modified_at.isoformat()
+            if source.external_modified_at
+            else None
+        ),
+        "parent_source_id": source.parent_source_id,
+        "external_size": source.external_size,
+        "sync_generation": source.sync_generation,
     }
 
 
@@ -6444,11 +6476,24 @@ def list_knowledge_sources(
         .all()
     )
 
+    google_connection = (
+        db.query(GoogleConnection)
+        .filter(
+            GoogleConnection.organization_id
+            == membership.organization_id,
+        )
+        .first()
+    )
+
     return {
         "items": [
-            serialize_knowledge_source(
-                source
-            )
+            {
+                **serialize_knowledge_source(source),
+                "freshness": _derive_freshness(
+                    source,
+                    google_connection,
+                ),
+            }
             for source in sources
         ],
         "total": len(sources),
@@ -6610,12 +6655,28 @@ def delete_knowledge_source(
             detail="Knowledge source not found",
         )
 
-    # Delete S3 artifact
-    try:
-        delete_knowledge_file(
-            source.s3_bucket,
-            source.s3_key,
+    sources_to_delete = [source]
+    if source.source_type == "google_drive_folder":
+        sources_to_delete.extend(
+            db.query(KnowledgeSource)
+            .filter(
+                KnowledgeSource.parent_source_id
+                == source.id,
+                KnowledgeSource.organization_id
+                == membership.organization_id,
+                KnowledgeSource.active.is_(True),
+            )
+            .all()
         )
+
+    # A folder is metadata only; its children own the S3 artifacts.
+    try:
+        for item in sources_to_delete:
+            if item.s3_bucket and item.s3_key:
+                delete_knowledge_file(
+                    item.s3_bucket,
+                    item.s3_key,
+                )
     except Exception as exc:
         raise HTTPException(
             status_code=502,
@@ -6625,9 +6686,9 @@ def delete_knowledge_source(
             ),
         ) from exc
 
-    # Mark source as deleted
-    source.active = False
-    source.status = "deleted"
+    for item in sources_to_delete:
+        item.active = False
+        item.status = "deleted"
     db.flush()
 
     # Trigger Bedrock reindex to remove
@@ -12565,6 +12626,13 @@ GOOGLE_SCOPES = [
     "https://www.googleapis.com/auth/drive.metadata.readonly",
 ]
 
+# Requested only from the incremental authorization flow. Google classifies
+# drive.readonly as restricted because Diaglob lists and downloads user files.
+GOOGLE_DRIVE_SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets.readonly",
+    "https://www.googleapis.com/auth/drive.readonly",
+]
+
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_REVOKE_URL = "https://oauth2.googleapis.com/revoke"
@@ -13769,5 +13837,1888 @@ def check_ingestion_status(
             else None
         ),
         "sync_error": source.sync_error,
+    }
+
+
+# ============================================================
+# GOOGLE DRIVE / DOCS INTEGRATION — PHASE 2
+# ============================================================
+
+
+# --- Pydantic models ---
+
+
+class GoogleDriveFileRequest(BaseModel):
+    file_id: str
+    file_name: str
+    mime_type: str
+
+
+class GoogleDriveFolderRequest(BaseModel):
+    folder_id: str
+    folder_name: str
+
+
+# --- Scope helpers ---
+
+
+def _connection_has_drive_scope(
+    connection: GoogleConnection,
+) -> bool:
+    """Check if connection has drive.readonly scope."""
+    if not connection.scopes:
+        return False
+    return "drive.readonly" in connection.scopes
+
+
+def _require_drive_scope(
+    connection: GoogleConnection,
+) -> None:
+    """Raise 403 if connection lacks drive scope."""
+    if not _connection_has_drive_scope(connection):
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "INSUFFICIENT_SCOPES",
+                "message": (
+                    "Additional Google permissions "
+                    "required for Drive access."
+                ),
+                "required_scope": "drive.readonly",
+            },
+        )
+
+
+def _parse_google_modified_at(
+    value: str | None,
+) -> datetime | None:
+    """Convert Drive's RFC 3339 value to a UTC-naive DB timestamp."""
+    if not value:
+        return None
+
+    try:
+        timestamp = datetime.fromisoformat(
+            value.replace("Z", "+00:00")
+        )
+        if timestamp.tzinfo:
+            timestamp = timestamp.astimezone(
+                timezone.utc
+            ).replace(tzinfo=None)
+        return timestamp
+    except ValueError:
+        return None
+
+
+def _is_remote_file_modified(
+    source: KnowledgeSource,
+    remote_modified_at: str | None,
+) -> bool:
+    """Compare normalized timestamps without lexical/RFC3339 ambiguity."""
+    remote = _parse_google_modified_at(
+        remote_modified_at
+    )
+    if not remote:
+        return False
+
+    local = source.external_modified_at
+    if not local:
+        return True
+    if local.tzinfo:
+        local = local.astimezone(timezone.utc).replace(
+            tzinfo=None
+        )
+    return remote > local
+
+
+def _derive_freshness(
+    source: KnowledgeSource,
+    connection: GoogleConnection | None,
+) -> str:
+    """Derive freshness status for a knowledge source.
+
+    Returns one of:
+    - fresh
+    - changed
+    - syncing
+    - failed
+    - disconnected
+    - static
+    """
+    source_type = source.source_type or ""
+
+    if (
+        source_type.startswith("google_")
+        and (
+            not connection
+            or connection.status != "connected"
+        )
+    ):
+        return "disconnected"
+
+    if source.sync_status == "failed":
+        return "failed"
+
+    if source.sync_status in ("syncing", "indexing"):
+        return "syncing"
+
+    if source_type.startswith("google_"):
+        if (
+            source.external_modified_at
+            and source.last_synced_at
+            and source.external_modified_at
+            > source.last_synced_at
+        ):
+            return "changed"
+        if source.sync_status == "synced":
+            return "fresh"
+
+    return "static"
+
+
+# --- Scope check endpoint ---
+
+
+@app.get(
+    "/api/integrations/google/drive/scopes"
+)
+def check_google_drive_scopes(
+    membership: OrganizationMembership = Depends(
+        require_permission("knowledge.read")
+    ),
+    db: Session = Depends(get_db),
+):
+    connection = (
+        db.query(GoogleConnection)
+        .filter(
+            GoogleConnection.organization_id
+            == membership.organization_id,
+            GoogleConnection.status
+            != "revoked",
+        )
+        .first()
+    )
+
+    if not connection:
+        return {
+            "connected": False,
+            "has_drive_scope": False,
+            "scopes": [],
+        }
+
+    has_drive = _connection_has_drive_scope(
+        connection
+    )
+
+    return {
+        "connected": True,
+        "has_drive_scope": has_drive,
+        "scopes": (
+            connection.scopes.split()
+            if connection.scopes
+            else []
+        ),
+    }
+
+
+# --- Expand scopes (re-authorize with drive.readonly) ---
+
+
+@app.get(
+    "/api/integrations/google/oauth/expand-scopes"
+)
+def expand_google_scopes(
+    membership: OrganizationMembership = Depends(
+        require_permission("knowledge.write")
+    ),
+    db: Session = Depends(get_db),
+):
+    client_id = _get_google_client_id()
+    redirect_uri = _get_google_redirect_uri()
+
+    # Clean old states for this org
+    (
+        db.query(GoogleOAuthState)
+        .filter(
+            GoogleOAuthState.organization_id
+            == membership.organization_id,
+            GoogleOAuthState.used.is_(False),
+        )
+        .update({"used": True})
+    )
+    db.flush()
+
+    state_token = secrets.token_urlsafe(32)
+    scopes_str = " ".join(GOOGLE_DRIVE_SCOPES)
+
+    oauth_state = GoogleOAuthState(
+        state_token=state_token,
+        organization_id=membership.organization_id,
+        user_id=membership.user_id,
+        scopes=scopes_str,
+        expires_at=datetime.utcnow()
+        + timedelta(minutes=10),
+        used=False,
+    )
+    db.add(oauth_state)
+    db.commit()
+
+    params = {
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
+        "response_type": "code",
+        "scope": scopes_str,
+        "state": state_token,
+        "access_type": "offline",
+        "prompt": "consent",
+        "include_granted_scopes": "true",
+    }
+
+    query_string = "&".join(
+        f"{k}={v}" for k, v in params.items()
+    )
+    auth_url = (
+        f"{GOOGLE_AUTH_URL}?{query_string}"
+    )
+
+    return {
+        "authorization_url": auth_url,
+    }
+
+
+# --- Drive: list files (file picker) ---
+
+
+@app.get(
+    "/api/integrations/google/drive/files"
+)
+async def list_drive_files_endpoint(
+    query: str = "",
+    page_token: str | None = None,
+    mime_type: str | None = None,
+    membership: OrganizationMembership = Depends(
+        require_permission("knowledge.read")
+    ),
+    db: Session = Depends(get_db),
+):
+    connection = (
+        db.query(GoogleConnection)
+        .filter(
+            GoogleConnection.organization_id
+            == membership.organization_id,
+            GoogleConnection.status
+            == "connected",
+        )
+        .first()
+    )
+
+    if not connection:
+        raise HTTPException(
+            status_code=404,
+            detail="Google not connected",
+        )
+
+    _require_drive_scope(connection)
+
+    access_token = _get_valid_google_token(
+        connection, db
+    )
+    if not access_token:
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "code": "GOOGLE_TOKEN_EXPIRED",
+                "message": (
+                    "Google connection expired. "
+                    "Please reconnect."
+                ),
+            },
+        )
+
+    try:
+        result = await list_drive_files(
+            access_token,
+            search=query,
+            page_token=page_token,
+            mime_types={mime_type} if mime_type else None,
+        )
+
+        files = []
+        for f in result.get("files", []):
+            files.append({
+                "id": f["id"],
+                "name": f.get("name", "Untitled"),
+                "mime_type": f.get("mimeType", ""),
+                "modified_time": f.get(
+                    "modifiedTime"
+                ),
+                "size": f.get("size"),
+                "parents": f.get("parents", []),
+            })
+
+        return {
+            "files": files,
+            "next_page_token": result.get(
+                "nextPageToken"
+            ),
+        }
+
+    except httpx.HTTPStatusError as exc:
+        code, msg = map_google_api_error(
+            exc.response.status_code
+        )
+        if code == "reconnect_required":
+            connection.status = "token_expired"
+            db.commit()
+        raise HTTPException(
+            status_code=exc.response.status_code,
+            detail={"code": code, "message": msg},
+        ) from exc
+
+
+# --- Drive: list folders (folder picker) ---
+
+
+@app.get(
+    "/api/integrations/google/drive/folders"
+)
+async def list_drive_folders_endpoint(
+    query: str = "",
+    page_token: str | None = None,
+    membership: OrganizationMembership = Depends(
+        require_permission("knowledge.read")
+    ),
+    db: Session = Depends(get_db),
+):
+    connection = (
+        db.query(GoogleConnection)
+        .filter(
+            GoogleConnection.organization_id
+            == membership.organization_id,
+            GoogleConnection.status
+            == "connected",
+        )
+        .first()
+    )
+
+    if not connection:
+        raise HTTPException(
+            status_code=404,
+            detail="Google not connected",
+        )
+
+    _require_drive_scope(connection)
+
+    access_token = _get_valid_google_token(
+        connection, db
+    )
+    if not access_token:
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "code": "GOOGLE_TOKEN_EXPIRED",
+                "message": (
+                    "Google connection expired. "
+                    "Please reconnect."
+                ),
+            },
+        )
+
+    try:
+        result = await list_drive_folders(
+            access_token,
+            search=query,
+            page_token=page_token,
+        )
+
+        folders = []
+        for f in result.get("folders", []):
+            folders.append({
+                "id": f["id"],
+                "name": f.get("name", "Untitled"),
+                "modified_time": f.get(
+                    "modifiedTime"
+                ),
+            })
+
+        return {
+            "folders": folders,
+            "next_page_token": result.get(
+                "nextPageToken"
+            ),
+        }
+
+    except httpx.HTTPStatusError as exc:
+        code, msg = map_google_api_error(
+            exc.response.status_code
+        )
+        if code == "reconnect_required":
+            connection.status = "token_expired"
+            db.commit()
+        raise HTTPException(
+            status_code=exc.response.status_code,
+            detail={"code": code, "message": msg},
+        ) from exc
+
+
+# --- Add Google Doc source ---
+
+
+@app.post(
+    "/api/knowledge-bases/"
+    "{knowledge_base_id}/sources/google-doc"
+)
+async def add_google_doc_source(
+    knowledge_base_id: int,
+    request: GoogleDriveFileRequest,
+    membership: OrganizationMembership = Depends(
+        require_permission("knowledge.write")
+    ),
+    db: Session = Depends(get_db),
+):
+    org_id = membership.organization_id
+
+    kb = (
+        db.query(KnowledgeBase)
+        .filter(
+            KnowledgeBase.id
+            == knowledge_base_id,
+            KnowledgeBase.organization_id
+            == org_id,
+        )
+        .first()
+    )
+
+    if not kb:
+        raise HTTPException(
+            status_code=404,
+            detail="Knowledge Base not found",
+        )
+
+    connection = (
+        db.query(GoogleConnection)
+        .filter(
+            GoogleConnection.organization_id
+            == org_id,
+            GoogleConnection.status
+            == "connected",
+        )
+        .first()
+    )
+
+    if not connection:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "GOOGLE_DISCONNECTED",
+                "message": (
+                    "Google not connected. "
+                    "Please connect Google first."
+                ),
+            },
+        )
+
+    _require_drive_scope(connection)
+
+    # Check duplicate
+    existing = (
+        db.query(KnowledgeSource)
+        .filter(
+            KnowledgeSource.knowledge_base_id
+            == knowledge_base_id,
+            KnowledgeSource.external_id
+            == request.file_id,
+            KnowledgeSource.active.is_(True),
+        )
+        .first()
+    )
+
+    if existing:
+        return {
+            "source_id": existing.id,
+            "name": existing.name,
+            "sync_status": existing.sync_status
+            or "synced",
+            "message": "Source already exists",
+        }
+
+    access_token = _get_valid_google_token(
+        connection, db
+    )
+    if not access_token:
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "code": "GOOGLE_TOKEN_EXPIRED",
+                "message": (
+                    "Google connection expired."
+                ),
+            },
+        )
+
+    # Export Google Doc to text/plain
+    try:
+        content = await export_google_doc(
+            access_token,
+            request.file_id,
+            "text/plain",
+        )
+    except httpx.HTTPStatusError as exc:
+        code, msg = map_google_api_error(
+            exc.response.status_code
+        )
+        raise HTTPException(
+            status_code=exc.response.status_code,
+            detail={"code": code, "message": msg},
+        ) from exc
+
+    if not content:
+        raise HTTPException(
+            status_code=400,
+            detail="Document is empty",
+        )
+
+    # Upload to S3
+    filename = f"{request.file_name}.txt"
+    try:
+        s3_result = upload_knowledge_file(
+            organization_id=org_id,
+            knowledge_base_id=knowledge_base_id,
+            filename=filename,
+            content=content,
+            content_type="text/plain",
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"S3 upload failed: {exc}",
+        ) from exc
+
+    # Get remote modified time
+    remote_meta = None
+    try:
+        remote_meta = await get_file_metadata(
+            access_token, request.file_id
+        )
+    except Exception:
+        pass
+
+    modified_at = None
+    if remote_meta and remote_meta.get(
+        "modifiedTime"
+    ):
+        try:
+            modified_at = datetime.fromisoformat(
+                remote_meta[
+                    "modifiedTime"
+                ].replace("Z", "+00:00")
+            )
+        except Exception:
+            pass
+
+    source = KnowledgeSource(
+        knowledge_base_id=knowledge_base_id,
+        organization_id=org_id,
+        name=request.file_name,
+        source_type="google_doc",
+        s3_bucket=s3_result["bucket"],
+        s3_key=s3_result["key"],
+        size_bytes=len(content),
+        status="uploaded",
+        external_id=request.file_id,
+        external_name=request.file_name,
+        external_mime_type=(
+            "application/vnd.google-apps.document"
+        ),
+        external_modified_at=modified_at,
+        last_synced_at=datetime.utcnow(),
+        sync_status="uploaded",
+    )
+    db.add(source)
+    db.flush()
+
+    # Start Bedrock ingestion
+    ingestion_job_id = None
+    sync_status = "uploaded"
+
+    if kb.external_id and kb.external_data_source_id:
+        ingestion_job_id = start_ingestion_job(
+            kb.external_id,
+            kb.external_data_source_id,
+        )
+        if ingestion_job_id:
+            sync_status = "indexing"
+            source.ingestion_job_id = (
+                ingestion_job_id
+            )
+            source.sync_status = "indexing"
+
+    db.commit()
+    db.refresh(source)
+
+    return {
+        "source_id": source.id,
+        "name": source.name,
+        "sync_status": sync_status,
+        "ingestion_job_id": ingestion_job_id,
+    }
+
+
+# --- Add Drive file source (PDF, DOCX, etc.) ---
+
+
+@app.post(
+    "/api/knowledge-bases/"
+    "{knowledge_base_id}/sources/"
+    "google-drive-file"
+)
+async def add_google_drive_file_source(
+    knowledge_base_id: int,
+    request: GoogleDriveFileRequest,
+    membership: OrganizationMembership = Depends(
+        require_permission("knowledge.write")
+    ),
+    db: Session = Depends(get_db),
+):
+    org_id = membership.organization_id
+
+    kb = (
+        db.query(KnowledgeBase)
+        .filter(
+            KnowledgeBase.id
+            == knowledge_base_id,
+            KnowledgeBase.organization_id
+            == org_id,
+        )
+        .first()
+    )
+
+    if not kb:
+        raise HTTPException(
+            status_code=404,
+            detail="Knowledge Base not found",
+        )
+
+    connection = (
+        db.query(GoogleConnection)
+        .filter(
+            GoogleConnection.organization_id
+            == org_id,
+            GoogleConnection.status
+            == "connected",
+        )
+        .first()
+    )
+
+    if not connection:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "GOOGLE_DISCONNECTED",
+                "message": (
+                    "Google not connected."
+                ),
+            },
+        )
+
+    _require_drive_scope(connection)
+
+    if not is_supported_mime_type(
+        request.mime_type
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "UNSUPPORTED_FILE_TYPE",
+                "message": (
+                    f"File type "
+                    f"'{request.mime_type}' "
+                    f"is not supported."
+                ),
+            },
+        )
+
+    # Check duplicate
+    existing = (
+        db.query(KnowledgeSource)
+        .filter(
+            KnowledgeSource.knowledge_base_id
+            == knowledge_base_id,
+            KnowledgeSource.external_id
+            == request.file_id,
+            KnowledgeSource.active.is_(True),
+        )
+        .first()
+    )
+
+    if existing:
+        return {
+            "source_id": existing.id,
+            "name": existing.name,
+            "sync_status": existing.sync_status
+            or "synced",
+            "message": "Source already exists",
+        }
+
+    access_token = _get_valid_google_token(
+        connection, db
+    )
+    if not access_token:
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "code": "GOOGLE_TOKEN_EXPIRED",
+                "message": (
+                    "Google connection expired."
+                ),
+            },
+        )
+
+    # Download file from Drive
+    try:
+        content = await download_drive_file(
+            access_token, request.file_id
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "FILE_TOO_LARGE",
+                "message": str(exc),
+            },
+        ) from exc
+    except httpx.HTTPStatusError as exc:
+        code, msg = map_google_api_error(
+            exc.response.status_code
+        )
+        raise HTTPException(
+            status_code=exc.response.status_code,
+            detail={"code": code, "message": msg},
+        ) from exc
+
+    if not content:
+        raise HTTPException(
+            status_code=400,
+            detail="File is empty",
+        )
+
+    # Upload to S3
+    safe_name = re.sub(
+        r"[^A-Za-z0-9._-]+",
+        "-",
+        request.file_name,
+    )
+    filename = f"{safe_name}"
+    try:
+        s3_result = upload_knowledge_file(
+            organization_id=org_id,
+            knowledge_base_id=knowledge_base_id,
+            filename=filename,
+            content=content,
+            content_type=request.mime_type,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"S3 upload failed: {exc}",
+        ) from exc
+
+    # Get remote metadata
+    remote_meta = None
+    try:
+        remote_meta = await get_file_metadata(
+            access_token, request.file_id
+        )
+    except Exception:
+        pass
+
+    modified_at = None
+    ext_size = None
+    if remote_meta:
+        if remote_meta.get("modifiedTime"):
+            try:
+                modified_at = datetime.fromisoformat(
+                    remote_meta[
+                        "modifiedTime"
+                    ].replace("Z", "+00:00")
+                )
+            except Exception:
+                pass
+        if remote_meta.get("size"):
+            ext_size = int(remote_meta["size"])
+
+    source = KnowledgeSource(
+        knowledge_base_id=knowledge_base_id,
+        organization_id=org_id,
+        name=request.file_name,
+        source_type="google_drive_file",
+        content_type=request.mime_type,
+        s3_bucket=s3_result["bucket"],
+        s3_key=s3_result["key"],
+        size_bytes=len(content),
+        status="uploaded",
+        external_id=request.file_id,
+        external_name=request.file_name,
+        external_mime_type=request.mime_type,
+        external_modified_at=modified_at,
+        external_size=ext_size,
+        last_synced_at=datetime.utcnow(),
+        sync_status="uploaded",
+    )
+    db.add(source)
+    db.flush()
+
+    # Start Bedrock ingestion
+    ingestion_job_id = None
+    sync_status = "uploaded"
+
+    if kb.external_id and kb.external_data_source_id:
+        ingestion_job_id = start_ingestion_job(
+            kb.external_id,
+            kb.external_data_source_id,
+        )
+        if ingestion_job_id:
+            sync_status = "indexing"
+            source.ingestion_job_id = (
+                ingestion_job_id
+            )
+            source.sync_status = "indexing"
+
+    db.commit()
+    db.refresh(source)
+
+    return {
+        "source_id": source.id,
+        "name": source.name,
+        "sync_status": sync_status,
+        "ingestion_job_id": ingestion_job_id,
+    }
+
+
+# --- Add Drive folder source ---
+
+
+@app.post(
+    "/api/knowledge-bases/"
+    "{knowledge_base_id}/sources/"
+    "google-drive-folder"
+)
+async def add_google_drive_folder_source(
+    knowledge_base_id: int,
+    request: GoogleDriveFolderRequest,
+    membership: OrganizationMembership = Depends(
+        require_permission("knowledge.write")
+    ),
+    db: Session = Depends(get_db),
+):
+    org_id = membership.organization_id
+
+    kb = (
+        db.query(KnowledgeBase)
+        .filter(
+            KnowledgeBase.id
+            == knowledge_base_id,
+            KnowledgeBase.organization_id
+            == org_id,
+        )
+        .first()
+    )
+
+    if not kb:
+        raise HTTPException(
+            status_code=404,
+            detail="Knowledge Base not found",
+        )
+
+    connection = (
+        db.query(GoogleConnection)
+        .filter(
+            GoogleConnection.organization_id
+            == org_id,
+            GoogleConnection.status
+            == "connected",
+        )
+        .first()
+    )
+
+    if not connection:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "GOOGLE_DISCONNECTED",
+                "message": (
+                    "Google not connected."
+                ),
+            },
+        )
+
+    _require_drive_scope(connection)
+
+    # Check duplicate folder
+    existing = (
+        db.query(KnowledgeSource)
+        .filter(
+            KnowledgeSource.knowledge_base_id
+            == knowledge_base_id,
+            KnowledgeSource.external_id
+            == request.folder_id,
+            KnowledgeSource.source_type
+            == "google_drive_folder",
+            KnowledgeSource.active.is_(True),
+        )
+        .first()
+    )
+
+    if existing:
+        return {
+            "source_id": existing.id,
+            "name": existing.name,
+            "sync_status": existing.sync_status
+            or "synced",
+            "message": "Folder source already exists",
+        }
+
+    # List folder children to validate
+    access_token = _get_valid_google_token(
+        connection, db
+    )
+    if not access_token:
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "code": "GOOGLE_TOKEN_EXPIRED",
+                "message": (
+                    "Google connection expired."
+                ),
+            },
+        )
+
+    try:
+        result = await list_folder_children(
+            access_token, request.folder_id
+        )
+    except httpx.HTTPStatusError as exc:
+        code, msg = map_google_api_error(
+            exc.response.status_code
+        )
+        raise HTTPException(
+            status_code=exc.response.status_code,
+            detail={"code": code, "message": msg},
+        ) from exc
+
+    files = result.get("files", [])
+
+    if result.get("limit_exceeded"):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "SYNC_LIMIT_EXCEEDED",
+                "message": (
+                    "Folder exceeds the configured "
+                    "maximum file count."
+                ),
+            },
+        )
+
+    # Validate limits
+    limit_error = validate_folder_sync_limits(
+        files
+    )
+    if limit_error:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "SYNC_LIMIT_EXCEEDED",
+                "message": limit_error,
+            },
+        )
+
+    # Create folder source (no S3 artifact yet)
+    source = KnowledgeSource(
+        knowledge_base_id=knowledge_base_id,
+        organization_id=org_id,
+        name=request.folder_name,
+        source_type="google_drive_folder",
+        s3_bucket="",
+        s3_key="",
+        status="uploaded",
+        external_id=request.folder_id,
+        external_name=request.folder_name,
+        sync_status="synced",
+        metadata_json=json.dumps(
+            {
+                "file_count": len(files),
+                "last_synced_files": [
+                    {
+                        "id": f["id"],
+                        "name": f.get("name", ""),
+                        "modifiedTime": f.get(
+                            "modifiedTime", ""
+                        ),
+                        "size": f.get("size", "0"),
+                    }
+                    for f in files
+                ],
+            }
+        ),
+    )
+    db.add(source)
+    db.flush()
+
+    # Create child sources for each file
+    child_ids = []
+    for f in files:
+        file_id = f["id"]
+        file_name = f.get("name", "Untitled")
+        mime_type = f.get("mimeType", "")
+
+        # Skip if child already exists
+        child_existing = (
+            db.query(KnowledgeSource)
+            .filter(
+                KnowledgeSource.knowledge_base_id
+                == knowledge_base_id,
+                KnowledgeSource.external_id
+                == file_id,
+                KnowledgeSource.active.is_(True),
+            )
+            .first()
+        )
+
+        if child_existing:
+            child_ids.append(child_existing.id)
+            continue
+
+        # Download file content
+        try:
+            if is_google_doc(mime_type):
+                content = await export_google_doc(
+                    access_token,
+                    file_id,
+                    "text/plain",
+                )
+                child_mime = "text/plain"
+                child_type = "google_doc"
+            else:
+                content = (
+                    await download_drive_file(
+                        access_token, file_id
+                    )
+                )
+                child_mime = mime_type
+                child_type = "google_drive_file"
+        except Exception:
+            logger.warning(
+                "Failed to download file %s "
+                "from folder %s",
+                file_id,
+                request.folder_id,
+            )
+            continue
+
+        if not content:
+            continue
+
+        safe_name = re.sub(
+            r"[^A-Za-z0-9._-]+",
+            "-",
+            file_name,
+        )
+        child_filename = f"{safe_name}"
+
+        try:
+            s3_result = upload_knowledge_file(
+                organization_id=org_id,
+                knowledge_base_id=knowledge_base_id,
+                filename=child_filename,
+                content=content,
+                content_type=child_mime,
+            )
+        except Exception:
+            logger.warning(
+                "Failed to upload %s to S3",
+                file_id,
+            )
+            continue
+
+        modified_at = None
+        ext_size = None
+        if f.get("modifiedTime"):
+            try:
+                modified_at = datetime.fromisoformat(
+                    f["modifiedTime"].replace(
+                        "Z", "+00:00"
+                    )
+                )
+            except Exception:
+                pass
+        if f.get("size"):
+            ext_size = int(f["size"])
+
+        child_source = KnowledgeSource(
+            knowledge_base_id=knowledge_base_id,
+            organization_id=org_id,
+            name=file_name,
+            source_type=child_type,
+            content_type=child_mime,
+            s3_bucket=s3_result["bucket"],
+            s3_key=s3_result["key"],
+            size_bytes=len(content),
+            status="uploaded",
+            external_id=file_id,
+            external_name=file_name,
+            external_mime_type=child_mime,
+            external_modified_at=modified_at,
+            external_size=ext_size,
+            parent_source_id=source.id,
+            last_synced_at=datetime.utcnow(),
+            sync_status="uploaded",
+        )
+        db.add(child_source)
+        db.flush()
+        child_ids.append(child_source.id)
+
+    # ONE Bedrock ingestion for entire folder
+    ingestion_job_id = None
+    sync_status = "synced"
+
+    if kb.external_id and kb.external_data_source_id:
+        ingestion_job_id = start_ingestion_job(
+            kb.external_id,
+            kb.external_data_source_id,
+        )
+        if ingestion_job_id:
+            sync_status = "indexing"
+            source.sync_status = "indexing"
+            source.ingestion_job_id = ingestion_job_id
+
+    db.commit()
+    db.refresh(source)
+
+    return {
+        "source_id": source.id,
+        "name": source.name,
+        "sync_status": sync_status,
+        "ingestion_job_id": ingestion_job_id,
+        "child_count": len(child_ids),
+    }
+
+
+# --- Sync Drive folder ---
+
+
+@app.post(
+    "/api/knowledge-bases/"
+    "{knowledge_base_id}/sources/"
+    "{source_id}/sync-folder"
+)
+async def sync_drive_folder(
+    knowledge_base_id: int,
+    source_id: int,
+    membership: OrganizationMembership = Depends(
+        require_permission("knowledge.write")
+    ),
+    db: Session = Depends(get_db),
+):
+    org_id = membership.organization_id
+
+    kb = (
+        db.query(KnowledgeBase)
+        .filter(
+            KnowledgeBase.id
+            == knowledge_base_id,
+            KnowledgeBase.organization_id
+            == org_id,
+        )
+        .first()
+    )
+
+    if not kb:
+        raise HTTPException(
+            status_code=404,
+            detail="Knowledge Base not found",
+        )
+
+    source = (
+        db.query(KnowledgeSource)
+        .filter(
+            KnowledgeSource.id == source_id,
+            KnowledgeSource.knowledge_base_id
+            == knowledge_base_id,
+            KnowledgeSource.organization_id
+            == org_id,
+            KnowledgeSource.source_type
+            == "google_drive_folder",
+        )
+        .first()
+    )
+
+    if not source:
+        raise HTTPException(
+            status_code=404,
+            detail="Folder source not found",
+        )
+
+    # Idempotency
+    if source.sync_status in ("syncing", "indexing"):
+        return {
+            "source_id": source.id,
+            "sync_status": source.sync_status,
+            "message": "Sync already in progress",
+        }
+
+    connection = (
+        db.query(GoogleConnection)
+        .filter(
+            GoogleConnection.organization_id
+            == org_id,
+            GoogleConnection.status
+            == "connected",
+        )
+        .first()
+    )
+
+    if not connection:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "GOOGLE_DISCONNECTED",
+                "message": (
+                    "Google not connected."
+                ),
+            },
+        )
+
+    _require_drive_scope(connection)
+
+    access_token = _get_valid_google_token(
+        connection, db
+    )
+    if not access_token:
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "code": "GOOGLE_TOKEN_EXPIRED",
+                "message": (
+                    "Google connection expired."
+                ),
+            },
+        )
+
+    source.sync_status = "syncing"
+    source.sync_error = None
+    db.flush()
+
+    # List current folder children
+    try:
+        result = await list_folder_children(
+            access_token, source.external_id
+        )
+    except httpx.HTTPStatusError as exc:
+        code, msg = map_google_api_error(
+            exc.response.status_code
+        )
+        source.sync_status = "failed"
+        source.sync_error = msg
+        db.commit()
+        raise HTTPException(
+            status_code=exc.response.status_code,
+            detail={"code": code, "message": msg},
+        ) from exc
+
+    remote_files = result.get("files", [])
+
+    if result.get("limit_exceeded"):
+        source.sync_status = "failed"
+        source.sync_error = (
+            "Folder exceeds the configured "
+            "maximum file count"
+        )
+        db.commit()
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "SYNC_LIMIT_EXCEEDED",
+                "message": source.sync_error,
+            },
+        )
+
+    limit_error = validate_folder_sync_limits(
+        remote_files
+    )
+    if limit_error:
+        source.sync_status = "failed"
+        source.sync_error = limit_error
+        db.commit()
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "SYNC_LIMIT_EXCEEDED",
+                "message": limit_error,
+            },
+        )
+
+    # Load existing children from DB
+    existing_children = (
+        db.query(KnowledgeSource)
+        .filter(
+            KnowledgeSource.parent_source_id
+            == source.id,
+            KnowledgeSource.active.is_(True),
+        )
+        .all()
+    )
+
+    remote_by_id = {
+        f["id"]: f for f in remote_files
+    }
+    local_by_ext_id = {
+        c.external_id: c
+        for c in existing_children
+        if c.external_id
+    }
+
+    new_files = []
+    modified_files = []
+    removed_children = []
+
+    # Detect new and modified
+    for fid, fmeta in remote_by_id.items():
+        if fid not in local_by_ext_id:
+            new_files.append(fmeta)
+        else:
+            child = local_by_ext_id[fid]
+            if _is_remote_file_modified(
+                child,
+                fmeta.get("modifiedTime"),
+            ):
+                modified_files.append(fmeta)
+
+    # Detect removed
+    for fid, child in local_by_ext_id.items():
+        if fid not in remote_by_id:
+            removed_children.append(child)
+
+    s3_changed = False
+
+    # Process new files
+    for fmeta in new_files:
+        fid = fmeta["id"]
+        fname = fmeta.get("name", "Untitled")
+        fmime = fmeta.get("mimeType", "")
+
+        try:
+            if is_google_doc(fmime):
+                content = await export_google_doc(
+                    access_token,
+                    fid,
+                    "text/plain",
+                )
+                child_mime = "text/plain"
+                child_type = "google_doc"
+            else:
+                content = await download_drive_file(
+                    access_token, fid
+                )
+                child_mime = fmime
+                child_type = "google_drive_file"
+        except Exception:
+            logger.warning(
+                "Failed to download new file %s", fid
+            )
+            continue
+
+        if not content:
+            continue
+
+        safe_name = re.sub(
+            r"[^A-Za-z0-9._-]+", "-", fname
+        )
+        try:
+            s3_result = upload_knowledge_file(
+                organization_id=org_id,
+                knowledge_base_id=knowledge_base_id,
+                filename=safe_name,
+                content=content,
+                content_type=child_mime,
+            )
+        except Exception:
+            continue
+
+        modified_at = None
+        ext_size = None
+        if fmeta.get("modifiedTime"):
+            try:
+                modified_at = datetime.fromisoformat(
+                    fmeta["modifiedTime"].replace(
+                        "Z", "+00:00"
+                    )
+                )
+            except Exception:
+                pass
+        if fmeta.get("size"):
+            ext_size = int(fmeta["size"])
+
+        child_source = KnowledgeSource(
+            knowledge_base_id=knowledge_base_id,
+            organization_id=org_id,
+            name=fname,
+            source_type=child_type,
+            content_type=child_mime,
+            s3_bucket=s3_result["bucket"],
+            s3_key=s3_result["key"],
+            size_bytes=len(content),
+            status="uploaded",
+            external_id=fid,
+            external_name=fname,
+            external_mime_type=child_mime,
+            external_modified_at=modified_at,
+            external_size=ext_size,
+            parent_source_id=source.id,
+            last_synced_at=datetime.utcnow(),
+            sync_status="uploaded",
+        )
+        db.add(child_source)
+        s3_changed = True
+
+    # Process modified files
+    for fmeta in modified_files:
+        fid = fmeta["id"]
+        fname = fmeta.get("name", "Untitled")
+        fmime = fmeta.get("mimeType", "")
+        child = local_by_ext_id[fid]
+
+        try:
+            if is_google_doc(fmime):
+                content = await export_google_doc(
+                    access_token,
+                    fid,
+                    "text/plain",
+                )
+                child_mime = "text/plain"
+                child_type = "google_doc"
+            else:
+                content = await download_drive_file(
+                    access_token, fid
+                )
+                child_mime = fmime
+                child_type = "google_drive_file"
+        except Exception:
+            logger.warning(
+                "Failed to download modified %s", fid
+            )
+            continue
+
+        if not content:
+            continue
+
+        # Replace S3 artifact
+        try:
+            delete_knowledge_file(
+                child.s3_bucket, child.s3_key
+            )
+            safe_name = re.sub(
+                r"[^A-Za-z0-9._-]+", "-", fname
+            )
+            s3_result = upload_knowledge_file(
+                organization_id=org_id,
+                knowledge_base_id=knowledge_base_id,
+                filename=safe_name,
+                content=content,
+                content_type=child_mime,
+            )
+        except Exception:
+            continue
+
+        modified_at = None
+        ext_size = None
+        if fmeta.get("modifiedTime"):
+            try:
+                modified_at = datetime.fromisoformat(
+                    fmeta["modifiedTime"].replace(
+                        "Z", "+00:00"
+                    )
+                )
+            except Exception:
+                pass
+        if fmeta.get("size"):
+            ext_size = int(fmeta["size"])
+
+        child.s3_bucket = s3_result["bucket"]
+        child.s3_key = s3_result["key"]
+        child.size_bytes = len(content)
+        child.external_modified_at = modified_at
+        child.external_size = ext_size
+        child.last_synced_at = datetime.utcnow()
+        child.sync_status = "uploaded"
+        s3_changed = True
+
+    # Process removed files
+    for child in removed_children:
+        try:
+            delete_knowledge_file(
+                child.s3_bucket, child.s3_key
+            )
+        except Exception:
+            pass
+
+        child.active = False
+        child.status = "deleted"
+        s3_changed = True
+
+    # ONE Bedrock ingestion if any S3 changed
+    ingestion_job_id = None
+    sync_status = "synced"
+
+    if s3_changed and kb.external_id and kb.external_data_source_id:
+        ingestion_job_id = start_ingestion_job(
+            kb.external_id,
+            kb.external_data_source_id,
+        )
+        if ingestion_job_id:
+            sync_status = "indexing"
+            source.sync_status = "indexing"
+            source.ingestion_job_id = ingestion_job_id
+        else:
+            source.sync_status = "failed"
+            source.sync_error = (
+                "Bedrock ingestion failed to start"
+            )
+    else:
+        source.sync_status = "synced"
+
+    # Update metadata
+    source.sync_generation = (
+        source.sync_generation + 1
+    )
+    source.last_synced_at = datetime.utcnow()
+    source.external_modified_at = datetime.utcnow()
+
+    source.metadata_json = json.dumps(
+        {
+            "file_count": len(remote_files),
+            "new": len(new_files),
+            "modified": len(modified_files),
+            "removed": len(removed_children),
+            "unchanged": (
+                len(remote_files)
+                - len(new_files)
+                - len(modified_files)
+            ),
+            "last_synced_files": [
+                {
+                    "id": f["id"],
+                    "name": f.get("name", ""),
+                    "modifiedTime": f.get(
+                        "modifiedTime", ""
+                    ),
+                    "size": f.get("size", "0"),
+                }
+                for f in remote_files
+            ],
+        }
+    )
+
+    db.commit()
+    db.refresh(source)
+
+    return {
+        "source_id": source.id,
+        "sync_status": sync_status,
+        "ingestion_job_id": ingestion_job_id,
+        "new_files": len(new_files),
+        "modified_files": len(modified_files),
+        "removed_files": len(removed_children),
+    }
+
+
+# --- Sync single Drive file or Doc ---
+
+
+@app.post(
+    "/api/knowledge-bases/"
+    "{knowledge_base_id}/sources/"
+    "{source_id}/sync-drive-file"
+)
+async def sync_drive_file_source(
+    knowledge_base_id: int,
+    source_id: int,
+    membership: OrganizationMembership = Depends(
+        require_permission("knowledge.write")
+    ),
+    db: Session = Depends(get_db),
+):
+    org_id = membership.organization_id
+
+    kb = (
+        db.query(KnowledgeBase)
+        .filter(
+            KnowledgeBase.id
+            == knowledge_base_id,
+            KnowledgeBase.organization_id
+            == org_id,
+        )
+        .first()
+    )
+
+    if not kb:
+        raise HTTPException(
+            status_code=404,
+            detail="Knowledge Base not found",
+        )
+
+    source = (
+        db.query(KnowledgeSource)
+        .filter(
+            KnowledgeSource.id == source_id,
+            KnowledgeSource.knowledge_base_id
+            == knowledge_base_id,
+            KnowledgeSource.organization_id
+            == org_id,
+            KnowledgeSource.source_type.in_(
+                [
+                    "google_doc",
+                    "google_drive_file",
+                ]
+            ),
+        )
+        .first()
+    )
+
+    if not source:
+        raise HTTPException(
+            status_code=404,
+            detail="Drive source not found",
+        )
+
+    # Idempotency
+    if source.sync_status in ("syncing", "indexing"):
+        return {
+            "source_id": source.id,
+            "sync_status": source.sync_status,
+            "message": "Sync already in progress",
+        }
+
+    connection = (
+        db.query(GoogleConnection)
+        .filter(
+            GoogleConnection.organization_id
+            == org_id,
+            GoogleConnection.status
+            == "connected",
+        )
+        .first()
+    )
+
+    if not connection:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "GOOGLE_DISCONNECTED",
+                "message": "Google not connected.",
+            },
+        )
+
+    _require_drive_scope(connection)
+
+    access_token = _get_valid_google_token(
+        connection, db
+    )
+    if not access_token:
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "code": "GOOGLE_TOKEN_EXPIRED",
+                "message": "Google connection expired.",
+            },
+        )
+
+    source.sync_status = "syncing"
+    source.sync_error = None
+    db.flush()
+
+    # Re-download content
+    try:
+        if source.source_type == "google_doc":
+            content = await export_google_doc(
+                access_token,
+                source.external_id,
+                "text/plain",
+            )
+            new_mime = "text/plain"
+        else:
+            content = await download_drive_file(
+                access_token, source.external_id
+            )
+            new_mime = (
+                source.external_mime_type
+                or source.content_type
+                or "application/octet-stream"
+            )
+    except httpx.HTTPStatusError as exc:
+        code, msg = map_google_api_error(
+            exc.response.status_code
+        )
+        source.sync_status = "failed"
+        source.sync_error = msg
+        db.commit()
+        raise HTTPException(
+            status_code=exc.response.status_code,
+            detail={"code": code, "message": msg},
+        ) from exc
+
+    if not content:
+        source.sync_status = "failed"
+        source.sync_error = "File is empty"
+        db.commit()
+        raise HTTPException(
+            status_code=400,
+            detail="File is empty",
+        )
+
+    # Replace S3 artifact
+    try:
+        delete_knowledge_file(
+            source.s3_bucket, source.s3_key
+        )
+        safe_name = re.sub(
+            r"[^A-Za-z0-9._-]+",
+            "-",
+            source.external_name
+            or source.name,
+        )
+        s3_result = upload_knowledge_file(
+            organization_id=org_id,
+            knowledge_base_id=knowledge_base_id,
+            filename=safe_name,
+            content=content,
+            content_type=new_mime,
+        )
+    except Exception as exc:
+        source.sync_status = "failed"
+        source.sync_error = f"S3 failed: {exc}"
+        db.commit()
+        raise HTTPException(
+            status_code=500,
+            detail=f"S3 upload failed: {exc}",
+        ) from exc
+
+    # Get remote metadata
+    remote_meta = None
+    try:
+        remote_meta = await get_file_metadata(
+            access_token, source.external_id
+        )
+    except Exception:
+        pass
+
+    if remote_meta and remote_meta.get(
+        "modifiedTime"
+    ):
+        try:
+            source.external_modified_at = (
+                datetime.fromisoformat(
+                    remote_meta[
+                        "modifiedTime"
+                    ].replace("Z", "+00:00")
+                )
+            )
+        except Exception:
+            pass
+
+    source.s3_bucket = s3_result["bucket"]
+    source.s3_key = s3_result["key"]
+    source.size_bytes = len(content)
+    source.last_synced_at = datetime.utcnow()
+
+    # Bedrock ingestion
+    ingestion_job_id = None
+    sync_status = "uploaded"
+
+    if kb.external_id and kb.external_data_source_id:
+        ingestion_job_id = start_ingestion_job(
+            kb.external_id,
+            kb.external_data_source_id,
+        )
+        if ingestion_job_id:
+            sync_status = "indexing"
+            source.ingestion_job_id = (
+                ingestion_job_id
+            )
+            source.sync_status = "indexing"
+
+    db.commit()
+    db.refresh(source)
+
+    return {
+        "source_id": source.id,
+        "sync_status": sync_status,
+        "ingestion_job_id": ingestion_job_id,
+    }
+
+
+# --- Source freshness endpoint ---
+
+
+@app.get(
+    "/api/knowledge-bases/"
+    "{knowledge_base_id}/sources/"
+    "{source_id}/freshness"
+)
+def get_source_freshness(
+    knowledge_base_id: int,
+    source_id: int,
+    membership: OrganizationMembership = Depends(
+        require_permission("knowledge.read")
+    ),
+    db: Session = Depends(get_db),
+):
+    org_id = membership.organization_id
+
+    source = (
+        db.query(KnowledgeSource)
+        .filter(
+            KnowledgeSource.id == source_id,
+            KnowledgeSource.knowledge_base_id
+            == knowledge_base_id,
+            KnowledgeSource.organization_id
+            == org_id,
+        )
+        .first()
+    )
+
+    if not source:
+        raise HTTPException(
+            status_code=404,
+            detail="Source not found",
+        )
+
+    connection = (
+        db.query(GoogleConnection)
+        .filter(
+            GoogleConnection.organization_id
+            == org_id,
+        )
+        .first()
+    )
+
+    freshness = _derive_freshness(
+        source, connection
+    )
+
+    return {
+        "source_id": source.id,
+        "freshness": freshness,
+        "last_synced_at": (
+            source.last_synced_at.isoformat()
+            if source.last_synced_at
+            else None
+        ),
+        "external_modified_at": (
+            source.external_modified_at.isoformat()
+            if source.external_modified_at
+            else None
+        ),
+        "sync_status": source.sync_status,
+        "source_type": source.source_type,
     }
 
