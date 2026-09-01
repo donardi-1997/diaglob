@@ -785,9 +785,12 @@ export default function KnowledgeBasesPage({
     source: InitialSource,
   ) {
     if (selectedInitialSource !== source) {
+      const sourceWasAlreadySelected = selectedInitialSource !== null;
       setSelectedInitialSource(source);
-      setSecurityAcknowledged(false);
-      return true;
+      if (sourceWasAlreadySelected) {
+        setSecurityAcknowledged(false);
+      }
+      return sourceWasAlreadySelected || !securityAcknowledged;
     }
 
     return !securityAcknowledged;
@@ -2367,11 +2370,14 @@ export default function KnowledgeBasesPage({
                           <li>{t("knowledgeSecurityPracticeRemove")}</li>
                         </ul>
                       </details>
-                      <label className="knowledge-security-acknowledgement">
+                      <label
+                        className="knowledge-security-acknowledgement"
+                        htmlFor="knowledge-security-acknowledgement"
+                      >
                         <input
+                          id="knowledge-security-acknowledgement"
                           type="checkbox"
                           checked={securityAcknowledged}
-                          disabled={!selectedInitialSource}
                           onChange={(event) =>
                             setSecurityAcknowledged(event.target.checked)
                           }
