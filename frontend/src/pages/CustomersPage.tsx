@@ -6,6 +6,7 @@ import {
   useState,
 } from "react";
 import {
+  AlertTriangle,
   ChevronLeft,
   ChevronRight,
   Clock,
@@ -13,7 +14,8 @@ import {
   Phone,
   Search,
   ShoppingBag,
-  Tag,
+  Target,
+  TrendingUp,
   Users,
   X,
 } from "lucide-react";
@@ -24,6 +26,7 @@ import {
   type CustomerSummary,
   type CustomerListResponse,
   type CustomerDetail,
+  type TimelineEvent,
 } from "../services/customers";
 
 
@@ -57,11 +60,127 @@ const SEGMENT_COLORS: Record<string, string> = {
 };
 
 
+const PRIORITY_COLORS: Record<string, string> = {
+  high: "#ef4444",
+  medium: "#f59e0b",
+  low: "#6b7280",
+};
+
+
+const PRIORITY_KEYS: Record<string, string> = {
+  high: "ciPriorityHigh",
+  medium: "ciPriorityMedium",
+  low: "ciPriorityLow",
+};
+
+
+const HEALTH_COLORS: Record<string, string> = {
+  active: "#10b981",
+  at_risk: "#f59e0b",
+  inactive: "#6b7280",
+};
+
+
+const HEALTH_KEYS: Record<string, string> = {
+  active: "ciHealthActive",
+  at_risk: "ciHealthAtRisk",
+  inactive: "ciHealthInactive",
+};
+
+
+const ACTION_KEYS: Record<string, string> = {
+  follow_up_conversation: "ciActionFollowUp",
+  recover_failed_order: "ciActionRecoverFailed",
+  reengage_customer: "ciActionReengage",
+  review_vip: "ciActionReviewVip",
+  no_action_needed: "ciActionNoAction",
+};
+
+
+const TIMELINE_ICONS: Record<string, string> = {
+  customer_created: "ciTimelineCreated",
+  conversation: "ciTimelineConversation",
+  order_created: "ciTimelineOrderCreated",
+  order_status_failed: "ciTimelineOrderFailed",
+  order_status_unknown: "ciTimelineOrderUnknown",
+  order_pending: "ciTimelineOrderPending",
+};
+
+
+const CODE_TRANSLATIONS: Record<string, string> = {
+  recent_interaction: "ciCodeRecentInteraction",
+  moderate_interaction: "ciCodeModerateInteraction",
+  stale_interaction: "ciCodeStaleInteraction",
+  multiple_conversations: "ciCodeMultipleConversations",
+  has_conversations: "ciCodeHasConversations",
+  high_message_volume: "ciCodeHighMessageVolume",
+  moderate_message_volume: "ciCodeModerateMessageVolume",
+  vip_customer: "ciCodeVipCustomer",
+  repeat_customer: "ciCodeRepeatCustomer",
+  has_orders: "ciCodeHasOrders",
+  recent_purchase: "ciCodeRecentPurchase",
+  moderate_purchase_recency: "ciCodeModeratePurchaseRecency",
+  recent_purchase_recency: "ciCodeRecentPurchaseRecency",
+  long_term_customer: "ciCodeLongTermCustomer",
+  established_customer: "ciCodeEstablishedCustomer",
+  high_order_frequency: "ciCodeHighOrderFrequency",
+  repeat_buyer_loyalty: "ciCodeRepeatBuyerLoyalty",
+  at_risk: "ciCodeAtRisk",
+  recent_failed_order: "ciCodeRecentFailedOrder",
+  recent_unknown_order: "ciCodeRecentUnknownOrder",
+  vip_at_risk: "ciCodeVipAtRisk",
+  high_intent_strong_signal: "ciCodeHighIntentStrongSignal",
+  buyer_failed_order_recent: "ciCodeBuyerFailedOrderRecent",
+  recent_high_intent: "ciCodeRecentHighIntent",
+  active_buyer: "ciCodeActiveBuyer",
+  high_engagement_score: "ciCodeHighEngagementScore",
+  inactive_customer: "ciCodeInactiveCustomer",
+  low_engagement_score: "ciCodeLowEngagementScore",
+  no_priority_signal: "ciCodeNoPrioritySignal",
+  high_intent_no_order: "ciCodeHighIntentNoOrder",
+  repeat_customer_opp: "ciCodeRepeatCustomerOppo",
+  vip_customer_opp: "ciCodeVipCustomerOppo",
+  recent_failed_order_recovery: "ciCodeRecentFailedOrderRecovery",
+  recent_reengagement: "ciCodeRecentReengagement",
+  recent_conversation_no_order: "ciCodeRecentConversationNoOrder",
+  inactive: "ciCodeInactive",
+  failed_order: "ciCodeFailedOrder",
+  unknown_order: "ciCodeUnknownOrder",
+  long_time_since_purchase: "ciCodeLongTimeSincePurchase",
+  long_time_since_interaction: "ciCodeLongTimeSinceInteraction",
+  no_engagement_history: "ciCodeNoEngagementHistory",
+  order_failed_recently: "ciCodeOrderFailedRecently",
+  vip_customer_at_risk: "ciCodeVipCustomerAtRisk",
+  customer_at_risk: "ciCodeCustomerAtRisk",
+  recent_high_intent_conversation: "ciCodeRecentHighIntentConversation",
+  buyer_becoming_inactive: "ciCodeBuyerBecomingInactive",
+  customer_inactive: "ciCodeCustomerInactive",
+  new_customer_no_engagement: "ciCodeNewCustomerNoEngagement",
+  moderately_recent_interaction: "ciCodeModeratelyRecentInteraction",
+  stale_interaction_recency: "ciCodeStaleInteractionRecency",
+};
+
+
+function formatIntelligenceCode(
+  code: string,
+  t: (key: string) => string,
+): string {
+  const key = CODE_TRANSLATIONS[code];
+  if (key) {
+    const translated = t(key);
+    if (translated !== key) return translated;
+  }
+  return code
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+
 function formatTimeAgo(
   iso: string | null,
   t: (key: string) => string,
 ): string {
-  if (!iso) return "—";
+  if (!iso) return "\u2014";
 
   const date = new Date(iso);
   const now = new Date();
@@ -72,11 +191,10 @@ function formatTimeAgo(
 
   if (diffDays === 0) return t("ciToday");
   if (diffDays === 1) return t("ciYesterday");
-  if (diffDays < 7)
-    return `${diffDays}d`;
+  if (diffDays < 7) return `${diffDays}d`;
   if (diffDays < 30) {
     const weeks = Math.floor(diffDays / 7);
-    return `${weeks}w`;
+    return `${weeks}wk`;
   }
   if (diffDays < 365) {
     const months = Math.floor(diffDays / 30);
@@ -92,7 +210,7 @@ function formatSpend(
 ): string {
   const currencies = Object.keys(spend);
 
-  if (currencies.length === 0) return "—";
+  if (currencies.length === 0) return "\u2014";
 
   const parts = currencies.map((c) => {
     const val = spend[c].total;
@@ -100,6 +218,97 @@ function formatSpend(
   });
 
   return parts.join(" / ");
+}
+
+
+function ScoreBar({ score }: { score: number }) {
+  const color = "#7c6cff";
+
+  return (
+    <div className="ci-score-cell">
+      <div className="ci-score-value">{score}</div>
+      <div className="ci-score-bar">
+        <div
+          className="ci-score-fill"
+          style={{
+            width: `${score}%`,
+            background: color,
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+
+function TimelineSection({
+  timeline,
+  t,
+}: {
+  timeline: TimelineEvent[];
+  t: (key: string) => string;
+}) {
+  if (!timeline || timeline.length === 0) return null;
+
+  return (
+    <div className="ci-detail-section">
+      <h3>{t("ciTimeline")}</h3>
+      <div className="ci-timeline">
+        {timeline.slice(0, 15).map((ev, idx) => {
+          const iconClass =
+            ev.type.includes("status_failed")
+              ? "ci-tl-icon ci-tl-failed"
+              : ev.type.includes("status_unknown")
+                ? "ci-tl-icon ci-tl-unknown"
+                : ev.type === "conversation"
+                  ? "ci-tl-icon ci-tl-conv"
+                  : "ci-tl-icon ci-tl-default";
+
+          return (
+            <div key={idx} className="ci-tl-item">
+              <div className={iconClass}>
+                {ev.type === "conversation" && (
+                  <Mail size={10} />
+                )}
+                {ev.type === "customer_created" && (
+                  <Users size={10} />
+                )}
+                {ev.type.includes("order") && (
+                  <ShoppingBag size={10} />
+                )}
+              </div>
+              <div className="ci-tl-content">
+                <div className="ci-tl-type">
+                  {t(
+                    TIMELINE_ICONS[ev.type] ||
+                      ev.type,
+                  )}
+                </div>
+                <div className="ci-tl-meta">
+                  {ev.channel && (
+                    <span>{ev.channel}</span>
+                  )}
+                  {ev.order_number && (
+                    <span>{ev.order_number}</span>
+                  )}
+                  {ev.total_amount !== undefined &&
+                    ev.currency && (
+                      <span>
+                        {ev.currency}{" "}
+                        {ev.total_amount.toLocaleString()}
+                      </span>
+                    )}
+                </div>
+              </div>
+              <div className="ci-tl-time">
+                {formatTimeAgo(ev.timestamp, t)}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 
@@ -119,6 +328,10 @@ export default function CustomersPage({
   const [error, setError] = useState("");
 
   const [activeSegment, setActiveSegment] =
+    useState<string>("");
+  const [activePriority, setActivePriority] =
+    useState<string>("");
+  const [activeHealth, setActiveHealth] =
     useState<string>("");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -150,6 +363,8 @@ export default function CustomersPage({
           : activeSegment || undefined,
         flag: isFlag ? "at_risk" : undefined,
         search: search || undefined,
+        priority: activePriority || undefined,
+        health: activeHealth || undefined,
         page,
         pageSize,
       });
@@ -160,7 +375,16 @@ export default function CustomersPage({
     } finally {
       setLoading(false);
     }
-  }, [storeId, activeSegment, search, page, pageSize, t]);
+  }, [
+    storeId,
+    activeSegment,
+    activePriority,
+    activeHealth,
+    search,
+    page,
+    pageSize,
+    t,
+  ]);
 
   useEffect(() => {
     loadSummary();
@@ -172,7 +396,7 @@ export default function CustomersPage({
 
   useEffect(() => {
     setPage(1);
-  }, [activeSegment, search]);
+  }, [activeSegment, activePriority, activeHealth, search]);
 
   const loadDetail = useCallback(
     async (customerId: number) => {
@@ -278,19 +502,19 @@ export default function CustomersPage({
             </div>
           </div>
           <div className="ci-stat">
-            <div className="ci-stat-value ci-color-repeat">
-              {summary.repeat_buyers.toLocaleString()}
+            <div className="ci-stat-value ci-color-at-risk">
+              {summary.high_priority.toLocaleString()}
             </div>
             <div className="ci-stat-label">
-              {t("ciRepeatBuyers")}
+              {t("ciHighPriority")}
             </div>
           </div>
           <div className="ci-stat">
-            <div className="ci-stat-value ci-color-vip">
-              {summary.vip.toLocaleString()}
+            <div className="ci-stat-value ci-color-at-risk">
+              {summary.needs_followup.toLocaleString()}
             </div>
             <div className="ci-stat-label">
-              {t("ciVip")}
+              {t("ciNeedsFollowup")}
             </div>
           </div>
           <div className="ci-stat">
@@ -318,7 +542,10 @@ export default function CustomersPage({
             const label =
               tab.key === ""
                 ? t("ciAll")
-                : t(SEGMENT_KEYS[tab.key] || tab.key);
+                : t(
+                    SEGMENT_KEYS[tab.key] ||
+                      tab.key,
+                  );
 
             return (
               <button
@@ -342,26 +569,72 @@ export default function CustomersPage({
           })}
         </div>
 
-        <div className="ci-search">
-          <Search size={14} />
-          <input
-            type="text"
-            placeholder={t("ciSearchPlaceholder")}
-            value={search}
+        <div className="ci-filters-row">
+          <select
+            className="ci-filter-select"
+            value={activePriority}
             onChange={(e) => {
-              setSearch(e.target.value);
+              setActivePriority(e.target.value);
             }}
-          />
-          {search && (
-            <button
-              className="ci-search-clear"
-              onClick={() => {
-                setSearch("");
+          >
+            <option value="">
+              {t("ciFilterAllPriority")}
+            </option>
+            <option value="high">
+              {t("ciPriorityHigh")}
+            </option>
+            <option value="medium">
+              {t("ciPriorityMedium")}
+            </option>
+            <option value="low">
+              {t("ciPriorityLow")}
+            </option>
+          </select>
+
+          <select
+            className="ci-filter-select"
+            value={activeHealth}
+            onChange={(e) => {
+              setActiveHealth(e.target.value);
+            }}
+          >
+            <option value="">
+              {t("ciFilterAllHealth")}
+            </option>
+            <option value="active">
+              {t("ciHealthActive")}
+            </option>
+            <option value="at_risk">
+              {t("ciHealthAtRisk")}
+            </option>
+            <option value="inactive">
+              {t("ciHealthInactive")}
+            </option>
+          </select>
+
+          <div className="ci-search">
+            <Search size={14} />
+            <input
+              type="text"
+              placeholder={t(
+                "ciSearchPlaceholder",
+              )}
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
               }}
-            >
-              <X size={12} />
-            </button>
-          )}
+            />
+            {search && (
+              <button
+                className="ci-search-clear"
+                onClick={() => {
+                  setSearch("");
+                }}
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -371,11 +644,12 @@ export default function CustomersPage({
             <tr>
               <th>{t("ciTableCustomer")}</th>
               <th>{t("ciTableSegment")}</th>
-              <th>{t("ciTableStore")}</th>
+              <th>{t("ciTablePriority")}</th>
+              <th>{t("ciTableScore")}</th>
+              <th>{t("ciTableHealth")}</th>
               <th>{t("ciTableLastInteraction")}</th>
               <th>{t("ciTableOrders")}</th>
               <th>{t("ciTableSpend")}</th>
-              <th>{t("ciTableLastPurchase")}</th>
               <th></th>
             </tr>
           </thead>
@@ -383,7 +657,7 @@ export default function CustomersPage({
             {loading && (
               <tr>
                 <td
-                  colSpan={8}
+                  colSpan={9}
                   className="ci-loading"
                 >
                   {t("ciLoading")}
@@ -434,7 +708,8 @@ export default function CustomersPage({
                         background:
                           SEGMENT_COLORS[
                             customer.primary_segment
-                          ] + "20",
+                          ]
+                            + "20",
                         color:
                           SEGMENT_COLORS[
                             customer.primary_segment
@@ -444,26 +719,75 @@ export default function CustomersPage({
                       {t(
                         SEGMENT_KEYS[
                           customer.primary_segment
-                        ] || customer.primary_segment,
+                        ] ||
+                          customer.primary_segment,
                       )}
                     </span>
-                    {customer.flags.includes(
-                      "at_risk",
-                    ) && (
-                      <span className="ci-flag ci-flag-at-risk">
-                        {t("ciAtRisk")}
-                      </span>
+                  </td>
+                  <td>
+                    <span
+                      className="ci-priority-badge"
+                      style={{
+                        background:
+                          PRIORITY_COLORS[
+                            customer.priority
+                          ]
+                            + "20",
+                        color:
+                          PRIORITY_COLORS[
+                            customer.priority
+                          ],
+                      }}
+                    >
+                      {t(
+                        PRIORITY_KEYS[
+                          customer.priority
+                        ] || customer.priority,
+                      )}
+                    </span>
+                    {customer.priority_reasons
+                      .length > 0 && (
+                      <div className="ci-reason-codes">
+                        {customer.priority_reasons
+                          .slice(0, 2)
+                          .map((r) => (
+                            <span
+                              key={r}
+                              className="ci-reason-code"
+                            >
+                              {formatIntelligenceCode(r, t)}
+                            </span>
+                          ))}
+                      </div>
                     )}
                   </td>
                   <td>
-                    <div className="ci-store-cell">
-                      {customer.store_name || "—"}
-                      {customer.country_code && (
-                        <span className="ci-country">
-                          {customer.country_code}
-                        </span>
+                    <ScoreBar
+                      score={customer.customer_score}
+                    />
+                  </td>
+                  <td>
+                    <span
+                      className="ci-health-badge"
+                      style={{
+                        background:
+                          HEALTH_COLORS[
+                            customer.customer_health
+                          ]
+                            + "20",
+                        color:
+                          HEALTH_COLORS[
+                            customer.customer_health
+                          ],
+                      }}
+                    >
+                      {t(
+                        HEALTH_KEYS[
+                          customer.customer_health
+                        ] ||
+                          customer.customer_health,
                       )}
-                    </div>
+                    </span>
                   </td>
                   <td>
                     <div className="ci-time-cell">
@@ -483,15 +807,6 @@ export default function CustomersPage({
                     )}
                   </td>
                   <td>
-                    <div className="ci-time-cell">
-                      <ShoppingBag size={12} />
-                      {formatTimeAgo(
-                        customer.last_order_at,
-                        t,
-                      )}
-                    </div>
-                  </td>
-                  <td>
                     <button
                       className="ci-view-btn"
                       onClick={() => {
@@ -509,7 +824,7 @@ export default function CustomersPage({
               list.items.length === 0 && (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={9}
                     className="ci-empty"
                   >
                     <div className="ci-empty-content">
@@ -608,14 +923,45 @@ export default function CustomersPage({
                   ] || detail.primary_segment,
                 )}
               </span>
-              {detail.flags.includes("at_risk") && (
-                <span className="ci-flag ci-flag-at-risk">
-                  {t("ciAtRisk")}
-                </span>
-              )}
+              <span
+                className="ci-priority-badge ci-priority-badge-lg"
+                style={{
+                  background:
+                    PRIORITY_COLORS[
+                      detail.priority
+                    ] + "20",
+                  color:
+                    PRIORITY_COLORS[
+                      detail.priority
+                    ],
+                }}
+              >
+                {t(
+                  PRIORITY_KEYS[detail.priority] ||
+                    detail.priority,
+                )}
+              </span>
+              <span
+                className="ci-health-badge ci-health-badge-lg"
+                style={{
+                  background:
+                    HEALTH_COLORS[
+                      detail.customer_health
+                    ] + "20",
+                  color:
+                    HEALTH_COLORS[
+                      detail.customer_health
+                    ],
+                }}
+              >
+                {t(
+                  HEALTH_KEYS[
+                    detail.customer_health
+                  ] || detail.customer_health,
+                )}
+              </span>
               {detail.country_code && (
                 <span className="ci-flag">
-                  <Tag size={10} />
                   {detail.country_code}
                 </span>
               )}
@@ -626,6 +972,125 @@ export default function CustomersPage({
               )}
             </div>
 
+            {/* Customer Score */}
+            <div className="ci-detail-section">
+              <h3>{t("ciScore")}</h3>
+              <div className="ci-score-detail">
+                <div className="ci-score-number">
+                  {detail.customer_score}
+                  <span className="ci-score-total">
+                    {" "}/ 100
+                  </span>
+                </div>
+                <div className="ci-score-bar ci-score-bar-lg">
+                  <div
+                    className="ci-score-fill"
+                    style={{
+                      width: `${detail.customer_score}%`,
+                      background: "#7c6cff",
+                    }}
+                  />
+                </div>
+              </div>
+              {detail.score_factors.length > 0 && (
+                <div className="ci-score-factors">
+                  {detail.score_factors.map(
+                    (f, idx) => (
+                      <span
+                        key={idx}
+                        className={
+                          "ci-factor"
+                          + (f.impact < 0
+                            ? " ci-factor-negative"
+                            : "")
+                        }
+                      >
+                        {formatIntelligenceCode(f.code, t)}:{" "}
+                        {f.impact > 0 ? "+" : ""}
+                        {f.impact}
+                      </span>
+                    ),
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Opportunities */}
+            {detail.opportunities.length > 0 && (
+              <div className="ci-detail-section">
+                <h3>{t("ciOpportunities")}</h3>
+                <div className="ci-detail-list">
+                  {detail.opportunities.map(
+                    (opp, idx) => (
+                      <div
+                        key={idx}
+                        className="ci-detail-list-item ci-opp"
+                      >
+                        <TrendingUp
+                          size={12}
+                        />
+                        <span>{formatIntelligenceCode(opp, t)}</span>
+                      </div>
+                    ),
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Risks */}
+            {detail.risks.length > 0 && (
+              <div className="ci-detail-section">
+                <h3>{t("ciRisks")}</h3>
+                <div className="ci-detail-list">
+                  {detail.risks.map(
+                    (risk, idx) => (
+                      <div
+                        key={idx}
+                        className="ci-detail-list-item ci-risk"
+                      >
+                        <AlertTriangle
+                          size={12}
+                        />
+                        <span>{formatIntelligenceCode(risk, t)}</span>
+                      </div>
+                    ),
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Next Best Action */}
+            <div className="ci-detail-section">
+              <h3>{t("ciNextBestAction")}</h3>
+              <div className="ci-action-box">
+                <Target size={14} />
+                <span className="ci-action-text">
+                  {t(
+                    ACTION_KEYS[
+                      detail.next_best_action
+                    ] ||
+                      detail.next_best_action,
+                  )}
+                </span>
+              </div>
+              {detail.next_best_action_reasons
+                .length > 0 && (
+                <div className="ci-action-reasons">
+                  {detail.next_best_action_reasons.map(
+                    (r, idx) => (
+                      <span
+                        key={idx}
+                        className="ci-reason-code"
+                      >
+                        {formatIntelligenceCode(r, t)}
+                      </span>
+                    ),
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Stats */}
             <div className="ci-detail-stats">
               <div className="ci-detail-stat">
                 <div className="ci-detail-stat-val">
@@ -678,7 +1143,23 @@ export default function CustomersPage({
                   {t("ciLastPurchase")}
                 </div>
               </div>
+              {detail.failed_order_count > 0 && (
+                <div className="ci-detail-stat">
+                  <div className="ci-detail-stat-val ci-color-at-risk">
+                    {detail.failed_order_count}
+                  </div>
+                  <div className="ci-detail-stat-lbl">
+                    {t("ciFailedOrders")}
+                  </div>
+                </div>
+              )}
             </div>
+
+            {/* Timeline */}
+            <TimelineSection
+              timeline={detail.timeline}
+              t={t}
+            />
 
             {detail.recent_orders.length > 0 && (
               <div className="ci-detail-section">
@@ -700,7 +1181,9 @@ export default function CustomersPage({
                               + order.external_creation_status
                             }
                           >
-                            {order.external_creation_status}
+                            {
+                              order.external_creation_status
+                            }
                           </span>
                         </div>
                         <div>
@@ -723,7 +1206,9 @@ export default function CustomersPage({
             {detail.recent_conversations.length >
               0 && (
               <div className="ci-detail-section">
-                <h3>{t("ciRecentConversations")}</h3>
+                <h3>
+                  {t("ciRecentConversations")}
+                </h3>
                 <div className="ci-detail-list">
                   {detail.recent_conversations.map(
                     (conv) => (
@@ -732,7 +1217,9 @@ export default function CustomersPage({
                         className="ci-detail-list-item"
                       >
                         <div>
-                          <strong>{conv.channel}</strong>
+                          <strong>
+                            {conv.channel}
+                          </strong>
                           <span className="ci-conv-mode">
                             {conv.mode}
                           </span>

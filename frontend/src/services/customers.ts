@@ -7,6 +7,12 @@ export interface SpendByCurrency {
 }
 
 
+export interface ScoreFactor {
+  code: string;
+  impact: number;
+}
+
+
 export interface CustomerSummary {
   total_customers: number;
   new_customers: number;
@@ -17,6 +23,11 @@ export interface CustomerSummary {
   vip: number;
   at_risk: number;
   inactive: number;
+  high_priority: number;
+  needs_followup: number;
+  active_health: number;
+  at_risk_health: number;
+  inactive_health: number;
 }
 
 
@@ -40,6 +51,19 @@ export interface CustomerItem {
   flags: string[];
   days_since_last_interaction: number | null;
   days_since_last_purchase: number | null;
+  customer_score: number;
+  score_factors: ScoreFactor[];
+  priority: string;
+  priority_reasons: string[];
+  customer_health: string;
+  opportunities: string[];
+  risks: string[];
+  next_best_action: string;
+  next_best_action_reasons: string[];
+  failed_order_count: number;
+  unknown_order_count: number;
+  last_failed_order_days: number | null;
+  needs_attention: boolean;
 }
 
 
@@ -72,9 +96,24 @@ export interface OrderSummary {
 }
 
 
+export interface TimelineEvent {
+  type: string;
+  timestamp: string | null;
+  conversation_id?: number;
+  order_id?: number;
+  customer_id?: number;
+  channel?: string;
+  preview?: string;
+  order_number?: string;
+  total_amount?: number;
+  currency?: string;
+}
+
+
 export interface CustomerDetail extends CustomerItem {
   recent_conversations: ConversationSummary[];
   recent_orders: OrderSummary[];
+  timeline: TimelineEvent[];
 }
 
 
@@ -106,6 +145,9 @@ export async function getCustomerList(params: {
   page?: number;
   pageSize?: number;
   sort?: string;
+  priority?: string;
+  health?: string;
+  needsAttention?: boolean;
 }): Promise<CustomerListResponse> {
   const searchParams = new URLSearchParams();
 
@@ -148,6 +190,21 @@ export async function getCustomerList(params: {
 
   if (params.sort) {
     searchParams.set("sort", params.sort);
+  }
+
+  if (params.priority) {
+    searchParams.set("priority", params.priority);
+  }
+
+  if (params.health) {
+    searchParams.set("health", params.health);
+  }
+
+  if (params.needsAttention !== undefined) {
+    searchParams.set(
+      "needs_attention",
+      String(params.needsAttention),
+    );
   }
 
   const qs = searchParams.toString();

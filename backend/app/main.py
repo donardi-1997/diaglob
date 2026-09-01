@@ -10018,6 +10018,10 @@ def list_customers(
     page: int = 1,
     page_size: int = 25,
     sort: str = "last_interaction_desc",
+    # Phase 2 filters
+    priority: str | None = None,
+    health: str | None = None,
+    needs_attention: bool | None = None,
     membership: OrganizationMembership = Depends(
         require_permission("customers.read")
     ),
@@ -10056,6 +10060,9 @@ def list_customers(
         page=page,
         page_size=page_size,
         sort=sort,
+        priority=priority,
+        health=health,
+        needs_attention=needs_attention,
     )
 
 
