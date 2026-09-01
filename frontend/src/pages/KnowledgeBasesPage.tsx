@@ -2353,10 +2353,32 @@ export default function KnowledgeBasesPage({
                   </span>
                 </div>
                 {selectedKnowledgeBase.external_status !== "ready" && (
-                  <div className="knowledge-provisioning-notice">
+                  <section
+                    className="knowledge-provisioning-notice"
+                    role="status"
+                    aria-labelledby="knowledge-provisioning-title"
+                  >
                     <Info size={16} aria-hidden="true" />
-                    <span>{t("knowledgeSourcesPendingNotice")}</span>
-                  </div>
+                    <div className="knowledge-provisioning-notice-content">
+                      <div className="knowledge-provisioning-notice-heading">
+                        <strong id="knowledge-provisioning-title">
+                          {t("knowledgeSourcesPendingTitle")}
+                        </strong>
+                        <span className="knowledge-provisioning-status">
+                          {t("knowledgeSourcesCurrentStatus", {
+                            status: t(
+                              PROVISIONING_STATUS_KEYS[
+                                selectedKnowledgeBase.external_status
+                              ],
+                            ),
+                          })}
+                        </span>
+                      </div>
+                      <p>{t("knowledgeSourcesPendingBody")}</p>
+                      <p>{t("knowledgeSourcesPendingSecondary")}</p>
+                      <small>{t("knowledgeSourcesPendingFooter")}</small>
+                    </div>
+                  </section>
                 )}
                 {canWrite && (
                   <div className="knowledge-security-notice">
@@ -2427,6 +2449,11 @@ export default function KnowledgeBasesPage({
                       )}
 
                       {t("knowledgeGoogleUploadFile")}
+                      {selectedKnowledgeBase.external_status !== "ready" && (
+                        <small className="knowledge-source-disabled-reason">
+                          {t("knowledgeSourcesPendingReason")}
+                        </small>
+                      )}
                     </button>
 
                     <input
@@ -2478,7 +2505,7 @@ export default function KnowledgeBasesPage({
                         ) : (
                           <FileSpreadsheet size={16} />
                         )}
-                        <span className="knowledge-source-option-copy"><strong>{t("knowledgeGoogleSelectSheet")}</strong><small>{t("knowledgeGoogleSheetsDescription")}</small></span>
+                        <span className="knowledge-source-option-copy"><strong>{t("knowledgeGoogleSelectSheet")}</strong><small>{t("knowledgeGoogleSheetsDescription")}</small>{selectedKnowledgeBase.external_status !== "ready" && <small className="knowledge-source-disabled-reason">{t("knowledgeSourcesPendingReason")}</small>}</span>
                       </button>
 
                       <button
@@ -2501,7 +2528,7 @@ export default function KnowledgeBasesPage({
                         ) : (
                           <FileText size={16} />
                         )}
-                        <span className="knowledge-source-option-copy"><strong>{t("knowledgeGoogleDocs")}</strong><small>{t("knowledgeGoogleDocsDescription")}</small></span>
+                        <span className="knowledge-source-option-copy"><strong>{t("knowledgeGoogleDocs")}</strong><small>{t("knowledgeGoogleDocsDescription")}</small>{selectedKnowledgeBase.external_status !== "ready" ? <small className="knowledge-source-disabled-reason">{t("knowledgeSourcesPendingReason")}</small> : driveScopeStatus?.has_drive_scope === false && <small className="knowledge-source-disabled-reason">{t("knowledgeGooglePermissionsReason")}</small>}</span>
                       </button>
 
                       <button
@@ -2524,7 +2551,7 @@ export default function KnowledgeBasesPage({
                         ) : (
                           <File size={16} />
                         )}
-                        <span className="knowledge-source-option-copy"><strong>{t("knowledgeGoogleDriveFile")}</strong><small>{t("knowledgeGoogleDriveFileDescription")}</small></span>
+                        <span className="knowledge-source-option-copy"><strong>{t("knowledgeGoogleDriveFile")}</strong><small>{t("knowledgeGoogleDriveFileDescription")}</small>{selectedKnowledgeBase.external_status !== "ready" ? <small className="knowledge-source-disabled-reason">{t("knowledgeSourcesPendingReason")}</small> : driveScopeStatus?.has_drive_scope === false && <small className="knowledge-source-disabled-reason">{t("knowledgeGooglePermissionsReason")}</small>}</span>
                       </button>
 
                       <button
@@ -2546,7 +2573,7 @@ export default function KnowledgeBasesPage({
                         ) : (
                           <Folder size={16} />
                         )}
-                        <span className="knowledge-source-option-copy"><strong>{t("knowledgeGoogleDriveFolder")}</strong><small>{t("knowledgeGoogleDriveFolderDescription")}</small></span>
+                        <span className="knowledge-source-option-copy"><strong>{t("knowledgeGoogleDriveFolder")}</strong><small>{t("knowledgeGoogleDriveFolderDescription")}</small>{selectedKnowledgeBase.external_status !== "ready" ? <small className="knowledge-source-disabled-reason">{t("knowledgeSourcesPendingReason")}</small> : driveScopeStatus?.has_drive_scope === false && <small className="knowledge-source-disabled-reason">{t("knowledgeGooglePermissionsReason")}</small>}</span>
                       </button>
                       {driveScopeStatus &&
                         !driveScopeStatus.has_drive_scope && (

@@ -388,6 +388,20 @@ const resources = {
       knowledgeAddSourceTitle: "Agregar fuente",
       knowledgeSourcesPendingNotice:
         "Las fuentes estarán disponibles cuando esta Knowledge Base esté lista.",
+      knowledgeSourcesPendingTitle:
+        "Esta Knowledge Base aún se está preparando",
+      knowledgeSourcesPendingBody:
+        "Puedes ver y configurar tus integraciones, pero no podrás importar nuevas fuentes hasta que el estado AWS cambie a \"Lista\".",
+      knowledgeSourcesPendingSecondary:
+        "No necesitas volver a conectar Google ni conceder permisos otra vez.",
+      knowledgeSourcesCurrentStatus:
+        "Estado actual: {{status}}",
+      knowledgeSourcesPendingFooter:
+        "Cuando el aprovisionamiento termine, Google Sheets, Google Docs, Drive y la carga de archivos se habilitarán automáticamente.",
+      knowledgeSourcesPendingReason:
+        "Disponible cuando AWS esté Lista",
+      knowledgeGooglePermissionsReason:
+        "Requiere permisos adicionales de Google",
       knowledgeSourcesEyebrow: "CATALOGO",
       knowledgeSourcesTitle: "Fuentes",
       knowledgeSourceCount: "{{count}} fuentes",
@@ -1954,6 +1968,20 @@ const resources = {
       knowledgeAddSourceTitle: "Add source",
       knowledgeSourcesPendingNotice:
         "Sources will be available when this Knowledge Base is ready.",
+      knowledgeSourcesPendingTitle:
+        "This Knowledge Base is still being prepared",
+      knowledgeSourcesPendingBody:
+        "You can view and configure your integrations, but new sources cannot be imported until the AWS status changes to \"Ready\".",
+      knowledgeSourcesPendingSecondary:
+        "You do not need to reconnect Google or grant permissions again.",
+      knowledgeSourcesCurrentStatus:
+        "Current status: {{status}}",
+      knowledgeSourcesPendingFooter:
+        "Once provisioning finishes, Google Sheets, Google Docs, Drive, and file uploads will be enabled automatically.",
+      knowledgeSourcesPendingReason:
+        "Available when AWS is Ready",
+      knowledgeGooglePermissionsReason:
+        "Additional Google permissions are required",
       knowledgeSourcesEyebrow: "CATALOG",
       knowledgeSourcesTitle: "Sources",
       knowledgeSourceCount: "{{count}} sources",
