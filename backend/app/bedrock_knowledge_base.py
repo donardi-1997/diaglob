@@ -16,7 +16,8 @@ from botocore.exceptions import BotoCoreError, ClientError
 from sqlalchemy.orm import Session
 
 from .bedrock_ingestion import AWS_REGION, _get_bedrock_agent_client
-from .models import KnowledgeBase
+from .models import KnowledgeBase, KnowledgeSource
+from .knowledge_storage import delete_knowledge_prefix
 
 logger = logging.getLogger(__name__)
 
@@ -128,7 +129,7 @@ VECTOR_NON_FILTERABLE_METADATA_KEYS = (
     "AMAZON_BEDROCK_METADATA",
 )
 
-PROVISIONING_STATES = ("pending", "provisioning", "retrying", "ready", "failed")
+PROVISIONING_STATES = ("pending", "provisioning", "retrying", "ready", "failed", "deleting")
 RECOVERY_ATTEMPTS = int(os.getenv("BEDROCK_RECOVERY_ATTEMPTS", "3"))
 WAIT_ATTEMPTS = int(os.getenv("BEDROCK_WAIT_ATTEMPTS", "30"))
 POLL_INTERVAL_SECONDS = float(os.getenv("BEDROCK_POLL_INTERVAL_SECONDS", "2"))
@@ -1118,3 +1119,58 @@ def cleanup_bedrock_resources(db: Session, knowledge_base: KnowledgeBase) -> Non
         "resources_cleaned" if result.succeeded else "cleanup_failed"
     )
     _commit_state(db, "failure_state_persist_failed")
+
+
+def delete_diaglob_knowledge_base(db: Session, knowledge_base: KnowledgeBase) -> None:
+    """Delete one KB and only its verified remote resources and S3 prefix."""
+    claimed = (
+        db.query(KnowledgeBase)
+        .filter(
+            KnowledgeBase.id == knowledge_base.id,
+            KnowledgeBase.organization_id == knowledge_base.organization_id,
+            KnowledgeBase.external_status != "deleting",
+        )
+        .update(
+            {KnowledgeBase.external_status: "deleting", KnowledgeBase.external_last_error: None},
+            synchronize_session=False,
+        )
+    )
+    _commit_state(db)
+    db.refresh(knowledge_base)
+    if not claimed and knowledge_base.external_status != "deleting":
+        raise BedrockProvisioningError("invalid_deletion_state", resource="knowledge_base")
+
+    org_id = knowledge_base.organization_id
+    kb_id = knowledge_base.id
+    try:
+        cleanup = _cleanup_remote_resources(
+            org_id,
+            kb_id,
+            _vector_index_arn(kb_id),
+            knowledge_base.external_id,
+            knowledge_base.external_data_source_id,
+        )
+        if not cleanup.succeeded:
+            raise BedrockProvisioningError("deletion_cleanup_failed", resource="knowledge_base")
+        delete_knowledge_prefix(org_id, kb_id)
+        db.query(KnowledgeSource).filter(
+            KnowledgeSource.organization_id == org_id,
+            KnowledgeSource.knowledge_base_id == kb_id,
+        ).delete(synchronize_session=False)
+        db.delete(knowledge_base)
+        _commit_state(db, "deletion_state_persist_failed")
+    except Exception as error:
+        db.rollback()
+        current = db.get(KnowledgeBase, kb_id)
+        if current:
+            current.external_status = "deleting"
+            current.external_last_error = "deletion_failed"
+            _commit_state(db, "deletion_state_persist_failed")
+        logger.exception(
+            "Knowledge Base deletion failed: organization_id=%s knowledge_base_id=%s",
+            org_id,
+            kb_id,
+        )
+        if isinstance(error, BedrockProvisioningError):
+            raise
+        raise BedrockProvisioningError("deletion_failed", resource="knowledge_base") from error

@@ -1066,6 +1066,53 @@ def test_existing_ready_kb_performs_no_aws_calls(db):
     create_index.assert_not_called()
 
 
+def test_delete_ready_kb_cleans_owned_resources_prefix_and_sources(db):
+    org = _make_org(db)
+    kb = _make_local_kb(db, org, status="ready", external_id=BEDROCK_KB_ID, data_source_id=BEDROCK_DS_ID)
+    source = KnowledgeSource(
+        organization_id=org.id,
+        knowledge_base_id=kb.id,
+        name="Uploaded file",
+        source_type="file",
+        s3_bucket=KNOWLEDGE_BUCKET,
+        s3_key=f"organizations/{org.id}/knowledge-bases/{kb.id}/documents/file.txt",
+    )
+    db.add(source)
+    db.commit()
+    source_id = source.id
+    with patch.object(provisioning, "_cleanup_remote_resources", return_value=provisioning.CleanupResult(True, None, None)) as cleanup, patch.object(provisioning, "delete_knowledge_prefix") as delete_prefix:
+        provisioning.delete_diaglob_knowledge_base(db, kb)
+    cleanup.assert_called_once()
+    delete_prefix.assert_called_once_with(org.id, kb.id)
+    assert db.get(KnowledgeBase, kb.id) is None
+    assert db.query(KnowledgeSource).filter_by(id=source_id).first() is None
+
+
+def test_delete_failed_kb_without_remote_resources_is_safe(db):
+    org = _make_org(db)
+    kb = _make_local_kb(db, org, status="failed")
+    with patch.object(provisioning, "_cleanup_remote_resources", return_value=provisioning.CleanupResult(True, None, None)), patch.object(provisioning, "delete_knowledge_prefix"):
+        provisioning.delete_diaglob_knowledge_base(db, kb)
+    assert db.get(KnowledgeBase, kb.id) is None
+
+
+def test_delete_endpoint_hides_other_tenant_knowledge_base(api_client, db):
+    client, _, _ = api_client
+    other_org = _make_org(db, "other-delete-test")
+    other_kb = _make_local_kb(db, other_org, status="failed")
+    response = client.delete(f"/api/knowledge-bases/{other_kb.id}")
+    assert response.status_code == 404
+    assert db.get(KnowledgeBase, other_kb.id) is not None
+
+
+def test_provisioning_cannot_claim_deleting_knowledge_base(db):
+    org = _make_org(db)
+    kb = _make_local_kb(db, org, status="deleting")
+    with pytest.raises(provisioning.BedrockProvisioningError) as exc:
+        provisioning.provision_diaglob_knowledge_base(db, kb)
+    assert exc.value.code == "invalid_provisioning_state"
+
+
 def test_partial_retry_reuses_existing_kb_and_creates_data_source(db):
     org = _make_org(db)
     kb = _make_local_kb(db, org, external_id=BEDROCK_KB_ID)

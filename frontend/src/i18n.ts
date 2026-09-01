@@ -396,6 +396,14 @@ const resources = {
         "Crear Knowledge Base",
       knowledgeI18nDeleteDocument:
         "Eliminar documento",
+      knowledgeI18nDeleteKnowledgeBase: "Eliminar Knowledge Base",
+      knowledgeI18nDeletingKnowledgeBase: "Eliminando...",
+      knowledgeI18nDeleteKnowledgeBaseBody:
+        "Esta acción eliminará de forma permanente esta Knowledge Base y sus fuentes asociadas. No se puede deshacer.",
+      knowledgeI18nDeleteKnowledgeBaseConfirm:
+        "Escribe {{name}} para confirmar.",
+      knowledgeI18nDeleteKnowledgeBaseError:
+        "No pudimos completar la eliminación. La Knowledge Base quedó bloqueada para evitar nuevos cambios. Puedes intentar nuevamente.",
 
       knowledgeGoogleDocuments:
         "DOCUMENTOS",
@@ -1993,6 +2001,14 @@ const resources = {
         "Create Knowledge Base",
       knowledgeI18nDeleteDocument:
         "Delete document",
+      knowledgeI18nDeleteKnowledgeBase: "Delete Knowledge Base",
+      knowledgeI18nDeletingKnowledgeBase: "Deleting...",
+      knowledgeI18nDeleteKnowledgeBaseBody:
+        "This action permanently deletes this Knowledge Base and its associated sources. It cannot be undone.",
+      knowledgeI18nDeleteKnowledgeBaseConfirm:
+        "Type {{name}} to confirm.",
+      knowledgeI18nDeleteKnowledgeBaseError:
+        "We couldn't complete the deletion. The Knowledge Base has been locked to prevent new changes. You can try again.",
 
       knowledgeGoogleDocuments:
         "DOCUMENTS",

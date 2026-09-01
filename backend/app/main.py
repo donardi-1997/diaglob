@@ -37,6 +37,7 @@ from sqlalchemy.orm import Session
 from .auth import verify_cognito_access_token
 from .knowledge_storage import (
     delete_knowledge_file,
+    delete_knowledge_prefix,
     upload_knowledge_file,
 )
 from .ai_generation import generate_grounded_answer
@@ -195,6 +196,7 @@ from .bedrock_knowledge_base import (
     ProvisioningErrorClassification,
     ProvisioningInProgressError,
     provision_diaglob_knowledge_base,
+    delete_diaglob_knowledge_base,
 )
 
 Base.metadata.create_all(bind=engine)
@@ -7634,6 +7636,35 @@ def retry_knowledge_base_provisioning(
         ) from e
 
     return serialize_knowledge_base(knowledge_base)
+
+
+@app.delete("/api/knowledge-bases/{knowledge_base_id}")
+def delete_knowledge_base(
+    knowledge_base_id: int,
+    membership: OrganizationMembership = Depends(require_permission("knowledge.write")),
+    db: Session = Depends(get_db),
+):
+    knowledge_base = db.query(KnowledgeBase).filter(
+        KnowledgeBase.id == knowledge_base_id,
+        KnowledgeBase.organization_id == membership.organization_id,
+    ).first()
+    if not knowledge_base:
+        raise HTTPException(status_code=404, detail="Knowledge base not found")
+    try:
+        delete_diaglob_knowledge_base(db, knowledge_base)
+    except BedrockProvisioningError as error:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "KNOWLEDGE_BASE_DELETION_FAILED",
+                "message": "Knowledge Base deletion could not be completed.",
+            },
+        ) from error
+    logger.info(
+        "Knowledge Base deleted: organization_id=%s knowledge_base_id=%s actor_user_id=%s",
+        membership.organization_id, knowledge_base_id, membership.user_id,
+    )
+    return {"id": knowledge_base_id, "deleted": True}
 
 
 @app.get("/api/conversations")

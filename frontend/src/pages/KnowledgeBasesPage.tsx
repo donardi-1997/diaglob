@@ -31,6 +31,7 @@ import {
 
 import {
   createKnowledgeBase,
+  deleteKnowledgeBase,
   getKnowledgeBases,
   retryKnowledgeBaseProvisioning,
   updateKnowledgeBase,
@@ -187,6 +188,9 @@ export default function KnowledgeBasesPage({
 
   const [retryingKnowledgeBaseId, setRetryingKnowledgeBaseId] =
     useState<number | null>(null);
+  const [deletingKnowledgeBase, setDeletingKnowledgeBase] = useState<KnowledgeBase | null>(null);
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const [deleting, setDeleting] = useState(false);
 
   const [error, setError] =
     useState("");
@@ -1094,6 +1098,22 @@ export default function KnowledgeBasesPage({
       setError(t("knowledgeI18nProvisioningRetryError"));
     } finally {
       setRetryingKnowledgeBaseId(null);
+    }
+  }
+
+  async function handleDeleteKnowledgeBase() {
+    if (!deletingKnowledgeBase || deleteConfirmation !== deletingKnowledgeBase.name) return;
+    try {
+      setDeleting(true);
+      await deleteKnowledgeBase(deletingKnowledgeBase.id);
+      setItems((current) => current.filter((item) => item.id !== deletingKnowledgeBase.id));
+      setDeletingKnowledgeBase(null);
+      setDeleteConfirmation("");
+    } catch (err) {
+      console.error(err);
+      setError(t("knowledgeI18nDeleteKnowledgeBaseError"));
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -2033,6 +2053,16 @@ export default function KnowledgeBasesPage({
                             ? t("knowledgeI18nDeactivate")
                             : t("knowledgeI18nActivate")
                         }
+                      </button>
+                      <button
+                        className="secondary-button danger"
+                        onClick={() => {
+                          setDeletingKnowledgeBase(knowledgeBase);
+                          setDeleteConfirmation("");
+                        }}
+                      >
+                        <Trash2 size={15} />
+                        {t("knowledgeI18nDeleteKnowledgeBase")}
                       </button>
                     </>
                   )}
@@ -3238,6 +3268,27 @@ export default function KnowledgeBasesPage({
               )}
 
             </div>
+          </div>
+        </div>
+      )}
+
+      {deletingKnowledgeBase && (
+        <div className="management-modal-backdrop" onMouseDown={() => !deleting && setDeletingKnowledgeBase(null)}>
+          <div className="management-modal" onMouseDown={(event) => event.stopPropagation()}>
+            <header className="management-modal-header">
+              <div><span className="eyebrow">{t("knowledgeI18nDeleteKnowledgeBase")}</span><h2>{t("knowledgeI18nDeleteKnowledgeBase")}</h2></div>
+              <button className="icon-button" disabled={deleting} onClick={() => setDeletingKnowledgeBase(null)}><X size={18} /></button>
+            </header>
+            <div className="management-form">
+              <p>{t("knowledgeI18nDeleteKnowledgeBaseBody")}</p>
+              <p><strong>{deletingKnowledgeBase.name}</strong></p>
+              <p>{t("knowledgeI18nDeleteKnowledgeBaseConfirm", { name: deletingKnowledgeBase.name })}</p>
+              <input value={deleteConfirmation} onChange={(event) => setDeleteConfirmation(event.target.value)} disabled={deleting} />
+            </div>
+            <footer className="management-modal-footer">
+              <button className="secondary-button" disabled={deleting} onClick={() => setDeletingKnowledgeBase(null)}>{t("knowledgeI18nCancel")}</button>
+              <button className="danger-button" disabled={deleting || deleteConfirmation !== deletingKnowledgeBase.name} onClick={() => void handleDeleteKnowledgeBase()}>{deleting ? t("knowledgeI18nDeletingKnowledgeBase") : t("knowledgeI18nDeleteKnowledgeBase")}</button>
+            </footer>
           </div>
         </div>
       )}

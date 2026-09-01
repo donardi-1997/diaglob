@@ -82,3 +82,7 @@ export async function retryKnowledgeBaseProvisioning(
 
   return response.data;
 }
+
+export async function deleteKnowledgeBase(id: number) {
+  await api.delete(`/api/knowledge-bases/${id}`);
+}

@@ -126,7 +126,7 @@ def _upsert_product(
     description: str,
     image_url: str | None,
     status: str,
-) -> Product:
+) -> tuple[Product, bool]:
     existing = (
         db.query(Product)
         .filter(
@@ -151,7 +151,7 @@ def _upsert_product(
             datetime.utcnow()
         )
 
-        return existing
+        return existing, False
 
     product = Product(
         organization_id=organization_id,
@@ -169,7 +169,7 @@ def _upsert_product(
     db.add(product)
     db.flush()
 
-    return product
+    return product, True
 
 
 def _upsert_variant(
@@ -327,7 +327,7 @@ def sync_shopify_products(
                 )
 
             try:
-                product = _upsert_product(
+                product, product_created = _upsert_product(
                     db,
                     organization_id=(
                         connection.organization_id
@@ -347,10 +347,7 @@ def sync_shopify_products(
                     status=status,
                 )
 
-                if (
-                    product.created_at
-                    == product.updated_at
-                ):
+                if product_created:
                     created += 1
                 else:
                     updated += 1

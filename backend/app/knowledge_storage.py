@@ -107,3 +107,26 @@ def delete_knowledge_file(
         Bucket=bucket,
         Key=key,
     )
+
+
+def delete_knowledge_prefix(organization_id: int, knowledge_base_id: int):
+    """Delete only the documents owned by one Knowledge Base prefix."""
+    if not KNOWLEDGE_BUCKET:
+        raise RuntimeError("DIAGLOB_KNOWLEDGE_BUCKET is not configured")
+    prefix = (
+        f"organizations/{organization_id}/knowledge-bases/"
+        f"{knowledge_base_id}/documents/"
+    )
+    client = get_s3_client()
+    continuation_token = None
+    while True:
+        request = {"Bucket": KNOWLEDGE_BUCKET, "Prefix": prefix}
+        if continuation_token:
+            request["ContinuationToken"] = continuation_token
+        response = client.list_objects_v2(**request)
+        objects = [{"Key": item["Key"]} for item in response.get("Contents", [])]
+        if objects:
+            client.delete_objects(Bucket=KNOWLEDGE_BUCKET, Delete={"Objects": objects})
+        continuation_token = response.get("NextContinuationToken")
+        if not continuation_token:
+            return
