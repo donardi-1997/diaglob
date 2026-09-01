@@ -123,6 +123,17 @@ const PROVISIONING_STATUS_KEYS: Record<
 };
 
 
+function isProvisioningFailure(error: unknown) {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "response" in error &&
+    (error as { response?: { data?: { detail?: { code?: string } } } }).response
+      ?.data?.detail?.code === "BEDROCK_PROVISIONING_FAILED"
+  );
+}
+
+
 function isSyncInProgress(
   status: string | null | undefined,
 ) {
@@ -713,7 +724,11 @@ export default function KnowledgeBasesPage({
       await loadData();
 
       setError(
-        t("knowledgeI18nSaveError"),
+        t(
+          isProvisioningFailure(err)
+            ? "knowledgeI18nProvisioningCreateError"
+            : "knowledgeI18nSaveError",
+        ),
       );
     } finally {
       setSaving(false);

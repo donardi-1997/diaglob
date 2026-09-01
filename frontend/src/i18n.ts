@@ -320,6 +320,8 @@ const resources = {
         "Selecciona al menos una tienda.",
       knowledgeI18nSaveError:
         "No fue posible guardar la Knowledge Base.",
+      knowledgeI18nProvisioningCreateError:
+        "No pudimos terminar de preparar esta Knowledge Base. Puedes reintentar sin crear una nueva.",
       knowledgeI18nStatusError:
         "No fue posible cambiar el estado.",
       knowledgeI18nDocumentsLoadError:
@@ -1900,6 +1902,8 @@ const resources = {
         "Select at least one store.",
       knowledgeI18nSaveError:
         "We couldn't save the Knowledge Base.",
+      knowledgeI18nProvisioningCreateError:
+        "We couldn't finish preparing this Knowledge Base. You can retry without creating a new one.",
       knowledgeI18nStatusError:
         "We couldn't change the status.",
       knowledgeI18nDocumentsLoadError:

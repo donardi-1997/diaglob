@@ -204,6 +204,29 @@ def _client_error_code(error: Exception) -> str | None:
     return None
 
 
+def _client_error_message(error: Exception) -> str | None:
+    if not isinstance(error, ClientError):
+        return None
+    message = error.response.get("Error", {}).get("Message")
+    if not isinstance(message, str):
+        return None
+    return " ".join(message.split())[:500]
+
+
+def _log_provisioning_aws_error(
+    stage: str, org_id: int, kb_id: int, error: Exception
+) -> None:
+    logger.error(
+        "Knowledge Base provisioning AWS failure: stage=%s organization_id=%s "
+        "knowledge_base_id=%s aws_error_code=%s aws_error_message=%s",
+        stage,
+        org_id,
+        kb_id,
+        _client_error_code(error),
+        _client_error_message(error),
+    )
+
+
 def _is_uncertain_create_error(error: Exception) -> bool:
     if isinstance(error, BotoCoreError):
         return True
@@ -332,6 +355,9 @@ def create_s3_vectors_index(org_id: int, kb_id: int) -> dict[str, Any]:
         raise
     except (BotoCoreError, ClientError) as error:
         if not _is_uncertain_create_error(error):
+            _log_provisioning_aws_error(
+                "vector_index_create", org_id, kb_id, error
+            )
             logger.exception("Failed to create managed S3 Vectors index")
             raise BedrockProvisioningError(
                 "vector_index_create_failed", resource="vector_index"

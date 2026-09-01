@@ -1,6 +1,8 @@
 """Tests for isolated Bedrock and S3 Vectors provisioning."""
 
 from datetime import datetime, timezone
+import json
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import boto3
@@ -437,6 +439,41 @@ def test_create_vector_index_failure_is_sanitized():
                 provisioning.create_s3_vectors_index(1, 1)
     assert exc.value.code == "vector_index_create_failed"
     assert "request" not in str(exc.value)
+
+
+def test_vector_index_create_failure_logs_safe_aws_diagnostics(caplog):
+    client = _s3vectors_client()
+    with Stubber(client) as stubber:
+        stubber.add_client_error(
+            "create_index",
+            service_error_code="AccessDeniedException",
+            service_message="TagResource permission is required",
+            http_status_code=403,
+        )
+        with patch.object(
+            provisioning, "_get_s3_vectors_client", return_value=client
+        ):
+            with pytest.raises(provisioning.BedrockProvisioningError):
+                provisioning.create_s3_vectors_index(1, 1)
+    assert "stage=vector_index_create" in caplog.text
+    assert "organization_id=1" in caplog.text
+    assert "knowledge_base_id=1" in caplog.text
+    assert "aws_error_code=AccessDeniedException" in caplog.text
+    assert "aws_error_message=TagResource permission is required" in caplog.text
+
+
+def test_production_policy_allows_tagging_new_vector_indexes():
+    policy_path = Path(__file__).parents[1] / "diaglob-prod-knowledge-policy.json"
+    policy = json.loads(policy_path.read_text(encoding="utf-8"))
+    statement = next(
+        item
+        for item in policy["Statement"]
+        if item["Sid"] == "CreateManagedS3VectorIndexes"
+    )
+    assert set(statement["Action"]) == {
+        "s3vectors:CreateIndex",
+        "s3vectors:TagResource",
+    }
 
 
 def test_get_vector_index_rejects_incompatible_configuration():
