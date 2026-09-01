@@ -8,6 +8,7 @@ import os
 import re
 import time
 from dataclasses import dataclass
+from enum import Enum
 from typing import Any
 
 import boto3
@@ -23,9 +24,15 @@ logger = logging.getLogger(__name__)
 class BedrockProvisioningError(Exception):
     """A safe, stable provisioning failure suitable for persistence."""
 
-    def __init__(self, code: str, resource: str | None = None):
+    def __init__(
+        self,
+        code: str,
+        resource: str | None = None,
+        classification: "ProvisioningErrorClassification" | None = None,
+    ):
         self.code = code
         self.resource = resource
+        self.classification = classification or ProvisioningErrorClassification.PERMANENT_RESOURCE_ERROR
         super().__init__(code)
 
 
@@ -34,6 +41,22 @@ class ProvisioningInProgressError(BedrockProvisioningError):
 
     def __init__(self):
         super().__init__("provisioning_in_progress", resource="knowledge_base")
+
+
+class ProvisioningErrorClassification(str, Enum):
+    USER_ACTION_REQUIRED = "user_action_required"
+    RETRYABLE_INFRASTRUCTURE = "retryable_infrastructure"
+    PLATFORM_CONFIGURATION_ERROR = "platform_configuration_error"
+    PERMANENT_RESOURCE_ERROR = "permanent_resource_error"
+
+
+def classify_provisioning_aws_error(error: Exception) -> ProvisioningErrorClassification:
+    code = _client_error_code(error)
+    if code in {"ThrottlingException", "TooManyRequestsException", "InternalServerException", "ServiceUnavailableException", "RequestTimeoutException"} or isinstance(error, BotoCoreError):
+        return ProvisioningErrorClassification.RETRYABLE_INFRASTRUCTURE
+    if code in {"AccessDeniedException", "UnauthorizedException", "ValidationException"}:
+        return ProvisioningErrorClassification.PLATFORM_CONFIGURATION_ERROR
+    return ProvisioningErrorClassification.PERMANENT_RESOURCE_ERROR
 
 
 _CANONICAL_ENVIRONMENTS = {
@@ -105,7 +128,7 @@ VECTOR_NON_FILTERABLE_METADATA_KEYS = (
     "AMAZON_BEDROCK_METADATA",
 )
 
-PROVISIONING_STATES = ("pending", "provisioning", "ready", "failed")
+PROVISIONING_STATES = ("pending", "provisioning", "retrying", "ready", "failed")
 RECOVERY_ATTEMPTS = int(os.getenv("BEDROCK_RECOVERY_ATTEMPTS", "3"))
 WAIT_ATTEMPTS = int(os.getenv("BEDROCK_WAIT_ATTEMPTS", "30"))
 POLL_INTERVAL_SECONDS = float(os.getenv("BEDROCK_POLL_INTERVAL_SECONDS", "2"))
@@ -360,7 +383,9 @@ def create_s3_vectors_index(org_id: int, kb_id: int) -> dict[str, Any]:
             )
             logger.exception("Failed to create managed S3 Vectors index")
             raise BedrockProvisioningError(
-                "vector_index_create_failed", resource="vector_index"
+                "vector_index_create_failed",
+                resource="vector_index",
+                classification=classify_provisioning_aws_error(error),
             ) from error
         logger.warning(
             "S3 Vectors index create response was uncertain; attempting recovery",
@@ -895,7 +920,7 @@ def _claim_provisioning(db: Session, knowledge_base: KnowledgeBase) -> None:
         .filter(
             KnowledgeBase.id == knowledge_base.id,
             KnowledgeBase.organization_id == knowledge_base.organization_id,
-            KnowledgeBase.external_status.in_(("pending", "failed")),
+            KnowledgeBase.external_status.in_(("pending", "retrying", "failed")),
         )
         .update(
             {

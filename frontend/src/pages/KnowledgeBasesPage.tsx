@@ -118,6 +118,7 @@ const PROVISIONING_STATUS_KEYS: Record<
 > = {
   pending: "knowledgeI18nProvisioningPending",
   provisioning: "knowledgeI18nProvisioningInProgress",
+  retrying: "knowledgeI18nProvisioningRetrying",
   ready: "knowledgeI18nProvisioningReady",
   failed: "knowledgeI18nProvisioningFailed",
 };
@@ -436,6 +437,14 @@ export default function KnowledgeBasesPage({
   useEffect(() => {
     void loadData();
   }, []);
+
+  useEffect(() => {
+    if (!items.some((item) => item.external_status === "pending" || item.external_status === "provisioning" || item.external_status === "retrying")) {
+      return;
+    }
+    const interval = window.setInterval(() => void loadData(), 7_500);
+    return () => window.clearInterval(interval);
+  }, [items]);
 
 
   function getSyncStatusLabel(
@@ -1972,8 +1981,7 @@ export default function KnowledgeBasesPage({
 
                   {canWrite && (
                     <>
-                      {(knowledgeBase.external_status === "pending" ||
-                        knowledgeBase.external_status === "failed") && (
+                      {knowledgeBase.external_status === "failed" && (
                         <button
                           className="secondary-button"
                           disabled={
@@ -2377,7 +2385,7 @@ export default function KnowledgeBasesPage({
                     <div className="knowledge-provisioning-notice-content">
                       <div className="knowledge-provisioning-notice-heading">
                         <strong id="knowledge-provisioning-title">
-                          {t("knowledgeSourcesPendingTitle")}
+                          {t(selectedKnowledgeBase.external_status === "failed" ? "knowledgeI18nFailedTitle" : selectedKnowledgeBase.external_status === "retrying" ? "knowledgeI18nRetryingTitle" : "knowledgeI18nPreparingTitle")}
                         </strong>
                         <span className="knowledge-provisioning-status">
                           {t("knowledgeSourcesCurrentStatus", {
@@ -2389,9 +2397,8 @@ export default function KnowledgeBasesPage({
                           })}
                         </span>
                       </div>
-                      <p>{t("knowledgeSourcesPendingBody")}</p>
-                      <p>{t("knowledgeSourcesPendingSecondary")}</p>
-                      <small>{t("knowledgeSourcesPendingFooter")}</small>
+                      <p>{t(selectedKnowledgeBase.external_status === "failed" ? "knowledgeI18nFailedBody" : selectedKnowledgeBase.external_status === "retrying" ? "knowledgeI18nRetryingBody" : "knowledgeI18nPreparingBody")}</p>
+                      {selectedKnowledgeBase.external_status === "failed" ? <small>{t("knowledgeI18nFailedSupport")}</small> : <><p>{t("knowledgeSourcesPendingSecondary")}</p><small>{t("knowledgeSourcesPendingFooter")}</small></>}
                     </div>
                   </section>
                 )}

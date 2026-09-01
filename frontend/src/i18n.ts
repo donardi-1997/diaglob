@@ -353,6 +353,8 @@ const resources = {
         "Pendiente",
       knowledgeI18nProvisioningInProgress:
         "Aprovisionando",
+      knowledgeI18nProvisioningRetrying:
+        "Preparando",
       knowledgeI18nProvisioningReady:
         "Lista",
       knowledgeI18nProvisioningFailed:
@@ -361,6 +363,19 @@ const resources = {
         "Reintentar",
       knowledgeI18nProvisioningRetryError:
         "No fue posible reintentar el aprovisionamiento.",
+      knowledgeI18nPreparingTitle: "Preparando Knowledge Base",
+      knowledgeI18nPreparingBody:
+        "Estamos configurando la infraestructura necesaria. No tienes que hacer nada.",
+      knowledgeI18nRetryingTitle:
+        "Seguimos preparando esta Knowledge Base",
+      knowledgeI18nRetryingBody:
+        "Detectamos un inconveniente temporal y estamos reintentando automáticamente.",
+      knowledgeI18nFailedTitle:
+        "No pudimos terminar de preparar esta Knowledge Base",
+      knowledgeI18nFailedBody:
+        "Detectamos un problema interno durante la preparación. No necesitas cambiar tus integraciones ni volver a conectar Google.",
+      knowledgeI18nFailedSupport:
+        "Nuestro equipo puede revisar este problema. Puedes intentar nuevamente más tarde.",
       knowledgeI18nDeactivate:
         "Desactivar",
       knowledgeI18nActivate:
@@ -1935,6 +1950,8 @@ const resources = {
         "Pending",
       knowledgeI18nProvisioningInProgress:
         "Provisioning",
+      knowledgeI18nProvisioningRetrying:
+        "Preparing",
       knowledgeI18nProvisioningReady:
         "Ready",
       knowledgeI18nProvisioningFailed:
@@ -1943,6 +1960,19 @@ const resources = {
         "Retry",
       knowledgeI18nProvisioningRetryError:
         "We couldn't retry provisioning.",
+      knowledgeI18nPreparingTitle: "Preparing Knowledge Base",
+      knowledgeI18nPreparingBody:
+        "We're setting up the required infrastructure. You don't need to do anything.",
+      knowledgeI18nRetryingTitle:
+        "We're still preparing this Knowledge Base",
+      knowledgeI18nRetryingBody:
+        "We detected a temporary issue and are retrying automatically.",
+      knowledgeI18nFailedTitle:
+        "We couldn't finish preparing this Knowledge Base",
+      knowledgeI18nFailedBody:
+        "We detected an internal issue during setup. You don't need to change your integrations or reconnect Google.",
+      knowledgeI18nFailedSupport:
+        "Our team can review this issue. You can try again later.",
       knowledgeI18nDeactivate:
         "Deactivate",
       knowledgeI18nActivate:

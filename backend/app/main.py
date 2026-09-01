@@ -5,6 +5,7 @@ import hmac
 import hashlib
 import logging
 import re
+import time
 import httpx
 from typing import Literal
 
@@ -66,7 +67,7 @@ from .permissions import (
     get_permissions_for_role,
     has_permission,
 )
-from .db import Base, engine, get_db
+from .db import Base, SessionLocal, engine, get_db
 from .models import (
     Agent,
     Automation,
@@ -191,6 +192,7 @@ from .bedrock_ingestion import (
 
 from .bedrock_knowledge_base import (
     BedrockProvisioningError,
+    ProvisioningErrorClassification,
     ProvisioningInProgressError,
     provision_diaglob_knowledge_base,
 )
@@ -198,6 +200,49 @@ from .bedrock_knowledge_base import (
 Base.metadata.create_all(bind=engine)
 
 logger = logging.getLogger(__name__)
+
+PROVISIONING_RETRY_DELAYS_SECONDS = (0, 60, 300, 900)
+
+
+def run_knowledge_base_provisioning(knowledge_base_id: int) -> None:
+    """Provision in the background so customers never wait on AWS setup."""
+    for attempt, delay in enumerate(PROVISIONING_RETRY_DELAYS_SECONDS, start=1):
+        if delay:
+            time.sleep(delay)
+        db = SessionLocal()
+        try:
+            knowledge_base = db.get(KnowledgeBase, knowledge_base_id)
+            if not knowledge_base or knowledge_base.external_status == "ready":
+                return
+            try:
+                provision_diaglob_knowledge_base(db, knowledge_base)
+                logger.info(
+                    "Knowledge Base provisioning succeeded: organization_id=%s knowledge_base_id=%s attempt=%s",
+                    knowledge_base.organization_id, knowledge_base.id, attempt,
+                )
+                return
+            except ProvisioningInProgressError:
+                return
+            except BedrockProvisioningError as error:
+                retry_scheduled = (
+                    error.classification in {
+                        ProvisioningErrorClassification.RETRYABLE_INFRASTRUCTURE,
+                        ProvisioningErrorClassification.PLATFORM_CONFIGURATION_ERROR,
+                    }
+                    and attempt < len(PROVISIONING_RETRY_DELAYS_SECONDS)
+                )
+                logger.error(
+                    "Knowledge Base provisioning failed: organization_id=%s knowledge_base_id=%s attempt=%s stage=%s classification=%s retry_scheduled=%s",
+                    knowledge_base.organization_id, knowledge_base.id, attempt,
+                    error.resource, error.classification, retry_scheduled,
+                )
+                if retry_scheduled:
+                    knowledge_base.external_status = "retrying"
+                    db.commit()
+                else:
+                    return
+        finally:
+            db.close()
 
 app = FastAPI(
     title="Diaglob API",
@@ -7334,6 +7379,7 @@ def get_knowledge_base(
 @app.post("/api/knowledge-bases")
 def create_knowledge_base(
     payload: KnowledgeBaseCreate,
+    background_tasks: BackgroundTasks,
     membership: OrganizationMembership = Depends(
         require_permission("knowledge.write")
     ),
@@ -7407,21 +7453,7 @@ def create_knowledge_base(
         knowledge_base
     )
 
-    try:
-        provision_diaglob_knowledge_base(db, knowledge_base)
-        db.refresh(knowledge_base)
-    except BedrockProvisioningError as e:
-        logger.exception(
-            "Failed to provision Bedrock resources for KnowledgeBase %d",
-            knowledge_base.id,
-        )
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "code": "BEDROCK_PROVISIONING_FAILED",
-                "message": str(e),
-            },
-        ) from e
+    background_tasks.add_task(run_knowledge_base_provisioning, knowledge_base.id)
 
     return serialize_knowledge_base(
         knowledge_base

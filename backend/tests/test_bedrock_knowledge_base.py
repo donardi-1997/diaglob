@@ -8,11 +8,13 @@ from unittest.mock import MagicMock, patch
 import boto3
 import pytest
 from botocore.stub import Stubber
+from botocore.exceptions import ClientError
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app import bedrock_knowledge_base as provisioning
+from app import main as api_main
 from app.db import Base, get_db
 from app.main import app, get_current_membership, get_current_user
 from app.models import (
@@ -460,6 +462,38 @@ def test_vector_index_create_failure_logs_safe_aws_diagnostics(caplog):
     assert "knowledge_base_id=1" in caplog.text
     assert "aws_error_code=AccessDeniedException" in caplog.text
     assert "aws_error_message=TagResource permission is required" in caplog.text
+
+
+def test_tag_resource_access_denied_is_platform_configuration_error():
+    error = ClientError(
+        {"Error": {"Code": "AccessDeniedException", "Message": "TagResource denied"}},
+        "CreateIndex",
+    )
+    assert provisioning.classify_provisioning_aws_error(error) == (
+        provisioning.ProvisioningErrorClassification.PLATFORM_CONFIGURATION_ERROR
+    )
+
+
+def test_transient_provisioning_failure_retries_automatically():
+    knowledge_base = MagicMock(id=1, organization_id=1, external_status="pending")
+    db = MagicMock()
+    db.get.return_value = knowledge_base
+    transient = provisioning.BedrockProvisioningError(
+        "vector_index_create_failed",
+        classification=provisioning.ProvisioningErrorClassification.RETRYABLE_INFRASTRUCTURE,
+    )
+
+    def succeed(_db, kb):
+        kb.external_status = "ready"
+
+    with patch.object(api_main, "SessionLocal", return_value=db), patch.object(
+        api_main, "PROVISIONING_RETRY_DELAYS_SECONDS", (0, 0)
+    ), patch.object(
+        api_main, "provision_diaglob_knowledge_base", side_effect=[transient, succeed]
+    ) as provision:
+        api_main.run_knowledge_base_provisioning(1)
+    assert provision.call_count == 2
+    assert db.commit.called
 
 
 def test_production_policy_allows_tagging_new_vector_indexes():

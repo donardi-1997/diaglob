@@ -17,6 +17,7 @@ export interface KnowledgeBaseAgent {
 export type KnowledgeBaseProvisioningStatus =
   | "pending"
   | "provisioning"
+  | "retrying"
   | "ready"
   | "failed";
 
