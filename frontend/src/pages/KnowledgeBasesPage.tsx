@@ -2317,7 +2317,7 @@ export default function KnowledgeBasesPage({
                 </button>
               </header>
 
-              {canWrite && selectedKnowledgeBase.external_status === "ready" && !googleStatus?.connected && (
+              {canWrite && !googleStatus?.connected && (
                 <div className="knowledge-google-connect-box">
                   <Link2 size={22} />
                   <div>
@@ -2352,6 +2352,12 @@ export default function KnowledgeBasesPage({
                     {t("knowledgeSourceCount", { count: sources.length })}
                   </span>
                 </div>
+                {selectedKnowledgeBase.external_status !== "ready" && (
+                  <div className="knowledge-provisioning-notice">
+                    <Info size={16} aria-hidden="true" />
+                    <span>{t("knowledgeSourcesPendingNotice")}</span>
+                  </div>
+                )}
                 {canWrite && (
                   <div className="knowledge-security-notice">
                     <Shield size={18} aria-hidden="true" />
@@ -2403,12 +2409,10 @@ export default function KnowledgeBasesPage({
                     <button
                       className="primary-button"
                       onClick={() => {
-                        if (!requiresSecurityAcknowledgement("local")) {
-                          fileInputRef.current?.click();
-                        }
+                        fileInputRef.current?.click();
                       }}
                       disabled={
-                        uploading
+                        uploading || selectedKnowledgeBase.external_status !== "ready"
                       }
                     >
                       {uploading ? (
@@ -2439,33 +2443,22 @@ export default function KnowledgeBasesPage({
                   </div>
                 )}
 
-                {canWrite && selectedKnowledgeBase.external_status === "ready" && googleStatus?.connected && (
-                  <div className="knowledge-google-connect-box">
-                    <FileSpreadsheet
-                      size={22}
-                    />
-
-                    <div>
-                      <strong>
-                        {t("knowledgeGoogleWorkspaceTitle")}
-                      </strong>
-
-                      <span>
-                        {t("knowledgeGoogleWorkspaceDescription")}
-                      </span>
-                      <span>
-                        {t("knowledgeGoogleConnected")} {googleStatus.email || t("knowledgeGoogleConnectedGeneric")}
-                      </span>
+                {canWrite && googleStatus?.connected && (
+                  <section className="knowledge-google-workspace">
+                    <div className="knowledge-google-workspace-status">
+                      <FileSpreadsheet size={22} />
+                      <div>
+                        <strong>{t("knowledgeGoogleWorkspaceTitle")}</strong>
+                        <span>{t("knowledgeGoogleWorkspaceDescription")}</span>
+                        <span>{t("knowledgeGoogleConnected")} {googleStatus.email || t("knowledgeGoogleConnectedGeneric")}</span>
+                      </div>
+                      <button
+                        className="text-button danger"
+                        onClick={() => void handleDisconnectGoogle()}
+                      >
+                        {t("knowledgeGoogleDisconnect")}
+                      </button>
                     </div>
-
-                    <button
-                      className="text-button danger"
-                      onClick={() =>
-                        void handleDisconnectGoogle()
-                      }
-                    >
-                      {t("knowledgeGoogleDisconnect")}
-                    </button>
 
                     <div className="knowledge-google-source-buttons">
                       <button
@@ -2475,7 +2468,10 @@ export default function KnowledgeBasesPage({
                           setAddSourceMode("sheets");
                           void handleOpenGoogleSheets();
                         }}
-                        disabled={googleSheetsLoading}
+                        disabled={
+                          selectedKnowledgeBase.external_status !== "ready" ||
+                          googleSheetsLoading
+                        }
                       >
                         {googleSheetsLoading ? (
                           <LoaderCircle className="spin" size={16} />
@@ -2494,7 +2490,11 @@ export default function KnowledgeBasesPage({
                             event.currentTarget,
                           );
                         }}
-                        disabled={driveFilesLoading}
+                        disabled={
+                          selectedKnowledgeBase.external_status !== "ready" ||
+                          driveFilesLoading ||
+                          driveScopeStatus?.has_drive_scope === false
+                        }
                       >
                         {driveFilesLoading ? (
                           <LoaderCircle className="spin" size={16} />
@@ -2513,7 +2513,11 @@ export default function KnowledgeBasesPage({
                             event.currentTarget,
                           );
                         }}
-                        disabled={driveFilesLoading}
+                        disabled={
+                          selectedKnowledgeBase.external_status !== "ready" ||
+                          driveFilesLoading ||
+                          driveScopeStatus?.has_drive_scope === false
+                        }
                       >
                         {driveFilesLoading ? (
                           <LoaderCircle className="spin" size={16} />
@@ -2531,7 +2535,11 @@ export default function KnowledgeBasesPage({
                             event.currentTarget,
                           );
                         }}
-                        disabled={driveFoldersLoading}
+                        disabled={
+                          selectedKnowledgeBase.external_status !== "ready" ||
+                          driveFoldersLoading ||
+                          driveScopeStatus?.has_drive_scope === false
+                        }
                       >
                         {driveFoldersLoading ? (
                           <LoaderCircle className="spin" size={16} />
@@ -2540,26 +2548,21 @@ export default function KnowledgeBasesPage({
                         )}
                         <span className="knowledge-source-option-copy"><strong>{t("knowledgeGoogleDriveFolder")}</strong><small>{t("knowledgeGoogleDriveFolderDescription")}</small></span>
                       </button>
+                      {driveScopeStatus &&
+                        !driveScopeStatus.has_drive_scope && (
+                          <div className="knowledge-drive-permissions">
+                            <span>{t("knowledgeGoogleAdditionalPermissions")}</span>
+                            <button
+                              className="secondary-button"
+                              onClick={() => void handleExpandScopes()}
+                              disabled={googleConnecting}
+                            >
+                              {t("knowledgeGoogleExpandPermissions")}
+                            </button>
+                          </div>
+                        )}
                     </div>
-
-                    {driveScopeStatus &&
-                      !driveScopeStatus.has_drive_scope && (
-                        <div className="knowledge-drive-permissions">
-                          <span>
-                            {t("knowledgeGoogleAdditionalPermissions")}
-                          </span>
-                          <button
-                            className="secondary-button"
-                            onClick={() =>
-                              void handleExpandScopes()
-                            }
-                            disabled={googleConnecting}
-                          >
-                            {t("knowledgeGoogleExpandPermissions")}
-                          </button>
-                        </div>
-                      )}
-                  </div>
+                  </section>
                 )}
 
 
@@ -2995,7 +2998,7 @@ export default function KnowledgeBasesPage({
                         <button
                           className="knowledge-source-row google-source-row"
                           onClick={() => setGoogleSheetImportMode("sheet")}
-                          disabled={googleAdding || !securityAcknowledged || selectedInitialSource !== "sheets"}
+                          disabled={googleAdding || selectedInitialSource !== "sheets"}
                         >
                           <div className="management-icon"><FileText size={18} /></div>
                           <div className="knowledge-source-info">

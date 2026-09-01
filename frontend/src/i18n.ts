@@ -386,6 +386,8 @@ const resources = {
         "Agrega y administra las fuentes que alimentan esta Knowledge Base.",
       knowledgeAddSourceEyebrow: "FUENTES",
       knowledgeAddSourceTitle: "Agregar fuente",
+      knowledgeSourcesPendingNotice:
+        "Las fuentes estarán disponibles cuando esta Knowledge Base esté lista.",
       knowledgeSourcesEyebrow: "CATALOGO",
       knowledgeSourcesTitle: "Fuentes",
       knowledgeSourceCount: "{{count}} fuentes",
@@ -1950,6 +1952,8 @@ const resources = {
         "Add and manage the sources that power this Knowledge Base.",
       knowledgeAddSourceEyebrow: "SOURCES",
       knowledgeAddSourceTitle: "Add source",
+      knowledgeSourcesPendingNotice:
+        "Sources will be available when this Knowledge Base is ready.",
       knowledgeSourcesEyebrow: "CATALOG",
       knowledgeSourcesTitle: "Sources",
       knowledgeSourceCount: "{{count}} sources",
