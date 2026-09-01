@@ -1,0 +1,180 @@
+import { api } from "./api";
+
+
+export interface SpendByCurrency {
+  total: number;
+  avg_order_value: number;
+}
+
+
+export interface CustomerSummary {
+  total_customers: number;
+  new_customers: number;
+  interested: number;
+  high_intent: number;
+  buyers: number;
+  repeat_buyers: number;
+  vip: number;
+  at_risk: number;
+  inactive: number;
+}
+
+
+export interface CustomerItem {
+  id: number;
+  name: string;
+  phone: string;
+  email: string | null;
+  country_code: string | null;
+  created_at: string;
+  store_name: string | null;
+  store_id: number | null;
+  conversation_count: number;
+  message_count: number;
+  first_interaction_at: string | null;
+  last_interaction_at: string | null;
+  successful_order_count: number;
+  last_order_at: string | null;
+  spend_by_currency: Record<string, SpendByCurrency>;
+  primary_segment: string;
+  flags: string[];
+  days_since_last_interaction: number | null;
+  days_since_last_purchase: number | null;
+}
+
+
+export interface CustomerListResponse {
+  items: CustomerItem[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+}
+
+
+export interface ConversationSummary {
+  id: number;
+  channel: string;
+  mode: string;
+  preview: string;
+  updated_at: string | null;
+}
+
+
+export interface OrderSummary {
+  id: number;
+  order_number: string;
+  total_amount: number;
+  currency: string;
+  external_creation_status: string;
+  financial_status: string | null;
+  created_at: string | null;
+}
+
+
+export interface CustomerDetail extends CustomerItem {
+  recent_conversations: ConversationSummary[];
+  recent_orders: OrderSummary[];
+}
+
+
+export async function getCustomerSummary(
+  storeId?: number,
+): Promise<CustomerSummary> {
+  const params = new URLSearchParams();
+
+  if (storeId) {
+    params.set("store_id", String(storeId));
+  }
+
+  const qs = params.toString();
+  const url = `/api/customers/summary${qs ? `?${qs}` : ""}`;
+
+  const response =
+    await api.get<CustomerSummary>(url);
+
+  return response.data;
+}
+
+
+export async function getCustomerList(params: {
+  storeId?: number;
+  segment?: string;
+  flag?: string;
+  search?: string;
+  hasOrders?: boolean;
+  page?: number;
+  pageSize?: number;
+  sort?: string;
+}): Promise<CustomerListResponse> {
+  const searchParams = new URLSearchParams();
+
+  if (params.storeId) {
+    searchParams.set(
+      "store_id",
+      String(params.storeId),
+    );
+  }
+
+  if (params.segment) {
+    searchParams.set("segment", params.segment);
+  }
+
+  if (params.flag) {
+    searchParams.set("flag", params.flag);
+  }
+
+  if (params.search) {
+    searchParams.set("search", params.search);
+  }
+
+  if (params.hasOrders !== undefined) {
+    searchParams.set(
+      "has_orders",
+      String(params.hasOrders),
+    );
+  }
+
+  if (params.page) {
+    searchParams.set("page", String(params.page));
+  }
+
+  if (params.pageSize) {
+    searchParams.set(
+      "page_size",
+      String(params.pageSize),
+    );
+  }
+
+  if (params.sort) {
+    searchParams.set("sort", params.sort);
+  }
+
+  const qs = searchParams.toString();
+  const url = `/api/customers${qs ? `?${qs}` : ""}`;
+
+  const response =
+    await api.get<CustomerListResponse>(url);
+
+  return response.data;
+}
+
+
+export async function getCustomerDetail(
+  customerId: number,
+  storeId?: number,
+): Promise<CustomerDetail> {
+  const params = new URLSearchParams();
+
+  if (storeId) {
+    params.set("store_id", String(storeId));
+  }
+
+  const qs = params.toString();
+  const url = `/api/customers/${customerId}${qs ? `?${qs}` : ""}`;
+
+  const response =
+    await api.get<CustomerDetail>(url);
+
+  return response.data;
+}

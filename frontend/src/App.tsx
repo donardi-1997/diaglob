@@ -41,6 +41,7 @@ import DashboardPage from "./pages/DashboardPage";
 const CommercePage = lazy(() => import("./pages/CommercePage"));
 const AutomationsPage = lazy(() => import("./pages/AutomationsPage"));
 const AnalyticsPage = lazy(() => import("./pages/AnalyticsPage"));
+const CustomersPage = lazy(() => import("./pages/CustomersPage"));
 import { getStores, type Store } from "./services/stores";
 import {
   getCurrentUser,
@@ -582,6 +583,11 @@ function App() {
                   )}
                   {activePage === "plans" && <PlansPage />}
                   {activePage === "conversations" && <ConversationsPage canWrite={can("conversations.write")} />}
+                  {activePage === "customers" && (
+                    <Suspense fallback={<div className="page-loading">Cargando...</div>}>
+                      <CustomersPage canWrite={can("customers.write")} storeId={Number(selectedStoreId) || 0} />
+                    </Suspense>
+                  )}
                   {activePage === "team" && <TeamPage canWrite={can("users.write")} />}
                   {activePage === "agents" && <AgentsPage canWrite={can("agents.write")} />}
                   {activePage === "knowledge" && <KnowledgeBasesPage canWrite={can("knowledge.write")} />}
