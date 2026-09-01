@@ -3,6 +3,11 @@ Customer Intelligence service for Diaglob.
 
 Deterministic segmentation based on real data.
 No AI inference, no mock data, no revenue attribution.
+
+Phase 1 HIGH_INTENT is a conservative heuristic based on
+structured activity signals (recent conversation recency).
+It is NOT: AI purchase propensity, cart intent, checkout
+intent, or predicted conversion probability.
 """
 
 from __future__ import annotations
@@ -102,37 +107,31 @@ def _classify_customer(
     elif successful_order_count >= 1:
         primary = SEGMENT_BUYER
     elif (
-        conversation_count >= INTERESTED_MIN_CONVERSATIONS
-        or (
-            days_since_interaction is not None
-            and days_since_interaction <= HIGH_INTENT_RECENCY_DAYS
-        )
+        days_since_interaction is not None
+        and days_since_interaction >= INACTIVE_DAYS
     ):
-        # Interested vs High Intent:
-        # High intent requires recent interaction (<=7 days)
-        # AND either multiple conversations or a failed/unknown order attempt
-        if (
-            days_since_interaction is not None
-            and days_since_interaction <= HIGH_INTENT_RECENCY_DAYS
-        ):
-            primary = SEGMENT_HIGH_INTENT
-        else:
-            primary = SEGMENT_INTERESTED
+        # Inactive: no orders and no interaction for 60+ days.
+        # Check this BEFORE INTERESTED/HIGH_INTENT so that
+        # stale interested customers become inactive.
+        primary = SEGMENT_INACTIVE
+    elif (
+        days_since_interaction is not None
+        and days_since_interaction <= HIGH_INTENT_RECENCY_DAYS
+    ):
+        # High intent: recent interaction (<=7 days) with
+        # no completed order yet.
+        primary = SEGMENT_HIGH_INTENT
+    elif conversation_count >= INTERESTED_MIN_CONVERSATIONS:
+        primary = SEGMENT_INTERESTED
+    elif customer_age_days <= NEW_CUSTOMER_DAYS:
+        primary = SEGMENT_NEW
     else:
-        # No orders, limited conversation activity
-        if (
-            days_since_interaction is not None
-            and days_since_interaction >= INACTIVE_DAYS
-        ):
-            primary = SEGMENT_INACTIVE
-        elif customer_age_days <= NEW_CUSTOMER_DAYS:
-            primary = SEGMENT_NEW
-        else:
-            primary = SEGMENT_NEW
+        primary = SEGMENT_NEW
 
     # AT_RISK flag:
     # Applies only to customers who have made at least one purchase
     # and haven't purchased recently.
+    # Recent purchase (within threshold) prevents at-risk status.
     if (
         successful_order_count >= 1
         and days_since_purchase is not None
@@ -141,11 +140,14 @@ def _classify_customer(
         flags.append(FLAG_AT_RISK)
 
     # Also mark as at risk if previously active buyer
-    # with no interaction for extended period
+    # with no interaction for extended period, but only
+    # if not already flagged and purchase is also stale.
     if (
         successful_order_count >= 1
         and days_since_interaction is not None
         and days_since_interaction >= AT_RISK_DAYS
+        and days_since_purchase is not None
+        and days_since_purchase >= AT_RISK_DAYS
         and FLAG_AT_RISK not in flags
     ):
         flags.append(FLAG_AT_RISK)
@@ -301,6 +303,10 @@ def get_customer_metrics(
     """
     Compute metrics for all customers in scope.
     Returns list of dicts with segment classification.
+
+    Uses JOINs against pre-aggregated subqueries to avoid N+1.
+    When store_id is provided, only returns customers that have
+    a CustomerStoreProfile for that store.
     """
     now = datetime.utcnow()
 
@@ -310,18 +316,43 @@ def get_customer_metrics(
         )
     )
 
-    # Base customer query
-    base_q = (
-        db.query(Customer)
+    # Base customer query — join with subqueries via LEFT JOIN
+    q = (
+        db.query(
+            Customer,
+            func.coalesce(
+                conv_agg.c.conversation_count, 0
+            ).label("conversation_count"),
+            conv_agg.c.last_interaction_at,
+            conv_agg.c.first_interaction_at,
+            func.coalesce(
+                msg_agg.c.message_count, 0
+            ).label("message_count"),
+            func.coalesce(
+                order_agg.c.successful_order_count, 0
+            ).label("successful_order_count"),
+            order_agg.c.last_order_at,
+        )
+        .outerjoin(
+            conv_agg,
+            conv_agg.c.customer_id == Customer.id,
+        )
+        .outerjoin(
+            msg_agg,
+            msg_agg.c.customer_id == Customer.id,
+        )
+        .outerjoin(
+            order_agg,
+            order_agg.c.customer_id == Customer.id,
+        )
         .filter(
             Customer.organization_id == organization_id,
         )
     )
 
     if store_id is not None:
-        # Only customers that have activity in this store
-        # or have a store profile for this store
-        base_q = base_q.outerjoin(
+        # Only return customers with a profile in this store
+        q = q.join(
             CustomerStoreProfile,
             and_(
                 CustomerStoreProfile.customer_id
@@ -331,97 +362,60 @@ def get_customer_metrics(
             ),
         )
 
-    customers = base_q.all()
+    rows = q.all()
 
-    results = []
+    # Pre-fetch spend for all customers in one batch
+    customer_ids = [r[0].id for r in rows]
 
-    for cust in customers:
-        # Conversation metrics
-        conv_row = (
-            db.query(
-                conv_agg.c.conversation_count,
-                conv_agg.c.last_interaction_at,
-                conv_agg.c.first_interaction_at,
-            )
-            .filter(
-                conv_agg.c.customer_id == cust.id
-            )
-            .first()
-        )
-
-        conversation_count = (
-            conv_row.conversation_count
-            if conv_row
-            else 0
-        )
-        last_interaction_at = (
-            conv_row.last_interaction_at
-            if conv_row
-            else None
-        )
-        first_interaction_at = (
-            conv_row.first_interaction_at
-            if conv_row
-            else None
-        )
-
-        # Message metrics
-        msg_row = (
-            db.query(msg_agg.c.message_count)
-            .filter(
-                msg_agg.c.customer_id == cust.id
-            )
-            .first()
-        )
-
-        message_count = (
-            msg_row.message_count if msg_row else 0
-        )
-
-        # Order metrics
-        order_row = (
-            db.query(
-                order_agg.c.successful_order_count,
-                order_agg.c.last_order_at,
-            )
-            .filter(
-                order_agg.c.customer_id == cust.id
-            )
-            .first()
-        )
-
-        successful_order_count = (
-            order_row.successful_order_count
-            if order_row
-            else 0
-        )
-        last_order_at = (
-            order_row.last_order_at if order_row else None
-        )
-
-        # Spend by currency
+    spend_by_customer: dict[int, dict] = {}
+    if customer_ids:
         spend_rows = (
             db.query(
+                spend_agg.c.customer_id,
                 spend_agg.c.currency,
                 spend_agg.c.total_spend,
                 spend_agg.c.avg_order_value,
             )
             .filter(
-                spend_agg.c.customer_id == cust.id
+                spend_agg.c.customer_id.in_(customer_ids)
             )
             .all()
         )
-
-        spend_by_currency: dict[str, dict] = {}
-        for row in spend_rows:
-            spend_by_currency[row.currency] = {
-                "total": float(row.total_spend),
+        for sr in spend_rows:
+            cid = sr.customer_id
+            if cid not in spend_by_customer:
+                spend_by_customer[cid] = {}
+            spend_by_customer[cid][sr.currency] = {
+                "total": float(sr.total_spend),
                 "avg_order_value": float(
-                    row.avg_order_value
+                    sr.avg_order_value
                 ),
             }
 
-        # Classify
+    # Pre-fetch store name if scoped to a single store
+    store_name = None
+    store_id_val = None
+    if store_id is not None:
+        store_obj = (
+            db.query(Store)
+            .filter(Store.id == store_id)
+            .first()
+        )
+        if store_obj:
+            store_name = store_obj.name
+            store_id_val = store_obj.id
+
+    results = []
+
+    for (
+        cust,
+        conversation_count,
+        last_interaction_at,
+        first_interaction_at,
+        message_count,
+        successful_order_count,
+        last_order_at,
+    ) in rows:
         primary_segment, flags = _classify_customer(
             now=now,
             created_at=cust.created_at,
@@ -437,19 +431,6 @@ def get_customer_metrics(
         days_since_last_purchase = _days_since(
             last_order_at, now
         )
-
-        # Store info from profile
-        store_name = None
-        store_id_val = None
-        if store_id is not None:
-            store_obj = (
-                db.query(Store)
-                .filter(Store.id == store_id)
-                .first()
-            )
-            if store_obj:
-                store_name = store_obj.name
-                store_id_val = store_obj.id
 
         results.append(
             {
@@ -479,7 +460,9 @@ def get_customer_metrics(
                     if last_order_at
                     else None
                 ),
-                "spend_by_currency": spend_by_currency,
+                "spend_by_currency": spend_by_customer.get(
+                    cust.id, {}
+                ),
                 "primary_segment": primary_segment,
                 "flags": flags,
                 "days_since_last_interaction": (

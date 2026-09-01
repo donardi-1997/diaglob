@@ -141,9 +141,14 @@ export default function CustomersPage({
   const loadList = useCallback(async () => {
     try {
       setLoading(true);
+      const isFlag =
+        activeSegment === "at_risk";
       const data = await getCustomerList({
         storeId: storeId || undefined,
-        segment: activeSegment || undefined,
+        segment: isFlag
+          ? undefined
+          : activeSegment || undefined,
+        flag: isFlag ? "at_risk" : undefined,
         search: search || undefined,
         page,
         pageSize,

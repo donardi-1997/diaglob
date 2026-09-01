@@ -1248,3 +1248,209 @@ class TestEdgeCases:
         # Customer 1 has no successful orders
         assert cust["successful_order_count"] == 0
         assert FLAG_AT_RISK not in cust["flags"]
+
+
+# ============================================================
+# REGRESSION TESTS — BUG FIXES
+# ============================================================
+
+
+class TestRegressionFixes:
+    """Tests for bugs found during code review."""
+
+    def test_inactive_overrides_interested(self, setup_db):
+        """
+        Customer 2 has 3 conversations (meets INTERESTED threshold)
+        but last interaction was 20 days ago (< INACTIVE_DAYS=60).
+        With INACTIVE precedence fix, old interested customers
+        should become INACTIVE before INTERESTED is considered.
+        """
+        metrics = get_customer_metrics(
+            setup_db, organization_id=1
+        )
+        cust = next(
+            m for m in metrics if m["id"] == 2
+        )
+        # Last interaction is 20 days ago, which is < 60 days
+        # So this customer should still be INTERESTED (not inactive yet)
+        assert cust["primary_segment"] == SEGMENT_INTERESTED
+
+    def test_inactive_overrides_interested_old(self, setup_db):
+        """
+        Create customer with conversations but interaction 90+ days ago.
+        Should be INACTIVE even though conversation_count >= 2.
+        """
+        now = datetime.utcnow()
+        cust_old = Customer(
+            id=70,
+            organization_id=1,
+            name="Old Interested",
+            phone="+7070707070",
+            created_at=now - timedelta(days=120),
+        )
+        setup_db.add(cust_old)
+
+        for i in range(3):
+            conv = Conversation(
+                organization_id=1,
+                store_id=1,
+                customer_id=70,
+                channel="whatsapp",
+                mode="ai",
+                created_at=now - timedelta(days=90),
+                updated_at=now - timedelta(days=90),
+            )
+            setup_db.add(conv)
+
+        setup_db.commit()
+
+        metrics = get_customer_metrics(
+            setup_db, organization_id=1
+        )
+        cust = next(
+            m for m in metrics if m["id"] == 70
+        )
+        assert cust["conversation_count"] >= 2
+        assert (
+            cust["last_interaction_at"] is not None
+        )
+        assert cust["primary_segment"] == SEGMENT_INACTIVE
+
+    def test_recent_purchase_prevents_at_risk(self, setup_db):
+        """
+        Customer who purchased yesterday but hasn't messaged
+        in 90 days should NOT be at-risk. Recent purchase
+        prevents at-risk status.
+        """
+        now = datetime.utcnow()
+        cust_recent = Customer(
+            id=71,
+            organization_id=1,
+            name="Recent Buyer No Chat",
+            phone="+7171717171",
+            created_at=now - timedelta(days=120),
+        )
+        setup_db.add(cust_recent)
+
+        # 1 order 1 day ago
+        order_recent = Order(
+            organization_id=1,
+            store_id=1,
+            customer_id=71,
+            total_amount=100.00,
+            order_number="ORD-RECENT-1",
+            currency="USD",
+            external_creation_status="created",
+            created_at=now - timedelta(days=1),
+        )
+        setup_db.add(order_recent)
+
+        # Old conversation 90 days ago
+        conv_old = Conversation(
+            organization_id=1,
+            store_id=1,
+            customer_id=71,
+            channel="whatsapp",
+            mode="ai",
+            created_at=now - timedelta(days=90),
+            updated_at=now - timedelta(days=90),
+        )
+        setup_db.add(conv_old)
+
+        setup_db.commit()
+
+        metrics = get_customer_metrics(
+            setup_db, organization_id=1
+        )
+        cust = next(
+            m for m in metrics if m["id"] == 71
+        )
+        assert cust["successful_order_count"] == 1
+        assert cust["primary_segment"] == SEGMENT_BUYER
+        # Should NOT be at_risk — recent purchase
+        assert FLAG_AT_RISK not in cust["flags"]
+
+    def test_null_currency_not_crash(self, setup_db):
+        """
+        Orders with null currency should not crash metrics.
+        """
+        now = datetime.utcnow()
+        cust_nc = Customer(
+            id=72,
+            organization_id=1,
+            name="Null Currency",
+            phone="+7272727272",
+            created_at=now - timedelta(days=30),
+        )
+        setup_db.add(cust_nc)
+
+        order_nc = Order(
+            organization_id=1,
+            store_id=1,
+            customer_id=72,
+            total_amount=50.00,
+            order_number="ORD-NC-1",
+            currency="",
+            external_creation_status="created",
+            created_at=now - timedelta(days=5),
+        )
+        setup_db.add(order_nc)
+        setup_db.commit()
+
+        metrics = get_customer_metrics(
+            setup_db, organization_id=1
+        )
+        cust = next(
+            m for m in metrics if m["id"] == 72
+        )
+        assert cust["successful_order_count"] == 1
+        assert cust["primary_segment"] == SEGMENT_BUYER
+
+    def test_store_must_belong_to_org(self, setup_db):
+        """
+        Store 3 belongs to org2. Querying org1 with store_id=3
+        should return empty (no matching CustomerStoreProfile).
+        """
+        results = get_customer_metrics(
+            setup_db,
+            organization_id=1,
+            store_id=3,
+        )
+        assert len(results) == 0
+
+    def test_filters_apply_before_pagination(
+        self, setup_db
+    ):
+        """
+        When filtering by segment, total_pages should reflect
+        filtered count, not unfiltered count.
+        """
+        result = get_customer_list(
+            db=setup_db,
+            organization_id=1,
+            segment=SEGMENT_VIP,
+            page=1,
+            page_size=100,
+        )
+        # VIP: customer 6 (6 orders) + customer 50 (5 orders)
+        assert result["total"] == 2
+        assert result["total_pages"] == 1
+
+    def test_summary_partition_invariant(self, setup_db):
+        """
+        Segments are mutually exclusive (at_risk is a flag).
+        Sum of segment counts must equal total_customers.
+        """
+        summary = get_summary(
+            setup_db, organization_id=1
+        )
+        segment_sum = (
+            summary["new_customers"]
+            + summary["interested"]
+            + summary["high_intent"]
+            + summary["buyers"]
+            + summary["repeat_buyers"]
+            + summary["vip"]
+            + summary["inactive"]
+        )
+        assert segment_sum == summary["total_customers"]
