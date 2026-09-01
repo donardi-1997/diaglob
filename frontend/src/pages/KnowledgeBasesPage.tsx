@@ -1,5 +1,6 @@
 import { useTranslation } from "react-i18next";
 import {
+  useCallback,
   useEffect,
   useEffectEvent,
   useRef,
@@ -167,6 +168,18 @@ function formatFileSize(
     bytes /
     (1024 * 1024)
   ).toFixed(1)} MB`;
+}
+
+
+function hasProvisioningChange(
+  current: KnowledgeBase,
+  next: KnowledgeBase,
+) {
+  return (
+    current.external_status !== next.external_status ||
+    current.external_last_error !== next.external_last_error ||
+    current.external_id !== next.external_id
+  );
 }
 
 
@@ -442,13 +455,82 @@ export default function KnowledgeBasesPage({
     void loadData();
   }, []);
 
-  useEffect(() => {
-    if (!items.some((item) => item.external_status === "pending" || item.external_status === "provisioning" || item.external_status === "retrying")) {
-      return;
+  const refreshProvisioningStatuses = useEffectEvent(async () => {
+    try {
+      const response = await getKnowledgeBases();
+      const nextItems = response.items;
+
+      setItems((currentItems) => {
+        if (
+          currentItems.length === nextItems.length &&
+          currentItems.every((item, index) =>
+            item.id === nextItems[index]?.id &&
+            !hasProvisioningChange(item, nextItems[index]),
+          )
+        ) {
+          return currentItems;
+        }
+        return currentItems.map((item) => {
+          const next = nextItems.find((candidate) => candidate.id === item.id);
+          return next && hasProvisioningChange(item, next)
+            ? { ...item, ...next }
+            : item;
+        });
+      });
+
+      setSelectedKnowledgeBase((current) => {
+        const next = current && nextItems.find((item) => item.id === current.id);
+        return next && hasProvisioningChange(current, next)
+          ? { ...current, ...next }
+          : current;
+      });
+    } catch (err) {
+      console.error(err);
     }
-    const interval = window.setInterval(() => void loadData(), 7_500);
-    return () => window.clearInterval(interval);
-  }, [items]);
+  });
+
+const pollingTimeoutRef = useRef<number | undefined>(undefined);
+  const isPollingRef = useRef(false);
+
+  const startPolling = useCallback(() => {
+    if (isPollingRef.current) return;
+    isPollingRef.current = true;
+
+    const poll = async () => {
+      if (!isPollingRef.current) return;
+      await refreshProvisioningStatuses();
+      if (isPollingRef.current) {
+        pollingTimeoutRef.current = window.setTimeout(poll, 7_500);
+      }
+    };
+
+    poll();
+  }, [refreshProvisioningStatuses]);
+
+  const stopPolling = useCallback(() => {
+    isPollingRef.current = false;
+    if (pollingTimeoutRef.current) {
+      window.clearTimeout(pollingTimeoutRef.current);
+      pollingTimeoutRef.current = undefined;
+    }
+  }, []);
+
+  useEffect(() => {
+    const hasActiveProvisioning = items.some(
+      (item) =>
+        item.external_status === "pending" ||
+        item.external_status === "provisioning" ||
+        item.external_status === "retrying",
+    );
+    if (hasActiveProvisioning) {
+      startPolling();
+    } else {
+      stopPolling();
+    }
+    return () => {
+      stopPolling();
+    };
+  }, [items, startPolling, stopPolling]);
 
 
   function getSyncStatusLabel(
