@@ -20,6 +20,7 @@ export interface GoogleTabItem {
   sheetId: number;
   title: string;
   index: number;
+  hidden?: boolean;
 }
 
 
@@ -105,7 +106,8 @@ export async function addGoogleSheetSource(
   knowledgeBaseId: number,
   spreadsheetId: string,
   spreadsheetName: string,
-  sheetName: string,
+  sheetName?: string,
+  importMode: "sheet" | "workbook" = "sheet",
 ) {
   const response =
     await api.post<{
@@ -120,6 +122,7 @@ export async function addGoogleSheetSource(
         spreadsheet_id: spreadsheetId,
         spreadsheet_name: spreadsheetName,
         sheet_name: sheetName,
+        import_mode: importMode,
       },
     );
 

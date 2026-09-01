@@ -89,7 +89,8 @@ async def get_spreadsheet_metadata(
     Returns:
         {
             "title": str,
-            "sheets": [{"sheetId": int, "title": str, "index": int}]
+            "sheets": [{"sheetId": int, "title": str, "index": int,
+                        "hidden": bool}]
         }
 
     Raises:
@@ -115,6 +116,7 @@ async def get_spreadsheet_metadata(
             "sheetId": props.get("sheetId"),
             "title": props.get("title", ""),
             "index": props.get("index", 0),
+            "hidden": props.get("hidden", False),
         })
 
     return {"title": title, "sheets": sheets}

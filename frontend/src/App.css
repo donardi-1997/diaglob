@@ -9370,6 +9370,60 @@ button:disabled {
   transition: background 0.15s;
 }
 
+.knowledge-security-notice {
+  display: flex;
+  gap: 10px;
+  padding: 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.knowledge-security-notice > svg {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
+.knowledge-security-notice strong,
+.knowledge-security-notice p {
+  display: block;
+  margin: 0;
+}
+
+.knowledge-security-notice p,
+.knowledge-security-notice details {
+  margin-top: 4px;
+  color: var(--text-secondary);
+}
+
+.knowledge-security-notice summary {
+  cursor: pointer;
+}
+
+.knowledge-security-notice ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+.knowledge-security-acknowledgement {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin-top: 8px;
+  color: var(--text);
+}
+
+.knowledge-security-contextual-warning {
+  display: flex !important;
+  align-items: center;
+  gap: 4px;
+  margin-top: 5px;
+  color: var(--muted);
+}
+
 .google-button:hover {
   background: var(--google-button-hover);
 }

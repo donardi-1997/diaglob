@@ -6,6 +6,7 @@ import hashlib
 import logging
 import re
 import httpx
+from typing import Literal
 
 import httpx
 from datetime import datetime, timedelta, timezone
@@ -12928,7 +12929,8 @@ class GoogleOAuthStartResponse(BaseModel):
 class GoogleSheetSourceRequest(BaseModel):
     spreadsheet_id: str
     spreadsheet_name: str = ""
-    sheet_name: str
+    sheet_name: str | None = None
+    import_mode: Literal["sheet", "workbook"] = "sheet"
 
 
 class GoogleSyncResponse(BaseModel):
@@ -12936,6 +12938,48 @@ class GoogleSyncResponse(BaseModel):
     sync_status: str
     ingestion_job_id: str | None = None
     message: str = ""
+
+
+def _google_source_import_mode(source: KnowledgeSource) -> str:
+    """Treat sources created before workbook support as single-sheet imports."""
+    try:
+        metadata = json.loads(source.metadata_json or "{}")
+    except json.JSONDecodeError:
+        return "sheet"
+    return metadata.get("import_mode", "sheet")
+
+
+async def _fetch_google_workbook_content(
+    access_token: str,
+    spreadsheet_id: str,
+    spreadsheet_title: str,
+) -> tuple[str, str]:
+    metadata = await get_spreadsheet_metadata(
+        access_token, spreadsheet_id
+    )
+    spreadsheet_title = metadata.get("title", spreadsheet_title)
+    sections = []
+    for tab in metadata.get("sheets", []):
+        if tab.get("hidden", False):
+            continue
+        tab_name = tab.get("title", "")
+        values = await fetch_sheet_values(
+            access_token, spreadsheet_id, tab_name
+        )
+        csv_content = normalize_to_csv(
+            values, spreadsheet_title, tab_name
+        )
+        if csv_content.strip():
+            sections.append(f"## Sheet: {tab_name}\n{csv_content.strip()}")
+
+    if not sections:
+        raise ValueError("Workbook has no non-empty visible sheets")
+
+    return spreadsheet_title, (
+        f"# Spreadsheet: {spreadsheet_title}\n\n"
+        + "\n\n".join(sections)
+        + "\n"
+    )
 
 
 # --- Google Status ---
@@ -13580,19 +13624,34 @@ async def add_google_sheet_source(
             status_code=400,
             detail="Invalid spreadsheet ID or URL",
         )
+    if payload.import_mode == "sheet" and not payload.sheet_name:
+        raise HTTPException(
+            status_code=400,
+            detail="Sheet name is required for sheet imports",
+        )
+    source_sheet_name = (
+        payload.sheet_name if payload.import_mode == "sheet" else None
+    )
 
     # Check for duplicate source in same KB
-    existing = (
+    candidates = (
         db.query(KnowledgeSource)
         .filter(
             KnowledgeSource.knowledge_base_id
             == knowledge_base_id,
             KnowledgeSource.external_id == sheet_id,
-            KnowledgeSource.sheet_name
-            == payload.sheet_name,
+            KnowledgeSource.source_type == "google_sheet",
             KnowledgeSource.active.is_(True),
         )
-        .first()
+        .all()
+    )
+    existing = next(
+        (
+            source for source in candidates
+            if _google_source_import_mode(source) == payload.import_mode
+            and source.sheet_name == source_sheet_name
+        ),
+        None,
     )
 
     if existing:
@@ -13636,27 +13695,32 @@ async def add_google_sheet_source(
             },
         )
 
-    # Fetch spreadsheet metadata for name
     spreadsheet_title = (
         payload.spreadsheet_name or sheet_id
     )
     try:
-        metadata = await get_spreadsheet_metadata(
-            access_token, sheet_id
-        )
-        spreadsheet_title = metadata.get(
-            "title", spreadsheet_title
-        )
-    except Exception:
-        pass
-
-    # Fetch sheet values
-    try:
-        values = await fetch_sheet_values(
-            access_token,
-            sheet_id,
-            payload.sheet_name,
-        )
+        if payload.import_mode == "workbook":
+            spreadsheet_title, csv_content = (
+                await _fetch_google_workbook_content(
+                    access_token, sheet_id, spreadsheet_title
+                )
+            )
+        else:
+            try:
+                metadata = await get_spreadsheet_metadata(
+                    access_token, sheet_id
+                )
+                spreadsheet_title = metadata.get(
+                    "title", spreadsheet_title
+                )
+            except Exception:
+                pass
+            values = await fetch_sheet_values(
+                access_token, sheet_id, source_sheet_name
+            )
+            csv_content = normalize_to_csv(
+                values, spreadsheet_title, source_sheet_name
+            )
     except httpx.HTTPStatusError as exc:
         code, msg = map_google_api_error(
             exc.response.status_code
@@ -13671,22 +13735,19 @@ async def add_google_sheet_source(
             detail=str(exc),
         ) from exc
 
-    # Normalize to CSV
-    csv_content = normalize_to_csv(
-        values,
-        spreadsheet_title,
-        payload.sheet_name,
-    )
-
     if not csv_content.strip():
         raise HTTPException(
             status_code=400,
-            detail="Sheet is empty",
+            detail=(
+                "Workbook has no non-empty visible sheets"
+                if payload.import_mode == "workbook"
+                else "Sheet is empty"
+            ),
         )
 
     # Upload to S3
     filename = (
-        f"{sheet_id}_{payload.sheet_name}.csv"
+        f"{sheet_id}_{source_sheet_name or 'workbook'}.csv"
     )
     try:
         s3_result = upload_knowledge_file(
@@ -13706,8 +13767,11 @@ async def add_google_sheet_source(
     source = KnowledgeSource(
         organization_id=org_id,
         knowledge_base_id=knowledge_base_id,
-        name=f"{spreadsheet_title} — "
-        f"{payload.sheet_name}",
+        name=(
+            spreadsheet_title
+            if payload.import_mode == "workbook"
+            else f"{spreadsheet_title} — {source_sheet_name}"
+        ),
         source_type="google_sheet",
         content_type="text/csv",
         s3_bucket=s3_result["bucket"],
@@ -13716,8 +13780,9 @@ async def add_google_sheet_source(
         status="uploaded",
         external_id=sheet_id,
         external_name=spreadsheet_title,
-        sheet_name=payload.sheet_name,
+        sheet_name=source_sheet_name,
         sync_status="uploaded",
+        metadata_json=json.dumps({"import_mode": payload.import_mode}),
     )
     db.add(source)
     db.flush()
@@ -13847,13 +13912,30 @@ async def sync_google_sheet_source(
     source.sync_error = None
     db.flush()
 
-    # Fetch sheet values
+    import_mode = _google_source_import_mode(source)
+
+    # Fetch the selected tab or every visible workbook tab.
     try:
-        values = await fetch_sheet_values(
-            access_token,
-            source.external_id,
-            source.sheet_name,
-        )
+        if import_mode == "workbook":
+            spreadsheet_title, csv_content = (
+                await _fetch_google_workbook_content(
+                    access_token,
+                    source.external_id,
+                    source.external_name or source.external_id,
+                )
+            )
+            source.external_name = spreadsheet_title
+        else:
+            values = await fetch_sheet_values(
+                access_token,
+                source.external_id,
+                source.sheet_name,
+            )
+            csv_content = normalize_to_csv(
+                values,
+                source.external_name or "",
+                source.sheet_name or "",
+            )
     except httpx.HTTPStatusError as exc:
         code, msg = map_google_api_error(
             exc.response.status_code
@@ -13874,26 +13956,22 @@ async def sync_google_sheet_source(
             detail=str(exc),
         ) from exc
 
-    # Normalize to CSV
-    csv_content = normalize_to_csv(
-        values,
-        source.external_name or "",
-        source.sheet_name or "",
-    )
-
     if not csv_content.strip():
         source.sync_status = "failed"
-        source.sync_error = "Sheet is empty"
+        source.sync_error = (
+            "Workbook has no non-empty visible sheets"
+            if import_mode == "workbook" else "Sheet is empty"
+        )
         db.commit()
         raise HTTPException(
             status_code=400,
-            detail="Sheet is empty",
+            detail=source.sync_error,
         )
 
     # Upload to S3
     filename = (
         f"{source.external_id}"
-        f"_{source.sheet_name}.csv"
+        f"_{source.sheet_name or 'workbook'}.csv"
     )
     try:
         s3_result = upload_knowledge_file(

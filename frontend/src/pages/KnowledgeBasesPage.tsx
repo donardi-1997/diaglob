@@ -16,10 +16,12 @@ import {
   Folder,
   Link2,
   LoaderCircle,
+  Info,
   Pencil,
   Plus,
   RefreshCw,
   Search,
+  Shield,
   Store as StoreIcon,
   Trash2,
   Upload,
@@ -102,6 +104,13 @@ const EMPTY_FORM: KnowledgeFormState = {
 
 const GOOGLE_DOC_MIME_TYPE =
   "application/vnd.google-apps.document";
+
+type InitialSource =
+  | "local"
+  | "sheets"
+  | "docs"
+  | "drive-file"
+  | "drive-folder";
 
 const PROVISIONING_STATUS_KEYS: Record<
   KnowledgeBase["external_status"],
@@ -215,6 +224,12 @@ export default function KnowledgeBasesPage({
     setUploading,
   ] = useState(false);
 
+  const [selectedInitialSource, setSelectedInitialSource] =
+    useState<InitialSource | null>(null);
+
+  const [securityAcknowledged, setSecurityAcknowledged] =
+    useState(false);
+
   const fileInputRef =
     useRef<HTMLInputElement | null>(
       null,
@@ -258,6 +273,9 @@ export default function KnowledgeBasesPage({
     googleTabsOpen,
     setGoogleTabsOpen,
   ] = useState(false);
+
+  const [googleSheetImportMode, setGoogleSheetImportMode] =
+    useState<"choose" | "sheet">("choose");
 
   const [
     googleTabs,
@@ -745,6 +763,7 @@ export default function KnowledgeBasesPage({
 
     setSourcesOpen(true);
     setAddSourceMode("menu");
+    resetSecurityAcknowledgement();
 
     await Promise.all([
       loadSources(
@@ -753,6 +772,35 @@ export default function KnowledgeBasesPage({
       loadGoogleStatus(),
       loadDriveScopeStatus(),
     ]);
+  }
+
+
+  function resetSecurityAcknowledgement() {
+    setSelectedInitialSource(null);
+    setSecurityAcknowledged(false);
+  }
+
+
+  function requiresSecurityAcknowledgement(
+    source: InitialSource,
+  ) {
+    if (selectedInitialSource !== source) {
+      setSelectedInitialSource(source);
+      setSecurityAcknowledged(false);
+      return true;
+    }
+
+    return !securityAcknowledged;
+  }
+
+
+  function closeSources() {
+    if (uploading) {
+      return;
+    }
+
+    setSourcesOpen(false);
+    resetSecurityAcknowledgement();
   }
 
 
@@ -871,6 +919,7 @@ export default function KnowledgeBasesPage({
   ) {
     try {
       setSelectedGoogleSheet(sheet);
+      setGoogleSheetImportMode("choose");
       setGoogleTabsOpen(true);
       setGoogleTabsLoading(true);
       setError("");
@@ -917,6 +966,7 @@ export default function KnowledgeBasesPage({
       setGoogleTabsOpen(false);
       setSelectedGoogleSheet(null);
       setGoogleSheetsOpen(false);
+      resetSecurityAcknowledgement();
 
       await loadSources(
         selectedKnowledgeBase.id,
@@ -1010,9 +1060,39 @@ export default function KnowledgeBasesPage({
     }
   }
 
+  async function handleAddGoogleWorkbookSource() {
+    if (!selectedKnowledgeBase || !selectedGoogleSheet) return;
+
+    try {
+      setGoogleAdding(true);
+      setError("");
+      const result = await addGoogleSheetSource(
+        selectedKnowledgeBase.id,
+        selectedGoogleSheet.spreadsheet_id,
+        selectedGoogleSheet.name,
+        undefined,
+        "workbook",
+      );
+      setGoogleTabsOpen(false);
+      setGoogleSheetsOpen(false);
+      setSelectedGoogleSheet(null);
+      resetSecurityAcknowledgement();
+      await loadSources(selectedKnowledgeBase.id);
+      if (isSyncInProgress(result.sync_status)) {
+        startPollingIngestion(selectedKnowledgeBase.id, result.source_id);
+      }
+    } catch (err) {
+      console.error(err);
+      setError(t("knowledgeGoogleAddSourceError"));
+    } finally {
+      setGoogleAdding(false);
+    }
+  }
+
 
   function closeDriveFilesPicker() {
     setDriveFilesOpen(false);
+    resetSecurityAcknowledgement();
     restoreDriveTrigger(
       driveFilesTriggerRef.current,
     );
@@ -1021,6 +1101,7 @@ export default function KnowledgeBasesPage({
 
   function closeDriveFoldersPicker() {
     setDriveFoldersOpen(false);
+    resetSecurityAcknowledgement();
     restoreDriveTrigger(
       driveFoldersTriggerRef.current,
     );
@@ -1043,6 +1124,7 @@ export default function KnowledgeBasesPage({
     setDriveFoldersLoadingMore(false);
     setDriveSearchQuery("");
     setAddSourceMode("menu");
+    resetSecurityAcknowledgement();
   }
 
   async function loadDriveScopeStatus() {
@@ -1569,7 +1651,8 @@ export default function KnowledgeBasesPage({
 
     if (
       !file ||
-      !selectedKnowledgeBase
+      !selectedKnowledgeBase ||
+      requiresSecurityAcknowledgement("local")
     ) {
       return;
     }
@@ -1594,6 +1677,7 @@ export default function KnowledgeBasesPage({
       );
     } finally {
       setUploading(false);
+      resetSecurityAcknowledgement();
 
       if (
         fileInputRef.current
@@ -2179,11 +2263,7 @@ export default function KnowledgeBasesPage({
           <div
             className="management-modal-backdrop"
             onMouseDown={() => {
-              if (!uploading) {
-                setSourcesOpen(
-                  false,
-                );
-              }
+              closeSources();
             }}
           >
             <div
@@ -2211,9 +2291,7 @@ export default function KnowledgeBasesPage({
                 <button
                   className="icon-button"
                   onClick={() =>
-                    setSourcesOpen(
-                      false,
-                    )
+                    closeSources()
                   }
                   disabled={
                     uploading
@@ -2223,7 +2301,7 @@ export default function KnowledgeBasesPage({
                 </button>
               </header>
 
-              {canWrite && (
+              {canWrite && selectedKnowledgeBase.external_status === "ready" && (
                 <div className="knowledge-google-banner">
                   {googleStatus?.connected ? (
                     <>
@@ -2276,6 +2354,35 @@ export default function KnowledgeBasesPage({
 
               <div className="management-form">
                 {canWrite && (
+                  <div className="knowledge-security-notice">
+                    <Shield size={18} aria-hidden="true" />
+                    <div>
+                      <strong>{t("knowledgeSecurityTitle")}</strong>
+                      <p>{t("knowledgeSecurityBody")}</p>
+                      <details>
+                        <summary>{t("knowledgeSecurityDetails")}</summary>
+                        <ul>
+                          <li>{t("knowledgeSecurityPracticeAccess")}</li>
+                          <li>{t("knowledgeSecurityPracticeReview")}</li>
+                          <li>{t("knowledgeSecurityPracticeRemove")}</li>
+                        </ul>
+                      </details>
+                      <label className="knowledge-security-acknowledgement">
+                        <input
+                          type="checkbox"
+                          checked={securityAcknowledged}
+                          disabled={!selectedInitialSource}
+                          onChange={(event) =>
+                            setSecurityAcknowledged(event.target.checked)
+                          }
+                        />
+                        <span>{t("knowledgeSecurityAcknowledgement")}</span>
+                      </label>
+                    </div>
+                  </div>
+                )}
+
+                {canWrite && (
                   <div className="knowledge-upload-box">
                     <Upload
                       size={22}
@@ -2293,9 +2400,11 @@ export default function KnowledgeBasesPage({
 
                     <button
                       className="primary-button"
-                      onClick={() =>
-                        fileInputRef.current?.click()
-                      }
+                      onClick={() => {
+                        if (!requiresSecurityAcknowledgement("local")) {
+                          fileInputRef.current?.click();
+                        }
+                      }}
                       disabled={
                         uploading
                       }
@@ -2328,7 +2437,7 @@ export default function KnowledgeBasesPage({
                   </div>
                 )}
 
-                {canWrite && googleStatus?.connected && (
+                {canWrite && selectedKnowledgeBase.external_status === "ready" && googleStatus?.connected && (
                   <div className="knowledge-google-connect-box">
                     <FileSpreadsheet
                       size={22}
@@ -2348,6 +2457,9 @@ export default function KnowledgeBasesPage({
                       <button
                         className="google-button"
                         onClick={() => {
+                          if (requiresSecurityAcknowledgement("sheets")) {
+                            return;
+                          }
                           setAddSourceMode("sheets");
                           void handleOpenGoogleSheets();
                         }}
@@ -2364,6 +2476,9 @@ export default function KnowledgeBasesPage({
                       <button
                         className="google-button"
                         onClick={(event) => {
+                          if (requiresSecurityAcknowledgement("docs")) {
+                            return;
+                          }
                           void handleOpenDriveFiles(
                             "docs",
                             event.currentTarget,
@@ -2382,6 +2497,9 @@ export default function KnowledgeBasesPage({
                       <button
                         className="google-button"
                         onClick={(event) => {
+                          if (requiresSecurityAcknowledgement("drive-file")) {
+                            return;
+                          }
                           void handleOpenDriveFiles(
                             "drive-file",
                             event.currentTarget,
@@ -2400,6 +2518,9 @@ export default function KnowledgeBasesPage({
                       <button
                         className="google-button"
                         onClick={(event) => {
+                          if (requiresSecurityAcknowledgement("drive-folder")) {
+                            return;
+                          }
                           void handleOpenDriveFolders(
                             event.currentTarget,
                           );
@@ -2700,6 +2821,7 @@ export default function KnowledgeBasesPage({
               if (!googleAdding) {
                 setGoogleSheetsOpen(false);
                 setSelectedGoogleSheet(null);
+                resetSecurityAcknowledgement();
               }
             }}
           >
@@ -2725,6 +2847,7 @@ export default function KnowledgeBasesPage({
                   onClick={() => {
                     setGoogleSheetsOpen(false);
                     setSelectedGoogleSheet(null);
+                    resetSecurityAcknowledgement();
                   }}
                   disabled={googleAdding}
                 >
@@ -2792,6 +2915,7 @@ export default function KnowledgeBasesPage({
               if (!googleAdding) {
                 setGoogleTabsOpen(false);
                 setSelectedGoogleSheet(null);
+                resetSecurityAcknowledgement();
               }
             }}
           >
@@ -2807,9 +2931,11 @@ export default function KnowledgeBasesPage({
                     {selectedGoogleSheet?.name}
                   </span>
 
-                  <h2>
-                    {t("knowledgeGoogleSelectTab")}
-                  </h2>
+                    <h2>
+                      {googleSheetImportMode === "choose"
+                        ? t("knowledgeGoogleImportChoice")
+                        : t("knowledgeGoogleSelectTab")}
+                    </h2>
                 </div>
 
                 <button
@@ -2817,6 +2943,7 @@ export default function KnowledgeBasesPage({
                   onClick={() => {
                     setGoogleTabsOpen(false);
                     setSelectedGoogleSheet(null);
+                    resetSecurityAcknowledgement();
                   }}
                   disabled={googleAdding}
                 >
@@ -2831,13 +2958,48 @@ export default function KnowledgeBasesPage({
                   </div>
                 ) : (
                   <div className="knowledge-source-list">
-                    {googleTabs.map((tab) => (
+                    {googleSheetImportMode === "choose" && (
+                      <>
+                        <button
+                          className="knowledge-source-row google-source-row"
+                          onClick={() => {
+                            if (!requiresSecurityAcknowledgement("sheets")) {
+                              void handleAddGoogleWorkbookSource();
+                            }
+                          }}
+                          disabled={googleAdding || !securityAcknowledged || selectedInitialSource !== "sheets"}
+                        >
+                          <div className="management-icon"><FileSpreadsheet size={18} /></div>
+                          <div className="knowledge-source-info">
+                            <strong>{t("knowledgeGoogleEntireWorkbook")}</strong>
+                            <span>{t("knowledgeGoogleEntireWorkbookDescription", { count: googleTabs.filter((tab) => !tab.hidden).length })}</span>
+                            <span className="knowledge-security-contextual-warning">
+                              <Info size={14} aria-hidden="true" />
+                              {t("knowledgeSecurityWorkbookWarning")}
+                            </span>
+                          </div>
+                        </button>
+                        <button
+                          className="knowledge-source-row google-source-row"
+                          onClick={() => setGoogleSheetImportMode("sheet")}
+                          disabled={googleAdding || !securityAcknowledged || selectedInitialSource !== "sheets"}
+                        >
+                          <div className="management-icon"><FileText size={18} /></div>
+                          <div className="knowledge-source-info">
+                            <strong>{t("knowledgeGoogleSingleSheet")}</strong>
+                            <span>{t("knowledgeGoogleSingleSheetDescription")}</span>
+                          </div>
+                        </button>
+                      </>
+                    )}
+
+                    {googleSheetImportMode === "sheet" && googleTabs.filter((tab) => !tab.hidden).map((tab) => (
                       <div
                         key={tab.sheetId}
                         className="knowledge-source-row google-source-row"
-                        onClick={() => {
-                          if (!googleAdding) {
-                            void handleAddGoogleSheetSource(tab);
+                          onClick={() => {
+                            if (!googleAdding && !requiresSecurityAcknowledgement("sheets")) {
+                              void handleAddGoogleSheetSource(tab);
                           }
                         }}
                         style={{ cursor: "pointer" }}
@@ -2852,7 +3014,7 @@ export default function KnowledgeBasesPage({
                       </div>
                     ))}
 
-                    {!googleTabs.length && (
+                    {!googleTabs.filter((tab) => !tab.hidden).length && (
                       <div className="empty-management">
                         <FileText size={30} />
 
@@ -2961,8 +3123,11 @@ export default function KnowledgeBasesPage({
                           </div>
                           <button
                             className="google-button"
-                            disabled={googleAdding}
+                            disabled={googleAdding || !securityAcknowledged || selectedInitialSource !== (isDoc ? "docs" : "drive-file")}
                             onClick={() => {
+                              if (requiresSecurityAcknowledgement(isDoc ? "docs" : "drive-file")) {
+                                return;
+                              }
                               if (isDoc) {
                                 void handleAddGoogleDoc(file);
                               } else {
@@ -3006,6 +3171,7 @@ export default function KnowledgeBasesPage({
                   )}
                 </div>
               )}
+
             </div>
           </div>
         </div>
@@ -3090,12 +3256,18 @@ export default function KnowledgeBasesPage({
                         <strong>{folder.name}</strong>
                         <span>{folder.modified_time || ""}</span>
                       </div>
+                      <span className="knowledge-security-contextual-warning">
+                        <Info size={14} aria-hidden="true" />
+                        {t("knowledgeSecurityFolderWarning")}
+                      </span>
                       <button
                         className="google-button"
-                        disabled={googleAdding}
-                        onClick={() =>
-                          void handleAddDriveFolder(folder)
-                        }
+                        disabled={googleAdding || !securityAcknowledged || selectedInitialSource !== "drive-folder"}
+                        onClick={() => {
+                          if (!requiresSecurityAcknowledgement("drive-folder")) {
+                            void handleAddDriveFolder(folder);
+                          }
+                        }}
                       >
                         {t("knowledgeGoogleAddFolder")}
                       </button>

@@ -989,6 +989,131 @@ class TestGoogleSheetTabs:
 
 
 class TestAddGoogleSheetSource:
+    def test_workbook_content_uses_visible_non_empty_tabs(self):
+        from app.main import _fetch_google_workbook_content
+
+        metadata = {
+            "title": "Operations",
+            "sheets": [
+                {"title": "Orders", "hidden": False},
+                {"title": "Empty", "hidden": False},
+                {"title": "Internal", "hidden": True},
+            ],
+        }
+
+        async def values(_token, _spreadsheet_id, tab_name):
+            return {
+                "Orders": [["Order", "Total"], ["A-1", "10"]],
+                "Empty": [],
+            }[tab_name]
+
+        with patch(
+            "app.main.get_spreadsheet_metadata",
+            AsyncMock(return_value=metadata),
+        ), patch(
+            "app.main.fetch_sheet_values",
+            AsyncMock(side_effect=values),
+        ) as fetch_values:
+            title, content = asyncio.run(
+                _fetch_google_workbook_content("token", "sheet-id", "Fallback")
+            )
+
+        assert title == "Operations"
+        assert content == (
+            "# Spreadsheet: Operations\n\n"
+            "## Sheet: Orders\nOrder,Total\nA-1,10\n"
+        )
+        assert [call.args[2] for call in fetch_values.call_args_list] == [
+            "Orders", "Empty"
+        ]
+
+    def test_workbook_content_rejects_only_empty_visible_tabs(self):
+        from app.main import _fetch_google_workbook_content
+
+        with patch(
+            "app.main.get_spreadsheet_metadata",
+            AsyncMock(return_value={
+                "title": "Empty Book",
+                "sheets": [{"title": "Empty", "hidden": False}],
+            }),
+        ), patch(
+            "app.main.fetch_sheet_values",
+            AsyncMock(return_value=[]),
+        ):
+            with pytest.raises(
+                ValueError,
+                match="no non-empty visible sheets",
+            ):
+                asyncio.run(
+                    _fetch_google_workbook_content(
+                        "token", "sheet-id", "Fallback"
+                    )
+                )
+
+    def test_add_workbook_source_persists_import_mode(
+        self, client_factory, db
+    ):
+        org = _make_org(db)
+        user, _ = _make_user(db, org)
+        kb = _make_kb(db, org)
+        connection = GoogleConnection(
+            organization_id=org.id,
+            user_id=user.id,
+            access_token_encrypted="enc-access",
+            token_expiry=datetime.utcnow() + timedelta(hours=1),
+            status="connected",
+        )
+        db.add(connection)
+        db.commit()
+        client = client_factory(org)
+
+        with patch(
+            "app.main._get_valid_google_token", return_value="token"
+        ), patch(
+            "app.main._fetch_google_workbook_content",
+            AsyncMock(return_value=(
+                "Operations",
+                "# Spreadsheet: Operations\n\n## Sheet: Data\nName\nAlice\n",
+            )),
+        ), patch(
+            "app.main.upload_knowledge_file",
+            return_value={"bucket": "bucket", "key": "workbook-key"},
+        ), patch(
+            "app.main.start_ingestion_job", return_value="job-workbook"
+        ):
+            resp = client.post(
+                f"/api/knowledge-bases/{kb.id}/sources/google-sheet",
+                json={
+                    "spreadsheet_id": "1AbCdEfGhIjKlMnOpQrStUvWxYz",
+                    "import_mode": "workbook",
+                },
+            )
+
+        assert resp.status_code == 200
+        source = db.get(KnowledgeSource, resp.json()["source_id"])
+        assert source.sheet_name is None
+        assert source.metadata_json == '{"import_mode": "workbook"}'
+
+    def test_add_workbook_requires_ready_knowledge_base(
+        self, client_factory, db
+    ):
+        org = _make_org(db)
+        kb = _make_kb(db, org)
+        kb.external_status = "provisioning"
+        db.commit()
+        client = client_factory(org)
+
+        resp = client.post(
+            f"/api/knowledge-bases/{kb.id}/sources/google-sheet",
+            json={
+                "spreadsheet_id": "1AbCdEfGhIjKlMnOpQrStUvWxYz",
+                "import_mode": "workbook",
+            },
+        )
+
+        assert resp.status_code == 409
+        assert resp.json()["detail"]["code"] == "KNOWLEDGE_BASE_NOT_READY"
+
     def test_add_source_starts_ingestion(
         self, client_factory, db
     ):
@@ -1143,8 +1268,101 @@ class TestAddGoogleSheetSource:
             data["source_id"] == existing_source.id
         )
 
+    def test_duplicate_workbook_returns_existing(
+        self, client_factory, db
+    ):
+        org = _make_org(db)
+        user, _ = _make_user(db, org)
+        kb = _make_kb(db, org)
+        sheet_id = "1AbCdEfGhIjKlMnOpQrStUvWxYz"
+        source = KnowledgeSource(
+            knowledge_base_id=kb.id,
+            organization_id=org.id,
+            name="My Spreadsheet",
+            source_type="google_sheet",
+            s3_bucket="diaglob-bucket",
+            s3_key="google/sheet-123/workbook.csv",
+            status="active",
+            external_id=sheet_id,
+            external_name="My Spreadsheet",
+            sheet_name=None,
+            sync_status="synced",
+            metadata_json='{"import_mode": "workbook"}',
+        )
+        db.add(source)
+        db.commit()
+        client = client_factory(org)
+
+        with patch("app.main._fetch_google_workbook_content") as fetch:
+            resp = client.post(
+                f"/api/knowledge-bases/{kb.id}/sources/google-sheet",
+                json={
+                    "spreadsheet_id": sheet_id,
+                    "import_mode": "workbook",
+                },
+            )
+
+        assert resp.status_code == 200
+        assert resp.json()["source_id"] == source.id
+        fetch.assert_not_called()
+
 
 class TestSyncGoogleSheetSource:
+    def test_sync_workbook(self, client_factory, db):
+        org = _make_org(db)
+        user, _ = _make_user(db, org)
+        kb = _make_kb(db, org)
+        source = KnowledgeSource(
+            knowledge_base_id=kb.id,
+            organization_id=org.id,
+            name="Old Workbook Name",
+            source_type="google_sheet",
+            s3_bucket="diaglob-bucket",
+            s3_key="google/sheet-123/workbook.csv",
+            status="active",
+            external_id="1AbCdEfGhIjKlMnOpQrStUvWxYz",
+            external_name="Old Workbook Name",
+            sheet_name=None,
+            sync_status="synced",
+            metadata_json='{"import_mode": "workbook"}',
+        )
+        connection = GoogleConnection(
+            organization_id=org.id,
+            user_id=user.id,
+            access_token_encrypted="enc-access",
+            token_expiry=datetime.utcnow() + timedelta(hours=1),
+            status="connected",
+        )
+        db.add_all([source, connection])
+        db.commit()
+        client = client_factory(org)
+
+        with patch(
+            "app.main._get_valid_google_token",
+            return_value="valid-token",
+        ), patch(
+            "app.main._fetch_google_workbook_content",
+            AsyncMock(return_value=(
+                "New Workbook Name",
+                "# Spreadsheet: New Workbook Name\n\n"
+                "## Sheet: Data\nName\nAlice\n",
+            )),
+        ), patch(
+            "app.main.upload_knowledge_file",
+            return_value={"bucket": "diaglob-bucket", "key": "new-key"},
+        ) as upload, patch(
+            "app.main.start_ingestion_job", return_value="job-workbook"
+        ):
+            resp = client.post(
+                f"/api/knowledge-bases/{kb.id}/sources/{source.id}/sync"
+            )
+
+        assert resp.status_code == 200
+        assert resp.json()["sync_status"] == "indexing"
+        assert upload.call_args.kwargs["filename"].endswith("_workbook.csv")
+        db.refresh(source)
+        assert source.external_name == "New Workbook Name"
+
     def test_sync_existing_source(
         self, client_factory, db
     ):

@@ -388,6 +388,22 @@ const resources = {
         "PDF, TXT, MD, HTML, DOC, DOCX, CSV, XLSX o Google Sheets.",
       knowledgeGoogleUploadFile:
         "Subir archivo",
+      knowledgeSecurityTitle: "Antes de añadir una fuente",
+      knowledgeSecurityBody:
+        "Confirma que tienes autorización para importar este contenido y que no incluye información sensible innecesaria.",
+      knowledgeSecurityDetails: "Ver buenas prácticas",
+      knowledgeSecurityPracticeAccess:
+        "Importa solo contenido al que tu equipo deba acceder.",
+      knowledgeSecurityPracticeReview:
+        "Revisa permisos, enlaces y datos personales antes de importarlos.",
+      knowledgeSecurityPracticeRemove:
+        "Elimina fuentes que ya no necesites mantener disponibles.",
+      knowledgeSecurityAcknowledgement:
+        "Entiendo y confirmo que puedo importar esta fuente.",
+      knowledgeSecurityWorkbookWarning:
+        "Se importarán todas las pestañas visibles del archivo.",
+      knowledgeSecurityFolderWarning:
+        "La carpeta y sus archivos se sincronizarán como una fuente.",
       knowledgeGoogleNoDocuments:
         "Sin documentos",
       knowledgeGoogleNoDocumentsDescription:
@@ -420,6 +436,12 @@ const resources = {
         "No fue posible cargar las pestañas.",
       knowledgeGoogleSelectTab:
         "Selecciona una pestaña",
+      knowledgeGoogleImportChoice: "¿Qué quieres importar?",
+      knowledgeGoogleEntireWorkbook: "Todo el archivo",
+      knowledgeGoogleEntireWorkbookDescription: "Importa todas las pestañas visibles de esta hoja de cálculo ({{count}}).",
+      knowledgeGoogleSingleSheet: "Una pestaña",
+      knowledgeGoogleSingleSheetDescription: "Selecciona una pestaña específica.",
+      knowledgeGoogleKnowledgeBaseNotReady: "Esta base de conocimiento aún se está preparando. Intenta nuevamente cuando su estado sea Lista.",
       knowledgeGoogleNoSheets:
         "Sin hojas de cálculo",
       knowledgeGoogleNoSheetsDescription:
@@ -1910,6 +1932,22 @@ const resources = {
         "PDF, TXT, MD, HTML, DOC, DOCX, CSV, XLSX or Google Sheets.",
       knowledgeGoogleUploadFile:
         "Upload file",
+      knowledgeSecurityTitle: "Before adding a source",
+      knowledgeSecurityBody:
+        "Confirm you are authorized to import this content and that it does not contain unnecessary sensitive information.",
+      knowledgeSecurityDetails: "View best practices",
+      knowledgeSecurityPracticeAccess:
+        "Import only content your team needs to access.",
+      knowledgeSecurityPracticeReview:
+        "Review permissions, links, and personal data before importing.",
+      knowledgeSecurityPracticeRemove:
+        "Remove sources that no longer need to remain available.",
+      knowledgeSecurityAcknowledgement:
+        "I understand and confirm I can import this source.",
+      knowledgeSecurityWorkbookWarning:
+        "All visible sheets in this workbook will be imported.",
+      knowledgeSecurityFolderWarning:
+        "The folder and its files will sync as one source.",
       knowledgeGoogleNoDocuments:
         "No documents",
       knowledgeGoogleNoDocumentsDescription:
@@ -1942,6 +1980,12 @@ const resources = {
         "We couldn't load the tabs.",
       knowledgeGoogleSelectTab:
         "Select a tab",
+      knowledgeGoogleImportChoice: "What do you want to import?",
+      knowledgeGoogleEntireWorkbook: "Entire workbook",
+      knowledgeGoogleEntireWorkbookDescription: "Import all visible sheets from this spreadsheet ({{count}}).",
+      knowledgeGoogleSingleSheet: "Single sheet",
+      knowledgeGoogleSingleSheetDescription: "Choose one specific sheet.",
+      knowledgeGoogleKnowledgeBaseNotReady: "This Knowledge Base is still being prepared. Try again when its status is Ready.",
       knowledgeGoogleNoSheets:
         "No spreadsheets",
       knowledgeGoogleNoSheetsDescription:
