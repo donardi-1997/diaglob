@@ -388,22 +388,22 @@ const resources = {
         "PDF, TXT, MD, HTML, DOC, DOCX, CSV, XLSX o Google Sheets.",
       knowledgeGoogleUploadFile:
         "Subir archivo",
-      knowledgeSecurityTitle: "Antes de añadir una fuente",
+      knowledgeSecurityTitle: "Protege la información sensible",
       knowledgeSecurityBody:
-        "Confirma que tienes autorización para importar este contenido y que no incluye información sensible innecesaria.",
-      knowledgeSecurityDetails: "Ver buenas prácticas",
+        "Antes de añadir una fuente, revisa su contenido y comparte únicamente la información necesaria. Evita incluir contraseñas, claves API, tokens, claves privadas, credenciales bancarias o secretos de infraestructura.",
+      knowledgeSecurityDetails: "Buenas prácticas de seguridad",
       knowledgeSecurityPracticeAccess:
-        "Importa solo contenido al que tu equipo deba acceder.",
+        "Importa solo la información necesaria para el agente o flujo previsto y elimina datos personales o financieros que no sean necesarios.",
       knowledgeSecurityPracticeReview:
-        "Revisa permisos, enlaces y datos personales antes de importarlos.",
+        "Revisa hojas de cálculo completas antes de importarlas y carpetas antes de activar su sincronización. Evita guardar archivos secretos en carpetas sincronizadas.",
       knowledgeSecurityPracticeRemove:
-        "Elimina fuentes que ya no necesites mantener disponibles.",
+        "No incluyas contraseñas, claves API, secretos OAuth, tokens de acceso o actualización, claves privadas, credenciales de base de datos o nube, códigos de recuperación, frases semilla, CVV, accesos bancarios ni secretos de archivos .env o configuración.",
       knowledgeSecurityAcknowledgement:
-        "Entiendo y confirmo que puedo importar esta fuente.",
+        "He revisado esta fuente y confirmo que solo contiene la información necesaria para este uso.",
       knowledgeSecurityWorkbookWarning:
-        "Se importarán todas las pestañas visibles del archivo.",
+        "Se importarán todas las pestañas visibles y no vacías. Revisa el archivo completo y elimina información sensible innecesaria antes de continuar.",
       knowledgeSecurityFolderWarning:
-        "La carpeta y sus archivos se sincronizarán como una fuente.",
+        "Esta carpeta podrá sincronizar archivos nuevos o modificados. Asegúrate de que no contenga credenciales, secretos u otros archivos que no deban formar parte de esta base de conocimiento.",
       knowledgeGoogleNoDocuments:
         "Sin documentos",
       knowledgeGoogleNoDocumentsDescription:
@@ -1932,22 +1932,22 @@ const resources = {
         "PDF, TXT, MD, HTML, DOC, DOCX, CSV, XLSX or Google Sheets.",
       knowledgeGoogleUploadFile:
         "Upload file",
-      knowledgeSecurityTitle: "Before adding a source",
+      knowledgeSecurityTitle: "Protect sensitive information",
       knowledgeSecurityBody:
-        "Confirm you are authorized to import this content and that it does not contain unnecessary sensitive information.",
-      knowledgeSecurityDetails: "View best practices",
+        "Before adding a source, review its contents and share only the information necessary for the intended use. Avoid including passwords, API keys, tokens, private keys, banking credentials, or infrastructure secrets.",
+      knowledgeSecurityDetails: "Security best practices",
       knowledgeSecurityPracticeAccess:
-        "Import only content your team needs to access.",
+        "Import only information needed by the intended agent or workflow, and remove personal or financial data that is not necessary.",
       knowledgeSecurityPracticeReview:
-        "Review permissions, links, and personal data before importing.",
+        "Review entire spreadsheets before importing them and folders before enabling synchronization. Avoid placing secret files in synchronized folders.",
       knowledgeSecurityPracticeRemove:
-        "Remove sources that no longer need to remain available.",
+        "Do not include passwords, API keys, OAuth client secrets, access or refresh tokens, private keys, database or cloud credentials, recovery codes, seed phrases, CVV, banking logins, or secrets in .env and configuration files.",
       knowledgeSecurityAcknowledgement:
-        "I understand and confirm I can import this source.",
+        "I reviewed this source and confirm that it only contains information necessary for this use.",
       knowledgeSecurityWorkbookWarning:
-        "All visible sheets in this workbook will be imported.",
+        "All visible, non-empty sheets will be imported. Review the entire workbook and remove unnecessary sensitive information before continuing.",
       knowledgeSecurityFolderWarning:
-        "The folder and its files will sync as one source.",
+        "This folder may synchronize new or modified files. Make sure it does not contain credentials, secrets, or other files that should not become part of this knowledge base.",
       knowledgeGoogleNoDocuments:
         "No documents",
       knowledgeGoogleNoDocumentsDescription:
