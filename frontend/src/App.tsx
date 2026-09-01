@@ -36,6 +36,7 @@ import StoresPage from "./pages/StoresPage";
 import PlansPage from "./pages/PlansPage";
 import LoginPage from "./pages/LoginPage";
 import PublicLandingPage from "./pages/PublicLandingPage";
+import LegalPage from "./pages/LegalPage";
 import DashboardPage from "./pages/DashboardPage";
 
 const CommercePage = lazy(() => import("./pages/CommercePage"));
@@ -466,6 +467,8 @@ function App() {
           )
         }
       />
+      <Route path="/privacy" element={<LegalPage kind="privacy" />} />
+      <Route path="/terms" element={<LegalPage kind="terms" />} />
       <Route
         path="/app/*"
         element={
