@@ -188,6 +188,12 @@ from .bedrock_ingestion import (
     STATUS_FAILED,
 )
 
+from .bedrock_knowledge_base import (
+    BedrockProvisioningError,
+    ProvisioningInProgressError,
+    provision_diaglob_knowledge_base,
+)
+
 Base.metadata.create_all(bind=engine)
 
 logger = logging.getLogger(__name__)
@@ -439,7 +445,6 @@ class AgentUpdate(BaseModel):
 class KnowledgeBaseCreate(BaseModel):
     name: str
     scope: str = "selected_stores"
-    external_id: str | None = None
     active: bool = True
     store_ids: list[int] = []
 
@@ -447,7 +452,6 @@ class KnowledgeBaseCreate(BaseModel):
 class KnowledgeBaseUpdate(BaseModel):
     name: str | None = None
     scope: str | None = None
-    external_id: str | None = None
     active: bool | None = None
     store_ids: list[int] | None = None
 
@@ -1618,6 +1622,8 @@ def serialize_knowledge_base(
         "name": knowledge_base.name,
         "scope": knowledge_base.scope,
         "external_id": knowledge_base.external_id,
+        "external_status": knowledge_base.external_status,
+        "external_last_error": knowledge_base.external_last_error,
         "active": knowledge_base.active,
         "stores": [
             serialize_store_short(store)
@@ -1634,6 +1640,40 @@ def serialize_knowledge_base(
             for agent in knowledge_base.agents
         ],
     }
+
+
+def _require_knowledge_base_ready(
+    db: Session,
+    organization_id: int,
+    knowledge_base_id: int,
+) -> KnowledgeBase:
+    knowledge_base = (
+        db.query(KnowledgeBase)
+        .filter(
+            KnowledgeBase.id == knowledge_base_id,
+            KnowledgeBase.organization_id == organization_id,
+        )
+        .first()
+    )
+    if not knowledge_base:
+        raise HTTPException(
+            status_code=404,
+            detail="Knowledge Base not found",
+        )
+    if (
+        knowledge_base.external_status != "ready"
+        or not knowledge_base.external_id
+        or not knowledge_base.external_data_source_id
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "KNOWLEDGE_BASE_NOT_READY",
+                "message": "Knowledge Base provisioning is not ready.",
+                "status": knowledge_base.external_status or "pending",
+            },
+        )
+    return knowledge_base
 
 
 def serialize_agent(
@@ -6516,22 +6556,11 @@ async def upload_knowledge_source(
     ),
     db: Session = Depends(get_db),
 ):
-    knowledge_base = (
-        db.query(KnowledgeBase)
-        .filter(
-            KnowledgeBase.id
-            == knowledge_base_id,
-            KnowledgeBase.organization_id
-            == membership.organization_id,
-        )
-        .first()
+    knowledge_base = _require_knowledge_base_ready(
+        db,
+        membership.organization_id,
+        knowledge_base_id,
     )
-
-    if not knowledge_base:
-        raise HTTPException(
-            status_code=404,
-            detail="Knowledge base not found",
-        )
 
     filename = (
         file.filename
@@ -6641,6 +6670,11 @@ def delete_knowledge_source(
     ),
     db: Session = Depends(get_db),
 ):
+    kb = _require_knowledge_base_ready(
+        db,
+        membership.organization_id,
+        knowledge_base_id,
+    )
     source = (
         db.query(KnowledgeSource)
         .filter(
@@ -6701,34 +6735,18 @@ def delete_knowledge_source(
 
     # Trigger Bedrock reindex to remove
     # deleted content from vector index
-    kb = (
-        db.query(KnowledgeBase)
-        .filter(
-            KnowledgeBase.id
-            == knowledge_base_id,
-            KnowledgeBase.organization_id
-            == membership.organization_id,
-        )
-        .first()
-    )
-
     ingestion_job_id = None
     reindex_status = "not_configured"
 
-    if (
-        kb
-        and kb.external_id
-        and kb.external_data_source_id
-    ):
-        job_id = start_ingestion_job(
-            kb.external_id,
-            kb.external_data_source_id,
-        )
-        if job_id:
-            ingestion_job_id = job_id
-            reindex_status = "indexing"
-        else:
-            reindex_status = "reindex_failed"
+    job_id = start_ingestion_job(
+        kb.external_id,
+        kb.external_data_source_id,
+    )
+    if job_id:
+        ingestion_job_id = job_id
+        reindex_status = "indexing"
+    else:
+        reindex_status = "reindex_failed"
 
     db.commit()
 
@@ -6859,6 +6877,7 @@ def ask_agent(
         in agent.knowledge_bases
         if (
             knowledge_base.active
+            and knowledge_base.external_status == "ready"
             and knowledge_base.external_id
             and knowledge_base.external_data_source_id
         )
@@ -7373,11 +7392,7 @@ def create_knowledge_base(
             membership.organization_id,
         name=name,
         scope=scope,
-        external_id=(
-            payload.external_id.strip()
-            if payload.external_id
-            else None
-        ),
+        external_status="pending",
         active=payload.active,
     )
 
@@ -7390,6 +7405,22 @@ def create_knowledge_base(
     db.refresh(
         knowledge_base
     )
+
+    try:
+        provision_diaglob_knowledge_base(db, knowledge_base)
+        db.refresh(knowledge_base)
+    except BedrockProvisioningError as e:
+        logger.exception(
+            "Failed to provision Bedrock resources for KnowledgeBase %d",
+            knowledge_base.id,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "BEDROCK_PROVISIONING_FAILED",
+                "message": str(e),
+            },
+        ) from e
 
     return serialize_knowledge_base(
         knowledge_base
@@ -7467,12 +7498,6 @@ def update_knowledge_base(
         next_scope
     )
 
-    if payload.external_id is not None:
-        knowledge_base.external_id = (
-            payload.external_id.strip()
-            or None
-        )
-
     if payload.active is not None:
         knowledge_base.active = (
             payload.active
@@ -7507,6 +7532,75 @@ def update_knowledge_base(
     return serialize_knowledge_base(
         knowledge_base
     )
+
+
+@app.post(
+    "/api/knowledge-bases/{knowledge_base_id}/retry-provisioning"
+)
+def retry_knowledge_base_provisioning(
+    knowledge_base_id: int,
+    membership: OrganizationMembership = Depends(
+        require_permission("knowledge.write")
+    ),
+    db: Session = Depends(get_db),
+):
+    knowledge_base = (
+        db.query(KnowledgeBase)
+        .filter(
+            KnowledgeBase.id == knowledge_base_id,
+            KnowledgeBase.organization_id == membership.organization_id,
+        )
+        .first()
+    )
+
+    if not knowledge_base:
+        raise HTTPException(
+            status_code=404,
+            detail="Knowledge base not found",
+        )
+
+    if knowledge_base.external_status == "provisioning":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "PROVISIONING_IN_PROGRESS",
+                "message": "Knowledge Base provisioning is already in progress.",
+            },
+        )
+
+    if knowledge_base.external_status not in ("pending", "failed"):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "INVALID_PROVISIONING_STATE",
+                "message": f"Cannot retry provisioning for KnowledgeBase with status: {knowledge_base.external_status}",
+            },
+        )
+
+    try:
+        provision_diaglob_knowledge_base(db, knowledge_base)
+        db.refresh(knowledge_base)
+    except ProvisioningInProgressError as e:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "PROVISIONING_IN_PROGRESS",
+                "message": "Knowledge Base provisioning is already in progress.",
+            },
+        ) from e
+    except BedrockProvisioningError as e:
+        logger.exception(
+            "Retry provisioning failed for KnowledgeBase %d", knowledge_base_id
+        )
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "BEDROCK_PROVISIONING_FAILED",
+                "message": str(e),
+            },
+        ) from e
+
+    return serialize_knowledge_base(knowledge_base)
 
 
 @app.get("/api/conversations")
@@ -13330,22 +13424,9 @@ async def add_google_sheet_source(
 ):
     org_id = membership.organization_id
 
-    kb = (
-        db.query(KnowledgeBase)
-        .filter(
-            KnowledgeBase.id
-            == knowledge_base_id,
-            KnowledgeBase.organization_id
-            == org_id,
-        )
-        .first()
+    kb = _require_knowledge_base_ready(
+        db, org_id, knowledge_base_id
     )
-
-    if not kb:
-        raise HTTPException(
-            status_code=404,
-            detail="Knowledge Base not found",
-        )
 
     # Validate spreadsheet ID
     sheet_id = extract_spreadsheet_id(
@@ -13466,8 +13547,8 @@ async def add_google_sheet_source(
     )
     try:
         s3_result = upload_knowledge_file(
-            org_id=org_id,
-            kb_id=knowledge_base_id,
+            organization_id=org_id,
+            knowledge_base_id=knowledge_base_id,
             filename=filename,
             content=csv_content.encode("utf-8"),
             content_type="text/csv",
@@ -13502,20 +13583,19 @@ async def add_google_sheet_source(
     ingestion_job_id = None
     sync_status = "uploaded"
 
-    if kb.external_id and kb.external_data_source_id:
-        ingestion_job_id = start_ingestion_job(
-            kb.external_id,
-            kb.external_data_source_id,
+    ingestion_job_id = start_ingestion_job(
+        kb.external_id,
+        kb.external_data_source_id,
+    )
+    if ingestion_job_id:
+        sync_status = "indexing"
+        source.ingestion_job_id = (
+            ingestion_job_id
         )
-        if ingestion_job_id:
-            sync_status = "indexing"
-            source.ingestion_job_id = (
-                ingestion_job_id
-            )
-            source.sync_status = "indexing"
-        else:
-            sync_status = "uploaded"
-            source.sync_status = "uploaded"
+        source.sync_status = "indexing"
+    else:
+        sync_status = "uploaded"
+        source.sync_status = "uploaded"
 
     db.commit()
     db.refresh(source)
@@ -13545,22 +13625,9 @@ async def sync_google_sheet_source(
 ):
     org_id = membership.organization_id
 
-    kb = (
-        db.query(KnowledgeBase)
-        .filter(
-            KnowledgeBase.id
-            == knowledge_base_id,
-            KnowledgeBase.organization_id
-            == org_id,
-        )
-        .first()
+    kb = _require_knowledge_base_ready(
+        db, org_id, knowledge_base_id
     )
-
-    if not kb:
-        raise HTTPException(
-            status_code=404,
-            detail="Knowledge Base not found",
-        )
 
     source = (
         db.query(KnowledgeSource)
@@ -13687,8 +13754,8 @@ async def sync_google_sheet_source(
     )
     try:
         s3_result = upload_knowledge_file(
-            org_id=org_id,
-            kb_id=knowledge_base_id,
+            organization_id=org_id,
+            knowledge_base_id=knowledge_base_id,
             filename=filename,
             content=csv_content.encode("utf-8"),
             content_type="text/csv",
@@ -13715,20 +13782,19 @@ async def sync_google_sheet_source(
     ingestion_job_id = None
     sync_status = "uploaded"
 
-    if kb.external_id and kb.external_data_source_id:
-        ingestion_job_id = start_ingestion_job(
-            kb.external_id,
-            kb.external_data_source_id,
+    ingestion_job_id = start_ingestion_job(
+        kb.external_id,
+        kb.external_data_source_id,
+    )
+    if ingestion_job_id:
+        sync_status = "indexing"
+        source.ingestion_job_id = (
+            ingestion_job_id
         )
-        if ingestion_job_id:
-            sync_status = "indexing"
-            source.ingestion_job_id = (
-                ingestion_job_id
-            )
-            source.sync_status = "indexing"
-        else:
-            sync_status = "uploaded"
-            source.sync_status = "uploaded"
+        source.sync_status = "indexing"
+    else:
+        sync_status = "uploaded"
+        source.sync_status = "uploaded"
 
     db.commit()
     db.refresh(source)
@@ -13794,6 +13860,23 @@ def check_ingestion_status(
 
     # If not in indexing state, return current status
     if source.sync_status != "indexing":
+        return {
+            "source_id": source.id,
+            "sync_status": source.sync_status,
+            "last_synced_at": (
+                source.last_synced_at.isoformat()
+                if source.last_synced_at
+                else None
+            ),
+            "sync_error": source.sync_error,
+        }
+
+    # Guard: do not call Bedrock if KB is not ready. This prevents
+    # mutating DB state from a GET when provisioning has not completed
+    # or has failed.  (R2 readiness gate — tech-debt note: this GET
+    # has side effects; the read+persist pattern is kept for
+    # compatibility in this phase.)
+    if kb.external_status != "ready":
         return {
             "source_id": source.id,
             "sync_status": source.sync_status,
@@ -14605,22 +14688,9 @@ async def add_google_doc_source(
 ):
     org_id = membership.organization_id
 
-    kb = (
-        db.query(KnowledgeBase)
-        .filter(
-            KnowledgeBase.id
-            == knowledge_base_id,
-            KnowledgeBase.organization_id
-            == org_id,
-        )
-        .first()
+    kb = _require_knowledge_base_ready(
+        db, org_id, knowledge_base_id
     )
-
-    if not kb:
-        raise HTTPException(
-            status_code=404,
-            detail="Knowledge Base not found",
-        )
 
     connection = (
         db.query(GoogleConnection)
@@ -14805,22 +14875,9 @@ async def add_google_drive_file_source(
 ):
     org_id = membership.organization_id
 
-    kb = (
-        db.query(KnowledgeBase)
-        .filter(
-            KnowledgeBase.id
-            == knowledge_base_id,
-            KnowledgeBase.organization_id
-            == org_id,
-        )
-        .first()
+    kb = _require_knowledge_base_ready(
+        db, org_id, knowledge_base_id
     )
-
-    if not kb:
-        raise HTTPException(
-            status_code=404,
-            detail="Knowledge Base not found",
-        )
 
     connection = (
         db.query(GoogleConnection)
@@ -15029,22 +15086,9 @@ async def add_google_drive_folder_source(
 ):
     org_id = membership.organization_id
 
-    kb = (
-        db.query(KnowledgeBase)
-        .filter(
-            KnowledgeBase.id
-            == knowledge_base_id,
-            KnowledgeBase.organization_id
-            == org_id,
-        )
-        .first()
+    kb = _require_knowledge_base_ready(
+        db, org_id, knowledge_base_id
     )
-
-    if not kb:
-        raise HTTPException(
-            status_code=404,
-            detail="Knowledge Base not found",
-        )
 
     connection = (
         db.query(GoogleConnection)
@@ -15402,22 +15446,9 @@ async def sync_drive_folder(
 ):
     org_id = membership.organization_id
 
-    kb = (
-        db.query(KnowledgeBase)
-        .filter(
-            KnowledgeBase.id
-            == knowledge_base_id,
-            KnowledgeBase.organization_id
-            == org_id,
-        )
-        .first()
+    kb = _require_knowledge_base_ready(
+        db, org_id, knowledge_base_id
     )
-
-    if not kb:
-        raise HTTPException(
-            status_code=404,
-            detail="Knowledge Base not found",
-        )
 
     source = (
         db.query(KnowledgeSource)
@@ -15975,22 +16006,9 @@ async def sync_drive_file_source(
 ):
     org_id = membership.organization_id
 
-    kb = (
-        db.query(KnowledgeBase)
-        .filter(
-            KnowledgeBase.id
-            == knowledge_base_id,
-            KnowledgeBase.organization_id
-            == org_id,
-        )
-        .first()
+    kb = _require_knowledge_base_ready(
+        db, org_id, knowledge_base_id
     )
-
-    if not kb:
-        raise HTTPException(
-            status_code=404,
-            detail="Knowledge Base not found",
-        )
 
     source = (
         db.query(KnowledgeSource)

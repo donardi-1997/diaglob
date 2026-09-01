@@ -14,12 +14,20 @@ export interface KnowledgeBaseAgent {
   active: boolean;
 }
 
+export type KnowledgeBaseProvisioningStatus =
+  | "pending"
+  | "provisioning"
+  | "ready"
+  | "failed";
+
 export interface KnowledgeBase {
   id: number;
   organization_id: number;
   name: string;
   scope: "organization" | "selected_stores";
   external_id: string | null;
+  external_status: KnowledgeBaseProvisioningStatus;
+  external_last_error: string | null;
   active: boolean;
   stores: KnowledgeBaseStore[];
   agents: KnowledgeBaseAgent[];
@@ -28,7 +36,6 @@ export interface KnowledgeBase {
 export interface KnowledgeBasePayload {
   name: string;
   scope: "organization" | "selected_stores";
-  external_id?: string | null;
   active?: boolean;
   store_ids: number[];
 }
@@ -60,6 +67,16 @@ export async function updateKnowledgeBase(
   const response = await api.patch<KnowledgeBase>(
     `/api/knowledge-bases/${id}`,
     payload,
+  );
+
+  return response.data;
+}
+
+export async function retryKnowledgeBaseProvisioning(
+  id: number,
+) {
+  const response = await api.post<KnowledgeBase>(
+    `/api/knowledge-bases/${id}/retry-provisioning`,
   );
 
   return response.data;

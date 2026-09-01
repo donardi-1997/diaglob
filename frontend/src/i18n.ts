@@ -347,6 +347,18 @@ const resources = {
         "Todas las tiendas",
       knowledgeI18nPendingBedrock:
         "Pendiente de conectar a Bedrock",
+      knowledgeI18nProvisioningPending:
+        "Pendiente",
+      knowledgeI18nProvisioningInProgress:
+        "Aprovisionando",
+      knowledgeI18nProvisioningReady:
+        "Lista",
+      knowledgeI18nProvisioningFailed:
+        "Falló",
+      knowledgeI18nRetryProvisioning:
+        "Reintentar",
+      knowledgeI18nProvisioningRetryError:
+        "No fue posible reintentar el aprovisionamiento.",
       knowledgeI18nDeactivate:
         "Desactivar",
       knowledgeI18nActivate:
@@ -1719,6 +1731,18 @@ const resources = {
         "All stores",
       knowledgeI18nPendingBedrock:
         "Waiting to connect to Bedrock",
+      knowledgeI18nProvisioningPending:
+        "Pending",
+      knowledgeI18nProvisioningInProgress:
+        "Provisioning",
+      knowledgeI18nProvisioningReady:
+        "Ready",
+      knowledgeI18nProvisioningFailed:
+        "Failed",
+      knowledgeI18nRetryProvisioning:
+        "Retry",
+      knowledgeI18nProvisioningRetryError:
+        "We couldn't retry provisioning.",
       knowledgeI18nDeactivate:
         "Deactivate",
       knowledgeI18nActivate:

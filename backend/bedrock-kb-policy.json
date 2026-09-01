@@ -1,0 +1,64 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ListDiaglobKnowledgeDocuments",
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::diaglob-knowledge-765761474007-us-east-2",
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": "organizations/*/knowledge-bases/*/documents/*"
+        }
+      }
+    },
+    {
+      "Sid": "ReadDiaglobKnowledgeDocuments",
+      "Effect": "Allow",
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::diaglob-knowledge-765761474007-us-east-2/organizations/*/knowledge-bases/*/documents/*"
+    },
+    {
+      "Sid": "InvokeEmbeddingModel",
+      "Effect": "Allow",
+      "Action": [
+        "bedrock:InvokeModel"
+      ],
+      "Resource": [
+        "arn:aws:bedrock:us-east-2::foundation-model/amazon.titan-embed-text-v2:0"
+      ]
+    },
+    {
+      "Sid": "UseLegacyDiaglobVectors",
+      "Effect": "Allow",
+      "Action": [
+        "s3vectors:GetIndex",
+        "s3vectors:GetVectors",
+        "s3vectors:QueryVectors",
+        "s3vectors:PutVectors",
+        "s3vectors:DeleteVectors"
+      ],
+      "Resource": [
+        "arn:aws:s3vectors:us-east-2:765761474007:bucket/diaglob-vectors-765761474007-us-east-2/index/diaglob-knowledge-v1"
+      ]
+    },
+    {
+      "Sid": "UseManagedDiaglobVectors",
+      "Effect": "Allow",
+      "Action": [
+        "s3vectors:GetIndex",
+        "s3vectors:GetVectors",
+        "s3vectors:QueryVectors",
+        "s3vectors:PutVectors",
+        "s3vectors:DeleteVectors"
+      ],
+      "Resource": "arn:aws:s3vectors:us-east-2:765761474007:bucket/diaglob-vectors-765761474007-us-east-2/index/diaglob-prod-kb-*",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/diaglob:managed-by": "diaglob-backend",
+          "aws:ResourceTag/diaglob:environment": "production"
+        }
+      }
+    }
+  ]
+}

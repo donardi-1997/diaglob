@@ -56,8 +56,6 @@ frontend/diaglob-cognito-client.json
 frontend/diaglob-cognito-pool.json
 frontend/diaglob-user-attributes.json
 
-backend/bedrock-kb-policy.json
-backend/bedrock-kb-trust.json
 backend/diaglob-bedrock-kb.json
 backend/diaglob-data-source.json
 backend/ses-dkim-route53.json

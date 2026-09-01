@@ -121,6 +121,7 @@ def _make_kb(db, org):
         scope="selected_stores",
         external_id="bedrock-kb-123",
         external_data_source_id="bedrock-ds-456",
+        external_status="ready",
     )
     db.add(kb)
     db.flush()
@@ -1664,7 +1665,7 @@ class TestDeleteSourceBedrockReindex:
         assert child.active is True
         assert child.sync_status == "failed"
 
-    def test_single_sync_without_bedrock_ids_stays_uploaded(
+    def test_single_sync_without_bedrock_ids_is_rejected(
         self, client_factory, db
     ):
         org = _make_org(db)
@@ -1719,12 +1720,14 @@ class TestDeleteSourceBedrockReindex:
                 f"{source.id}/sync-drive-file"
             )
 
-        assert response.status_code == 200
-        assert response.json()["sync_status"] == "uploaded"
+        assert response.status_code == 409
+        assert response.json()["detail"]["code"] == (
+            "KNOWLEDGE_BASE_NOT_READY"
+        )
         start_job.assert_not_called()
         db.refresh(source)
-        assert source.s3_key == "new-key"
-        assert source.sync_status == "uploaded"
+        assert source.s3_key == "old-key"
+        assert source.sync_status == "synced"
 
     @pytest.mark.parametrize(
         "start_error",
@@ -2550,10 +2553,10 @@ class TestGoogleDrivePhase2:
         assert folder.active is False
         assert child.active is False
 
-    def test_delete_kb_without_bedrock_ids(
+    def test_delete_kb_without_bedrock_ids_is_rejected(
         self, client_factory, db
     ):
-        """B. KB without Bedrock IDs → S3 deleted, no ingestion, not_configured"""
+        """A source mutation cannot run before remote provisioning is ready."""
         org = _make_org(db)
         user, _ = _make_user(db, org)
 
@@ -2593,13 +2596,14 @@ class TestGoogleDrivePhase2:
                 f"/api/knowledge-bases/{kb_no_bedrock.id}/sources/{source.id}",
             )
 
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["deleted"] is True
-        assert data["reindex_status"] == "not_configured"
-        assert data["ingestion_job_id"] is None
-        mock_delete.assert_called_once()
+        assert resp.status_code == 409
+        assert resp.json()["detail"]["code"] == (
+            "KNOWLEDGE_BASE_NOT_READY"
+        )
+        mock_delete.assert_not_called()
         mock_ingest.assert_not_called()
+        db.refresh(source)
+        assert source.active is True
 
     def test_delete_ingestion_failure(
         self, client_factory, db

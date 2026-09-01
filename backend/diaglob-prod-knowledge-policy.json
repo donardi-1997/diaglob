@@ -1,0 +1,110 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ManageS3VectorIndexes",
+      "Effect": "Allow",
+      "Action": [
+        "s3vectors:CreateIndex",
+        "s3vectors:GetIndex",
+        "s3vectors:DeleteIndex",
+        "s3vectors:ListTagsForResource",
+        "s3vectors:TagResource",
+        "s3vectors:UntagResource"
+      ],
+      "Resource": "arn:aws:s3vectors:us-east-2:765761474007:bucket/diaglob-vectors-765761474007-us-east-2/index/diaglob-prod-kb-*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/diaglob:managed-by": "diaglob-backend",
+          "aws:RequestTag/diaglob:environment": "production"
+        },
+        "ForAllValues:StringEquals": {
+          "aws:TagKeys": [
+            "diaglob:managed-by",
+            "diaglob:environment",
+            "diaglob:organization_id",
+            "diaglob:knowledge_base_id"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "ManageBedrockKnowledgeBases",
+      "Effect": "Allow",
+      "Action": [
+        "bedrock:CreateKnowledgeBase",
+        "bedrock:GetKnowledgeBase",
+        "bedrock:DeleteKnowledgeBase",
+        "bedrock:ListKnowledgeBases",
+        "bedrock:ListTagsForResource",
+        "bedrock:TagResource",
+        "bedrock:UntagResource"
+      ],
+      "Resource": "arn:aws:bedrock:us-east-2:765761474007:knowledge-base/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/diaglob:managed-by": "diaglob-backend",
+          "aws:RequestTag/diaglob:environment": "production",
+          "aws:RequestTag/diaglob:organization_id": "${aws:PrincipalTag/diaglob:organization_id}",
+          "aws:RequestTag/diaglob:knowledge_base_id": "${aws:PrincipalTag/diaglob:knowledge_base_id}"
+        },
+        "ForAllValues:StringEquals": {
+          "aws:TagKeys": [
+            "diaglob:managed-by",
+            "diaglob:environment",
+            "diaglob:organization_id",
+            "diaglob:knowledge_base_id"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "ManageBedrockDataSources",
+      "Effect": "Allow",
+      "Action": [
+        "bedrock:CreateDataSource",
+        "bedrock:GetDataSource",
+        "bedrock:DeleteDataSource",
+        "bedrock:ListDataSources",
+        "bedrock:StartIngestionJob",
+        "bedrock:GetIngestionJob"
+      ],
+      "Resource": [
+        "arn:aws:bedrock:us-east-2:765761474007:knowledge-base/*",
+        "arn:aws:bedrock:us-east-2:765761474007:knowledge-base/*/data-source/*"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/diaglob:managed-by": "diaglob-backend",
+          "aws:RequestTag/diaglob:environment": "production"
+        }
+      }
+    },
+    {
+      "Sid": "ManageKnowledgeDocuments",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:DeleteObject"
+      ],
+      "Resource": "arn:aws:s3:::diaglob-knowledge-765761474007-us-east-2/organizations/*/knowledge-bases/*/documents/*"
+    },
+    {
+      "Sid": "PassRoleToBedrock",
+      "Effect": "Allow",
+      "Action": "iam:PassRole",
+      "Resource": "arn:aws:iam::765761474007:role/DiaglobBedrockKnowledgeBaseRole",
+      "Condition": {
+        "StringEquals": {
+          "iam:PassedToService": "bedrock.amazonaws.com"
+        }
+      }
+    },
+    {
+      "Sid": "InvokeEmbeddingModel",
+      "Effect": "Allow",
+      "Action": "bedrock:InvokeModel",
+      "Resource": "arn:aws:bedrock:us-east-2::foundation-model/amazon.titan-embed-text-v2:0"
+    }
+  ]
+}

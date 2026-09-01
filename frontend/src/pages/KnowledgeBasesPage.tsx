@@ -30,6 +30,7 @@ import {
 import {
   createKnowledgeBase,
   getKnowledgeBases,
+  retryKnowledgeBaseProvisioning,
   updateKnowledgeBase,
   type KnowledgeBase,
 } from "../services/knowledgeBases";
@@ -85,8 +86,6 @@ interface KnowledgeFormState {
     | "organization"
     | "selected_stores";
 
-  external_id: string;
-
   active: boolean;
 
   store_ids: number[];
@@ -96,7 +95,6 @@ interface KnowledgeFormState {
 const EMPTY_FORM: KnowledgeFormState = {
   name: "",
   scope: "selected_stores",
-  external_id: "",
   active: true,
   store_ids: [],
 };
@@ -104,6 +102,16 @@ const EMPTY_FORM: KnowledgeFormState = {
 
 const GOOGLE_DOC_MIME_TYPE =
   "application/vnd.google-apps.document";
+
+const PROVISIONING_STATUS_KEYS: Record<
+  KnowledgeBase["external_status"],
+  string
+> = {
+  pending: "knowledgeI18nProvisioningPending",
+  provisioning: "knowledgeI18nProvisioningInProgress",
+  ready: "knowledgeI18nProvisioningReady",
+  failed: "knowledgeI18nProvisioningFailed",
+};
 
 
 function isSyncInProgress(
@@ -155,6 +163,9 @@ export default function KnowledgeBasesPage({
 
   const [saving, setSaving] =
     useState(false);
+
+  const [retryingKnowledgeBaseId, setRetryingKnowledgeBaseId] =
+    useState<number | null>(null);
 
   const [error, setError] =
     useState("");
@@ -567,10 +578,6 @@ export default function KnowledgeBasesPage({
       scope:
         knowledgeBase.scope,
 
-      external_id:
-        knowledgeBase.external_id ||
-        "",
-
       active:
         knowledgeBase.active,
 
@@ -652,10 +659,6 @@ export default function KnowledgeBasesPage({
         scope:
           form.scope,
 
-        external_id:
-          form.external_id.trim()
-          || null,
-
         active:
           form.active,
 
@@ -688,6 +691,8 @@ export default function KnowledgeBasesPage({
       await loadData();
     } catch (err) {
       console.error(err);
+
+      await loadData();
 
       setError(
         t("knowledgeI18nSaveError"),
@@ -985,6 +990,24 @@ export default function KnowledgeBasesPage({
     window.requestAnimationFrame(() => {
       trigger?.focus();
     });
+  }
+
+
+  async function handleRetryProvisioning(
+    knowledgeBaseId: number,
+  ) {
+    try {
+      setRetryingKnowledgeBaseId(knowledgeBaseId);
+      setError("");
+      await retryKnowledgeBaseProvisioning(knowledgeBaseId);
+      await loadData();
+    } catch (err) {
+      console.error(err);
+      await loadData();
+      setError(t("knowledgeI18nProvisioningRetryError"));
+    } finally {
+      setRetryingKnowledgeBaseId(null);
+    }
   }
 
 
@@ -1802,11 +1825,18 @@ export default function KnowledgeBasesPage({
                     AWS
                   </strong>
 
-                  <span className="management-muted">
-                    {
-                      knowledgeBase.external_id ||
-                      t("knowledgeI18nPendingBedrock")
+                  <span
+                    className={
+                      knowledgeBase.external_status === "ready"
+                        ? "status-pill active"
+                        : "status-pill"
                     }
+                  >
+                    {t(
+                      PROVISIONING_STATUS_KEYS[
+                        knowledgeBase.external_status
+                      ],
+                    )}
                   </span>
                 </div>
 
@@ -1830,6 +1860,31 @@ export default function KnowledgeBasesPage({
 
                   {canWrite && (
                     <>
+                      {(knowledgeBase.external_status === "pending" ||
+                        knowledgeBase.external_status === "failed") && (
+                        <button
+                          className="secondary-button"
+                          disabled={
+                            retryingKnowledgeBaseId === knowledgeBase.id
+                          }
+                          onClick={() =>
+                            void handleRetryProvisioning(
+                              knowledgeBase.id,
+                            )
+                          }
+                        >
+                          <RefreshCw
+                            className={
+                              retryingKnowledgeBaseId === knowledgeBase.id
+                                ? "spin"
+                                : undefined
+                            }
+                            size={15}
+                          />
+                          {t("knowledgeI18nRetryProvisioning")}
+                        </button>
+                      )}
+
                       <button
                         className="secondary-button"
                         onClick={() =>
@@ -2052,30 +2107,6 @@ export default function KnowledgeBasesPage({
                   </div>
                 )
               }
-
-
-              <label>
-                <span>
-                  External ID
-                </span>
-
-                <input
-                  value={
-                    form.external_id
-                  }
-                  onChange={(event) =>
-                    setForm(
-                      (current) => ({
-                        ...current,
-
-                        external_id:
-                          event.target.value,
-                      }),
-                    )
-                  }
-                  placeholder={t("knowledgeI18nBedrockPlaceholder")}
-                />
-              </label>
 
 
               <label className="toggle-row">

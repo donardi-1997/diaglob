@@ -613,6 +613,18 @@ class KnowledgeBase(Base):
         nullable=True,
     )
 
+    external_status: Mapped[str | None] = mapped_column(
+        String(30),
+        default="pending",
+        server_default="pending",
+        nullable=True,
+    )
+
+    external_last_error: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
     active: Mapped[bool] = mapped_column(
         Boolean,
         default=True,

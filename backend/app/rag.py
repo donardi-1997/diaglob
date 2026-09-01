@@ -132,7 +132,10 @@ def knowledge_base_is_available_for_store(
     knowledge_base,
     store_id: int | None,
 ):
-    if not knowledge_base.active:
+    if (
+        not knowledge_base.active
+        or knowledge_base.external_status != "ready"
+    ):
         return False
 
     if knowledge_base.scope == "organization":
