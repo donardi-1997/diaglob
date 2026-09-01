@@ -2289,6 +2289,9 @@ export default function KnowledgeBasesPage({
                       selectedKnowledgeBase.name
                     }
                   </h2>
+                  <p className="knowledge-modal-description">
+                    {t("knowledgeDocumentsDescription")}
+                  </p>
                 </div>
 
                 <button
@@ -2312,7 +2315,7 @@ export default function KnowledgeBasesPage({
                       <span>
                         {t("knowledgeGoogleConnected")}{" "}
                         <strong>
-                          {googleStatus.email}
+                          {googleStatus.email || t("knowledgeGoogleConnectedGeneric")}
                         </strong>
                       </span>
                       <button
@@ -2355,7 +2358,16 @@ export default function KnowledgeBasesPage({
               )}
 
 
-              <div className="management-form">
+              <div className="management-form knowledge-documents-form">
+                <div className="knowledge-add-source-heading">
+                  <div>
+                    <span className="eyebrow">{t("knowledgeAddSourceEyebrow")}</span>
+                    <h3>{t("knowledgeAddSourceTitle")}</h3>
+                  </div>
+                  <span className="knowledge-source-count">
+                    {t("knowledgeSourceCount", { count: sources.length })}
+                  </span>
+                </div>
                 {canWrite && (
                   <div className="knowledge-security-notice">
                     <Shield size={18} aria-hidden="true" />
@@ -2396,11 +2408,11 @@ export default function KnowledgeBasesPage({
 
                     <div>
                       <strong>
-                        {t("knowledgeGoogleAddDocument")}
+                        {t("knowledgeGoogleUploadTitle")}
                       </strong>
 
                       <span>
-                        {t("knowledgeGoogleAddDocumentFormats")}
+                        {t("knowledgeGoogleUploadFormats")}
                       </span>
                     </div>
 
@@ -2476,7 +2488,7 @@ export default function KnowledgeBasesPage({
                         ) : (
                           <FileSpreadsheet size={16} />
                         )}
-                        {t("knowledgeGoogleSelectSheet")}
+                        <span className="knowledge-source-option-copy"><strong>{t("knowledgeGoogleSelectSheet")}</strong><small>{t("knowledgeGoogleSheetsDescription")}</small></span>
                       </button>
 
                       <button
@@ -2497,7 +2509,7 @@ export default function KnowledgeBasesPage({
                         ) : (
                           <FileText size={16} />
                         )}
-                        {t("knowledgeGoogleDocs")}
+                        <span className="knowledge-source-option-copy"><strong>{t("knowledgeGoogleDocs")}</strong><small>{t("knowledgeGoogleDocsDescription")}</small></span>
                       </button>
 
                       <button
@@ -2518,7 +2530,7 @@ export default function KnowledgeBasesPage({
                         ) : (
                           <File size={16} />
                         )}
-                        {t("knowledgeGoogleDriveFile")}
+                        <span className="knowledge-source-option-copy"><strong>{t("knowledgeGoogleDriveFile")}</strong><small>{t("knowledgeGoogleDriveFileDescription")}</small></span>
                       </button>
 
                       <button
@@ -2538,7 +2550,7 @@ export default function KnowledgeBasesPage({
                         ) : (
                           <Folder size={16} />
                         )}
-                        {t("knowledgeGoogleDriveFolder")}
+                        <span className="knowledge-source-option-copy"><strong>{t("knowledgeGoogleDriveFolder")}</strong><small>{t("knowledgeGoogleDriveFolderDescription")}</small></span>
                       </button>
                     </div>
 
@@ -2563,6 +2575,13 @@ export default function KnowledgeBasesPage({
                 )}
 
 
+                <div className="knowledge-sources-heading">
+                  <div>
+                    <span className="eyebrow">{t("knowledgeSourcesEyebrow")}</span>
+                    <h3>{t("knowledgeSourcesTitle")}</h3>
+                  </div>
+                </div>
+
                 {sourcesLoading ? (
                   <div className="conversation-loading">
                     <LoaderCircle
@@ -2571,7 +2590,7 @@ export default function KnowledgeBasesPage({
                     />
                   </div>
                 ) : (
-                  <div className="knowledge-source-list">
+                    <div className="knowledge-source-list knowledge-document-source-list">
                     {sources.map(
                       (source) => {
                         const isGoogleSheets =

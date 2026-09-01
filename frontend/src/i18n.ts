@@ -382,6 +382,16 @@ const resources = {
 
       knowledgeGoogleDocuments:
         "DOCUMENTOS",
+      knowledgeDocumentsDescription:
+        "Agrega y administra las fuentes que alimentan esta Knowledge Base.",
+      knowledgeAddSourceEyebrow: "FUENTES",
+      knowledgeAddSourceTitle: "Agregar fuente",
+      knowledgeSourcesEyebrow: "CATALOGO",
+      knowledgeSourcesTitle: "Fuentes",
+      knowledgeSourceCount: "{{count}} fuentes",
+      knowledgeGoogleUploadTitle: "Subir archivo",
+      knowledgeGoogleUploadFormats:
+        "PDF, DOCX, XLSX, CSV y más",
       knowledgeGoogleAddDocument:
         "Añadir documento",
       knowledgeGoogleAddDocumentFormats:
@@ -410,6 +420,8 @@ const resources = {
         "Esta Knowledge Base todavía no tiene fuentes cargadas.",
       knowledgeGoogleConnected:
         "Conectado como",
+      knowledgeGoogleConnectedGeneric:
+        "Google Workspace conectado",
       knowledgeGoogleNotConnected:
         "Conecta tu cuenta de Google para sincronizar hojas de cálculo.",
       knowledgeGoogleConnect:
@@ -428,6 +440,14 @@ const resources = {
         "Sincroniza hojas de cálculo de Google como fuentes de conocimiento.",
       knowledgeGoogleSelectSheet:
         "Seleccionar hoja",
+      knowledgeGoogleSheetsDescription:
+        "Importa una pestaña o el archivo completo.",
+      knowledgeGoogleDocsDescription:
+        "Importa un documento de Google.",
+      knowledgeGoogleDriveFileDescription:
+        "Selecciona un archivo de Google Drive.",
+      knowledgeGoogleDriveFolderDescription:
+        "Sincroniza archivos desde una carpeta.",
       knowledgeGoogleSelectSpreadsheet:
         "Selecciona una hoja de cálculo",
       knowledgeGoogleSheetsLoadError:
@@ -1926,6 +1946,16 @@ const resources = {
 
       knowledgeGoogleDocuments:
         "DOCUMENTS",
+      knowledgeDocumentsDescription:
+        "Add and manage the sources that power this Knowledge Base.",
+      knowledgeAddSourceEyebrow: "SOURCES",
+      knowledgeAddSourceTitle: "Add source",
+      knowledgeSourcesEyebrow: "CATALOG",
+      knowledgeSourcesTitle: "Sources",
+      knowledgeSourceCount: "{{count}} sources",
+      knowledgeGoogleUploadTitle: "Upload file",
+      knowledgeGoogleUploadFormats:
+        "PDF, DOCX, XLSX, CSV, and more",
       knowledgeGoogleAddDocument:
         "Add document",
       knowledgeGoogleAddDocumentFormats:
@@ -1954,6 +1984,8 @@ const resources = {
         "This Knowledge Base has no sources uploaded yet.",
       knowledgeGoogleConnected:
         "Connected as",
+      knowledgeGoogleConnectedGeneric:
+        "Google Workspace connected",
       knowledgeGoogleNotConnected:
         "Connect your Google account to sync spreadsheets.",
       knowledgeGoogleConnect:
@@ -1972,6 +2004,14 @@ const resources = {
         "Sync Google spreadsheets as knowledge sources.",
       knowledgeGoogleSelectSheet:
         "Select sheet",
+      knowledgeGoogleSheetsDescription:
+        "Import one sheet or the entire workbook.",
+      knowledgeGoogleDocsDescription:
+        "Import a Google document.",
+      knowledgeGoogleDriveFileDescription:
+        "Select a file from Google Drive.",
+      knowledgeGoogleDriveFolderDescription:
+        "Sync files from a folder.",
       knowledgeGoogleSelectSpreadsheet:
         "Select a spreadsheet",
       knowledgeGoogleSheetsLoadError:
