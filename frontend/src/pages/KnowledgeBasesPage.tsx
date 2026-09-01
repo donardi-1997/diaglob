@@ -797,6 +797,16 @@ export default function KnowledgeBasesPage({
   }
 
 
+  function selectInitialSource(
+    source: InitialSource,
+  ) {
+    if (selectedInitialSource !== source) {
+      setSelectedInitialSource(source);
+      setSecurityAcknowledged(false);
+    }
+  }
+
+
   function closeSources() {
     if (uploading) {
       return;
@@ -2307,53 +2317,27 @@ export default function KnowledgeBasesPage({
                 </button>
               </header>
 
-              {canWrite && selectedKnowledgeBase.external_status === "ready" && (
-                <div className="knowledge-google-banner">
-                  {googleStatus?.connected ? (
-                    <>
+              {canWrite && selectedKnowledgeBase.external_status === "ready" && !googleStatus?.connected && (
+                <div className="knowledge-google-connect-box">
+                  <Link2 size={22} />
+                  <div>
+                    <strong>{t("knowledgeGoogleWorkspaceTitle")}</strong>
+                    <span>{t("knowledgeGoogleNotConnected")}</span>
+                  </div>
+                  <button
+                    className="primary-button google-button"
+                    onClick={() =>
+                      void handleConnectGoogle()
+                    }
+                    disabled={googleConnecting}
+                  >
+                    {googleConnecting ? (
+                      <LoaderCircle className="spin" size={14} />
+                    ) : (
                       <Link2 size={14} />
-                      <span>
-                        {t("knowledgeGoogleConnected")}{" "}
-                        <strong>
-                          {googleStatus.email || t("knowledgeGoogleConnectedGeneric")}
-                        </strong>
-                      </span>
-                      <button
-                        className="text-button danger"
-                        onClick={() =>
-                          void handleDisconnectGoogle()
-                        }
-                      >
-                        {t("knowledgeGoogleDisconnect")}
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <Link2 size={14} />
-                      <span>
-                        {t("knowledgeGoogleNotConnected")}
-                      </span>
-                      <button
-                        className="primary-button google-button"
-                        onClick={() =>
-                          void handleConnectGoogle()
-                        }
-                        disabled={
-                          googleConnecting
-                        }
-                      >
-                        {googleConnecting ? (
-                          <LoaderCircle
-                            className="spin"
-                            size={14}
-                          />
-                        ) : (
-                          <Link2 size={14} />
-                        )}
-                        {t("knowledgeGoogleConnect")}
-                      </button>
-                    </>
-                  )}
+                    )}
+                    {t("knowledgeGoogleConnect")}
+                  </button>
                 </div>
               )}
 
@@ -2469,15 +2453,25 @@ export default function KnowledgeBasesPage({
                       <span>
                         {t("knowledgeGoogleWorkspaceDescription")}
                       </span>
+                      <span>
+                        {t("knowledgeGoogleConnected")} {googleStatus.email || t("knowledgeGoogleConnectedGeneric")}
+                      </span>
                     </div>
+
+                    <button
+                      className="text-button danger"
+                      onClick={() =>
+                        void handleDisconnectGoogle()
+                      }
+                    >
+                      {t("knowledgeGoogleDisconnect")}
+                    </button>
 
                     <div className="knowledge-google-source-buttons">
                       <button
                         className="google-button"
                         onClick={() => {
-                          if (requiresSecurityAcknowledgement("sheets")) {
-                            return;
-                          }
+                          selectInitialSource("sheets");
                           setAddSourceMode("sheets");
                           void handleOpenGoogleSheets();
                         }}
@@ -2494,9 +2488,7 @@ export default function KnowledgeBasesPage({
                       <button
                         className="google-button"
                         onClick={(event) => {
-                          if (requiresSecurityAcknowledgement("docs")) {
-                            return;
-                          }
+                          selectInitialSource("docs");
                           void handleOpenDriveFiles(
                             "docs",
                             event.currentTarget,
@@ -2515,9 +2507,7 @@ export default function KnowledgeBasesPage({
                       <button
                         className="google-button"
                         onClick={(event) => {
-                          if (requiresSecurityAcknowledgement("drive-file")) {
-                            return;
-                          }
+                          selectInitialSource("drive-file");
                           void handleOpenDriveFiles(
                             "drive-file",
                             event.currentTarget,
@@ -2536,9 +2526,7 @@ export default function KnowledgeBasesPage({
                       <button
                         className="google-button"
                         onClick={(event) => {
-                          if (requiresSecurityAcknowledgement("drive-folder")) {
-                            return;
-                          }
+                          selectInitialSource("drive-folder");
                           void handleOpenDriveFolders(
                             event.currentTarget,
                           );

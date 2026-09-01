@@ -2579,6 +2579,19 @@ button:disabled {
   border-top: 1px solid var(--border);
 }
 
+.management-card .management-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 110px), 1fr));
+  align-items: stretch;
+  flex-wrap: wrap;
+}
+
+.management-card .management-actions button {
+  width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .management-muted {
   color: var(--muted);
   font-size: 13px;
