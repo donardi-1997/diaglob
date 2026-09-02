@@ -485,7 +485,7 @@ export default function KnowledgeBasesPage({
     void loadData();
   }, []);
 
-  const refreshProvisioningStatuses = useEffectEvent(async () => {
+  const refreshProvisioningStatuses = useCallback(async () => {
     try {
       const response = await getKnowledgeBases();
       const nextItems = response.items;
@@ -517,50 +517,58 @@ export default function KnowledgeBasesPage({
     } catch (err) {
       console.error(err);
     }
-  });
+  }, []);
 
-const pollingTimeoutRef = useRef<number | undefined>(undefined);
+  const pollingTimeoutRef = useRef<number | undefined>(undefined);
   const isPollingRef = useRef(false);
+  const pollingInFlightRef = useRef(false);
+
+  const stopPolling = useCallback(() => {
+    isPollingRef.current = false;
+    if (pollingTimeoutRef.current !== undefined) {
+      window.clearTimeout(pollingTimeoutRef.current);
+      pollingTimeoutRef.current = undefined;
+    }
+  }, []);
 
   const startPolling = useCallback(() => {
     if (isPollingRef.current) return;
     isPollingRef.current = true;
 
     const poll = async () => {
-      if (!isPollingRef.current) return;
-      await refreshProvisioningStatuses();
-      if (isPollingRef.current) {
-        pollingTimeoutRef.current = window.setTimeout(poll, 7_500);
+      pollingTimeoutRef.current = undefined;
+      if (!isPollingRef.current || pollingInFlightRef.current) return;
+
+      pollingInFlightRef.current = true;
+      try {
+        await refreshProvisioningStatuses();
+      } finally {
+        pollingInFlightRef.current = false;
+        if (isPollingRef.current) {
+          pollingTimeoutRef.current = window.setTimeout(poll, 7_500);
+        }
       }
     };
 
-    poll();
+    pollingTimeoutRef.current = window.setTimeout(poll, 7_500);
   }, [refreshProvisioningStatuses]);
 
-  const stopPolling = useCallback(() => {
-    isPollingRef.current = false;
-    if (pollingTimeoutRef.current) {
-      window.clearTimeout(pollingTimeoutRef.current);
-      pollingTimeoutRef.current = undefined;
-    }
-  }, []);
+  const hasActiveProvisioning = items.some(
+    (item) =>
+      item.external_status === "pending" ||
+      item.external_status === "provisioning" ||
+      item.external_status === "retrying",
+  );
 
   useEffect(() => {
-    const hasActiveProvisioning = items.some(
-      (item) =>
-        item.external_status === "pending" ||
-        item.external_status === "provisioning" ||
-        item.external_status === "retrying",
-    );
     if (hasActiveProvisioning) {
       startPolling();
     } else {
       stopPolling();
     }
-    return () => {
-      stopPolling();
-    };
-  }, [items, startPolling, stopPolling]);
+  }, [hasActiveProvisioning, startPolling, stopPolling]);
+
+  useEffect(() => stopPolling, [stopPolling]);
 
 
   function getSyncStatusLabel(
