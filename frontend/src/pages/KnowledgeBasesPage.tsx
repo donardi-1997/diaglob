@@ -123,6 +123,22 @@ const PROVISIONING_STATUS_KEYS: Record<
   retrying: "knowledgeI18nProvisioningRetrying",
   ready: "knowledgeI18nProvisioningReady",
   failed: "knowledgeI18nProvisioningFailed",
+  deleting: "knowledgeI18nDeletingKnowledgeBase",
+};
+
+const PROVISIONING_STAGE_KEYS: Record<
+  NonNullable<KnowledgeBase["provisioning_stage"]>,
+  string
+> = {
+  queued: "knowledgeI18nStageQueued",
+  creating_vector_index: "knowledgeI18nStageStorage",
+  creating_knowledge_base: "knowledgeI18nStageKnowledge",
+  creating_data_source: "knowledgeI18nStageSources",
+  finalizing: "knowledgeI18nStageFinalizing",
+  retrying: "knowledgeI18nStageRetrying",
+  ready: "knowledgeI18nProvisioningReady",
+  failed: "knowledgeI18nProvisioningFailed",
+  deleting: "knowledgeI18nDeletingKnowledgeBase",
 };
 
 
@@ -178,8 +194,17 @@ function hasProvisioningChange(
   return (
     current.external_status !== next.external_status ||
     current.external_last_error !== next.external_last_error ||
-    current.external_id !== next.external_id
+    current.external_id !== next.external_id ||
+    current.provisioning_stage !== next.provisioning_stage ||
+    current.provisioning_started_at !== next.provisioning_started_at ||
+    current.provisioning_stage_started_at !== next.provisioning_stage_started_at
   );
+}
+
+
+function isSlowProvisioning(knowledgeBase: KnowledgeBase) {
+  if (!knowledgeBase.provisioning_started_at) return false;
+  return Date.now() - Date.parse(knowledgeBase.provisioning_started_at) > 180_000;
 }
 
 
@@ -2045,7 +2070,7 @@ const pollingTimeoutRef = useRef<number | undefined>(undefined);
                 <div className="management-section">
                   <strong>
                     <Database size={15} />
-                    AWS
+                    {t("knowledgeI18nProvisioningLabel")}
                   </strong>
 
                   <span
@@ -2061,6 +2086,12 @@ const pollingTimeoutRef = useRef<number | undefined>(undefined);
                       ],
                     )}
                   </span>
+                  {knowledgeBase.external_status !== "ready" &&
+                    knowledgeBase.provisioning_stage && (
+                      <small className="knowledge-card-provisioning-stage">
+                        {t(PROVISIONING_STAGE_KEYS[knowledgeBase.provisioning_stage])}
+                      </small>
+                    )}
                 </div>
 
 
@@ -2486,6 +2517,12 @@ const pollingTimeoutRef = useRef<number | undefined>(undefined);
                   <span className="knowledge-source-count">
                     {t("knowledgeSourceCount", { count: sources.length })}
                   </span>
+                  {selectedKnowledgeBase.external_status !== "ready" &&
+                    selectedKnowledgeBase.provisioning_stage && (
+                      <small className="knowledge-card-provisioning-stage">
+                        {t(PROVISIONING_STAGE_KEYS[selectedKnowledgeBase.provisioning_stage])}
+                      </small>
+                    )}
                 </div>
                 {selectedKnowledgeBase.external_status !== "ready" && (
                   <section
@@ -2510,7 +2547,35 @@ const pollingTimeoutRef = useRef<number | undefined>(undefined);
                         </span>
                       </div>
                       <p>{t(selectedKnowledgeBase.external_status === "failed" ? "knowledgeI18nFailedBody" : selectedKnowledgeBase.external_status === "retrying" ? "knowledgeI18nRetryingBody" : "knowledgeI18nPreparingBody")}</p>
-                      {selectedKnowledgeBase.external_status === "failed" ? <small>{t("knowledgeI18nFailedSupport")}</small> : <><p>{t("knowledgeSourcesPendingSecondary")}</p><small>{t("knowledgeSourcesPendingFooter")}</small></>}
+                      {selectedKnowledgeBase.external_status === "failed" ? <>
+                        <small>{t("knowledgeI18nFailedSupport")}</small>
+                        {canWrite && (
+                          <button
+                            className="secondary-button knowledge-provisioning-retry"
+                            disabled={retryingKnowledgeBaseId === selectedKnowledgeBase.id}
+                            onClick={() => void handleRetryProvisioning(selectedKnowledgeBase.id)}
+                          >
+                            {retryingKnowledgeBaseId === selectedKnowledgeBase.id
+                              ? t("knowledgeI18nProvisioningRetrying")
+                              : t("knowledgeI18nRetryProvisioning")}
+                          </button>
+                        )}
+                      </> : <>
+                        {selectedKnowledgeBase.provisioning_stage && (
+                          <div className="knowledge-provisioning-stage">
+                            <span className="knowledge-provisioning-stage-dot" aria-hidden="true" />
+                            {t(PROVISIONING_STAGE_KEYS[selectedKnowledgeBase.provisioning_stage])}
+                          </div>
+                        )}
+                        <small>
+                          {selectedKnowledgeBase.external_status === "retrying"
+                            ? t("knowledgeI18nRetryingTime")
+                            : isSlowProvisioning(selectedKnowledgeBase)
+                              ? t("knowledgeI18nSlowProvisioning")
+                              : t("knowledgeI18nEstimatedTime")}
+                        </small>
+                        <small>{t("knowledgeI18nProvisioningProgress")}</small>
+                      </>}
                     </div>
                   </section>
                 )}
@@ -2611,7 +2676,11 @@ const pollingTimeoutRef = useRef<number | undefined>(undefined);
                       <div>
                         <strong>{t("knowledgeGoogleWorkspaceTitle")}</strong>
                         <span>{t("knowledgeGoogleWorkspaceDescription")}</span>
-                        <span>{t("knowledgeGoogleConnected")} {googleStatus.email || t("knowledgeGoogleConnectedGeneric")}</span>
+                        <span>
+                          {googleStatus.email
+                            ? `${t("knowledgeGoogleConnected")} ${googleStatus.email}`
+                            : t("knowledgeGoogleConnectedGeneric")}
+                        </span>
                       </div>
                       <button
                         className="text-button danger"

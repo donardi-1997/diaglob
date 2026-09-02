@@ -6,6 +6,7 @@ import hashlib
 import logging
 import re
 import time
+import threading
 import httpx
 from typing import Literal
 
@@ -33,6 +34,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import OperationalError
 
 from .auth import verify_cognito_access_token
 from .knowledge_storage import (
@@ -240,17 +242,68 @@ def run_knowledge_base_provisioning(knowledge_base_id: int) -> None:
                 )
                 if retry_scheduled:
                     knowledge_base.external_status = "retrying"
+                    knowledge_base.provisioning_stage = "retrying"
+                    knowledge_base.provisioning_stage_started_at = datetime.now(timezone.utc)
                     db.commit()
                 else:
                     return
         finally:
             db.close()
 
+
+def schedule_knowledge_base_provisioning(knowledge_base_id: int) -> None:
+    """Run startup recovery outside the request lifecycle."""
+    threading.Thread(
+        target=run_knowledge_base_provisioning,
+        args=(knowledge_base_id,),
+        daemon=True,
+    ).start()
+
+
+def reconcile_knowledge_base_provisioning() -> None:
+    """Resume stranded non-terminal provisioning after a process restart."""
+    db = SessionLocal()
+    try:
+        try:
+            knowledge_bases = db.query(KnowledgeBase).filter(
+                KnowledgeBase.active.is_(True),
+                KnowledgeBase.external_status.in_(("pending", "provisioning", "retrying")),
+            ).all()
+        except OperationalError as error:
+            db.rollback()
+            if "no such column" in str(error).lower() and "knowledge_bases.external_status" in str(error):
+                logger.warning("Skipping Knowledge Base provisioning reconciliation until migration 007 is applied")
+                return
+            raise
+        now = datetime.now(timezone.utc)
+        for knowledge_base in knowledge_bases:
+            if knowledge_base.external_status == "provisioning":
+                knowledge_base.external_status = "retrying"
+                knowledge_base.provisioning_stage = "retrying"
+                knowledge_base.provisioning_stage_started_at = now
+        db.commit()
+        for knowledge_base in knowledge_bases:
+            logger.info(
+                "Reconciling Knowledge Base provisioning: organization_id=%s knowledge_base_id=%s status=%s",
+                knowledge_base.organization_id,
+                knowledge_base.id,
+                knowledge_base.external_status,
+            )
+            schedule_knowledge_base_provisioning(knowledge_base.id)
+    finally:
+        db.close()
+
 app = FastAPI(
     title="Diaglob API",
     version="0.5.0",
     description="Backend API for Diaglob",
 )
+
+
+@app.on_event("startup")
+def reconcile_knowledge_base_provisioning_on_startup() -> None:
+    reconcile_knowledge_base_provisioning()
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -1672,6 +1725,17 @@ def serialize_knowledge_base(
         "external_id": knowledge_base.external_id,
         "external_status": knowledge_base.external_status,
         "external_last_error": knowledge_base.external_last_error,
+        "provisioning_stage": knowledge_base.provisioning_stage,
+        "provisioning_started_at": (
+            knowledge_base.provisioning_started_at.isoformat()
+            if knowledge_base.provisioning_started_at
+            else None
+        ),
+        "provisioning_stage_started_at": (
+            knowledge_base.provisioning_stage_started_at.isoformat()
+            if knowledge_base.provisioning_stage_started_at
+            else None
+        ),
         "active": knowledge_base.active,
         "stores": [
             serialize_store_short(store)
@@ -7442,6 +7506,9 @@ def create_knowledge_base(
         name=name,
         scope=scope,
         external_status="pending",
+        provisioning_stage="queued",
+        provisioning_started_at=datetime.now(timezone.utc),
+        provisioning_stage_started_at=datetime.now(timezone.utc),
         active=payload.active,
     )
 
@@ -7574,6 +7641,7 @@ def update_knowledge_base(
 )
 def retry_knowledge_base_provisioning(
     knowledge_base_id: int,
+    background_tasks: BackgroundTasks,
     membership: OrganizationMembership = Depends(
         require_permission("knowledge.write")
     ),
@@ -7594,7 +7662,7 @@ def retry_knowledge_base_provisioning(
             detail="Knowledge base not found",
         )
 
-    if knowledge_base.external_status == "provisioning":
+    if knowledge_base.external_status in ("provisioning", "retrying"):
         raise HTTPException(
             status_code=409,
             detail={
@@ -7612,28 +7680,14 @@ def retry_knowledge_base_provisioning(
             },
         )
 
-    try:
-        provision_diaglob_knowledge_base(db, knowledge_base)
-        db.refresh(knowledge_base)
-    except ProvisioningInProgressError as e:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "code": "PROVISIONING_IN_PROGRESS",
-                "message": "Knowledge Base provisioning is already in progress.",
-            },
-        ) from e
-    except BedrockProvisioningError as e:
-        logger.exception(
-            "Retry provisioning failed for KnowledgeBase %d", knowledge_base_id
-        )
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "code": "BEDROCK_PROVISIONING_FAILED",
-                "message": str(e),
-            },
-        ) from e
+    knowledge_base.external_status = "retrying"
+    knowledge_base.external_last_error = None
+    knowledge_base.provisioning_stage = "queued"
+    knowledge_base.provisioning_started_at = datetime.now(timezone.utc)
+    knowledge_base.provisioning_stage_started_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(knowledge_base)
+    background_tasks.add_task(run_knowledge_base_provisioning, knowledge_base.id)
 
     return serialize_knowledge_base(knowledge_base)
 

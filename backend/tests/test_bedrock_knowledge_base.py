@@ -271,6 +271,7 @@ def _make_local_kb(
     status="pending",
     external_id=None,
     data_source_id=None,
+    active=True,
 ):
     kb = KnowledgeBase(
         organization_id=org.id,
@@ -279,6 +280,7 @@ def _make_local_kb(
         external_status=status,
         external_id=external_id,
         external_data_source_id=data_source_id,
+        active=active,
     )
     db.add(kb)
     db.commit()
@@ -1023,7 +1025,7 @@ def test_database_commit_failure_triggers_cleanup_and_failed_state(db):
     def flaky_commit():
         nonlocal commit_count
         commit_count += 1
-        if commit_count == 2:
+        if commit_count == 3:
             raise RuntimeError("database unavailable")
         return original_commit()
 
@@ -1182,24 +1184,71 @@ def test_retry_endpoint_is_tenant_scoped(api_client, db):
     assert response.status_code == 404
 
 
-def test_pending_retry_endpoint_provisions_once(api_client, db):
+def test_pending_retry_endpoint_schedules_provisioning(api_client, db):
     client, org, _ = api_client
     kb = _make_local_kb(db, org)
 
-    def complete(_db, knowledge_base):
-        knowledge_base.external_status = "ready"
-        knowledge_base.external_id = BEDROCK_KB_ID
-        knowledge_base.external_data_source_id = BEDROCK_DS_ID
-        _db.commit()
-        return BEDROCK_KB_ID, BEDROCK_DS_ID
-
-    with patch("app.main.provision_diaglob_knowledge_base", side_effect=complete) as call:
+    with patch("app.main.run_knowledge_base_provisioning") as run:
         response = client.post(
             f"/api/knowledge-bases/{kb.id}/retry-provisioning"
         )
     assert response.status_code == 200
-    assert response.json()["external_status"] == "ready"
-    call.assert_called_once()
+    assert response.json()["external_status"] == "retrying"
+    assert response.json()["provisioning_stage"] == "queued"
+    run.assert_called_once_with(kb.id)
+
+
+def test_provisioning_stages_are_persisted_and_classification_is_retained(db):
+    org = _make_org(db)
+    kb = _make_local_kb(db, org)
+    transient = provisioning.BedrockProvisioningError(
+        "vector_index_create_failed",
+        resource="vector_index",
+        classification=provisioning.ProvisioningErrorClassification.RETRYABLE_INFRASTRUCTURE,
+    )
+    with patch.object(provisioning, "create_s3_vectors_index", side_effect=transient):
+        with pytest.raises(provisioning.BedrockProvisioningError) as exc:
+            provisioning.provision_diaglob_knowledge_base(db, kb)
+    assert exc.value.classification == transient.classification
+    assert kb.external_status == "failed"
+    assert kb.provisioning_stage == "failed"
+    assert kb.provisioning_started_at is not None
+    assert kb.provisioning_stage_started_at is not None
+
+
+def test_startup_reconciler_resumes_active_states_and_skips_deleting(db):
+    org = _make_org(db)
+    pending = _make_local_kb(db, org, status="pending")
+    stale = _make_local_kb(db, org, status="provisioning")
+    deleting = _make_local_kb(db, org, status="deleting")
+    inactive = _make_local_kb(db, org, status="pending", active=False)
+    pending_id, stale_id, deleting_id, inactive_id = (
+        pending.id,
+        stale.id,
+        deleting.id,
+        inactive.id,
+    )
+
+    with patch.object(api_main, "SessionLocal", return_value=db), patch.object(
+        api_main, "schedule_knowledge_base_provisioning"
+    ) as schedule:
+        api_main.reconcile_knowledge_base_provisioning()
+
+    verify_db = TestingSessionLocal()
+    try:
+        resumed = verify_db.get(KnowledgeBase, stale_id)
+        unchanged = verify_db.get(KnowledgeBase, deleting_id)
+        skipped = verify_db.get(KnowledgeBase, inactive_id)
+        assert resumed.external_status == "retrying"
+        assert resumed.provisioning_stage == "retrying"
+        assert unchanged.external_status == "deleting"
+        assert skipped.external_status == "pending"
+    finally:
+        verify_db.close()
+    assert schedule.call_args_list == [
+        ((pending_id,),),
+        ((stale_id,),),
+    ]
 
 
 READINESS_CASES = [

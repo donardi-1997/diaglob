@@ -8,6 +8,7 @@ import os
 import re
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
@@ -130,6 +131,10 @@ VECTOR_NON_FILTERABLE_METADATA_KEYS = (
 )
 
 PROVISIONING_STATES = ("pending", "provisioning", "retrying", "ready", "failed", "deleting")
+PROVISIONING_STAGES = (
+    "queued", "creating_vector_index", "creating_knowledge_base",
+    "creating_data_source", "finalizing", "retrying", "ready", "failed", "deleting",
+)
 RECOVERY_ATTEMPTS = int(os.getenv("BEDROCK_RECOVERY_ATTEMPTS", "3"))
 WAIT_ATTEMPTS = int(os.getenv("BEDROCK_WAIT_ATTEMPTS", "30"))
 POLL_INTERVAL_SECONDS = float(os.getenv("BEDROCK_POLL_INTERVAL_SECONDS", "2"))
@@ -915,7 +920,41 @@ def _commit_state(db: Session, error_code: str = "database_state_persist_failed"
         raise BedrockProvisioningError(error_code, resource="database") from error
 
 
+def _set_provisioning_stage(
+    db: Session, knowledge_base: KnowledgeBase, stage: str
+) -> None:
+    """Persist a customer-safe lifecycle checkpoint and its timing."""
+    now = datetime.now(timezone.utc)
+    previous_stage = knowledge_base.provisioning_stage
+    previous_started_at = knowledge_base.provisioning_stage_started_at
+    if knowledge_base.provisioning_started_at is None:
+        knowledge_base.provisioning_started_at = now
+    knowledge_base.provisioning_stage = stage
+    knowledge_base.provisioning_stage_started_at = now
+    _commit_state(db)
+    logger.info(
+        "Knowledge Base provisioning stage: organization_id=%s knowledge_base_id=%s stage=%s previous_stage=%s stage_duration_seconds=%s total_duration_seconds=%s",
+        knowledge_base.organization_id, knowledge_base.id, stage, previous_stage,
+        round((now - _as_utc(previous_started_at)).total_seconds(), 3) if previous_started_at else None,
+        round((now - _as_utc(knowledge_base.provisioning_started_at)).total_seconds(), 3),
+    )
+
+
+def _as_utc(value: datetime) -> datetime:
+    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
 def _claim_provisioning(db: Session, knowledge_base: KnowledgeBase) -> None:
+    previous_status = knowledge_base.external_status
+    now = datetime.now(timezone.utc)
+    claim_values: dict[object, object] = {
+        KnowledgeBase.external_status: "provisioning",
+        KnowledgeBase.external_last_error: None,
+        KnowledgeBase.provisioning_stage: "creating_vector_index",
+        KnowledgeBase.provisioning_stage_started_at: now,
+    }
+    if previous_status == "failed" or knowledge_base.provisioning_started_at is None:
+        claim_values[KnowledgeBase.provisioning_started_at] = now
     updated = (
         db.query(KnowledgeBase)
         .filter(
@@ -924,10 +963,7 @@ def _claim_provisioning(db: Session, knowledge_base: KnowledgeBase) -> None:
             KnowledgeBase.external_status.in_(("pending", "retrying", "failed")),
         )
         .update(
-            {
-                KnowledgeBase.external_status: "provisioning",
-                KnowledgeBase.external_last_error: None,
-            },
+            claim_values,
             synchronize_session=False,
         )
     )
@@ -1010,6 +1046,7 @@ def provision_diaglob_knowledge_base(
         vector_index = create_s3_vectors_index(org_id, kb_id)
         index_arn = vector_index["indexArn"]
 
+        _set_provisioning_stage(db, knowledge_base, "creating_knowledge_base")
         if bedrock_kb_id:
             remote_kb = get_bedrock_knowledge_base(bedrock_kb_id)
             if remote_kb is None:
@@ -1040,6 +1077,7 @@ def provision_diaglob_knowledge_base(
                 bedrock_kb_id, org_id, kb_id, index_arn
             )
 
+        _set_provisioning_stage(db, knowledge_base, "creating_data_source")
         if bedrock_ds_id:
             remote_ds = get_bedrock_data_source(bedrock_kb_id, bedrock_ds_id)
             if remote_ds is None:
@@ -1068,9 +1106,21 @@ def provision_diaglob_knowledge_base(
                 bedrock_kb_id, bedrock_ds_id, org_id, kb_id
             )
 
+        _set_provisioning_stage(db, knowledge_base, "finalizing")
         knowledge_base.external_status = "ready"
         knowledge_base.external_last_error = None
+        knowledge_base.provisioning_stage = "ready"
+        knowledge_base.provisioning_stage_started_at = datetime.now(timezone.utc)
         _commit_state(db)
+        logger.info(
+            "Knowledge Base provisioning completed: organization_id=%s knowledge_base_id=%s total_duration_seconds=%s",
+            org_id,
+            kb_id,
+            round(
+                (datetime.now(timezone.utc) - _as_utc(knowledge_base.provisioning_started_at)).total_seconds(),
+                3,
+            ) if knowledge_base.provisioning_started_at else None,
+        )
         return bedrock_kb_id, bedrock_ds_id
     except BedrockProvisioningError as error:
         failure = error
@@ -1089,6 +1139,8 @@ def provision_diaglob_knowledge_base(
     knowledge_base.external_id = cleanup.bedrock_kb_id
     knowledge_base.external_data_source_id = cleanup.bedrock_ds_id
     knowledge_base.external_status = "failed"
+    knowledge_base.provisioning_stage = "failed"
+    knowledge_base.provisioning_stage_started_at = datetime.now(timezone.utc)
     knowledge_base.external_last_error = (
         failure.code if cleanup.succeeded else "cleanup_failed"
     )
@@ -1096,6 +1148,7 @@ def provision_diaglob_knowledge_base(
     raise BedrockProvisioningError(
         knowledge_base.external_last_error,
         resource=failure.resource,
+        classification=failure.classification,
     ) from failure
 
 
@@ -1131,7 +1184,12 @@ def delete_diaglob_knowledge_base(db: Session, knowledge_base: KnowledgeBase) ->
             KnowledgeBase.external_status != "deleting",
         )
         .update(
-            {KnowledgeBase.external_status: "deleting", KnowledgeBase.external_last_error: None},
+            {
+                KnowledgeBase.external_status: "deleting",
+                KnowledgeBase.external_last_error: None,
+                KnowledgeBase.provisioning_stage: "deleting",
+                KnowledgeBase.provisioning_stage_started_at: datetime.now(timezone.utc),
+            },
             synchronize_session=False,
         )
     )
@@ -1165,6 +1223,8 @@ def delete_diaglob_knowledge_base(db: Session, knowledge_base: KnowledgeBase) ->
         if current:
             current.external_status = "deleting"
             current.external_last_error = "deletion_failed"
+            current.provisioning_stage = "deleting"
+            current.provisioning_stage_started_at = datetime.now(timezone.utc)
             _commit_state(db, "deletion_state_persist_failed")
         logger.exception(
             "Knowledge Base deletion failed: organization_id=%s knowledge_base_id=%s",

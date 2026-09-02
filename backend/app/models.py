@@ -625,6 +625,21 @@ class KnowledgeBase(Base):
         nullable=True,
     )
 
+    provisioning_stage: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+    )
+
+    provisioning_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    provisioning_stage_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
     active: Mapped[bool] = mapped_column(
         Boolean,
         default=True,

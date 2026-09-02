@@ -359,6 +359,20 @@ const resources = {
         "Lista",
       knowledgeI18nProvisioningFailed:
         "Falló",
+      knowledgeI18nProvisioningLabel: "Estado de preparación",
+      knowledgeI18nStageQueued: "En cola",
+      knowledgeI18nStageStorage: "Preparando almacenamiento",
+      knowledgeI18nStageKnowledge: "Configurando conocimiento",
+      knowledgeI18nStageSources: "Preparando fuentes",
+      knowledgeI18nStageFinalizing: "Finalizando",
+      knowledgeI18nStageRetrying: "Reintentando automáticamente",
+      knowledgeI18nEstimatedTime: "Tiempo estimado: 1–3 minutos",
+      knowledgeI18nSlowProvisioning:
+        "Está tardando más de lo habitual. Seguimos trabajando en ello.",
+      knowledgeI18nRetryingTime:
+        "Puede tardar unos minutos más.",
+      knowledgeI18nProvisioningProgress:
+        "Puedes seguir usando Diaglob. Esta pantalla se actualizará automáticamente.",
       knowledgeI18nRetryProvisioning:
         "Reintentar",
       knowledgeI18nProvisioningRetryError:
@@ -416,7 +430,7 @@ const resources = {
       knowledgeSourcesPendingTitle:
         "Esta Knowledge Base aún se está preparando",
       knowledgeSourcesPendingBody:
-        "Puedes ver y configurar tus integraciones, pero no podrás importar nuevas fuentes hasta que el estado AWS cambie a \"Lista\".",
+        "Puedes ver y configurar tus integraciones, pero no podrás importar nuevas fuentes hasta que esta Knowledge Base esté lista.",
       knowledgeSourcesPendingSecondary:
         "No necesitas volver a conectar Google ni conceder permisos otra vez.",
       knowledgeSourcesCurrentStatus:
@@ -424,7 +438,7 @@ const resources = {
       knowledgeSourcesPendingFooter:
         "Cuando el aprovisionamiento termine, Google Sheets, Google Docs, Drive y la carga de archivos se habilitarán automáticamente.",
       knowledgeSourcesPendingReason:
-        "Disponible cuando AWS esté Lista",
+        "Disponible cuando la Knowledge Base esté lista",
       knowledgeGooglePermissionsReason:
         "Requiere permisos adicionales de Google",
       knowledgeSourcesEyebrow: "CATALOGO",
@@ -1964,6 +1978,19 @@ const resources = {
         "Ready",
       knowledgeI18nProvisioningFailed:
         "Failed",
+      knowledgeI18nProvisioningLabel: "Preparation status",
+      knowledgeI18nStageQueued: "Queued",
+      knowledgeI18nStageStorage: "Preparing storage",
+      knowledgeI18nStageKnowledge: "Configuring knowledge",
+      knowledgeI18nStageSources: "Preparing sources",
+      knowledgeI18nStageFinalizing: "Finalizing",
+      knowledgeI18nStageRetrying: "Retrying automatically",
+      knowledgeI18nEstimatedTime: "Estimated time: 1–3 minutes",
+      knowledgeI18nSlowProvisioning:
+        "This is taking longer than usual. We are still working on it.",
+      knowledgeI18nRetryingTime: "This may take a few more minutes.",
+      knowledgeI18nProvisioningProgress:
+        "You can keep using Diaglob. This screen will update automatically.",
       knowledgeI18nRetryProvisioning:
         "Retry",
       knowledgeI18nProvisioningRetryError:
@@ -2021,7 +2048,7 @@ const resources = {
       knowledgeSourcesPendingTitle:
         "This Knowledge Base is still being prepared",
       knowledgeSourcesPendingBody:
-        "You can view and configure your integrations, but new sources cannot be imported until the AWS status changes to \"Ready\".",
+        "You can view and configure your integrations, but new sources cannot be imported until this Knowledge Base is ready.",
       knowledgeSourcesPendingSecondary:
         "You do not need to reconnect Google or grant permissions again.",
       knowledgeSourcesCurrentStatus:
@@ -2029,7 +2056,7 @@ const resources = {
       knowledgeSourcesPendingFooter:
         "Once provisioning finishes, Google Sheets, Google Docs, Drive, and file uploads will be enabled automatically.",
       knowledgeSourcesPendingReason:
-        "Available when AWS is Ready",
+        "Available when the Knowledge Base is ready",
       knowledgeGooglePermissionsReason:
         "Additional Google permissions are required",
       knowledgeSourcesEyebrow: "CATALOG",

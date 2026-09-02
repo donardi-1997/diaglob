@@ -19,7 +19,19 @@ export type KnowledgeBaseProvisioningStatus =
   | "provisioning"
   | "retrying"
   | "ready"
-  | "failed";
+  | "failed"
+  | "deleting";
+
+export type KnowledgeBaseProvisioningStage =
+  | "queued"
+  | "creating_vector_index"
+  | "creating_knowledge_base"
+  | "creating_data_source"
+  | "finalizing"
+  | "retrying"
+  | "ready"
+  | "failed"
+  | "deleting";
 
 export interface KnowledgeBase {
   id: number;
@@ -29,6 +41,9 @@ export interface KnowledgeBase {
   external_id: string | null;
   external_status: KnowledgeBaseProvisioningStatus;
   external_last_error: string | null;
+  provisioning_stage: KnowledgeBaseProvisioningStage | null;
+  provisioning_started_at: string | null;
+  provisioning_stage_started_at: string | null;
   active: boolean;
   stores: KnowledgeBaseStore[];
   agents: KnowledgeBaseAgent[];

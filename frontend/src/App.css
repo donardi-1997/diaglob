@@ -9777,6 +9777,33 @@ button:disabled {
   font-weight: 600;
 }
 
+.knowledge-provisioning-stage {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 8px;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.knowledge-provisioning-stage-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.knowledge-provisioning-retry {
+  margin-top: 10px;
+}
+
+.knowledge-card-provisioning-stage {
+  display: block;
+  margin-top: 6px;
+  color: var(--text-secondary);
+}
+
 .knowledge-google-workspace {
   padding: 16px;
   border: 1px solid var(--border);
