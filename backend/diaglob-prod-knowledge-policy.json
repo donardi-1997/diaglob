@@ -161,6 +161,14 @@
           "iam:PassedToService": "bedrock.amazonaws.com"
         }
       }
+    },
+    {
+      "Sid": "ReadManagedS3VectorIndexesForCleanup",
+      "Effect": "Allow",
+      "Action": [
+        "s3vectors:GetIndex"
+      ],
+      "Resource": "arn:aws:s3vectors:us-east-2:765761474007:bucket/diaglob-vectors-765761474007-us-east-2/index/diaglob-prod-kb-*"
     }
   ]
 }
