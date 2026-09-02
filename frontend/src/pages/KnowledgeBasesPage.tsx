@@ -16,6 +16,7 @@ import {
   FileText,
   Folder,
   Link2,
+  LogOut,
   LoaderCircle,
   Info,
   Pencil,
@@ -345,6 +346,10 @@ export default function KnowledgeBasesPage({
     googleConnecting,
     setGoogleConnecting,
   ] = useState(false);
+
+  const [disconnectGoogleOpen, setDisconnectGoogleOpen] = useState(false);
+  const [disconnectingGoogle, setDisconnectingGoogle] = useState(false);
+  const [disconnectGoogleError, setDisconnectGoogleError] = useState("");
 
   const [
     googleAdding,
@@ -1018,22 +1023,30 @@ const pollingTimeoutRef = useRef<number | undefined>(undefined);
   }
 
 
+  function handleOpenDisconnectGoogle() {
+    setDisconnectGoogleError("");
+    setDisconnectGoogleOpen(true);
+  }
+
+  function handleCloseDisconnectGoogle() {
+    if (disconnectingGoogle) return;
+    setDisconnectGoogleOpen(false);
+    setDisconnectGoogleError("");
+  }
+
   async function handleDisconnectGoogle() {
-    const confirmed = window.confirm(
-      t("knowledgeGoogleDisconnectConfirm"),
-    );
-
-    if (!confirmed) return;
-
     try {
+      setDisconnectingGoogle(true);
+      setDisconnectGoogleError("");
       await disconnectGoogle();
       clearDriveState();
       await loadGoogleStatus();
+      setDisconnectGoogleOpen(false);
     } catch (err) {
       console.error(err);
-      setError(
-        t("knowledgeGoogleDisconnectError"),
-      );
+      setDisconnectGoogleError(t("knowledgeGoogleDisconnectError"));
+    } finally {
+      setDisconnectingGoogle(false);
     }
   }
 
@@ -2683,9 +2696,11 @@ const pollingTimeoutRef = useRef<number | undefined>(undefined);
                         </span>
                       </div>
                       <button
-                        className="text-button danger"
-                        onClick={() => void handleDisconnectGoogle()}
+                        className="knowledge-google-disconnect-button"
+                        onClick={handleOpenDisconnectGoogle}
+                        type="button"
                       >
+                        <LogOut size={14} aria-hidden="true" />
                         {t("knowledgeGoogleDisconnect")}
                       </button>
                     </div>
@@ -3053,6 +3068,76 @@ const pollingTimeoutRef = useRef<number | undefined>(undefined);
           </div>
         )
       }
+
+
+      {disconnectGoogleOpen && (
+        <div
+          className="management-modal-backdrop"
+          onMouseDown={handleCloseDisconnectGoogle}
+        >
+          <div
+            className="management-modal knowledge-google-disconnect-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="knowledge-google-disconnect-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <header className="management-modal-header">
+              <div>
+                <span className="eyebrow">
+                  {t("knowledgeGoogleWorkspaceTitle")}
+                </span>
+                <h2 id="knowledge-google-disconnect-title">
+                  {t("knowledgeGoogleDisconnectTitle")}
+                </h2>
+              </div>
+              <button
+                className="icon-button"
+                onClick={handleCloseDisconnectGoogle}
+                disabled={disconnectingGoogle}
+                type="button"
+                aria-label={t("knowledgeGoogleClose")}
+              >
+                <X size={18} />
+              </button>
+            </header>
+            <div className="management-form knowledge-google-disconnect-body">
+              <p>{t("knowledgeGoogleDisconnectBody")}</p>
+              <p>{t("knowledgeGoogleDisconnectSecondary")}</p>
+              {disconnectGoogleError && (
+                <p className="knowledge-google-disconnect-error" role="alert">
+                  {disconnectGoogleError}
+                </p>
+              )}
+            </div>
+            <footer className="management-modal-actions">
+              <button
+                className="secondary-button"
+                onClick={handleCloseDisconnectGoogle}
+                disabled={disconnectingGoogle}
+                type="button"
+              >
+                {t("knowledgeGoogleDisconnectCancel")}
+              </button>
+              <button
+                className="knowledge-google-disconnect-confirm"
+                onClick={() => void handleDisconnectGoogle()}
+                disabled={disconnectingGoogle}
+                type="button"
+              >
+                {disconnectingGoogle && (
+                  <LoaderCircle className="spin" size={15} aria-hidden="true" />
+                )}
+                {t(
+                  disconnectingGoogle
+                    ? "knowledgeGoogleDisconnecting"
+                    : "knowledgeGoogleDisconnect",
+                )}
+              </button>
+            </footer>
+          </div>
+        </div>
+      )}
 
 
       {/* ===================================================

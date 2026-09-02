@@ -9693,6 +9693,70 @@ button:disabled {
   border-radius: 4px;
 }
 
+.knowledge-google-disconnect-button,
+.knowledge-google-disconnect-confirm {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 160ms ease, background 160ms ease, border-color 160ms ease;
+}
+
+.knowledge-google-disconnect-button {
+  flex: 0 0 auto;
+  padding: 7px 10px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border);
+}
+
+.knowledge-google-disconnect-button:hover,
+.knowledge-google-disconnect-button:focus-visible {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--border));
+}
+
+.knowledge-google-disconnect-confirm {
+  padding: 9px 14px;
+  color: #fff;
+  background: var(--danger);
+  border: 1px solid var(--danger);
+}
+
+.knowledge-google-disconnect-confirm:hover,
+.knowledge-google-disconnect-confirm:focus-visible {
+  filter: brightness(0.92);
+}
+
+.knowledge-google-disconnect-button:focus-visible,
+.knowledge-google-disconnect-confirm:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  outline-offset: 2px;
+}
+
+.knowledge-google-disconnect-modal {
+  max-width: 520px;
+}
+
+.knowledge-google-disconnect-body {
+  gap: 10px;
+}
+
+.knowledge-google-disconnect-body p {
+  margin: 0;
+}
+
+.knowledge-google-disconnect-error {
+  color: var(--danger);
+  font-weight: 600;
+}
+
 .knowledge-google-banner .primary-button {
   font-size: 12px;
   padding: 6px 12px;
@@ -9957,7 +10021,7 @@ button:disabled {
     grid-template-columns: auto minmax(0, 1fr);
   }
 
-  .knowledge-google-workspace-status .text-button {
+  .knowledge-google-workspace-status .knowledge-google-disconnect-button {
     grid-column: 1 / -1;
     justify-self: start;
   }

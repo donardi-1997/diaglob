@@ -483,10 +483,16 @@ const resources = {
         "Conectar Google",
       knowledgeGoogleDisconnect:
         "Desconectar",
-      knowledgeGoogleDisconnectConfirm:
-        "¿Desconectar tu cuenta de Google? Las fuentes existentes seguirán disponibles pero no se sincronizarán automáticamente.",
+      knowledgeGoogleDisconnectTitle:
+        "Desconectar Google Workspace",
+      knowledgeGoogleDisconnectBody:
+        "Diaglob dejará de tener acceso a Google Workspace para esta organización. Las fuentes ya importadas no se eliminarán.",
+      knowledgeGoogleDisconnectSecondary:
+        "Para volver a importar o sincronizar contenido de Google, tendrás que conectar Google Workspace nuevamente.",
+      knowledgeGoogleDisconnectCancel: "Cancelar",
+      knowledgeGoogleDisconnecting: "Desconectando...",
       knowledgeGoogleDisconnectError:
-        "No fue posible desconectar la cuenta de Google.",
+        "No pudimos desconectar Google Workspace. Inténtalo nuevamente.",
       knowledgeGoogleConnectionError:
         "No fue posible iniciar la conexión con Google.",
       knowledgeGoogleSheetTitle:
@@ -2101,10 +2107,16 @@ const resources = {
         "Connect Google",
       knowledgeGoogleDisconnect:
         "Disconnect",
-      knowledgeGoogleDisconnectConfirm:
-        "Disconnect your Google account? Existing sources will remain available but won't sync automatically.",
+      knowledgeGoogleDisconnectTitle:
+        "Disconnect Google Workspace",
+      knowledgeGoogleDisconnectBody:
+        "Diaglob will no longer have access to Google Workspace for this organization. Sources already imported will not be deleted.",
+      knowledgeGoogleDisconnectSecondary:
+        "To import or sync Google content again, you will need to connect Google Workspace again.",
+      knowledgeGoogleDisconnectCancel: "Cancel",
+      knowledgeGoogleDisconnecting: "Disconnecting...",
       knowledgeGoogleDisconnectError:
-        "We couldn't disconnect your Google account.",
+        "We couldn't disconnect Google Workspace. Please try again.",
       knowledgeGoogleConnectionError:
         "We couldn't start the Google connection.",
       knowledgeGoogleSheetTitle:
