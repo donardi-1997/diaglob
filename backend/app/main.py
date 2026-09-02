@@ -221,7 +221,7 @@ def run_knowledge_base_provisioning(knowledge_base_id: int) -> None:
             try:
                 provision_diaglob_knowledge_base(db, knowledge_base)
                 logger.info(
-                    "Knowledge Base provisioning succeeded: organization_id=%s knowledge_base_id=%s attempt=%s",
+                    "knowledge_base_provisioning_attempt_succeeded organization_id=%s knowledge_base_id=%s attempt=%s",
                     knowledge_base.organization_id, knowledge_base.id, attempt,
                 )
                 return
@@ -236,7 +236,7 @@ def run_knowledge_base_provisioning(knowledge_base_id: int) -> None:
                     and attempt < len(PROVISIONING_RETRY_DELAYS_SECONDS)
                 )
                 logger.error(
-                    "Knowledge Base provisioning failed: organization_id=%s knowledge_base_id=%s attempt=%s stage=%s classification=%s retry_scheduled=%s",
+                    "knowledge_base_provisioning_attempt_failed organization_id=%s knowledge_base_id=%s attempt=%s stage=%s classification=%s retry_scheduled=%s",
                     knowledge_base.organization_id, knowledge_base.id, attempt,
                     error.resource, error.classification, retry_scheduled,
                 )
@@ -7680,6 +7680,13 @@ def retry_knowledge_base_provisioning(
             },
         )
 
+    previous_status = knowledge_base.external_status
+    logger.info(
+        "knowledge_base_manual_retry_requested organization_id=%s knowledge_base_id=%s previous_status=%s",
+        knowledge_base.organization_id,
+        knowledge_base.id,
+        previous_status,
+    )
     knowledge_base.external_status = "retrying"
     knowledge_base.external_last_error = None
     knowledge_base.provisioning_stage = "queued"
@@ -7688,6 +7695,14 @@ def retry_knowledge_base_provisioning(
     db.commit()
     db.refresh(knowledge_base)
     background_tasks.add_task(run_knowledge_base_provisioning, knowledge_base.id)
+    logger.info(
+        "knowledge_base_manual_retry_scheduled organization_id=%s knowledge_base_id=%s previous_status=%s status=%s stage=%s",
+        knowledge_base.organization_id,
+        knowledge_base.id,
+        previous_status,
+        knowledge_base.external_status,
+        knowledge_base.provisioning_stage,
+    )
 
     return serialize_knowledge_base(knowledge_base)
 

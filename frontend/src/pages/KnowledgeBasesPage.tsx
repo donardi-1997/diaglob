@@ -1218,8 +1218,13 @@ export default function KnowledgeBasesPage({
     try {
       setRetryingKnowledgeBaseId(knowledgeBaseId);
       setError("");
-      await retryKnowledgeBaseProvisioning(knowledgeBaseId);
-      await loadData();
+      const retried = await retryKnowledgeBaseProvisioning(knowledgeBaseId);
+      setItems((current) =>
+        current.map((item) => item.id === retried.id ? retried : item),
+      );
+      setSelectedKnowledgeBase((current) =>
+        current?.id === retried.id ? retried : current,
+      );
     } catch (err) {
       console.error(err);
       await loadData();

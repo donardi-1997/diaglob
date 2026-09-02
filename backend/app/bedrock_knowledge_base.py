@@ -933,7 +933,7 @@ def _set_provisioning_stage(
     knowledge_base.provisioning_stage_started_at = now
     _commit_state(db)
     logger.info(
-        "Knowledge Base provisioning stage: organization_id=%s knowledge_base_id=%s stage=%s previous_stage=%s stage_duration_seconds=%s total_duration_seconds=%s",
+        "knowledge_base_provisioning_stage organization_id=%s knowledge_base_id=%s stage=%s previous_stage=%s stage_duration_seconds=%s total_duration_seconds=%s",
         knowledge_base.organization_id, knowledge_base.id, stage, previous_stage,
         round((now - _as_utc(previous_started_at)).total_seconds(), 3) if previous_started_at else None,
         round((now - _as_utc(knowledge_base.provisioning_started_at)).total_seconds(), 3),
@@ -970,6 +970,14 @@ def _claim_provisioning(db: Session, knowledge_base: KnowledgeBase) -> None:
     _commit_state(db)
     db.refresh(knowledge_base)
     if updated == 1:
+        logger.info(
+            "knowledge_base_provisioning_claimed organization_id=%s knowledge_base_id=%s previous_status=%s status=%s stage=%s",
+            knowledge_base.organization_id,
+            knowledge_base.id,
+            previous_status,
+            knowledge_base.external_status,
+            knowledge_base.provisioning_stage,
+        )
         return
     if knowledge_base.external_status == "provisioning":
         raise ProvisioningInProgressError()
@@ -1037,6 +1045,12 @@ def provision_diaglob_knowledge_base(
     _claim_provisioning(db, knowledge_base)
     org_id = knowledge_base.organization_id
     kb_id = knowledge_base.id
+    logger.info(
+        "knowledge_base_provisioning_started organization_id=%s knowledge_base_id=%s stage=%s",
+        org_id,
+        kb_id,
+        knowledge_base.provisioning_stage,
+    )
     index_arn: str | None = None
     bedrock_kb_id = knowledge_base.external_id
     bedrock_ds_id = knowledge_base.external_data_source_id
@@ -1113,7 +1127,7 @@ def provision_diaglob_knowledge_base(
         knowledge_base.provisioning_stage_started_at = datetime.now(timezone.utc)
         _commit_state(db)
         logger.info(
-            "Knowledge Base provisioning completed: organization_id=%s knowledge_base_id=%s total_duration_seconds=%s",
+            "knowledge_base_provisioning_completed organization_id=%s knowledge_base_id=%s total_duration_seconds=%s",
             org_id,
             kb_id,
             round(
@@ -1145,6 +1159,15 @@ def provision_diaglob_knowledge_base(
         failure.code if cleanup.succeeded else "cleanup_failed"
     )
     _commit_state(db, "failure_state_persist_failed")
+    logger.error(
+        "knowledge_base_provisioning_failed organization_id=%s knowledge_base_id=%s error_code=%s stage=%s classification=%s cleanup_succeeded=%s",
+        org_id,
+        kb_id,
+        knowledge_base.external_last_error,
+        failure.resource,
+        failure.classification,
+        cleanup.succeeded,
+    )
     raise BedrockProvisioningError(
         knowledge_base.external_last_error,
         resource=failure.resource,

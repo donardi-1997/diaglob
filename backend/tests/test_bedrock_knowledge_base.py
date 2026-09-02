@@ -1151,7 +1151,7 @@ def test_provisioning_status_prevents_second_attempt(db):
     create_index.assert_not_called()
 
 
-def test_retry_endpoint_rejects_ready_and_provisioning(api_client, db):
+def test_retry_endpoint_rejects_ready_and_active_or_deleting_states(api_client, db):
     client, org, _ = api_client
     ready = _make_local_kb(
         db,
@@ -1161,14 +1161,24 @@ def test_retry_endpoint_rejects_ready_and_provisioning(api_client, db):
         data_source_id=BEDROCK_DS_ID,
     )
     in_progress = _make_local_kb(db, org, status="provisioning")
+    retrying = _make_local_kb(db, org, status="retrying")
+    deleting = _make_local_kb(db, org, status="deleting")
     ready_response = client.post(
         f"/api/knowledge-bases/{ready.id}/retry-provisioning"
     )
     progress_response = client.post(
         f"/api/knowledge-bases/{in_progress.id}/retry-provisioning"
     )
+    retrying_response = client.post(
+        f"/api/knowledge-bases/{retrying.id}/retry-provisioning"
+    )
+    deleting_response = client.post(
+        f"/api/knowledge-bases/{deleting.id}/retry-provisioning"
+    )
     assert ready_response.status_code == 400
     assert progress_response.status_code == 409
+    assert retrying_response.status_code == 409
+    assert deleting_response.status_code == 400
     assert progress_response.json()["detail"]["code"] == (
         "PROVISIONING_IN_PROGRESS"
     )
@@ -1184,11 +1194,14 @@ def test_retry_endpoint_is_tenant_scoped(api_client, db):
     assert response.status_code == 404
 
 
-def test_pending_retry_endpoint_schedules_provisioning(api_client, db):
+@pytest.mark.parametrize("status", ["pending", "failed"])
+def test_retry_endpoint_schedules_provisioning(api_client, db, status):
     client, org, _ = api_client
-    kb = _make_local_kb(db, org)
+    kb = _make_local_kb(db, org, status=status)
 
-    with patch("app.main.run_knowledge_base_provisioning") as run:
+    with patch("app.main.run_knowledge_base_provisioning") as run, patch.object(
+        api_main, "reconcile_knowledge_base_provisioning"
+    ) as reconcile:
         response = client.post(
             f"/api/knowledge-bases/{kb.id}/retry-provisioning"
         )
@@ -1196,6 +1209,61 @@ def test_pending_retry_endpoint_schedules_provisioning(api_client, db):
     assert response.json()["external_status"] == "retrying"
     assert response.json()["provisioning_stage"] == "queued"
     run.assert_called_once_with(kb.id)
+    reconcile.assert_not_called()
+
+
+def test_duplicate_manual_retry_schedules_one_task(api_client, db):
+    client, org, _ = api_client
+    kb = _make_local_kb(db, org, status="failed")
+
+    with patch("app.main.run_knowledge_base_provisioning") as run:
+        first = client.post(f"/api/knowledge-bases/{kb.id}/retry-provisioning")
+        second = client.post(f"/api/knowledge-bases/{kb.id}/retry-provisioning")
+
+    assert first.status_code == 200
+    assert second.status_code == 409
+    run.assert_called_once_with(kb.id)
+
+
+def test_retrying_status_is_claimable(db):
+    org = _make_org(db)
+    kb = _make_local_kb(db, org, status="retrying")
+
+    provisioning._claim_provisioning(db, kb)
+
+    assert kb.external_status == "provisioning"
+    assert kb.provisioning_stage == "creating_vector_index"
+
+
+def test_manual_retry_task_persists_aws_failure(db):
+    org = _make_org(db)
+    kb = _make_local_kb(db, org, status="retrying")
+    org_id = org.id
+    kb_id = kb.id
+    failure = provisioning.BedrockProvisioningError(
+        "vector_index_create_failed",
+        resource="vector_index",
+        classification=(
+            provisioning.ProvisioningErrorClassification.PLATFORM_CONFIGURATION_ERROR
+        ),
+    )
+
+    with patch.object(api_main, "SessionLocal", return_value=db), patch.object(
+        api_main, "PROVISIONING_RETRY_DELAYS_SECONDS", (0,)
+    ), patch.object(
+        provisioning, "create_s3_vectors_index", side_effect=failure
+    ) as create_index:
+        api_main.run_knowledge_base_provisioning(kb_id)
+
+    verify_db = TestingSessionLocal()
+    try:
+        failed = verify_db.get(KnowledgeBase, kb_id)
+        assert failed.external_status == "failed"
+        assert failed.provisioning_stage == "failed"
+        assert failed.external_last_error == "vector_index_create_failed"
+    finally:
+        verify_db.close()
+    create_index.assert_called_once_with(org_id, kb_id)
 
 
 def test_provisioning_stages_are_persisted_and_classification_is_retained(db):
