@@ -40,7 +40,11 @@ def materialize_flow_trigger(db: Session, flow: AutomationFlow, customer_ids: li
     now = now or utcnow()
     if flow.status != "active" or not flow.active_version_id:
         return None
-    version = db.get(AutomationFlowVersion, flow.active_version_id)
+    version = db.query(AutomationFlowVersion).filter(
+        AutomationFlowVersion.id == flow.active_version_id,
+        AutomationFlowVersion.flow_id == flow.id,
+        AutomationFlowVersion.organization_id == flow.organization_id,
+    ).first()
     if not version:
         return None
     graph = version.graph

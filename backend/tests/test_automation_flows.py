@@ -527,6 +527,39 @@ class TestFlowCRUD:
         finally:
             app.dependency_overrides.clear()
 
+    def test_publish_rejects_version_from_another_flow(self, db):
+        session, org, store = db
+        user, mem = _user_and_membership(session, org, store)
+        flow_a = AutomationFlow(
+            organization_id=org.id, store_id=store.id,
+            name="Flow A", status="draft", created_by=user.id,
+        )
+        flow_b = AutomationFlow(
+            organization_id=org.id, store_id=store.id,
+            name="Flow B", status="draft", created_by=user.id,
+        )
+        session.add_all([flow_a, flow_b])
+        session.flush()
+        version_b = AutomationFlowVersion(
+            flow_id=flow_b.id, organization_id=org.id,
+            version_number=1, graph=_make_graph(),
+        )
+        session.add(version_b)
+        session.commit()
+        client = TestClient(app)
+        app.dependency_overrides[get_current_user] = lambda: user
+        app.dependency_overrides[get_current_membership] = lambda: mem
+        app.dependency_overrides[get_db] = lambda: session
+        try:
+            response = client.post(
+                f"/api/stores/{store.id}/automation-flows/{flow_a.id}"
+                f"/versions/{version_b.id}/publish",
+            )
+            assert response.status_code == 404
+            assert version_b.published_at is None
+        finally:
+            app.dependency_overrides.clear()
+
     def test_cannot_publish_twice(self, db):
         session, org, store = db
         user, mem = _user_and_membership(session, org, store)
@@ -557,6 +590,41 @@ class TestFlowCRUD:
             resp = client.post(f"/api/stores/{store.id}/automation-flows/{fid}/activate")
             assert resp.status_code == 200
             assert resp.json()["status"] == "active"
+        finally:
+            app.dependency_overrides.clear()
+
+    def test_activate_rejects_cross_flow_current_version(self, db):
+        session, org, store = db
+        user, mem = _user_and_membership(session, org, store)
+        flow_a = AutomationFlow(
+            organization_id=org.id, store_id=store.id,
+            name="Flow A", status="draft", created_by=user.id,
+        )
+        flow_b = AutomationFlow(
+            organization_id=org.id, store_id=store.id,
+            name="Flow B", status="draft", created_by=user.id,
+        )
+        session.add_all([flow_a, flow_b])
+        session.flush()
+        version_b = AutomationFlowVersion(
+            flow_id=flow_b.id, organization_id=org.id,
+            version_number=1, graph=_make_graph(),
+            published_at=utcnow(),
+        )
+        session.add(version_b)
+        session.flush()
+        flow_a.current_version_id = version_b.id
+        session.commit()
+        client = TestClient(app)
+        app.dependency_overrides[get_current_user] = lambda: user
+        app.dependency_overrides[get_current_membership] = lambda: mem
+        app.dependency_overrides[get_db] = lambda: session
+        try:
+            response = client.post(
+                f"/api/stores/{store.id}/automation-flows/{flow_a.id}/activate",
+            )
+            assert response.status_code == 404
+            assert flow_a.active_version_id is None
         finally:
             app.dependency_overrides.clear()
 

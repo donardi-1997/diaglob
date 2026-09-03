@@ -9481,6 +9481,17 @@ class _FlowRunCreate(_PydanticBaseModel):
     trigger_key: str | None = None
 
 
+def _flow_version_or_404(db: Session, flow: AutomationFlow, version_id: int) -> AutomationFlowVersion:
+    version = db.query(AutomationFlowVersion).filter(
+        AutomationFlowVersion.id == version_id,
+        AutomationFlowVersion.flow_id == flow.id,
+        AutomationFlowVersion.organization_id == flow.organization_id,
+    ).first()
+    if not version:
+        raise HTTPException(404, detail="Version not found")
+    return version
+
+
 @app.post("/api/stores/{store_id}/automation-flows")
 def create_flow(store_id: int, payload: _FlowCreate, membership: OrganizationMembership = Depends(require_permission("automations.write")), db: Session = Depends(get_db)):
     _campaign_store_or_404(db, membership.organization_id, store_id)
@@ -9525,9 +9536,8 @@ def get_flow(store_id: int, flow_id: int, membership: OrganizationMembership = D
         raise HTTPException(404, detail="Flow not found")
     result = _sf(flow)
     if flow.current_version_id:
-        ver = db.get(AutomationFlowVersion, flow.current_version_id)
-        if ver:
-            result["current_version"] = _sv(ver)
+        ver = _flow_version_or_404(db, flow, flow.current_version_id)
+        result["current_version"] = _sv(ver)
     return result
 
 
@@ -9613,9 +9623,7 @@ def publish_version(store_id: int, flow_id: int, version_id: int, membership: Or
     flow = db.get(AutomationFlow, flow_id)
     if not flow or flow.organization_id != membership.organization_id or flow.store_id != store_id:
         raise HTTPException(404, detail="Flow not found")
-    ver = db.get(AutomationFlowVersion, version_id)
-    if not ver or ver.flow_id != flow_id:
-        raise HTTPException(404, detail="Version not found")
+    ver = _flow_version_or_404(db, flow, version_id)
     if ver.published_at:
         raise HTTPException(409, detail="Version already published")
     ver.published_at = _utcnow()
@@ -9631,9 +9639,7 @@ def activate_flow(store_id: int, flow_id: int, membership: OrganizationMembershi
         raise HTTPException(404, detail="Flow not found")
     if not flow.current_version_id:
         raise HTTPException(409, detail="No version to activate")
-    ver = db.get(AutomationFlowVersion, flow.current_version_id)
-    if not ver:
-        raise HTTPException(404, detail="Current version not found")
+    ver = _flow_version_or_404(db, flow, flow.current_version_id)
     if not ver.published_at:
         raise HTTPException(409, detail="Version must be published before activation")
     ver.activated_at = _utcnow()

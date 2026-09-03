@@ -2499,7 +2499,9 @@ class AutomationFlow(Base):
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
-    __table_args__ = (UniqueConstraint("organization_id", "store_id", "name", name="uq_flow_org_store_name"),)
+    __table_args__ = (
+        UniqueConstraint("organization_id", "store_id", "name", name="uq_flow_org_store_name"),
+    )
 
 
 class AutomationFlowVersion(Base):
@@ -2513,7 +2515,10 @@ class AutomationFlowVersion(Base):
     published_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     activated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
-    __table_args__ = (UniqueConstraint("flow_id", "version_number", name="uq_flow_version_number"),)
+    __table_args__ = (
+        UniqueConstraint("flow_id", "version_number", name="uq_flow_version_number"),
+        UniqueConstraint("flow_id", "id", name="uq_flow_version_flow_id_id"),
+    )
 
 
 class AutomationFlowRun(Base):
