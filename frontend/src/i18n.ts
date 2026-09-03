@@ -1312,6 +1312,7 @@ const resources = {
       autoReviewCampaign: "Audiencia estimada: {{audience}}. Programación: {{schedule}}.",
       autoStatus_draft: "Borrador", autoStatus_active: "Activa", autoStatus_paused: "Pausada", autoStatus_archived: "Archivada",
       autoSchedule_once: "Una vez", autoSchedule_daily: "Diaria", autoSchedule_weekly: "Semanal", autoSchedule_every_n_days: "Cada X días",
+      autoMessageMode: "Modo de mensaje", autoModeAuto: "Automático", autoModeFreeForm: "Texto libre", autoModeTemplate: "Template aprobado", autoApprovedTemplate: "Template aprobado", autoSelectTemplate: "Selecciona un template", autoAutoModeHelp: "Diaglob usará texto libre dentro de la ventana de servicio de WhatsApp y el template aprobado fuera de ella.", autoFreeFormWarning: "Los clientes fuera de la ventana de servicio de WhatsApp se omitirán.", autoTemplateModeHelp: "El template aprobado se usará siempre.",
 
       analyticsTabOverview: "General",
       analyticsTabConversations: "Conversaciones",
@@ -2932,6 +2933,7 @@ const resources = {
       autoReviewCampaign: "Estimated audience: {{audience}}. Schedule: {{schedule}}.",
       autoStatus_draft: "Draft", autoStatus_active: "Active", autoStatus_paused: "Paused", autoStatus_archived: "Archived",
       autoSchedule_once: "One time", autoSchedule_daily: "Daily", autoSchedule_weekly: "Weekly", autoSchedule_every_n_days: "Every X days",
+      autoMessageMode: "Message mode", autoModeAuto: "Automatic", autoModeFreeForm: "Free-form", autoModeTemplate: "Approved template", autoApprovedTemplate: "Approved template", autoSelectTemplate: "Select a template", autoAutoModeHelp: "Diaglob uses free-form text inside the WhatsApp service window and the approved template outside it.", autoFreeFormWarning: "Customers outside the WhatsApp service window will be skipped.", autoTemplateModeHelp: "The approved template will always be used.",
 
       analyticsTabOverview: "Overview",
       analyticsTabConversations: "Conversations",

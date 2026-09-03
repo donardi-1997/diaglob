@@ -15,8 +15,9 @@ from .models import (
     AutomationCampaign, AutomationDeliveryAttempt, AutomationRecipientExecution,
     AutomationRateLimit, AutomationRun, Store, WhatsAppConnection,
 )
-from .whatsapp_client import WhatsAppDeliveryError, send_whatsapp_text_message
+from .whatsapp_client import WhatsAppDeliveryError, send_whatsapp_template_message, send_whatsapp_text_message
 from .whatsapp_security import decrypt_whatsapp_secret
+from .whatsapp_compliance import evaluate_whatsapp_delivery_eligibility, get_last_whatsapp_inbound_by_customer, template_components
 
 logger = logging.getLogger(__name__)
 MAX_ATTEMPTS = int(os.getenv("AUTOMATION_MAX_ATTEMPTS", "3"))
@@ -133,7 +134,7 @@ def materialize_due_campaigns(db: Session, now: datetime | None = None) -> int:
                 recipient = AutomationRecipientExecution(run_id=run.id, customer_id=customer["id"], status="skipped", exclusion_reason="invalid_template_data")
                 run.excluded_count += 1
             else:
-                recipient = AutomationRecipientExecution(run_id=run.id, customer_id=customer["id"], status="queued", rendered_message=message, next_attempt_at=now)
+                recipient = AutomationRecipientExecution(run_id=run.id, customer_id=customer["id"], status="queued", rendered_message=message, next_attempt_at=now, template_data={"customer.name": customer.get("name"), "store.name": store.name, "customer.segment": customer.get("primary_segment"), "customer.health": customer.get("customer_health")})
                 run.eligible_count += 1
             db.add(recipient)
         campaign.last_run_at = now
@@ -194,7 +195,7 @@ def _finish_attempt(db: Session, recipient: AutomationRecipientExecution, status
     db.commit()
 
 
-def process_recipient(db: Session, recipient_id: int, now: datetime | None = None, sender=send_whatsapp_text_message) -> str:
+def process_recipient(db: Session, recipient_id: int, now: datetime | None = None, sender=send_whatsapp_text_message, last_inbound_at=None, inbound_known: bool = False) -> str:
     """Claim is already committed. This function never holds a DB transaction during HTTP I/O."""
     now = now or utcnow()
     recipient = db.get(AutomationRecipientExecution, recipient_id)
@@ -219,6 +220,10 @@ def process_recipient(db: Session, recipient_id: int, now: datetime | None = Non
     if not connection:
         _finish_attempt(db, recipient, "failed", now, code="channel_unavailable", message="WhatsApp connection is unavailable")
         return "failed"
+    compliance = evaluate_whatsapp_delivery_eligibility(db, campaign, connection, recipient.customer_id, now, last_inbound_at, inbound_known)
+    if not compliance["allowed"]:
+        _finish_attempt(db, recipient, "skipped", now, code=compliance["reason"], message="WhatsApp delivery is not eligible")
+        return compliance["reason"]
     if not _acquire_rate_slot(db, connection.id, now):
         recipient = db.get(AutomationRecipientExecution, recipient_id); recipient.status = "queued"; recipient.next_attempt_at = now.replace(second=0, microsecond=0) + timedelta(minutes=1); recipient.lease_expires_at = None; db.commit(); return "rate_limited"
     recipient.status = "sending"
@@ -228,7 +233,17 @@ def process_recipient(db: Session, recipient_id: int, now: datetime | None = Non
     db.commit()
     customer = db.get(__import__("app.models", fromlist=["Customer"]).Customer, recipient.customer_id)
     try:
-        result = sender(connection.phone_number_id, decrypt_whatsapp_secret(connection.access_token_encrypted), customer.phone, recipient.rendered_message or "")
+        token = decrypt_whatsapp_secret(connection.access_token_encrypted)
+        if compliance["mode"] == "template":
+            template = compliance["template"]
+            components = template_components(template, campaign.template_variables, recipient.template_data)
+            result = send_whatsapp_template_message(connection.phone_number_id, token, customer.phone, template.provider_template_name, template.language_code, components)
+        else:
+            result = sender(connection.phone_number_id, token, customer.phone, recipient.rendered_message or "")
+    except ValueError:
+        recipient = db.get(AutomationRecipientExecution, recipient_id)
+        _finish_attempt(db, recipient, "skipped", now, code="invalid_template_data", message="Template variables are unavailable")
+        return "invalid_template_data"
     except WhatsAppDeliveryError as exc:
         recipient = db.get(AutomationRecipientExecution, recipient_id)
         if exc.category == "ambiguous":
@@ -258,7 +273,13 @@ def worker_cycle(db: Session, now: datetime | None = None, sender=send_whatsapp_
     reclaim_expired_leases(db, now)
     materialize_due_campaigns(db, now)
     ids = claim_recipients(db, now)
+    recipient_rows = db.query(AutomationRecipientExecution, AutomationRun, AutomationCampaign).join(AutomationRun).join(AutomationCampaign).filter(AutomationRecipientExecution.id.in_(ids)).all()
+    inbound_by_scope = {}
+    for recipient, _run, campaign in recipient_rows:
+        inbound_by_scope.setdefault((campaign.organization_id, campaign.store_id), []).append(recipient.customer_id)
+    inbound_maps = {scope: get_last_whatsapp_inbound_by_customer(db, *scope, list(set(customer_ids))) for scope, customer_ids in inbound_by_scope.items()}
+    inbound_by_recipient = {recipient.id: inbound_maps[(campaign.organization_id, campaign.store_id)].get(recipient.customer_id) for recipient, _run, campaign in recipient_rows}
     for recipient_id in ids:
-        process_recipient(db, recipient_id, now, sender)
+        process_recipient(db, recipient_id, now, sender, inbound_by_recipient.get(recipient_id), True)
     aggregate_runs(db, now)
     return len(ids)

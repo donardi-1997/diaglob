@@ -10,7 +10,8 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from .customers.intelligence import get_customer_metrics
-from .models import AutomationAudienceMember, AutomationCampaign, AutomationRecipientExecution, AutomationRun, Customer, Store
+from .models import AutomationAudienceMember, AutomationCampaign, AutomationRecipientExecution, AutomationRun, Customer, Store, WhatsAppConnection
+from .whatsapp_compliance import evaluate_whatsapp_delivery_eligibility, get_last_whatsapp_inbound_by_customer
 
 AUTOMATION_TYPES = {"recovery", "high_intent_followup", "inactive_reactivation", "vip_reactivation", "failed_order_recovery", "post_purchase_followup", "custom"}
 STATUSES = {"draft", "active", "paused", "archived"}
@@ -111,6 +112,8 @@ def simulate_campaign(db: Session, campaign: AutomationCampaign, store: Store, p
         rows = db.query(AutomationRecipientExecution.customer_id).join(AutomationRun).filter(AutomationRun.automation_id == campaign.id, AutomationRecipientExecution.status == "sent", AutomationRecipientExecution.sent_at >= cutoff).all()
         already_sent = {row[0] for row in rows}
     results, breakdown = [], {}
+    connection = db.query(WhatsAppConnection).filter(WhatsAppConnection.organization_id == campaign.organization_id, WhatsAppConnection.store_id == campaign.store_id, WhatsAppConnection.status == "connected").first()
+    inbound_by_customer = get_last_whatsapp_inbound_by_customer(db, campaign.organization_id, campaign.store_id, [customer["id"] for customer in metrics])
     for customer in metrics:
         reason = None
         message = None
@@ -122,6 +125,12 @@ def simulate_campaign(db: Session, campaign: AutomationCampaign, store: Store, p
             message = render_template(campaign.message_template, customer, store)
             if message is None:
                 reason = "invalid_template_data"
+            elif connection:
+                compliance = evaluate_whatsapp_delivery_eligibility(db, campaign, connection, customer["id"], last_inbound_at=inbound_by_customer.get(customer["id"]), inbound_known=True)
+                if not compliance["allowed"]:
+                    reason = compliance["reason"]
+            else:
+                reason = "connection_inactive"
         status = "excluded" if reason else "eligible"
         if reason:
             breakdown[reason] = breakdown.get(reason, 0) + 1

@@ -77,6 +77,9 @@ export interface AutomationCampaign {
   cooldown_days: number;
   channel: string;
   message_template: string;
+  message_mode: "free_form" | "template" | "auto";
+  whatsapp_template_id: number | null;
+  template_variables: Record<string, string[]>;
 }
 
 export interface AutomationCampaignPayload {
@@ -94,6 +97,18 @@ export interface AutomationCampaignPayload {
   cooldown_days: number;
   channel: "whatsapp";
   message_template: string;
+  message_mode: "free_form" | "template" | "auto";
+  whatsapp_template_id?: number;
+  template_variables: Record<string, string[]>;
+}
+
+export interface WhatsAppMessageTemplate {
+  id: number;
+  provider_template_name: string;
+  language_code: string;
+  category: string | null;
+  status: string;
+  components: Record<string, unknown>;
 }
 
 export interface AudiencePreview {
@@ -272,5 +287,10 @@ export async function simulateAutomationCampaign(storeId: number, campaignId: nu
 
 export async function duplicateAutomationCampaign(storeId: number, campaignId: number) {
   const response = await api.post<AutomationCampaign>(`/api/stores/${storeId}/automation-campaigns/${campaignId}/duplicate`);
+  return response.data;
+}
+
+export async function listWhatsAppTemplates(storeId: number) {
+  const response = await api.get<{ items: WhatsAppMessageTemplate[] }>(`/api/stores/${storeId}/whatsapp/templates`);
   return response.data;
 }

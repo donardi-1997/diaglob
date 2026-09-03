@@ -99,6 +99,7 @@ from .models import (
     Store,
     User,
     WhatsAppConnection,
+    WhatsAppMessageTemplate,
 )
 
 from .shopify_oauth import (
@@ -159,8 +160,10 @@ from .whatsapp_security import (
 )
 
 from .whatsapp_client import (
+    list_whatsapp_templates,
     send_whatsapp_text_message,
 )
+from .whatsapp_compliance import MESSAGE_MODES, TEMPLATE_VARIABLES
 
 from .google_security import (
     encrypt_google_secret,
@@ -610,6 +613,9 @@ class AutomationCampaignPayload(BaseModel):
     cooldown_days: int = 0
     channel: str = "whatsapp"
     message_template: str = ""
+    message_mode: str = "free_form"
+    whatsapp_template_id: int | None = None
+    template_variables: dict = {}
 
 
 class AudiencePreviewRequest(BaseModel):
@@ -9065,6 +9071,8 @@ def _serialize_campaign(campaign):
         "timezone": campaign.timezone, "send_window_start": campaign.send_window_start,
         "send_window_end": campaign.send_window_end, "cooldown_days": campaign.cooldown_days,
         "channel": campaign.channel, "message_template": campaign.message_template,
+        "message_mode": campaign.message_mode, "whatsapp_template_id": campaign.whatsapp_template_id,
+        "template_variables": campaign.template_variables,
         "created_at": campaign.created_at.isoformat() + "Z",
         "updated_at": campaign.updated_at.isoformat() + "Z",
     }
@@ -9088,6 +9096,34 @@ def _replace_campaign_members(db, campaign, organization_id, member_ids):
         raise HTTPException(status_code=400, detail="Customer is outside organization")
     db.query(AutomationAudienceMember).filter(AutomationAudienceMember.automation_id == campaign.id).delete()
     db.add_all([AutomationAudienceMember(automation_id=campaign.id, customer_id=customer_id) for customer_id in unique_ids])
+
+
+def _validate_campaign_compliance(db, data, organization_id, store_id):
+    if data["message_mode"] not in MESSAGE_MODES:
+        raise HTTPException(400, "Invalid message_mode")
+    mapping = data["template_variables"].get("body", [])
+    if not isinstance(mapping, list) or not set(mapping).issubset(TEMPLATE_VARIABLES):
+        raise HTTPException(400, "Invalid template variables")
+    template = None
+    if data["whatsapp_template_id"]:
+        template = db.query(WhatsAppMessageTemplate).join(WhatsAppConnection).filter(
+            WhatsAppMessageTemplate.id == data["whatsapp_template_id"],
+            WhatsAppMessageTemplate.organization_id == organization_id,
+            WhatsAppConnection.store_id == store_id,
+            WhatsAppConnection.organization_id == organization_id,
+        ).first()
+        if not template:
+            raise HTTPException(400, "Template is outside store scope")
+        body_components = [item for item in template.components.get("items", []) if str(item.get("type", "")).lower() == "body"]
+        body_text = next((item.get("text") for item in body_components if isinstance(item.get("text"), str)), None)
+        if body_text is not None:
+            expected_parameters = len(re.findall(r"{{\d+}}", body_text))
+            if expected_parameters != len(mapping):
+                raise HTTPException(400, "Template body parameter count does not match")
+    if data["status"] == "active" and data["message_mode"] in {"template", "auto"}:
+        if not template or template.status != "approved":
+            raise HTTPException(400, "Active template delivery requires an approved template")
+    return template
 
 
 @app.post("/api/stores/{store_id}/automation-campaigns/audience/preview")
@@ -9119,13 +9155,14 @@ def create_automation_campaign(
     data = payload.model_dump()
     data["timezone"] = data["timezone"] or store.timezone
     validate_campaign(data, store)
+    _validate_campaign_compliance(db, data, membership.organization_id, store_id)
     if data["status"] == "active" and not db.query(WhatsAppConnection).filter(WhatsAppConnection.organization_id == membership.organization_id, WhatsAppConnection.store_id == store_id, WhatsAppConnection.status == "connected").first():
         raise HTTPException(400, "WhatsApp channel is not connected")
     if db.query(AutomationCampaign).filter(AutomationCampaign.organization_id == membership.organization_id, AutomationCampaign.store_id == store_id, AutomationCampaign.name == payload.name).first():
         raise HTTPException(409, "Automation campaign name already exists")
     campaign = AutomationCampaign(
         organization_id=membership.organization_id, store_id=store_id, created_by=membership.user_id,
-        **{key: data[key] for key in ("name", "automation_type", "status", "audience_type", "schedule_type", "timezone", "send_window_start", "send_window_end", "cooldown_days", "channel", "message_template")},
+        **{key: data[key] for key in ("name", "automation_type", "status", "audience_type", "schedule_type", "timezone", "send_window_start", "send_window_end", "cooldown_days", "channel", "message_template", "message_mode", "whatsapp_template_id", "template_variables")},
         audience_filters=data["audience_filters"], schedule_config=data["schedule_config"],
     )
     if campaign.status == "active":
@@ -9161,9 +9198,10 @@ def update_automation_campaign(campaign_id: int, store_id: int, payload: Automat
     previous_status = campaign.status
     data = payload.model_dump(); data["timezone"] = data["timezone"] or store.timezone
     validate_campaign(data, store)
+    _validate_campaign_compliance(db, data, membership.organization_id, store_id)
     if data["status"] == "active" and not db.query(WhatsAppConnection).filter(WhatsAppConnection.organization_id == membership.organization_id, WhatsAppConnection.store_id == store_id, WhatsAppConnection.status == "connected").first():
         raise HTTPException(400, "WhatsApp channel is not connected")
-    for key in ("name", "automation_type", "status", "audience_type", "schedule_type", "timezone", "send_window_start", "send_window_end", "cooldown_days", "channel", "message_template"):
+    for key in ("name", "automation_type", "status", "audience_type", "schedule_type", "timezone", "send_window_start", "send_window_end", "cooldown_days", "channel", "message_template", "message_mode", "whatsapp_template_id", "template_variables"):
         setattr(campaign, key, data[key])
     campaign.audience_filters = data["audience_filters"]; campaign.schedule_config = data["schedule_config"]
     if campaign.status == "active":
@@ -9191,7 +9229,7 @@ def simulate_automation_campaign(campaign_id: int, store_id: int, membership: Or
 def duplicate_automation_campaign(campaign_id: int, store_id: int, membership: OrganizationMembership = Depends(require_permission("automations.write")), db: Session = Depends(get_db)):
     _campaign_store_or_404(db, membership.organization_id, store_id)
     source = _campaign_or_404(db, membership.organization_id, store_id, campaign_id)
-    copy = AutomationCampaign(organization_id=source.organization_id, store_id=source.store_id, name=f"{source.name} (copy)", automation_type=source.automation_type, status="draft", audience_type=source.audience_type, audience_filters=source.audience_filters, schedule_type=source.schedule_type, schedule_config=source.schedule_config, timezone=source.timezone, send_window_start=source.send_window_start, send_window_end=source.send_window_end, cooldown_days=source.cooldown_days, channel=source.channel, message_template=source.message_template, created_by=membership.user_id)
+    copy = AutomationCampaign(organization_id=source.organization_id, store_id=source.store_id, name=f"{source.name} (copy)", automation_type=source.automation_type, status="draft", audience_type=source.audience_type, audience_filters=source.audience_filters, schedule_type=source.schedule_type, schedule_config=source.schedule_config, timezone=source.timezone, send_window_start=source.send_window_start, send_window_end=source.send_window_end, cooldown_days=source.cooldown_days, channel=source.channel, message_template=source.message_template, message_mode=source.message_mode, whatsapp_template_id=source.whatsapp_template_id, template_variables=source.template_variables, created_by=membership.user_id)
     db.add(copy); db.flush()
     _replace_campaign_members(db, copy, membership.organization_id, [member.customer_id for member in source.members if member.included])
     db.commit(); db.refresh(copy)
@@ -10845,6 +10883,43 @@ async def dropi_webhook(
 # ============================================================
 # WHATSAPP
 # ============================================================
+
+
+def _serialize_whatsapp_template(template):
+    return {"id": template.id, "provider_template_name": template.provider_template_name, "language_code": template.language_code, "category": template.category, "status": template.status, "components": template.components, "updated_at": template.updated_at.isoformat() + "Z" if template.updated_at else None}
+
+
+@app.get("/api/stores/{store_id}/whatsapp/templates")
+def list_store_whatsapp_templates(store_id: int, membership: OrganizationMembership = Depends(require_permission("automations.read")), db: Session = Depends(get_db)):
+    connection = db.query(WhatsAppConnection).filter(WhatsAppConnection.store_id == store_id, WhatsAppConnection.organization_id == membership.organization_id).first()
+    if not connection:
+        return {"items": []}
+    templates = db.query(WhatsAppMessageTemplate).filter(WhatsAppMessageTemplate.organization_id == membership.organization_id, WhatsAppMessageTemplate.whatsapp_connection_id == connection.id).order_by(WhatsAppMessageTemplate.provider_template_name).all()
+    return {"items": [_serialize_whatsapp_template(item) for item in templates]}
+
+
+@app.post("/api/stores/{store_id}/whatsapp/templates/sync")
+def sync_store_whatsapp_templates(store_id: int, membership: OrganizationMembership = Depends(require_permission("stores.write")), db: Session = Depends(get_db)):
+    connection = db.query(WhatsAppConnection).filter(WhatsAppConnection.store_id == store_id, WhatsAppConnection.organization_id == membership.organization_id, WhatsAppConnection.status == "connected").first()
+    if not connection:
+        raise HTTPException(400, "WhatsApp connection is not connected")
+    try:
+        provider_templates = list_whatsapp_templates(connection.business_account_id, decrypt_whatsapp_secret(connection.access_token_encrypted))
+    except Exception as exc:
+        raise HTTPException(502, "Unable to sync WhatsApp templates") from exc
+    for item in provider_templates:
+        name, language = item.get("name"), item.get("language")
+        if not name or not language:
+            continue
+        template = db.query(WhatsAppMessageTemplate).filter(WhatsAppMessageTemplate.whatsapp_connection_id == connection.id, WhatsAppMessageTemplate.provider_template_name == name, WhatsAppMessageTemplate.language_code == language).first()
+        values = {"provider_template_id": item.get("id"), "category": item.get("category"), "status": str(item.get("status", "pending")).lower(), "components": {"items": item.get("components") or []}}
+        if template:
+            for key, value in values.items():
+                setattr(template, key, value)
+        else:
+            db.add(WhatsAppMessageTemplate(organization_id=membership.organization_id, whatsapp_connection_id=connection.id, provider_template_name=name, language_code=language, **values))
+    db.commit()
+    return list_store_whatsapp_templates(store_id, membership, db)
 
 
 @app.get(

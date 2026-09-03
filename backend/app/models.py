@@ -1595,6 +1595,23 @@ class WhatsAppConnection(Base):
     )
 
 
+class WhatsAppMessageTemplate(Base):
+    __tablename__ = "whatsapp_message_templates"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    whatsapp_connection_id: Mapped[int] = mapped_column(ForeignKey("whatsapp_connections.id", ondelete="CASCADE"), nullable=False, index=True)
+    provider_template_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    provider_template_name: Mapped[str] = mapped_column(String(512), nullable=False)
+    language_code: Mapped[str] = mapped_column(String(32), nullable=False)
+    category: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    components: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    __table_args__ = (UniqueConstraint("whatsapp_connection_id", "provider_template_name", "language_code", name="uq_whatsapp_template_connection_name_language"),)
+
+
 # ============================================================
 # SHOPIFY OAUTH STATE
 # ============================================================
@@ -2365,6 +2382,9 @@ class AutomationCampaign(Base):
     cooldown_days: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     channel: Mapped[str] = mapped_column(String(30), default="whatsapp", nullable=False)
     message_template: Mapped[str] = mapped_column(Text, nullable=False)
+    message_mode: Mapped[str] = mapped_column(String(20), default="free_form", nullable=False)
+    whatsapp_template_id: Mapped[int | None] = mapped_column(ForeignKey("whatsapp_message_templates.id", ondelete="SET NULL"), nullable=True)
+    template_variables: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     next_run_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     execution_enabled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -2430,6 +2450,7 @@ class AutomationRecipientExecution(Base):
     provider_message_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
     error_message: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    template_data: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
 
     run = relationship("AutomationRun", back_populates="recipients")
     __table_args__ = (UniqueConstraint("run_id", "customer_id", name="uq_campaign_run_customer"),)
