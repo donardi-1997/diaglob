@@ -92,6 +92,13 @@ def audience_metrics(db: Session, org_id: int, store_id: int, audience_type: str
         metrics = [item for item in metrics if item.get("country_code") in countries]
     if "has_orders" in filters:
         metrics = [item for item in metrics if (item.get("successful_order_count", 0) > 0) == filters["has_orders"]]
+    search = str(filters.get("search", "")).strip().lower()
+    if search:
+        metrics = [item for item in metrics if search in (item.get("name") or "").lower() or search in (item.get("phone") or "").lower() or search in (item.get("email") or "").lower()]
+    if filters.get("min_orders") is not None:
+        metrics = [item for item in metrics if item.get("successful_order_count", 0) >= int(filters["min_orders"])]
+    if filters.get("max_orders") is not None:
+        metrics = [item for item in metrics if item.get("successful_order_count", 0) <= int(filters["max_orders"])]
     excluded = set(filters.get("exclude_customer_ids", []))
     return [item for item in metrics if item["id"] not in excluded]
 

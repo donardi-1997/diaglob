@@ -605,6 +605,9 @@ class AutomationCampaignPayload(BaseModel):
     audience_type: str = "dynamic"
     audience_filters: dict = {}
     member_ids: list[int] = []
+    selection_mode: str = "explicit"
+    selected_customer_ids: list[int] = []
+    excluded_customer_ids: list[int] = []
     schedule_type: str = "once"
     schedule_config: dict = {}
     timezone: str | None = None
@@ -622,6 +625,9 @@ class AudiencePreviewRequest(BaseModel):
     audience_type: str = "dynamic"
     audience_filters: dict = {}
     member_ids: list[int] = []
+    selection_mode: str = "explicit"
+    selected_customer_ids: list[int] = []
+    excluded_customer_ids: list[int] = []
 
 
 bearer_scheme = HTTPBearer(
@@ -9089,13 +9095,29 @@ def _campaign_or_404(db, organization_id, store_id, campaign_id):
     return campaign
 
 
-def _replace_campaign_members(db, campaign, organization_id, member_ids):
-    unique_ids = set(member_ids)
-    valid_count = db.query(Customer).filter(Customer.organization_id == organization_id, Customer.id.in_(unique_ids)).count() if unique_ids else 0
-    if valid_count != len(unique_ids):
-        raise HTTPException(status_code=400, detail="Customer is outside organization")
+def _fixed_audience_ids(db, organization_id, store_id, data):
+    mode = data.get("selection_mode", "explicit")
+    if mode not in {"explicit", "all_filtered"}:
+        raise HTTPException(400, "Invalid selection_mode")
+    selected = set(data.get("selected_customer_ids") or data.get("member_ids") or [])
+    if mode == "all_filtered":
+        selected = {item["id"] for item in audience_metrics(db, organization_id, store_id, "dynamic", data.get("audience_filters", {}))}
+        selected -= set(data.get("excluded_customer_ids", []))
+    # Fixed audiences are store-scoped. Do not silently accept an org customer
+    # that has no profile in the campaign's store.
+    available = {item["id"] for item in audience_metrics(db, organization_id, store_id, "dynamic", {})}
+    if not selected.issubset(available):
+        raise HTTPException(status_code=400, detail="Customer is outside store scope")
+    return selected
+
+
+def _replace_campaign_members(db, campaign, organization_id, store_id, data):
+    unique_ids = _fixed_audience_ids(db, organization_id, store_id, data) if campaign.audience_type == "fixed" else set()
     db.query(AutomationAudienceMember).filter(AutomationAudienceMember.automation_id == campaign.id).delete()
-    db.add_all([AutomationAudienceMember(automation_id=campaign.id, customer_id=customer_id) for customer_id in unique_ids])
+    ids = sorted(unique_ids)
+    for offset in range(0, len(ids), 1000):
+        db.bulk_insert_mappings(AutomationAudienceMember, [{"automation_id": campaign.id, "customer_id": customer_id, "included": True} for customer_id in ids[offset:offset + 1000]])
+    return len(unique_ids)
 
 
 def _validate_campaign_compliance(db, data, organization_id, store_id):
@@ -9136,12 +9158,37 @@ def preview_automation_audience(
     _campaign_store_or_404(db, membership.organization_id, store_id)
     if payload.audience_type not in {"dynamic", "fixed"}:
         raise HTTPException(400, "Invalid audience_type")
-    if payload.member_ids:
-        valid_count = db.query(Customer).filter(Customer.organization_id == membership.organization_id, Customer.id.in_(set(payload.member_ids))).count()
-        if valid_count != len(set(payload.member_ids)):
-            raise HTTPException(400, "Customer is outside organization")
-    metrics = audience_metrics(db, membership.organization_id, store_id, payload.audience_type, payload.audience_filters, payload.member_ids)
-    return {"eligible_count": len(metrics), "sample": [explain(item) for item in metrics[:20]]}
+    data = payload.model_dump()
+    member_ids = _fixed_audience_ids(db, membership.organization_id, store_id, data) if payload.audience_type == "fixed" else data["member_ids"]
+    metrics = audience_metrics(db, membership.organization_id, store_id, payload.audience_type, payload.audience_filters, list(member_ids))
+    segment_distribution, country_distribution = {}, {}
+    for item in metrics:
+        segment_distribution[item.get("primary_segment") or "unknown"] = segment_distribution.get(item.get("primary_segment") or "unknown", 0) + 1
+        country_distribution[item.get("country_code") or "unknown"] = country_distribution.get(item.get("country_code") or "unknown", 0) + 1
+    return {"eligible_count": len(metrics), "sample": [explain(item) for item in metrics[:20]], "segment_distribution": segment_distribution, "country_distribution": country_distribution}
+
+
+@app.get("/api/stores/{store_id}/automation-campaigns/audience/customers")
+def list_automation_audience_customers(
+    store_id: int,
+    search: str | None = None,
+    page: int = 1,
+    page_size: int = 25,
+    segment: str | None = None,
+    priority: str | None = None,
+    health: str | None = None,
+    country: str | None = None,
+    needs_attention: bool | None = None,
+    has_orders: bool | None = None,
+    sort: str = "priority_desc",
+    membership: OrganizationMembership = Depends(require_permission("automations.read")),
+    db: Session = Depends(get_db),
+):
+    from .customers.intelligence import get_customer_list
+    _campaign_store_or_404(db, membership.organization_id, store_id)
+    result = get_customer_list(db, membership.organization_id, store_id, segment=segment, search=search, has_orders=has_orders, page=max(1, page), page_size=min(max(1, page_size), 100), sort=sort, priority=priority, health=health, needs_attention=needs_attention, country=country)
+    fields = ("id", "name", "phone", "email", "country_code", "primary_segment", "priority", "customer_score", "customer_health", "last_interaction_at", "successful_order_count", "spend_by_currency", "needs_attention")
+    return {**result, "items": [{("customer_id" if key == "id" else key): item.get(key) for key in fields} for item in result["items"]]}
 
 
 @app.post("/api/stores/{store_id}/automation-campaigns")
@@ -9169,7 +9216,9 @@ def create_automation_campaign(
         campaign.next_run_at = initial_next_run(campaign)
         campaign.execution_enabled_at = datetime.utcnow()
     db.add(campaign); db.flush()
-    _replace_campaign_members(db, campaign, membership.organization_id, data["member_ids"])
+    member_count = _replace_campaign_members(db, campaign, membership.organization_id, store_id, data)
+    if data["status"] == "active" and data["audience_type"] == "fixed" and member_count == 0:
+        raise HTTPException(400, "Active fixed campaign requires at least one customer")
     db.commit(); db.refresh(campaign)
     return _serialize_campaign(campaign)
 
@@ -9198,6 +9247,8 @@ def update_automation_campaign(campaign_id: int, store_id: int, payload: Automat
     previous_status = campaign.status
     data = payload.model_dump(); data["timezone"] = data["timezone"] or store.timezone
     validate_campaign(data, store)
+    if previous_status == "active" and (campaign.audience_type != data["audience_type"] or campaign.audience_filters != data["audience_filters"] or data.get("member_ids") or data.get("selected_customer_ids") or data.get("selection_mode") == "all_filtered"):
+        raise HTTPException(400, "Pause an active campaign before changing its audience")
     _validate_campaign_compliance(db, data, membership.organization_id, store_id)
     if data["status"] == "active" and not db.query(WhatsAppConnection).filter(WhatsAppConnection.organization_id == membership.organization_id, WhatsAppConnection.store_id == store_id, WhatsAppConnection.status == "connected").first():
         raise HTTPException(400, "WhatsApp channel is not connected")
@@ -9213,7 +9264,9 @@ def update_automation_campaign(campaign_id: int, store_id: int, payload: Automat
             campaign.next_run_at = initial_next_run(campaign)
     elif campaign.status in {"paused", "archived"}:
         campaign.next_run_at = None
-    _replace_campaign_members(db, campaign, membership.organization_id, data["member_ids"])
+    member_count = _replace_campaign_members(db, campaign, membership.organization_id, store_id, data)
+    if data["status"] == "active" and data["audience_type"] == "fixed" and member_count == 0:
+        raise HTTPException(400, "Active fixed campaign requires at least one customer")
     db.commit(); db.refresh(campaign)
     return _serialize_campaign(campaign)
 

@@ -89,6 +89,9 @@ export interface AutomationCampaignPayload {
   audience_type: "dynamic" | "fixed";
   audience_filters: Record<string, unknown>;
   member_ids: number[];
+  selection_mode?: "explicit" | "all_filtered";
+  selected_customer_ids?: number[];
+  excluded_customer_ids?: number[];
   schedule_type: string;
   schedule_config: Record<string, unknown>;
   timezone?: string;
@@ -114,6 +117,32 @@ export interface WhatsAppMessageTemplate {
 export interface AudiencePreview {
   eligible_count: number;
   sample: Array<Record<string, unknown>>;
+  segment_distribution?: Record<string, number>;
+  country_distribution?: Record<string, number>;
+}
+
+export interface AutomationAudienceCustomer {
+  customer_id: number;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  country_code: string | null;
+  primary_segment: string;
+  priority: string;
+  customer_score: number;
+  customer_health: string;
+  last_interaction_at: string | null;
+  successful_order_count: number;
+  spend_by_currency: Record<string, { total: number }>;
+  needs_attention: boolean;
+}
+
+export interface AutomationAudienceCustomerPage {
+  items: AutomationAudienceCustomer[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
 }
 
 export interface CampaignSimulation {
@@ -277,6 +306,13 @@ export async function createAutomationCampaign(storeId: number, payload: Automat
 
 export async function previewAutomationAudience(storeId: number, payload: Pick<AutomationCampaignPayload, "audience_type" | "audience_filters" | "member_ids">) {
   const response = await api.post<AudiencePreview>(`/api/stores/${storeId}/automation-campaigns/audience/preview`, payload);
+  return response.data;
+}
+
+export async function listAutomationAudienceCustomers(storeId: number, params: Record<string, string | number | boolean | undefined>) {
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => { if (value !== undefined && value !== "") query.set(key, String(value)); });
+  const response = await api.get<AutomationAudienceCustomerPage>(`/api/stores/${storeId}/automation-campaigns/audience/customers?${query}`);
   return response.data;
 }
 

@@ -1737,6 +1737,7 @@ def get_customer_list(
     priority: str | None = None,
     health: str | None = None,
     needs_attention: bool | None = None,
+    country: str | None = None,
 ) -> dict[str, Any]:
     """
     Get paginated, filtered, sorted customer list.
@@ -1814,6 +1815,9 @@ def get_customer_list(
             for m in metrics
             if m["needs_attention"] == needs_attention
         ]
+
+    if country:
+        metrics = [m for m in metrics if m.get("country_code") == country]
 
     # Sort
     reverse = True

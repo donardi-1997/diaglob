@@ -16,7 +16,7 @@ from app.automation_campaigns import (
 )
 from app.db import Base
 from app.models import Customer, CustomerStoreProfile, Organization, Store
-from app.models import AutomationCampaign, AutomationRecipientExecution, AutomationRun, Conversation, Message, WhatsAppConnection, WhatsAppMessageTemplate
+from app.models import AutomationAudienceMember, AutomationCampaign, AutomationRecipientExecution, AutomationRun, Conversation, Message, WhatsAppConnection, WhatsAppMessageTemplate
 from app.automation_execution_engine import (
     claim_recipients,
     materialize_due_campaigns,
@@ -27,6 +27,7 @@ from app.automation_execution_engine import (
 )
 from app.whatsapp_client import WhatsAppDeliveryError, send_whatsapp_template_message
 from app.whatsapp_compliance import evaluate_whatsapp_delivery_eligibility, get_whatsapp_service_window_status
+from app.main import _replace_campaign_members
 
 
 @pytest.fixture()
@@ -309,3 +310,38 @@ def test_template_sender_uses_cloud_api_template_payload(monkeypatch):
     result = send_whatsapp_template_message("phone-id", "token", "573001", "reengage", "es_CO", [{"type": "body", "parameters": [{"type": "text", "text": "Ana"}]}])
     assert captured["json"] == {"messaging_product": "whatsapp", "recipient_type": "individual", "to": "573001", "type": "template", "template": {"name": "reengage", "language": {"code": "es_CO"}, "components": [{"type": "body", "parameters": [{"type": "text", "text": "Ana"}]}]}}
     assert result["message_id"] == "wamid.template"
+
+
+def test_fixed_all_filtered_selection_snapshots_members_and_exclusions(db):
+    session, organization, store = db
+    customers = [add_customer(session, organization, store, f"Fixed {number}") for number in range(10)]
+    campaign = make_campaign(session, organization, store, status="draft")
+    campaign.audience_type = "fixed"; campaign.audience_filters = {"country_codes": ["CO"]}; session.commit()
+    count = _replace_campaign_members(session, campaign, organization.id, store.id, {"selection_mode": "all_filtered", "audience_filters": campaign.audience_filters, "excluded_customer_ids": [customers[0].id, customers[1].id]})
+    session.commit()
+    assert count == 8
+    assert session.query(AutomationAudienceMember).filter_by(automation_id=campaign.id).count() == 8
+    add_customer(session, organization, store, "Future fixed member")
+    assert session.query(AutomationAudienceMember).filter_by(automation_id=campaign.id).count() == 8
+
+
+def test_fixed_explicit_selection_is_store_scoped_and_deduplicated(db):
+    session, organization, store = db
+    customer = add_customer(session, organization, store)
+    campaign = make_campaign(session, organization, store, status="draft")
+    campaign.audience_type = "fixed"; session.commit()
+    assert _replace_campaign_members(session, campaign, organization.id, store.id, {"member_ids": [customer.id, customer.id]}) == 1
+    session.commit()
+    assert session.query(AutomationAudienceMember).filter_by(automation_id=campaign.id).count() == 1
+
+
+def test_replacing_fixed_members_does_not_change_historical_run_recipients(db):
+    session, organization, store = db
+    first, second = add_customer(session, organization, store, "First"), add_customer(session, organization, store, "Second")
+    campaign = make_campaign(session, organization, store, status="draft")
+    campaign.audience_type = "fixed"; session.commit()
+    _replace_campaign_members(session, campaign, organization.id, store.id, {"member_ids": [first.id]})
+    run = AutomationRun(automation_id=campaign.id, organization_id=organization.id, status="completed", run_key="historical", started_at=datetime.utcnow())
+    session.add(run); session.flush(); session.add(AutomationRecipientExecution(run_id=run.id, customer_id=first.id, status="sent")); session.commit()
+    _replace_campaign_members(session, campaign, organization.id, store.id, {"member_ids": [second.id]}); session.commit()
+    assert session.query(AutomationRecipientExecution).filter_by(run_id=run.id, customer_id=first.id).count() == 1
