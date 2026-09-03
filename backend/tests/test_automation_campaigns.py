@@ -5,17 +5,20 @@ from datetime import datetime, timedelta
 
 import pytest
 from fastapi import HTTPException
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from app.automation_campaigns import (
     audience_metrics,
     render_template,
     validate_campaign,
 )
-from app.db import Base
-from app.models import Customer, CustomerStoreProfile, Organization, Store
+from app.db import Base, get_db
+from app.main import app, get_current_membership, get_current_user
+from app.models import Customer, CustomerStoreProfile, Organization, OrganizationMembership, Store, User
 from app.models import AutomationAudienceMember, AutomationCampaign, AutomationRecipientExecution, AutomationRun, Conversation, Message, WhatsAppConnection, WhatsAppMessageTemplate
 from app.automation_execution_engine import (
     claim_recipients,
@@ -345,3 +348,531 @@ def test_replacing_fixed_members_does_not_change_historical_run_recipients(db):
     session.add(run); session.flush(); session.add(AutomationRecipientExecution(run_id=run.id, customer_id=first.id, status="sent")); session.commit()
     _replace_campaign_members(session, campaign, organization.id, store.id, {"member_ids": [second.id]}); session.commit()
     assert session.query(AutomationRecipientExecution).filter_by(run_id=run.id, customer_id=first.id).count() == 1
+
+
+# ============================================================
+# V2.1D EXPLICIT ENDPOINT TESTS
+# ============================================================
+
+@pytest.fixture()
+def endpoint_db():
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine)()
+    organization = Organization(name="Endpoint Org", slug="endpoint-org", plan="starter", subscription_status="active")
+    session.add(organization); session.flush()
+    store = Store(organization_id=organization.id, name="Endpoint Store", slug="endpoint-store", country_code="CO", currency="COP", timezone="America/Bogota", default_language="es")
+    session.add(store); session.flush()
+    user = User(email="endpoint@test.com", name="Endpoint Tester", external_auth_id="ep-cognito-sub")
+    session.add(user); session.flush()
+    membership = OrganizationMembership(user_id=user.id, organization_id=organization.id, role="manager")
+    session.add(membership); session.flush()
+    other_org = Organization(name="Other Org", slug="other-org", plan="starter", subscription_status="active")
+    session.add(other_org); session.flush()
+    other_user = User(email="other@test.com", name="Other Tester", external_auth_id="other-cognito-sub")
+    session.add(other_user); session.flush()
+    other_membership = OrganizationMembership(user_id=other_user.id, organization_id=other_org.id, role="manager")
+    session.add(other_membership); session.flush()
+    other_store = Store(organization_id=other_org.id, name="Other Store", slug="other-store", country_code="CO", currency="COP", timezone="America/Bogota", default_language="es")
+    session.add(other_store); session.flush()
+    yield session, organization, store, membership, other_org, other_store, other_membership
+    session.close(); Base.metadata.drop_all(engine)
+
+
+def _make_endpoint_client(db, membership):
+    original_overrides = dict(app.dependency_overrides)
+
+    def _override_db():
+        try:
+            yield db
+        finally:
+            pass
+
+    def _override_user():
+        return membership.user
+
+    def _override_membership():
+        return membership
+
+    app.dependency_overrides[get_db] = _override_db
+    app.dependency_overrides[get_current_user] = _override_user
+    app.dependency_overrides[get_current_membership] = _override_membership
+    client = TestClient(app, raise_server_exceptions=False)
+    yield client
+    app.dependency_overrides.clear()
+    app.dependency_overrides.update(original_overrides)
+
+
+def _api_campaign(session, organization, store, status="active", name="API Campaign"):
+    campaign = AutomationCampaign(
+        organization_id=organization.id, store_id=store.id, name=name,
+        status=status, audience_type="dynamic", audience_filters={},
+        schedule_type="once", schedule_config={"starts_at": datetime.utcnow().isoformat()},
+        timezone="America/Bogota", cooldown_days=0, message_template="Hola {{customer.name}}",
+        next_run_at=datetime.utcnow() - timedelta(minutes=1), execution_enabled_at=datetime.utcnow(),
+    )
+    session.add(campaign); session.commit()
+    return campaign
+
+
+def _api_run(session, campaign, status="completed", suffix=""):
+    run = AutomationRun(
+        automation_id=campaign.id, organization_id=campaign.organization_id,
+        status=status, run_key=f"api-{datetime.utcnow().timestamp()}-{suffix}",
+        started_at=datetime.utcnow(),
+    )
+    session.add(run); session.commit()
+    return run
+
+
+def _api_recipient(session, run, customer, status="failed", exclusion_reason=None, attempt_count=1, error_code=None):
+    recipient = AutomationRecipientExecution(
+        run_id=run.id, customer_id=customer.id, status=status,
+        exclusion_reason=exclusion_reason, attempt_count=attempt_count,
+        error_code=error_code, rendered_message="Hola Test", next_attempt_at=datetime.utcnow(),
+    )
+    session.add(recipient); session.commit()
+    return recipient
+
+
+def _api_customer(session, organization, name="API Customer"):
+    customer = Customer(organization_id=organization.id, name=name, phone="573001111111", country_code="CO")
+    session.add(customer); session.commit()
+    return customer
+
+
+def _api_customer_with_inbound(session, organization, store, name="API Customer"):
+    customer = Customer(organization_id=organization.id, name=name, phone="573001111111", country_code="CO")
+    session.add(customer); session.flush()
+    conversation = Conversation(organization_id=organization.id, store_id=store.id, customer_id=customer.id, channel="WhatsApp", preview="hi", mode="ai")
+    session.add(conversation); session.flush()
+    session.add(Message(conversation_id=conversation.id, sender="customer", text="hi", provider="whatsapp", external_message_id=f"inbound-{customer.id}", created_at=datetime.utcnow() - timedelta(minutes=1)))
+    session.commit()
+    return customer
+
+
+class TestRunListEndpoint:
+    def test_empty_list(self, endpoint_db):
+        session, org, store, membership, *_ = endpoint_db
+        client = next(_make_endpoint_client(db=session, membership=membership))
+        campaign = _api_campaign(session, org, store)
+        resp = client.get(f"/api/stores/{store.id}/automation-campaigns/{campaign.id}/runs")
+        assert resp.status_code == 200
+        assert resp.json()["items"] == []
+
+    def test_one_run(self, endpoint_db):
+        session, org, store, membership, *_ = endpoint_db
+        client = next(_make_endpoint_client(db=session, membership=membership))
+        campaign = _api_campaign(session, org, store)
+        run = _api_run(session, campaign)
+        resp = client.get(f"/api/stores/{store.id}/automation-campaigns/{campaign.id}/runs")
+        assert resp.status_code == 200
+        items = resp.json()["items"]
+        assert len(items) == 1
+        assert items[0]["id"] == run.id
+        assert items[0]["campaign_name"] == "API Campaign"
+
+    def test_multiple_runs_ordered_desc(self, endpoint_db):
+        session, org, store, membership, *_ = endpoint_db
+        client = next(_make_endpoint_client(db=session, membership=membership))
+        campaign = _api_campaign(session, org, store)
+        r1 = _api_run(session, campaign, suffix="first")
+        r2 = _api_run(session, campaign, suffix="second")
+        resp = client.get(f"/api/stores/{store.id}/automation-campaigns/{campaign.id}/runs")
+        items = resp.json()["items"]
+        assert [i["id"] for i in items] == [r2.id, r1.id]
+
+    def test_counters_serialized(self, endpoint_db):
+        session, org, store, membership, *_ = endpoint_db
+        client = next(_make_endpoint_client(db=session, membership=membership))
+        campaign = _api_campaign(session, org, store)
+        run = _api_run(session, campaign)
+        run.matched_count = 10; run.eligible_count = 8
+        run.sent_count = 5; run.failed_count = 2; run.excluded_count = 1
+        session.commit()
+        resp = client.get(f"/api/stores/{store.id}/automation-campaigns/{campaign.id}/runs")
+        item = resp.json()["items"][0]
+        assert item["matched_count"] == 10
+        assert item["eligible_count"] == 8
+        assert item["sent_count"] == 5
+        assert item["failed_count"] == 2
+        assert item["excluded_count"] == 1
+
+    def test_wrong_store_404(self, endpoint_db):
+        session, org, store, membership, _, other_store, _ = endpoint_db
+        client = next(_make_endpoint_client(db=session, membership=membership))
+        campaign = _api_campaign(session, org, store)
+        resp = client.get(f"/api/stores/{other_store.id}/automation-campaigns/{campaign.id}/runs")
+        assert resp.status_code == 404
+
+    def test_wrong_org_404(self, endpoint_db):
+        session, org, store, membership, other_org, other_store, other_membership = endpoint_db
+        client = next(_make_endpoint_client(db=session, membership=other_membership))
+        campaign = _api_campaign(session, org, store)
+        resp = client.get(f"/api/stores/{store.id}/automation-campaigns/{campaign.id}/runs")
+        assert resp.status_code == 404
+
+
+class TestRunDetailEndpoint:
+    def test_valid_run(self, endpoint_db):
+        session, org, store, membership, *_ = endpoint_db
+        client = next(_make_endpoint_client(db=session, membership=membership))
+        campaign = _api_campaign(session, org, store)
+        customer = _api_customer(session, org)
+        run = _api_run(session, campaign)
+        _api_recipient(session, run, customer, status="sent", attempt_count=1)
+        resp = client.get(f"/api/stores/{store.id}/automation-campaigns/{campaign.id}/runs/{run.id}")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total_recipients"] == 1
+
+    def test_pending_count(self, endpoint_db):
+        session, org, store, membership, *_ = endpoint_db
+        client = next(_make_endpoint_client(db=session, membership=membership))
+        campaign = _api_campaign(session, org, store)
+        customer = _api_customer(session, org)
+        run = _api_run(session, campaign, status="running")
+        _api_recipient(session, run, customer, status="sent")
+        resp = client.get(f"/api/stores/{store.id}/automation-campaigns/{campaign.id}/runs/{run.id}")
+        data = resp.json()
+        assert data["pending_count"] == 0
+
+    def test_run_not_found(self, endpoint_db):
+        session, org, store, membership, *_ = endpoint_db
+        client = next(_make_endpoint_client(db=session, membership=membership))
+        campaign = _api_campaign(session, org, store)
+        resp = client.get(f"/api/stores/{store.id}/automation-campaigns/{campaign.id}/runs/99999")
+        assert resp.status_code == 404
+
+    def test_wrong_campaign_404(self, endpoint_db):
+        session, org, store, membership, *_ = endpoint_db
+        client = next(_make_endpoint_client(db=session, membership=membership))
+        campaign1 = _api_campaign(session, org, store, name="Campaign 1")
+        campaign2 = _api_campaign(session, org, store, name="Campaign 2")
+        run = _api_run(session, campaign1, suffix="c1")
+        resp = client.get(f"/api/stores/{store.id}/automation-campaigns/{campaign2.id}/runs/{run.id}")
+        assert resp.status_code == 404
+
+
+class TestRecipientListEndpoint:
+    def test_pagination(self, endpoint_db):
+        session, org, store, membership, *_ = endpoint_db
+        client = next(_make_endpoint_client(db=session, membership=membership))
+        campaign = _api_campaign(session, org, store)
+        run = _api_run(session, campaign)
+        customers = [_api_customer(session, org, f"C{i}") for i in range(5)]
+        for c in customers:
+            _api_recipient(session, run, c, status="sent")
+        resp = client.get(f"/api/stores/{store.id}/automation-campaigns/{campaign.id}/runs/{run.id}/recipients?page=1&page_size=2")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["items"]) == 2
+        assert data["total"] == 5
+        assert data["total_pages"] == 3
+
+    def test_status_filter(self, endpoint_db):
+        session, org, store, membership, *_ = endpoint_db
+        client = next(_make_endpoint_client(db=session, membership=membership))
+        campaign = _api_campaign(session, org, store)
+        run = _api_run(session, campaign)
+        c1 = _api_customer(session, org, "Sent1")
+        c2 = _api_customer(session, org, "Failed1")
+        _api_recipient(session, run, c1, status="sent")
+        _api_recipient(session, run, c2, status="failed", error_code="channel_unavailable")
+        resp = client.get(f"/api/stores/{store.id}/automation-campaigns/{campaign.id}/runs/{run.id}/recipients?status=sent")
+        data = resp.json()
+        assert len(data["items"]) == 1
+        assert data["items"][0]["customer_name"] == "Sent1"
+
+    def test_reason_filter(self, endpoint_db):
+        session, org, store, membership, *_ = endpoint_db
+        client = next(_make_endpoint_client(db=session, membership=membership))
+        campaign = _api_campaign(session, org, store)
+        run = _api_run(session, campaign)
+        c1 = _api_customer(session, org, "Window1")
+        c2 = _api_customer(session, org, "Template1")
+        _api_recipient(session, run, c1, status="skipped", exclusion_reason="outside_service_window")
+        _api_recipient(session, run, c2, status="skipped", exclusion_reason="template_required")
+        resp = client.get(f"/api/stores/{store.id}/automation-campaigns/{campaign.id}/runs/{run.id}/recipients?reason=template_required")
+        data = resp.json()
+        assert len(data["items"]) == 1
+        assert data["items"][0]["customer_name"] == "Template1"
+
+    def test_search_name(self, endpoint_db):
+        session, org, store, membership, *_ = endpoint_db
+        client = next(_make_endpoint_client(db=session, membership=membership))
+        campaign = _api_campaign(session, org, store)
+        run = _api_run(session, campaign)
+        _api_recipient(session, run, _api_customer(session, org, "Alice Smith"), status="sent")
+        _api_recipient(session, run, _api_customer(session, org, "Bob Jones"), status="sent")
+        resp = client.get(f"/api/stores/{store.id}/automation-campaigns/{campaign.id}/runs/{run.id}/recipients?search=alice")
+        data = resp.json()
+        assert len(data["items"]) == 1
+        assert data["items"][0]["customer_name"] == "Alice Smith"
+
+    def test_search_phone(self, endpoint_db):
+        session, org, store, membership, *_ = endpoint_db
+        client = next(_make_endpoint_client(db=session, membership=membership))
+        campaign = _api_campaign(session, org, store)
+        run = _api_run(session, campaign)
+        c = _api_customer(session, org, "PhoneCust")
+        c.phone = "573009998888"; session.commit()
+        _api_recipient(session, run, c, status="sent")
+        resp = client.get(f"/api/stores/{store.id}/automation-campaigns/{campaign.id}/runs/{run.id}/recipients?search=9998")
+        data = resp.json()
+        assert len(data["items"]) == 1
+
+    def test_page_size_capped(self, endpoint_db):
+        session, org, store, membership, *_ = endpoint_db
+        client = next(_make_endpoint_client(db=session, membership=membership))
+        campaign = _api_campaign(session, org, store)
+        run = _api_run(session, campaign)
+        resp = client.get(f"/api/stores/{store.id}/automation-campaigns/{campaign.id}/runs/{run.id}/recipients?page_size=999")
+        data = resp.json()
+        assert data["page_size"] == 100
+
+    def test_no_cross_store_leak(self, endpoint_db):
+        session, org, store, membership, _, other_store, _ = endpoint_db
+        client = next(_make_endpoint_client(db=session, membership=membership))
+        campaign = _api_campaign(session, org, store)
+        other_campaign = _api_campaign(session, org, other_store, name="Other Store Campaign")
+        run = _api_run(session, campaign)
+        other_run = _api_run(session, other_campaign)
+        c = _api_customer(session, org, "StoreLeak")
+        _api_recipient(session, other_run, c, status="sent")
+        resp = client.get(f"/api/stores/{store.id}/automation-campaigns/{campaign.id}/runs/{run.id}/recipients")
+        data = resp.json()
+        assert len(data["items"]) == 0
+
+    def test_ordering_deterministic(self, endpoint_db):
+        session, org, store, membership, *_ = endpoint_db
+        client = next(_make_endpoint_client(db=session, membership=membership))
+        campaign = _api_campaign(session, org, store)
+        run = _api_run(session, campaign)
+        customers = [_api_customer(session, org, f"Order{i}") for i in range(3)]
+        recipients = [_api_recipient(session, run, c, status="sent") for c in customers]
+        resp1 = client.get(f"/api/stores/{store.id}/automation-campaigns/{campaign.id}/runs/{run.id}/recipients?page_size=10")
+        resp2 = client.get(f"/api/stores/{store.id}/automation-campaigns/{campaign.id}/runs/{run.id}/recipients?page_size=10")
+        assert [i["id"] for i in resp1.json()["items"]] == [i["id"] for i in resp2.json()["items"]]
+
+
+class TestRecipientDetailEndpoint:
+    def test_valid_detail(self, endpoint_db):
+        session, org, store, membership, *_ = endpoint_db
+        client = next(_make_endpoint_client(db=session, membership=membership))
+        campaign = _api_campaign(session, org, store)
+        run = _api_run(session, campaign)
+        customer = _api_customer(session, org)
+        recipient = _api_recipient(session, run, customer, status="failed", error_code="channel_unavailable")
+        resp = client.get(f"/api/stores/{store.id}/automation-campaigns/{campaign.id}/runs/{run.id}/recipients/{recipient.id}")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["customer_name"] == "API Customer"
+        assert data["rendered_message"] == "Hola Test"
+        assert data["attempts"] == []
+
+    def test_wrong_run_404(self, endpoint_db):
+        session, org, store, membership, *_ = endpoint_db
+        client = next(_make_endpoint_client(db=session, membership=membership))
+        campaign = _api_campaign(session, org, store)
+        run1 = _api_run(session, campaign, suffix="r1")
+        run2 = _api_run(session, campaign, suffix="r2")
+        customer = _api_customer(session, org)
+        recipient = _api_recipient(session, run1, customer)
+        resp = client.get(f"/api/stores/{store.id}/automation-campaigns/{campaign.id}/runs/{run2.id}/recipients/{recipient.id}")
+        assert resp.status_code == 404
+
+
+class TestRetryEndpoint:
+    def test_failed_to_queued(self, endpoint_db):
+        session, org, store, membership, *_ = endpoint_db
+        client = next(_make_endpoint_client(db=session, membership=membership))
+        campaign = _api_campaign(session, org, store)
+        connection = WhatsAppConnection(organization_id=org.id, store_id=store.id, phone_number_id="phone", business_account_id="biz", access_token_encrypted="enc", verify_token="verify", status="connected")
+        session.add(connection); session.commit()
+        customer = _api_customer_with_inbound(session, org, store)
+        run = _api_run(session, campaign, status="failed")
+        recipient = _api_recipient(session, run, customer, status="failed", error_code="channel_unavailable")
+        resp = client.post(f"/api/stores/{store.id}/automation-campaigns/{campaign.id}/runs/{run.id}/recipients/{recipient.id}/retry")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "queued"
+        refreshed = session.get(AutomationRecipientExecution, recipient.id)
+        assert refreshed.status == "queued"
+        assert refreshed.error_code is None
+
+    def test_failed_run_transitions_to_pending(self, endpoint_db):
+        session, org, store, membership, *_ = endpoint_db
+        client = next(_make_endpoint_client(db=session, membership=membership))
+        campaign = _api_campaign(session, org, store)
+        connection = WhatsAppConnection(organization_id=org.id, store_id=store.id, phone_number_id="phone", business_account_id="biz", access_token_encrypted="enc", verify_token="verify", status="connected")
+        session.add(connection); session.commit()
+        customer = _api_customer_with_inbound(session, org, store)
+        run = _api_run(session, campaign, status="failed")
+        run.failed_count = 1; session.commit()
+        recipient = _api_recipient(session, run, customer, status="failed")
+        resp = client.post(f"/api/stores/{store.id}/automation-campaigns/{campaign.id}/runs/{run.id}/recipients/{recipient.id}/retry")
+        assert resp.status_code == 200
+        session.expire_all()
+        refreshed_run = session.get(AutomationRun, run.id)
+        assert refreshed_run.status == "pending"
+        assert refreshed_run.completed_at is None
+        assert refreshed_run.failed_count == 0
+
+    def test_skipped_recoverable_to_queued(self, endpoint_db):
+        session, org, store, membership, *_ = endpoint_db
+        client = next(_make_endpoint_client(db=session, membership=membership))
+        campaign = _api_campaign(session, org, store)
+        connection = WhatsAppConnection(organization_id=org.id, store_id=store.id, phone_number_id="phone", business_account_id="biz", access_token_encrypted="enc", verify_token="verify", status="connected")
+        session.add(connection); session.commit()
+        customer = _api_customer_with_inbound(session, org, store)
+        run = _api_run(session, campaign, status="completed")
+        run.excluded_count = 1; session.commit()
+        recipient = _api_recipient(session, run, customer, status="skipped", exclusion_reason="template_required", attempt_count=0)
+        resp = client.post(f"/api/stores/{store.id}/automation-campaigns/{campaign.id}/runs/{run.id}/recipients/{recipient.id}/retry")
+        assert resp.status_code == 200
+        session.expire_all()
+        assert session.get(AutomationRecipientExecution, recipient.id).status == "queued"
+
+    def test_skipped_non_recoverable_rejected(self, endpoint_db):
+        session, org, store, membership, *_ = endpoint_db
+        client = next(_make_endpoint_client(db=session, membership=membership))
+        campaign = _api_campaign(session, org, store)
+        run = _api_run(session, campaign)
+        customer = _api_customer(session, org)
+        recipient = _api_recipient(session, run, customer, status="skipped", exclusion_reason="cooldown", attempt_count=0)
+        resp = client.post(f"/api/stores/{store.id}/automation-campaigns/{campaign.id}/runs/{run.id}/recipients/{recipient.id}/retry")
+        assert resp.status_code == 400
+
+    def test_sent_rejected(self, endpoint_db):
+        session, org, store, membership, *_ = endpoint_db
+        client = next(_make_endpoint_client(db=session, membership=membership))
+        campaign = _api_campaign(session, org, store)
+        run = _api_run(session, campaign)
+        customer = _api_customer(session, org)
+        recipient = _api_recipient(session, run, customer, status="sent")
+        resp = client.post(f"/api/stores/{store.id}/automation-campaigns/{campaign.id}/runs/{run.id}/recipients/{recipient.id}/retry")
+        assert resp.status_code == 400
+
+    def test_ambiguous_rejected(self, endpoint_db):
+        session, org, store, membership, *_ = endpoint_db
+        client = next(_make_endpoint_client(db=session, membership=membership))
+        campaign = _api_campaign(session, org, store)
+        run = _api_run(session, campaign)
+        customer = _api_customer(session, org)
+        recipient = _api_recipient(session, run, customer, status="ambiguous")
+        resp = client.post(f"/api/stores/{store.id}/automation-campaigns/{campaign.id}/runs/{run.id}/recipients/{recipient.id}/retry")
+        assert resp.status_code == 400
+
+    def test_queued_rejected(self, endpoint_db):
+        session, org, store, membership, *_ = endpoint_db
+        client = next(_make_endpoint_client(db=session, membership=membership))
+        campaign = _api_campaign(session, org, store)
+        run = _api_run(session, campaign)
+        customer = _api_customer(session, org)
+        recipient = _api_recipient(session, run, customer, status="queued")
+        resp = client.post(f"/api/stores/{store.id}/automation-campaigns/{campaign.id}/runs/{run.id}/recipients/{recipient.id}/retry")
+        assert resp.status_code == 400
+
+    def test_processing_rejected(self, endpoint_db):
+        session, org, store, membership, *_ = endpoint_db
+        client = next(_make_endpoint_client(db=session, membership=membership))
+        campaign = _api_campaign(session, org, store)
+        run = _api_run(session, campaign)
+        customer = _api_customer(session, org)
+        recipient = _api_recipient(session, run, customer, status="processing")
+        resp = client.post(f"/api/stores/{store.id}/automation-campaigns/{campaign.id}/runs/{run.id}/recipients/{recipient.id}/retry")
+        assert resp.status_code == 400
+
+    def test_attempt_count_preserved(self, endpoint_db):
+        session, org, store, membership, *_ = endpoint_db
+        client = next(_make_endpoint_client(db=session, membership=membership))
+        campaign = _api_campaign(session, org, store)
+        connection = WhatsAppConnection(organization_id=org.id, store_id=store.id, phone_number_id="phone", business_account_id="biz", access_token_encrypted="enc", verify_token="verify", status="connected")
+        session.add(connection); session.commit()
+        customer = _api_customer(session, org)
+        run = _api_run(session, campaign)
+        recipient = _api_recipient(session, run, customer, status="failed", attempt_count=2)
+        client.post(f"/api/stores/{store.id}/automation-campaigns/{campaign.id}/runs/{run.id}/recipients/{recipient.id}/retry")
+        refreshed = session.get(AutomationRecipientExecution, recipient.id)
+        assert refreshed.attempt_count == 2
+
+    def test_provider_message_id_preserved(self, endpoint_db):
+        session, org, store, membership, *_ = endpoint_db
+        client = next(_make_endpoint_client(db=session, membership=membership))
+        campaign = _api_campaign(session, org, store)
+        connection = WhatsAppConnection(organization_id=org.id, store_id=store.id, phone_number_id="phone", business_account_id="biz", access_token_encrypted="enc", verify_token="verify", status="connected")
+        session.add(connection); session.commit()
+        customer = _api_customer(session, org)
+        run = _api_run(session, campaign)
+        recipient = _api_recipient(session, run, customer, status="failed")
+        recipient.provider_message_id = "wamid.old"
+        session.commit()
+        client.post(f"/api/stores/{store.id}/automation-campaigns/{campaign.id}/runs/{run.id}/recipients/{recipient.id}/retry")
+        refreshed = session.get(AutomationRecipientExecution, recipient.id)
+        assert refreshed.provider_message_id == "wamid.old"
+
+    def test_no_connection_rejected(self, endpoint_db):
+        session, org, store, membership, *_ = endpoint_db
+        client = next(_make_endpoint_client(db=session, membership=membership))
+        campaign = _api_campaign(session, org, store)
+        customer = _api_customer(session, org)
+        run = _api_run(session, campaign)
+        recipient = _api_recipient(session, run, customer, status="failed")
+        resp = client.post(f"/api/stores/{store.id}/automation-campaigns/{campaign.id}/runs/{run.id}/recipients/{recipient.id}/retry")
+        assert resp.status_code == 400
+        assert "connection" in resp.json()["detail"].lower()
+
+    def test_compliance_blocks_outside_window(self, endpoint_db):
+        session, org, store, membership, *_ = endpoint_db
+        client = next(_make_endpoint_client(db=session, membership=membership))
+        campaign = _api_campaign(session, org, store)
+        campaign.message_mode = "free_form"; session.commit()
+        connection = WhatsAppConnection(organization_id=org.id, store_id=store.id, phone_number_id="phone", business_account_id="biz", access_token_encrypted="enc", verify_token="verify", status="connected")
+        session.add(connection); session.commit()
+        customer = Customer(organization_id=org.id, name="NoInbound", phone="573002222222", country_code="CO")
+        session.add(customer); session.commit()
+        run = _api_run(session, campaign)
+        recipient = _api_recipient(session, run, customer, status="failed")
+        resp = client.post(f"/api/stores/{store.id}/automation-campaigns/{campaign.id}/runs/{run.id}/recipients/{recipient.id}/retry")
+        assert resp.status_code == 400
+        assert "compliance" in resp.json()["detail"].lower()
+
+    def test_retry_wrong_store_404(self, endpoint_db):
+        session, org, store, membership, _, other_store, _ = endpoint_db
+        client = next(_make_endpoint_client(db=session, membership=membership))
+        campaign = _api_campaign(session, org, store)
+        run = _api_run(session, campaign)
+        customer = _api_customer(session, org)
+        recipient = _api_recipient(session, run, customer, status="failed")
+        resp = client.post(f"/api/stores/{other_store.id}/automation-campaigns/{campaign.id}/runs/{run.id}/recipients/{recipient.id}/retry")
+        assert resp.status_code == 404
+
+    def test_retry_wrong_org_404(self, endpoint_db):
+        session, org, store, membership, other_org, other_store, other_membership = endpoint_db
+        client = next(_make_endpoint_client(db=session, membership=other_membership))
+        campaign = _api_campaign(session, org, store)
+        run = _api_run(session, campaign)
+        customer = _api_customer(session, org)
+        recipient = _api_recipient(session, run, customer, status="failed")
+        resp = client.post(f"/api/stores/{store.id}/automation-campaigns/{campaign.id}/runs/{run.id}/recipients/{recipient.id}/retry")
+        assert resp.status_code == 404
+
+
+class TestRetryRunCounterCorrectness:
+    def test_failed_count_decrements_on_retry(self, endpoint_db):
+        session, org, store, membership, *_ = endpoint_db
+        client = next(_make_endpoint_client(db=session, membership=membership))
+        campaign = _api_campaign(session, org, store)
+        connection = WhatsAppConnection(organization_id=org.id, store_id=store.id, phone_number_id="phone", business_account_id="biz", access_token_encrypted="enc", verify_token="verify", status="connected")
+        session.add(connection); session.commit()
+        c1 = _api_customer_with_inbound(session, org, store, "C1")
+        c2 = _api_customer_with_inbound(session, org, store, "C2")
+        run = _api_run(session, campaign, status="failed")
+        run.failed_count = 2; session.commit()
+        r1 = _api_recipient(session, run, c1, status="failed", error_code="channel_unavailable")
+        r2 = _api_recipient(session, run, c2, status="failed", error_code="channel_unavailable")
+        client.post(f"/api/stores/{store.id}/automation-campaigns/{campaign.id}/runs/{run.id}/recipients/{r1.id}/retry")
+        session.expire_all()
+        refreshed_run = session.get(AutomationRun, run.id)
+        assert refreshed_run.failed_count == 1
+        assert refreshed_run.status == "pending"

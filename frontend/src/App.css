@@ -9475,6 +9475,64 @@ button:disabled {
   .automation-wizard { width: calc(100% - 24px); }
 }
 
+.automation-run-explorer { display: grid; gap: 16px; }
+.automation-run-campaign-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+.automation-run-campaign-card { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 14px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--surface-color); cursor: pointer; text-align: left; transition: border-color 0.15s; }
+.automation-run-campaign-card:hover { border-color: var(--primary-color); }
+.automation-run-campaign-card span { color: var(--text-secondary); font-size: 0.8rem; }
+.automation-run-detail-header { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px; }
+.automation-run-detail-header h3 { margin: 0; }
+.automation-run-detail-meta { display: flex; gap: 14px; flex-wrap: wrap; font-size: 0.85rem; color: var(--text-secondary); }
+.automation-run-counter-grid { display: flex; gap: 10px; flex-wrap: wrap; }
+.automation-run-counter { display: flex; flex-direction: column; align-items: center; padding: 12px 18px; border: 1px solid var(--border-color); border-radius: 8px; min-width: 90px; background: var(--surface-color); }
+.automation-run-counter-value { font-size: 1.3rem; font-weight: 700; }
+.automation-run-counter-label { font-size: 0.75rem; color: var(--text-secondary); }
+.automation-run-counter.success .automation-run-counter-value { color: #16a34a; }
+.automation-run-counter.danger .automation-run-counter-value { color: #dc2626; }
+.automation-run-counter.warning .automation-run-counter-value { color: #d97706; }
+.automation-run-counter.muted .automation-run-counter-value { color: var(--text-secondary); }
+.automation-run-live-notice { font-size: 0.8rem; color: var(--primary-color); font-style: italic; }
+.automation-runs-table-wrap, .automation-recipient-table-wrap { overflow-x: auto; border: 1px solid var(--border-color); border-radius: 8px; }
+.automation-runs-table, .automation-recipient-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.automation-runs-table th, .automation-runs-table td, .automation-recipient-table th, .automation-recipient-table td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border-color); white-space: nowrap; }
+.automation-run-row, .automation-recipient-row { cursor: pointer; transition: background 0.1s; }
+.automation-run-row:hover, .automation-recipient-row:hover { background: var(--surface-muted); }
+.automation-run-status-badge, .automation-recipient-status-badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 0.75rem; font-weight: 600; }
+.automation-run-status-badge.simulated, .automation-recipient-status-badge.simulated { background: #e0e7ff; color: #3730a3; }
+.automation-run-status-badge.pending, .automation-recipient-status-badge.pending { background: #fef3c7; color: #92400e; }
+.automation-run-status-badge.running, .automation-recipient-status-badge.running, .automation-recipient-status-badge.processing, .automation-recipient-status-badge.sending { background: #dbeafe; color: #1e40af; }
+.automation-run-status-badge.completed, .automation-recipient-status-badge.sent { background: #dcfce7; color: #166534; }
+.automation-run-status-badge.partial { background: #fef9c3; color: #854d0e; }
+.automation-run-status-badge.failed, .automation-recipient-status-badge.failed { background: #fee2e2; color: #991b1b; }
+.automation-recipient-status-badge.queued { background: #f3f4f6; color: #374151; }
+.automation-recipient-status-badge.retry_wait { background: #fef3c7; color: #92400e; }
+.automation-recipient-status-badge.skipped { background: #f3e8ff; color: #6b21a8; }
+.automation-recipient-status-badge.ambiguous { background: #ffe4e6; color: #9f1239; }
+.automation-recipient-filters { display: flex; gap: 8px; flex-wrap: wrap; }
+.automation-recipient-filters input, .automation-recipient-filters select { padding: 7px 10px; border: 1px solid var(--border-color); border-radius: 6px; min-width: 140px; }
+.automation-recipient-pagination, .automation-run-detail-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.automation-recipient-detail-modal { max-width: 720px; width: calc(100% - 24px); }
+.automation-recipient-detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 12px 0; }
+.automation-recipient-detail-grid strong { display: block; margin-bottom: 2px; font-size: 0.8rem; color: var(--text-secondary); }
+.automation-recipient-detail-grid p { margin: 0; }
+.automation-recipient-message-preview { grid-column: 1 / -1; }
+.automation-recipient-message-preview p { white-space: pre-wrap; padding: 10px; background: var(--surface-muted); border-radius: 6px; font-size: 0.85rem; }
+.automation-attempt-timeline { margin-top: 16px; }
+.automation-attempt-timeline h4 { margin: 0 0 8px; }
+.automation-attempt-entry { padding: 10px; border-left: 3px solid var(--border-color); margin-bottom: 8px; background: var(--surface-color); border-radius: 0 6px 6px 0; }
+.automation-attempt-entry.sent { border-left-color: #16a34a; }
+.automation-attempt-entry.failed { border-left-color: #dc2626; }
+.automation-attempt-entry.sending { border-left-color: #2563eb; }
+.automation-attempt-entry.ambiguous { border-left-color: #e11d48; }
+.automation-attempt-entry.retry_wait { border-left-color: #d97706; }
+.automation-attempt-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.automation-attempt-number { font-weight: 600; }
+.automation-attempt-meta { display: flex; gap: 12px; font-size: 0.8rem; color: var(--text-secondary); }
+.automation-attempt-error { margin: 4px 0 0; color: #dc2626; font-size: 0.85rem; }
+.automation-mono-text { font-family: monospace; font-size: 0.8rem; word-break: break-all; }
+.automation-ambiguous-notice { padding: 10px; border: 1px solid #fecaca; background: #fef2f2; border-radius: 6px; color: #991b1b; font-size: 0.85rem; }
+@media (max-width: 640px) { .automation-recipient-detail-grid { grid-template-columns: 1fr; } .automation-run-counter-grid { flex-direction: column; } }
+
 .knowledge-source-modal {
   width: min(760px, 100%);
 }

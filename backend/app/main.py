@@ -9289,12 +9289,154 @@ def duplicate_automation_campaign(campaign_id: int, store_id: int, membership: O
     return _serialize_campaign(copy)
 
 
+def _serialize_run(run, campaign_name=None):
+    return {
+        "id": run.id, "automation_id": run.automation_id,
+        "campaign_name": campaign_name, "status": run.status,
+        "matched_count": run.matched_count, "eligible_count": run.eligible_count,
+        "sent_count": run.sent_count, "failed_count": run.failed_count,
+        "excluded_count": run.excluded_count,
+        "started_at": run.started_at.isoformat() + "Z" if run.started_at else None,
+        "completed_at": run.completed_at.isoformat() + "Z" if run.completed_at else None,
+        "scheduled_for": run.scheduled_for.isoformat() + "Z" if run.scheduled_for else None,
+    }
+
+
+RECOVERABLE_SKIP_REASONS = {"template_required", "template_not_approved", "connection_inactive", "invalid_phone"}
+
+
 @app.get("/api/stores/{store_id}/automation-campaigns/{campaign_id}/runs")
 def list_automation_campaign_runs(campaign_id: int, store_id: int, membership: OrganizationMembership = Depends(require_permission("automations.read")), db: Session = Depends(get_db)):
     _campaign_store_or_404(db, membership.organization_id, store_id)
     campaign = _campaign_or_404(db, membership.organization_id, store_id, campaign_id)
     runs = db.query(AutomationRun).filter(AutomationRun.automation_id == campaign.id).order_by(AutomationRun.id.desc()).all()
-    return {"items": [{"id": run.id, "status": run.status, "matched": run.matched_count, "eligible": run.eligible_count, "sent": run.sent_count, "failed": run.failed_count, "excluded": run.excluded_count, "started_at": run.started_at.isoformat() + "Z"} for run in runs]}
+    return {"items": [_serialize_run(run, campaign.name) for run in runs]}
+
+
+@app.get("/api/stores/{store_id}/automation-campaigns/{campaign_id}/runs/{run_id}")
+def get_automation_run(run_id: int, campaign_id: int, store_id: int, membership: OrganizationMembership = Depends(require_permission("automations.read")), db: Session = Depends(get_db)):
+    _campaign_store_or_404(db, membership.organization_id, store_id)
+    campaign = _campaign_or_404(db, membership.organization_id, store_id, campaign_id)
+    run = db.query(AutomationRun).filter(AutomationRun.id == run_id, AutomationRun.automation_id == campaign.id).first()
+    if not run:
+        raise HTTPException(404, "Run not found")
+    terminal = {"sent", "failed", "skipped", "ambiguous"}
+    total = db.query(AutomationRecipientExecution).filter(AutomationRecipientExecution.run_id == run.id).count()
+    terminal_count = db.query(AutomationRecipientExecution).filter(AutomationRecipientExecution.run_id == run.id, AutomationRecipientExecution.status.in_(terminal)).count()
+    pending = total - terminal_count
+    return {**_serialize_run(run, campaign.name), "total_recipients": total, "pending_count": pending}
+
+
+@app.get("/api/stores/{store_id}/automation-campaigns/{campaign_id}/runs/{run_id}/recipients")
+def list_run_recipients(run_id: int, campaign_id: int, store_id: int, status: str | None = None, reason: str | None = None, search: str | None = None, page: int = 1, page_size: int = 25, membership: OrganizationMembership = Depends(require_permission("automations.read")), db: Session = Depends(get_db)):
+    _campaign_store_or_404(db, membership.organization_id, store_id)
+    campaign = _campaign_or_404(db, membership.organization_id, store_id, campaign_id)
+    run = db.query(AutomationRun).filter(AutomationRun.id == run_id, AutomationRun.automation_id == campaign.id).first()
+    if not run:
+        raise HTTPException(404, "Run not found")
+    from .models import Customer
+    query = db.query(AutomationRecipientExecution, Customer).join(Customer, AutomationRecipientExecution.customer_id == Customer.id).filter(AutomationRecipientExecution.run_id == run.id)
+    if status:
+        query = query.filter(AutomationRecipientExecution.status == status)
+    if reason:
+        query = query.filter(AutomationRecipientExecution.exclusion_reason == reason)
+    if search:
+        term = f"%{search.lower()}%"
+        query = query.filter((Customer.name.ilike(term)) | (Customer.phone.ilike(term)) | (Customer.email.ilike(term)))
+    total = query.count()
+    page_size = min(max(1, page_size), 100)
+    page = max(1, page)
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    rows = query.order_by(AutomationRecipientExecution.id).offset((page - 1) * page_size).limit(page_size).all()
+    items = []
+    for recipient, customer in rows:
+        items.append({
+            "id": recipient.id, "customer_id": recipient.customer_id,
+            "customer_name": customer.name, "customer_phone": customer.phone,
+            "status": recipient.status, "exclusion_reason": recipient.exclusion_reason,
+            "attempt_count": recipient.attempt_count,
+            "next_attempt_at": recipient.next_attempt_at.isoformat() + "Z" if recipient.next_attempt_at else None,
+            "sent_at": recipient.sent_at.isoformat() + "Z" if recipient.sent_at else None,
+            "provider_message_id": recipient.provider_message_id,
+            "error_code": recipient.error_code, "error_message": recipient.error_message,
+        })
+    return {"items": items, "total": total, "page": page, "page_size": page_size, "total_pages": total_pages}
+
+
+@app.get("/api/stores/{store_id}/automation-campaigns/{campaign_id}/runs/{run_id}/recipients/{recipient_id}")
+def get_run_recipient(recipient_id: int, run_id: int, campaign_id: int, store_id: int, membership: OrganizationMembership = Depends(require_permission("automations.read")), db: Session = Depends(get_db)):
+    _campaign_store_or_404(db, membership.organization_id, store_id)
+    campaign = _campaign_or_404(db, membership.organization_id, store_id, campaign_id)
+    run = db.query(AutomationRun).filter(AutomationRun.id == run_id, AutomationRun.automation_id == campaign.id).first()
+    if not run:
+        raise HTTPException(404, "Run not found")
+    from .models import Customer, AutomationDeliveryAttempt
+    recipient = db.query(AutomationRecipientExecution).filter(AutomationRecipientExecution.id == recipient_id, AutomationRecipientExecution.run_id == run.id).first()
+    if not recipient:
+        raise HTTPException(404, "Recipient not found")
+    customer = db.get(Customer, recipient.customer_id)
+    attempts = db.query(AutomationDeliveryAttempt).filter(AutomationDeliveryAttempt.recipient_execution_id == recipient.id).order_by(AutomationDeliveryAttempt.attempt_number).all()
+    return {
+        "id": recipient.id, "run_id": recipient.run_id, "customer_id": recipient.customer_id,
+        "customer_name": customer.name if customer else None, "customer_phone": customer.phone if customer else None,
+        "status": recipient.status, "exclusion_reason": recipient.exclusion_reason,
+        "rendered_message": recipient.rendered_message,
+        "attempt_count": recipient.attempt_count,
+        "next_attempt_at": recipient.next_attempt_at.isoformat() + "Z" if recipient.next_attempt_at else None,
+        "sent_at": recipient.sent_at.isoformat() + "Z" if recipient.sent_at else None,
+        "provider_message_id": recipient.provider_message_id,
+        "error_code": recipient.error_code, "error_message": recipient.error_message,
+        "template_data": recipient.template_data,
+        "attempts": [{"id": a.id, "attempt_number": a.attempt_number, "status": a.status, "provider_message_id": a.provider_message_id, "error_code": a.error_code, "error_message": a.error_message, "started_at": a.started_at.isoformat() + "Z" if a.started_at else None, "finished_at": a.finished_at.isoformat() + "Z" if a.finished_at else None} for a in attempts],
+    }
+
+
+@app.post("/api/stores/{store_id}/automation-campaigns/{campaign_id}/runs/{run_id}/recipients/{recipient_id}/retry")
+def retry_run_recipient(recipient_id: int, run_id: int, campaign_id: int, store_id: int, membership: OrganizationMembership = Depends(require_permission("automations.write")), db: Session = Depends(get_db)):
+    from .automation_execution_engine import utcnow
+    from .models import Customer, WhatsAppConnection
+    _campaign_store_or_404(db, membership.organization_id, store_id)
+    campaign = _campaign_or_404(db, membership.organization_id, store_id, campaign_id)
+    run = db.query(AutomationRun).filter(AutomationRun.id == run_id, AutomationRun.automation_id == campaign.id).first()
+    if not run:
+        raise HTTPException(404, "Run not found")
+    recipient = db.query(AutomationRecipientExecution).filter(AutomationRecipientExecution.id == recipient_id, AutomationRecipientExecution.run_id == run.id).first()
+    if not recipient:
+        raise HTTPException(404, "Recipient not found")
+    if recipient.status in {"queued", "processing", "sending", "retry_wait"}:
+        raise HTTPException(400, "Recipient is already active")
+    if recipient.status == "ambiguous":
+        raise HTTPException(400, "Ambiguous recipients cannot be retried to prevent duplicates")
+    if recipient.status == "sent":
+        raise HTTPException(400, "Sent recipients do not need retry")
+    if recipient.status == "skipped" and recipient.exclusion_reason not in RECOVERABLE_SKIP_REASONS:
+        raise HTTPException(400, "This skip reason is not recoverable")
+    customer = db.get(Customer, recipient.customer_id)
+    if not customer or not customer.phone:
+        raise HTTPException(400, "Customer phone is unavailable")
+    connection = db.query(WhatsAppConnection).filter(WhatsAppConnection.store_id == campaign.store_id, WhatsAppConnection.organization_id == campaign.organization_id, WhatsAppConnection.status == "connected").first()
+    if not connection:
+        raise HTTPException(400, "WhatsApp connection is inactive")
+    from .whatsapp_compliance import evaluate_whatsapp_delivery_eligibility
+    now = utcnow()
+    compliance = evaluate_whatsapp_delivery_eligibility(db, campaign, connection, recipient.customer_id, now)
+    if not compliance["allowed"]:
+        raise HTTPException(400, f"Compliance check failed: {compliance['reason']}")
+    recipient.status = "queued"
+    recipient.error_code = None
+    recipient.error_message = None
+    recipient.next_attempt_at = now
+    recipient.claimed_at = None
+    recipient.lease_expires_at = None
+    if run.status in {"completed", "partial", "failed"}:
+        run.status = "pending"
+        run.completed_at = None
+        states = [r[0] for r in db.query(AutomationRecipientExecution.status).filter(AutomationRecipientExecution.run_id == run.id).all()]
+        run.sent_count = states.count("sent")
+        run.failed_count = states.count("failed") + states.count("ambiguous")
+        run.excluded_count = states.count("skipped")
+    db.commit()
+    return {"ok": True, "recipient_id": recipient.id, "status": recipient.status}
 
 
 @app.get(

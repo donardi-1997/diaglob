@@ -330,3 +330,88 @@ export async function listWhatsAppTemplates(storeId: number) {
   const response = await api.get<{ items: WhatsAppMessageTemplate[] }>(`/api/stores/${storeId}/whatsapp/templates`);
   return response.data;
 }
+
+export interface AutomationRun {
+  id: number;
+  automation_id: number;
+  campaign_name: string | null;
+  status: "simulated" | "pending" | "running" | "completed" | "partial" | "failed";
+  matched_count: number;
+  eligible_count: number;
+  sent_count: number;
+  failed_count: number;
+  excluded_count: number;
+  started_at: string | null;
+  completed_at: string | null;
+  scheduled_for: string | null;
+  total_recipients?: number;
+  pending_count?: number;
+}
+
+export interface AutomationRecipientRow {
+  id: number;
+  customer_id: number;
+  customer_name: string;
+  customer_phone: string | null;
+  status: string;
+  exclusion_reason: string | null;
+  attempt_count: number;
+  next_attempt_at: string | null;
+  sent_at: string | null;
+  provider_message_id: string | null;
+  error_code: string | null;
+  error_message: string | null;
+}
+
+export interface AutomationRecipientDetail extends AutomationRecipientRow {
+  run_id: number;
+  rendered_message: string | null;
+  template_data: Record<string, unknown>;
+  attempts: AutomationDeliveryAttempt[];
+}
+
+export interface AutomationDeliveryAttempt {
+  id: number;
+  attempt_number: number;
+  status: string;
+  provider_message_id: string | null;
+  error_code: string | null;
+  error_message: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+}
+
+export interface AutomationRecipientPage {
+  items: AutomationRecipientRow[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+}
+
+export async function listCampaignRuns(storeId: number, campaignId: number) {
+  const response = await api.get<{ items: AutomationRun[] }>(`/api/stores/${storeId}/automation-campaigns/${campaignId}/runs`);
+  return response.data;
+}
+
+export async function getCampaignRunDetail(storeId: number, campaignId: number, runId: number) {
+  const response = await api.get<AutomationRun>(`/api/stores/${storeId}/automation-campaigns/${campaignId}/runs/${runId}`);
+  return response.data;
+}
+
+export async function listRunRecipients(storeId: number, campaignId: number, runId: number, params: Record<string, string | number | undefined>) {
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => { if (value !== undefined && value !== "") query.set(key, String(value)); });
+  const response = await api.get<AutomationRecipientPage>(`/api/stores/${storeId}/automation-campaigns/${campaignId}/runs/${runId}/recipients?${query}`);
+  return response.data;
+}
+
+export async function getRunRecipientDetail(storeId: number, campaignId: number, runId: number, recipientId: number) {
+  const response = await api.get<AutomationRecipientDetail>(`/api/stores/${storeId}/automation-campaigns/${campaignId}/runs/${runId}/recipients/${recipientId}`);
+  return response.data;
+}
+
+export async function retryRunRecipient(storeId: number, campaignId: number, runId: number, recipientId: number) {
+  const response = await api.post<{ ok: boolean; status: string }>(`/api/stores/${storeId}/automation-campaigns/${campaignId}/runs/${runId}/recipients/${recipientId}/retry`);
+  return response.data;
+}

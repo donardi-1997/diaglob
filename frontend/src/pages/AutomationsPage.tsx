@@ -3,10 +3,12 @@ import { useState } from "react";
 import {
   History,
   Workflow,
+  PlayCircle,
 } from "lucide-react";
 import AutomationsRules from "../components/AutomationsRules";
 import AutomationsExecutions from "../components/AutomationsExecutions";
 import AutomationCampaigns from "../components/AutomationCampaigns";
+import AutomationRunExplorer from "../components/AutomationRunExplorer";
 
 
 interface AutomationsPageProps {
@@ -17,6 +19,7 @@ interface AutomationsPageProps {
 
 type AutomationTab =
   | "rules"
+  | "runs"
   | "executions";
 
 
@@ -29,6 +32,11 @@ const TABS: {
     key: "rules",
     labelKey: "autoTabRules",
     icon: Workflow,
+  },
+  {
+    key: "runs",
+    labelKey: "autoTabRuns",
+    icon: PlayCircle,
   },
   {
     key: "executions",
@@ -86,6 +94,13 @@ export default function AutomationsPage({
         <AutomationCampaigns canWrite={canWrite} storeId={storeId} />
         {activeTab === "rules" && (
           <AutomationsRules
+            canWrite={canWrite}
+            storeId={storeId}
+          />
+        )}
+
+        {activeTab === "runs" && (
+          <AutomationRunExplorer
             canWrite={canWrite}
             storeId={storeId}
           />
