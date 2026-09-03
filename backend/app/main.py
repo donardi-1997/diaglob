@@ -32,7 +32,7 @@ from fastapi.security import (
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import OperationalError
 
@@ -131,6 +131,7 @@ from .shopify_orders import (
     list_shopify_orders,
     get_shopify_order,
 )
+from .shopify_poc import create_poc_order
 
 from .automations import (
     execute_automation,
@@ -152,6 +153,7 @@ from .shopify_client import (
     ShopifyAuthError,
     ShopifyAPIError,
     ShopifyGraphQLError,
+    ShopifyTimeoutError,
     ShopifyUserError,
 )
 
@@ -13230,6 +13232,113 @@ class ShopifyOrderCreateRequest(BaseModel):
     customer_name: str | None = None
     note: str | None = None
     idempotency_key: str | None = None
+
+
+class ShopifyPocShippingAddress(BaseModel):
+    first_name: str = Field(min_length=1, max_length=100)
+    last_name: str = Field(min_length=1, max_length=100)
+    address1: str = Field(min_length=1, max_length=255)
+    address2: str | None = Field(default=None, max_length=255)
+    city: str = Field(min_length=1, max_length=100)
+    province: str | None = Field(default=None, max_length=100)
+    province_code: str | None = Field(default=None, max_length=10)
+    country_code: str = Field(min_length=2, max_length=2)
+    zip: str = Field(min_length=1, max_length=30)
+
+    @field_validator("country_code")
+    @classmethod
+    def normalize_country_code(cls, value: str) -> str:
+        value = value.strip().upper()
+        if not value.isalpha():
+            raise ValueError("country_code must be ISO-3166 alpha-2")
+        return value
+
+
+class ShopifyPocOrderRequest(BaseModel):
+    variant_id: str = Field(min_length=1, max_length=255)
+    quantity: int = Field(ge=1, le=1000)
+    customer_email: str = Field(min_length=3, max_length=255)
+    customer_phone: str | None = Field(default=None, max_length=50)
+    shipping_address: ShopifyPocShippingAddress
+    tags: list[str] = Field(default_factory=list, max_length=20)
+    note: str | None = Field(default=None, max_length=500)
+    idempotency_key: str = Field(min_length=1, max_length=100)
+
+    @field_validator("customer_email")
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        value = value.strip()
+        if "@" not in value or value.startswith("@") or value.endswith("@"):
+            raise ValueError("customer_email must be a valid email")
+        return value
+
+
+@app.post("/api/stores/{store_id}/shopify/poc/order")
+def create_shopify_poc_order(
+    store_id: int,
+    payload: ShopifyPocOrderRequest,
+    membership: OrganizationMembership = Depends(
+        require_permission("commerce.write")
+    ),
+    db: Session = Depends(get_db),
+):
+    store = (
+        db.query(Store)
+        .filter(
+            Store.id == store_id,
+            Store.organization_id == membership.organization_id,
+            Store.deleted.is_(False),
+        )
+        .first()
+    )
+    if not store:
+        raise HTTPException(status_code=404, detail="Store not found")
+
+    connection = (
+        db.query(CommerceConnection)
+        .filter(
+            CommerceConnection.store_id == store.id,
+            CommerceConnection.organization_id == membership.organization_id,
+            CommerceConnection.provider == "shopify",
+            CommerceConnection.status == "connected",
+        )
+        .first()
+    )
+    if not connection:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "SHOPIFY_NOT_CONNECTED", "message": "Shopify no está conectado."},
+        )
+
+    try:
+        return create_poc_order(
+            db=db,
+            store=store,
+            connection=connection,
+            variant_id=payload.variant_id,
+            quantity=payload.quantity,
+            customer_email=payload.customer_email,
+            customer_phone=payload.customer_phone,
+            shipping_address=payload.shipping_address.model_dump(),
+            tags=payload.tags,
+            note=payload.note,
+            idempotency_key=payload.idempotency_key,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ShopifyAuthError as exc:
+        connection.status = "error"
+        connection.last_error = str(exc)
+        db.commit()
+        raise HTTPException(status_code=401, detail={"success": False, "error": str(exc)}) from exc
+    except ShopifyUserError as exc:
+        raise HTTPException(status_code=422, detail={"success": False, "error": str(exc)}) from exc
+    except ShopifyTimeoutError as exc:
+        raise HTTPException(status_code=504, detail={"success": False, "error": str(exc)}) from exc
+    except (ShopifyAPIError, ShopifyGraphQLError) as exc:
+        connection.last_error = str(exc)
+        db.commit()
+        raise HTTPException(status_code=502, detail={"success": False, "error": str(exc)}) from exc
 
 
 @app.post(

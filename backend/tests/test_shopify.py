@@ -23,6 +23,10 @@ from app.models import (
     Store,
     User,
 )
+from app.shopify_client import (
+    ShopifyAuthError,
+    ShopifyTimeoutError,
+)
 
 SQLALCHEMY_TEST_DATABASE_URL = (
     "sqlite:///./test_shopify.db"
@@ -429,6 +433,180 @@ class TestShopifyTestConnection:
             app.dependency_overrides.pop(
                 get_current_membership, None
             )
+
+
+class TestShopifyPocOrder:
+    def _variant(self, db, org, store):
+        product = Product(
+            organization_id=org.id,
+            store_id=store.id,
+            shopify_product_id="901",
+            title="POC product",
+            handle="poc-product",
+            description="",
+            active=True,
+        )
+        db.add(product)
+        db.flush()
+        variant = ProductVariant(
+            product_id=product.id,
+            shopify_variant_id="902",
+            title="Default",
+            sku="POC-902",
+            price=12.5,
+            currency="USD",
+            inventory_quantity=10,
+            available=True,
+        )
+        db.add(variant)
+        db.commit()
+        return variant
+
+    def _payload(self, variant_id, **changes):
+        payload = {
+            "variant_id": f"gid://shopify/ProductVariant/{variant_id}",
+            "quantity": 2,
+            "customer_email": "poc@example.com",
+            "customer_phone": "+573001234567",
+            "shipping_address": {
+                "first_name": "POC",
+                "last_name": "Diaglob",
+                "address1": "Calle 1",
+                "city": "Medellin",
+                "province": "Antioquia",
+                "country_code": "co",
+                "zip": "050001",
+            },
+            "idempotency_key": "poc-key-001",
+        }
+        payload.update(changes)
+        return payload
+
+    def test_success_and_idempotency(
+        self, client, db, org, store, shopify_connection
+    ):
+        variant = self._variant(db, org, store)
+        shopify_response = {
+            "orderCreate": {
+                "order": {
+                    "id": "gid://shopify/Order/700",
+                    "name": "#1007",
+                },
+                "userErrors": [],
+            }
+        }
+        with patch(
+            "app.shopify_poc.decrypt_shopify_secret",
+            return_value="secret",
+        ), patch(
+            "app.shopify_poc.ShopifyGraphQLClient.query",
+            return_value=shopify_response,
+        ) as query:
+            first = client.post(
+                f"/api/stores/{store.id}/shopify/poc/order",
+                json=self._payload(variant.shopify_variant_id),
+            )
+            second = client.post(
+                f"/api/stores/{store.id}/shopify/poc/order",
+                json=self._payload(variant.shopify_variant_id),
+            )
+        assert first.status_code == 200
+        assert second.json()["idempotent"] is True
+        query.assert_called_once()
+        variables = query.call_args.args[1]["order"]
+        assert variables["email"] == "poc@example.com"
+        assert variables["phone"] == "+573001234567"
+        assert "DIAGLOB_POC" in variables["tags"]
+
+    @pytest.mark.parametrize(
+        "changes",
+        [
+            {"quantity": 0},
+            {
+                "shipping_address": {
+                    "first_name": "",
+                    "last_name": "X",
+                    "address1": "A",
+                    "city": "C",
+                    "country_code": "CO",
+                    "zip": "1",
+                }
+            },
+        ],
+    )
+    def test_invalid_input_rejected(self, client, store, changes):
+        response = client.post(
+            f"/api/stores/{store.id}/shopify/poc/order",
+            json=self._payload("902", **changes),
+        )
+        assert response.status_code == 422
+
+    def test_invalid_variant_rejected(
+        self, client, store, shopify_connection
+    ):
+        response = client.post(
+            f"/api/stores/{store.id}/shopify/poc/order",
+            json=self._payload("999"),
+        )
+        assert response.status_code == 400
+
+    def test_user_error_is_normalized(
+        self, client, db, org, store, shopify_connection
+    ):
+        variant = self._variant(db, org, store)
+        with patch(
+            "app.shopify_poc.decrypt_shopify_secret",
+            return_value="secret",
+        ), patch(
+            "app.shopify_poc.ShopifyGraphQLClient.query",
+            return_value={
+                "orderCreate": {
+                    "order": None,
+                    "userErrors": [{"message": "invalid variant"}],
+                }
+            },
+        ):
+            response = client.post(
+                f"/api/stores/{store.id}/shopify/poc/order",
+                json=self._payload(variant.shopify_variant_id),
+            )
+        assert response.status_code == 422
+        assert "invalid variant" in response.json()["detail"]["error"]
+
+    @pytest.mark.parametrize(
+        "error,status",
+        [
+            (ShopifyTimeoutError("timed out"), 504),
+            (ShopifyAuthError("invalid token"), 401),
+        ],
+    )
+    def test_shopify_errors_do_not_expose_secret(
+        self,
+        client,
+        db,
+        org,
+        store,
+        shopify_connection,
+        error,
+        status,
+    ):
+        variant = self._variant(db, org, store)
+        with patch(
+            "app.shopify_poc.decrypt_shopify_secret",
+            return_value="secret",
+        ), patch(
+            "app.shopify_poc.ShopifyGraphQLClient.query",
+            side_effect=error,
+        ):
+            response = client.post(
+                f"/api/stores/{store.id}/shopify/poc/order",
+                json=self._payload(
+                    variant.shopify_variant_id,
+                    idempotency_key="poc-error",
+                ),
+            )
+        assert response.status_code == status
+        assert "secret" not in response.text
 
     def test_expired_token_handled(
         self,
@@ -1084,6 +1262,8 @@ class TestShopifyOrders:
 
         assert order is not None
         assert order.source == "shopify"
+
+
         assert (
             order.shopify_draft_order_id
             == "gid://shopify/DraftOrder/9999"

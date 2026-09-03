@@ -69,6 +69,11 @@ class ShopifyGraphQLClient:
                 timeout=SHOPIFY_TIMEOUT,
             )
 
+        except httpx.TimeoutException as exc:
+            raise ShopifyTimeoutError(
+                "Shopify request timed out"
+            ) from exc
+
         except httpx.HTTPError as exc:
             raise ShopifyAPIError(
                 "Unable to reach Shopify"
@@ -119,25 +124,6 @@ class ShopifyGraphQLClient:
                 )
             )
 
-        user_errors = (
-            data.get("data", {})
-            .values()
-        )
-
-        for value in user_errors:
-            if isinstance(value, dict):
-                ue = value.get(
-                    "userErrors"
-                )
-
-                if ue:
-                    raise ShopifyUserError(
-                        ue[0].get(
-                            "message",
-                            "User error",
-                        )
-                    )
-
         return data.get("data", {})
 
 
@@ -156,6 +142,10 @@ class ShopifyPlanError(ShopifyAPIError):
 class ShopifyRateLimitError(
     ShopifyAPIError
 ):
+    pass
+
+
+class ShopifyTimeoutError(ShopifyAPIError):
     pass
 
 
@@ -193,6 +183,34 @@ mutation draftOrderCreate($input: DraftOrderInput!) {
           node {
             id
           }
+        }
+      }
+    }
+    userErrors {
+      field
+      message
+    }
+  }
+}
+"""
+
+
+ORDER_CREATE_MUTATION = """
+mutation orderCreate($order: OrderCreateOrderInput!) {
+  orderCreate(order: $order) {
+    order {
+      id
+      name
+      email
+      phone
+      note
+      tags
+      lineItems(first: 100) {
+        nodes {
+          variant {
+            id
+          }
+          quantity
         }
       }
     }
