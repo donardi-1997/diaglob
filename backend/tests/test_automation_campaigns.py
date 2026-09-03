@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 import pytest
 from fastapi import HTTPException
 from sqlalchemy import create_engine
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import sessionmaker
 
 from app.automation_campaigns import (
@@ -21,6 +22,8 @@ from app.automation_execution_engine import (
     materialize_due_campaigns,
     process_recipient,
     reclaim_expired_leases,
+    worker_cycle,
+    _recipient_rows_query,
 )
 from app.whatsapp_client import WhatsAppDeliveryError, send_whatsapp_template_message
 from app.whatsapp_compliance import evaluate_whatsapp_delivery_eligibility, get_whatsapp_service_window_status
@@ -197,6 +200,28 @@ def test_expired_sending_lease_becomes_ambiguous_not_queued(db):
     recipient = session.get(AutomationRecipientExecution, recipient.id)
     assert recipient.status == "ambiguous"
     assert recipient.error_code == "lease_expired_sending"
+
+
+def test_worker_cycle_loads_claimed_recipient_rows_without_ambiguous_join(db):
+    session, organization, store = db
+    customer = add_customer(session, organization, store)
+    campaign = make_campaign(session, organization, store)
+    campaign.execution_enabled_at = None  # Keep scheduler materialization out of this join regression.
+    run = AutomationRun(automation_id=campaign.id, organization_id=organization.id, status="pending", run_key="join-regression", started_at=datetime.utcnow())
+    session.add(run); session.flush()
+    recipient = AutomationRecipientExecution(run_id=run.id, customer_id=customer.id, status="queued", rendered_message="hello", next_attempt_at=datetime.utcnow())
+    session.add(recipient); session.commit()
+
+    # No WhatsApp connection is configured, so the real worker path cannot send.
+    assert worker_cycle(session) == 1
+    assert session.get(AutomationRecipientExecution, recipient.id).status == "failed"
+
+
+def test_claimed_recipient_rows_query_compiles_for_postgresql(db):
+    session, _, _ = db
+    sql = str(_recipient_rows_query(session, [1]).statement.compile(dialect=postgresql.dialect()))
+    assert "JOIN automation_runs ON automation_recipient_executions.run_id = automation_runs.id" in sql
+    assert "JOIN automation_campaigns ON automation_runs.automation_id = automation_campaigns.id" in sql
 
 
 def test_service_window_uses_only_recent_whatsapp_customer_inbound(db):

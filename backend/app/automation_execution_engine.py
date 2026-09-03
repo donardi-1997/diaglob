@@ -268,12 +268,23 @@ def aggregate_runs(db: Session, now: datetime | None = None) -> None:
     db.commit()
 
 
+def _recipient_rows_query(db: Session, ids: list[int]):
+    """Return claimed recipients with their run and campaign from an explicit FK path."""
+    return db.query(AutomationRecipientExecution, AutomationRun, AutomationCampaign).select_from(
+        AutomationRecipientExecution
+    ).join(
+        AutomationRun, AutomationRecipientExecution.run_id == AutomationRun.id
+    ).join(
+        AutomationCampaign, AutomationRun.automation_id == AutomationCampaign.id
+    ).filter(AutomationRecipientExecution.id.in_(ids))
+
+
 def worker_cycle(db: Session, now: datetime | None = None, sender=send_whatsapp_text_message) -> int:
     now = now or utcnow()
     reclaim_expired_leases(db, now)
     materialize_due_campaigns(db, now)
     ids = claim_recipients(db, now)
-    recipient_rows = db.query(AutomationRecipientExecution, AutomationRun, AutomationCampaign).join(AutomationRun).join(AutomationCampaign).filter(AutomationRecipientExecution.id.in_(ids)).all()
+    recipient_rows = _recipient_rows_query(db, ids).all()
     inbound_by_scope = {}
     for recipient, _run, campaign in recipient_rows:
         inbound_by_scope.setdefault((campaign.organization_id, campaign.store_id), []).append(recipient.customer_id)

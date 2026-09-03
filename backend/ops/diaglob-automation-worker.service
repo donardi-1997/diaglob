@@ -4,13 +4,13 @@ After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=/opt/diaglob/backend
-EnvironmentFile=/opt/diaglob/.env
-ExecStart=/opt/diaglob/venv/bin/python -m app.automation_worker
+WorkingDirectory=/opt/diaglob/app/backend
+EnvironmentFile=/etc/diaglob/diaglob.env
+ExecStart=/opt/diaglob/app/backend/.venv/bin/python -m app.automation_worker
 Restart=always
 RestartSec=5
-User=diaglob
-Group=diaglob
+User=ubuntu
+Group=ubuntu
 
 [Install]
 WantedBy=multi-user.target
