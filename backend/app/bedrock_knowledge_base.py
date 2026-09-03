@@ -31,11 +31,25 @@ class BedrockProvisioningError(Exception):
         code: str,
         resource: str | None = None,
         classification: "ProvisioningErrorClassification" | None = None,
+        aws_service: str | None = None,
+        aws_operation: str | None = None,
+        aws_error_code: str | None = None,
+        aws_request_id: str | None = None,
     ):
         self.code = code
         self.resource = resource
         self.classification = classification or ProvisioningErrorClassification.PERMANENT_RESOURCE_ERROR
+        self.aws_service = aws_service
+        self.aws_operation = aws_operation
+        self.aws_error_code = aws_error_code
+        self.aws_request_id = aws_request_id
         super().__init__(code)
+
+    @property
+    def persistence_code(self) -> str:
+        if self.aws_error_code and re.fullmatch(r"[A-Za-z0-9._-]{1,100}", self.aws_error_code):
+            return f"{self.code}:{self.aws_error_code}"
+        return self.code
 
 
 class ProvisioningInProgressError(BedrockProvisioningError):
@@ -145,6 +159,7 @@ class CleanupResult:
     succeeded: bool
     bedrock_kb_id: str | None
     bedrock_ds_id: str | None
+    error: Exception | None = None
 
 
 def _get_s3_vectors_client():
@@ -227,32 +242,96 @@ def _validate_configuration() -> None:
         )
 
 
+def _find_client_error(error: Exception) -> ClientError | None:
+    current: BaseException | None = error
+    visited: set[int] = set()
+    while current and id(current) not in visited:
+        visited.add(id(current))
+        if isinstance(current, ClientError):
+            return current
+        current = current.__cause__ or current.__context__
+    return None
+
+
 def _client_error_code(error: Exception) -> str | None:
-    if isinstance(error, ClientError):
-        return error.response.get("Error", {}).get("Code")
+    client_error = _find_client_error(error)
+    if client_error:
+        return client_error.response.get("Error", {}).get("Code")
     return None
 
 
 def _client_error_message(error: Exception) -> str | None:
-    if not isinstance(error, ClientError):
+    client_error = _find_client_error(error)
+    if not client_error:
         return None
-    message = error.response.get("Error", {}).get("Message")
+    message = client_error.response.get("Error", {}).get("Message")
     if not isinstance(message, str):
         return None
     return " ".join(message.split())[:500]
 
 
+def _client_error_request_id(error: Exception) -> str | None:
+    client_error = _find_client_error(error)
+    if not client_error:
+        return None
+    return client_error.response.get("ResponseMetadata", {}).get("RequestId")
+
+
+def _aws_provisioning_error(
+    code: str,
+    resource: str,
+    error: Exception,
+    *,
+    aws_service: str,
+    aws_operation: str,
+    classification: ProvisioningErrorClassification | None = None,
+) -> BedrockProvisioningError:
+    return BedrockProvisioningError(
+        code,
+        resource=resource,
+        classification=classification,
+        aws_service=aws_service,
+        aws_operation=aws_operation,
+        aws_error_code=_client_error_code(error),
+        aws_request_id=_client_error_request_id(error),
+    )
+
+
 def _log_provisioning_aws_error(
-    stage: str, org_id: int, kb_id: int, error: Exception
+    *,
+    operation: str,
+    aws_service: str,
+    stage: str,
+    org_id: int,
+    kb_id: int,
+    error: Exception,
+    vector_index_arn: str | None = None,
+    bedrock_kb_id: str | None = None,
+    bedrock_data_source_id: str | None = None,
 ) -> None:
     logger.error(
-        "Knowledge Base provisioning AWS failure: stage=%s organization_id=%s "
-        "knowledge_base_id=%s aws_error_code=%s aws_error_message=%s",
-        stage,
+        "knowledge_base_aws_operation_failed operation=%s aws_service=%s "
+        "organization_id=%s knowledge_base_id=%s provisioning_stage=%s "
+        "aws_error_code=%s aws_error_message=%s aws_request_id=%s "
+        "vector_bucket_arn=%s vector_index_arn=%s bedrock_kb_id=%s "
+        "bedrock_data_source_id=%s bedrock_role_arn=%s embedding_model_arn=%s "
+        "knowledge_bucket=%s",
+        operation,
+        aws_service,
         org_id,
         kb_id,
+        stage,
         _client_error_code(error),
         _client_error_message(error),
+        _client_error_request_id(error),
+        VECTOR_BUCKET_ARN,
+        vector_index_arn,
+        bedrock_kb_id,
+        bedrock_data_source_id,
+        BEDROCK_SERVICE_ROLE_ARN,
+        EMBEDDING_MODEL_ARN,
+        KNOWLEDGE_BUCKET,
+        exc_info=(type(error), error, error.__traceback__),
     )
 
 
@@ -286,13 +365,23 @@ def get_s3_vectors_index(index_arn: str) -> dict[str, Any] | None:
         if _client_error_code(error) == "NotFoundException":
             return None
         logger.exception("Failed to inspect managed S3 Vectors index")
-        raise BedrockProvisioningError(
-            "vector_index_get_failed", resource="vector_index"
+        raise _aws_provisioning_error(
+            "vector_index_get_failed",
+            "vector_index",
+            error,
+            aws_service="s3vectors",
+            aws_operation="GetIndex",
+            classification=classify_provisioning_aws_error(error),
         ) from error
     except BotoCoreError as error:
         logger.exception("Failed to inspect managed S3 Vectors index")
-        raise BedrockProvisioningError(
-            "vector_index_get_failed", resource="vector_index"
+        raise _aws_provisioning_error(
+            "vector_index_get_failed",
+            "vector_index",
+            error,
+            aws_service="s3vectors",
+            aws_operation="GetIndex",
+            classification=classify_provisioning_aws_error(error),
         ) from error
 
 
@@ -303,8 +392,13 @@ def _get_s3_vectors_tags(index_arn: str) -> dict[str, str]:
         ).get("tags", {})
     except (BotoCoreError, ClientError) as error:
         logger.exception("Failed to inspect managed S3 Vectors index tags")
-        raise BedrockProvisioningError(
-            "vector_index_tags_get_failed", resource="vector_index"
+        raise _aws_provisioning_error(
+            "vector_index_tags_get_failed",
+            "vector_index",
+            error,
+            aws_service="s3vectors",
+            aws_operation="ListTagsForResource",
+            classification=classify_provisioning_aws_error(error),
         ) from error
 
 
@@ -385,12 +479,20 @@ def create_s3_vectors_index(org_id: int, kb_id: int) -> dict[str, Any]:
     except (BotoCoreError, ClientError) as error:
         if not _is_uncertain_create_error(error):
             _log_provisioning_aws_error(
-                "vector_index_create", org_id, kb_id, error
+                operation="CreateIndex",
+                aws_service="s3vectors",
+                stage="creating_vector_index",
+                org_id=org_id,
+                kb_id=kb_id,
+                error=error,
+                vector_index_arn=index_arn,
             )
-            logger.exception("Failed to create managed S3 Vectors index")
-            raise BedrockProvisioningError(
+            raise _aws_provisioning_error(
                 "vector_index_create_failed",
-                resource="vector_index",
+                "vector_index",
+                error,
+                aws_service="s3vectors",
+                aws_operation="CreateIndex",
                 classification=classify_provisioning_aws_error(error),
             ) from error
         logger.warning(
@@ -423,17 +525,24 @@ def delete_s3_vectors_index(index_arn: str, org_id: int, kb_id: int) -> None:
     )
     try:
         _get_s3_vectors_client().delete_index(indexArn=index_arn)
-    except ClientError as error:
+    except (BotoCoreError, ClientError) as error:
         if _client_error_code(error) == "NotFoundException":
             return
-        logger.exception("Failed to delete managed S3 Vectors index")
-        raise BedrockProvisioningError(
-            "vector_index_delete_failed", resource="vector_index"
-        ) from error
-    except BotoCoreError as error:
-        logger.exception("Failed to delete managed S3 Vectors index")
-        raise BedrockProvisioningError(
-            "vector_index_delete_failed", resource="vector_index"
+        _log_provisioning_aws_error(
+            operation="DeleteIndex",
+            aws_service="s3vectors",
+            stage="deleting",
+            org_id=org_id,
+            kb_id=kb_id,
+            error=error,
+            vector_index_arn=index_arn,
+        )
+        raise _aws_provisioning_error(
+            "vector_index_delete_failed",
+            "vector_index",
+            error,
+            aws_service="s3vectors",
+            aws_operation="DeleteIndex",
         ) from error
 
     for attempt in range(WAIT_ATTEMPTS):
@@ -455,13 +564,23 @@ def get_bedrock_knowledge_base(bedrock_kb_id: str) -> dict[str, Any] | None:
         if _client_error_code(error) == "ResourceNotFoundException":
             return None
         logger.exception("Failed to inspect Bedrock Knowledge Base")
-        raise BedrockProvisioningError(
-            "bedrock_kb_get_failed", resource="knowledge_base"
+        raise _aws_provisioning_error(
+            "bedrock_kb_get_failed",
+            "knowledge_base",
+            error,
+            aws_service="bedrock-agent",
+            aws_operation="GetKnowledgeBase",
+            classification=classify_provisioning_aws_error(error),
         ) from error
     except BotoCoreError as error:
         logger.exception("Failed to inspect Bedrock Knowledge Base")
-        raise BedrockProvisioningError(
-            "bedrock_kb_get_failed", resource="knowledge_base"
+        raise _aws_provisioning_error(
+            "bedrock_kb_get_failed",
+            "knowledge_base",
+            error,
+            aws_service="bedrock-agent",
+            aws_operation="GetKnowledgeBase",
+            classification=classify_provisioning_aws_error(error),
         ) from error
 
 
@@ -472,8 +591,13 @@ def _get_bedrock_tags(resource_arn: str) -> dict[str, str]:
         ).get("tags", {})
     except (BotoCoreError, ClientError) as error:
         logger.exception("Failed to inspect Bedrock Knowledge Base tags")
-        raise BedrockProvisioningError(
-            "bedrock_kb_tags_get_failed", resource="knowledge_base"
+        raise _aws_provisioning_error(
+            "bedrock_kb_tags_get_failed",
+            "knowledge_base",
+            error,
+            aws_service="bedrock-agent",
+            aws_operation="ListTagsForResource",
+            classification=classify_provisioning_aws_error(error),
         ) from error
 
 
@@ -541,8 +665,13 @@ def _list_knowledge_bases_by_name(name: str) -> list[dict[str, Any]]:
                 return candidates
     except (BotoCoreError, ClientError) as error:
         logger.exception("Failed to discover Bedrock Knowledge Base")
-        raise BedrockProvisioningError(
-            "resource_recovery_failed", resource="knowledge_base"
+        raise _aws_provisioning_error(
+            "resource_recovery_failed",
+            "knowledge_base",
+            error,
+            aws_service="bedrock-agent",
+            aws_operation="ListKnowledgeBases",
+            classification=classify_provisioning_aws_error(error),
         ) from error
 
 
@@ -609,9 +738,22 @@ def create_bedrock_knowledge_base(
         logger.warning("Bedrock KB create response omitted the resource ID")
     except (BotoCoreError, ClientError) as error:
         if not _is_uncertain_create_error(error):
-            logger.exception("Failed to create Bedrock Knowledge Base")
-            raise BedrockProvisioningError(
-                "bedrock_kb_create_failed", resource="knowledge_base"
+            _log_provisioning_aws_error(
+                operation="CreateKnowledgeBase",
+                aws_service="bedrock-agent",
+                stage="creating_knowledge_base",
+                org_id=org_id,
+                kb_id=kb_id,
+                error=error,
+                vector_index_arn=index_arn,
+            )
+            raise _aws_provisioning_error(
+                "bedrock_kb_create_failed",
+                "knowledge_base",
+                error,
+                aws_service="bedrock-agent",
+                aws_operation="CreateKnowledgeBase",
+                classification=classify_provisioning_aws_error(error),
             ) from error
         logger.warning(
             "Bedrock KB create response was uncertain; attempting recovery",
@@ -659,13 +801,23 @@ def get_bedrock_data_source(
         if _client_error_code(error) == "ResourceNotFoundException":
             return None
         logger.exception("Failed to inspect Bedrock Data Source")
-        raise BedrockProvisioningError(
-            "bedrock_data_source_get_failed", resource="data_source"
+        raise _aws_provisioning_error(
+            "bedrock_data_source_get_failed",
+            "data_source",
+            error,
+            aws_service="bedrock-agent",
+            aws_operation="GetDataSource",
+            classification=classify_provisioning_aws_error(error),
         ) from error
     except BotoCoreError as error:
         logger.exception("Failed to inspect Bedrock Data Source")
-        raise BedrockProvisioningError(
-            "bedrock_data_source_get_failed", resource="data_source"
+        raise _aws_provisioning_error(
+            "bedrock_data_source_get_failed",
+            "data_source",
+            error,
+            aws_service="bedrock-agent",
+            aws_operation="GetDataSource",
+            classification=classify_provisioning_aws_error(error),
         ) from error
 
 
@@ -723,8 +875,13 @@ def discover_bedrock_data_source(
                     break
         except (BotoCoreError, ClientError) as error:
             logger.exception("Failed to discover Bedrock Data Source")
-            raise BedrockProvisioningError(
-                "resource_recovery_failed", resource="data_source"
+            raise _aws_provisioning_error(
+                "resource_recovery_failed",
+                "data_source",
+                error,
+                aws_service="bedrock-agent",
+                aws_operation="ListDataSources",
+                classification=classify_provisioning_aws_error(error),
             ) from error
 
         if len(candidates) > 1:
@@ -782,9 +939,23 @@ def create_bedrock_data_source(
         logger.warning("Bedrock Data Source create response omitted the resource ID")
     except (BotoCoreError, ClientError) as error:
         if not _is_uncertain_create_error(error):
-            logger.exception("Failed to create Bedrock Data Source")
-            raise BedrockProvisioningError(
-                "bedrock_data_source_create_failed", resource="data_source"
+            _log_provisioning_aws_error(
+                operation="CreateDataSource",
+                aws_service="bedrock-agent",
+                stage="creating_data_source",
+                org_id=org_id,
+                kb_id=kb_id,
+                error=error,
+                vector_index_arn=_vector_index_arn(kb_id),
+                bedrock_kb_id=bedrock_kb_id,
+            )
+            raise _aws_provisioning_error(
+                "bedrock_data_source_create_failed",
+                "data_source",
+                error,
+                aws_service="bedrock-agent",
+                aws_operation="CreateDataSource",
+                classification=classify_provisioning_aws_error(error),
             ) from error
         logger.warning(
             "Bedrock Data Source create response was uncertain; attempting recovery",
@@ -854,15 +1025,26 @@ def delete_bedrock_data_source(
             knowledgeBaseId=bedrock_kb_id,
             dataSourceId=data_source_id,
         )
-    except ClientError as error:
+    except (BotoCoreError, ClientError) as error:
         if _client_error_code(error) == "ResourceNotFoundException":
             return
-        raise BedrockProvisioningError(
-            "bedrock_data_source_delete_failed", resource="data_source"
-        ) from error
-    except BotoCoreError as error:
-        raise BedrockProvisioningError(
-            "bedrock_data_source_delete_failed", resource="data_source"
+        _log_provisioning_aws_error(
+            operation="DeleteDataSource",
+            aws_service="bedrock-agent",
+            stage="deleting",
+            org_id=org_id,
+            kb_id=kb_id,
+            error=error,
+            vector_index_arn=index_arn,
+            bedrock_kb_id=bedrock_kb_id,
+            bedrock_data_source_id=data_source_id,
+        )
+        raise _aws_provisioning_error(
+            "bedrock_data_source_delete_failed",
+            "data_source",
+            error,
+            aws_service="bedrock-agent",
+            aws_operation="DeleteDataSource",
         ) from error
 
     for attempt in range(WAIT_ATTEMPTS):
@@ -888,15 +1070,25 @@ def delete_bedrock_knowledge_base(
         _get_bedrock_agent_client().delete_knowledge_base(
             knowledgeBaseId=bedrock_kb_id
         )
-    except ClientError as error:
+    except (BotoCoreError, ClientError) as error:
         if _client_error_code(error) == "ResourceNotFoundException":
             return
-        raise BedrockProvisioningError(
-            "bedrock_kb_delete_failed", resource="knowledge_base"
-        ) from error
-    except BotoCoreError as error:
-        raise BedrockProvisioningError(
-            "bedrock_kb_delete_failed", resource="knowledge_base"
+        _log_provisioning_aws_error(
+            operation="DeleteKnowledgeBase",
+            aws_service="bedrock-agent",
+            stage="deleting",
+            org_id=org_id,
+            kb_id=kb_id,
+            error=error,
+            vector_index_arn=index_arn,
+            bedrock_kb_id=bedrock_kb_id,
+        )
+        raise _aws_provisioning_error(
+            "bedrock_kb_delete_failed",
+            "knowledge_base",
+            error,
+            aws_service="bedrock-agent",
+            aws_operation="DeleteKnowledgeBase",
         ) from error
 
     for attempt in range(WAIT_ATTEMPTS):
@@ -1006,9 +1198,9 @@ def _cleanup_remote_resources(
                 index_arn,
             )
             remaining_ds_id = None
-        except Exception:
+        except Exception as error:
             logger.exception("Unable to confirm Bedrock Data Source cleanup")
-            return CleanupResult(False, remaining_kb_id, remaining_ds_id)
+            return CleanupResult(False, remaining_kb_id, remaining_ds_id, error)
 
     if remaining_kb_id and index_arn:
         try:
@@ -1017,16 +1209,16 @@ def _cleanup_remote_resources(
             )
             remaining_kb_id = None
             remaining_ds_id = None
-        except Exception:
+        except Exception as error:
             logger.exception("Unable to confirm Bedrock Knowledge Base cleanup")
-            return CleanupResult(False, remaining_kb_id, remaining_ds_id)
+            return CleanupResult(False, remaining_kb_id, remaining_ds_id, error)
 
     if index_arn:
         try:
             delete_s3_vectors_index(index_arn, org_id, kb_id)
-        except Exception:
+        except Exception as error:
             logger.exception("Unable to confirm S3 Vectors index cleanup")
-            return CleanupResult(False, remaining_kb_id, remaining_ds_id)
+            return CleanupResult(False, remaining_kb_id, remaining_ds_id, error)
 
     return CleanupResult(True, remaining_kb_id, remaining_ds_id)
 
@@ -1156,7 +1348,7 @@ def provision_diaglob_knowledge_base(
     knowledge_base.provisioning_stage = "failed"
     knowledge_base.provisioning_stage_started_at = datetime.now(timezone.utc)
     knowledge_base.external_last_error = (
-        failure.code if cleanup.succeeded else "cleanup_failed"
+        failure.persistence_code if cleanup.succeeded else "cleanup_failed"
     )
     _commit_state(db, "failure_state_persist_failed")
     logger.error(
@@ -1169,9 +1361,13 @@ def provision_diaglob_knowledge_base(
         cleanup.succeeded,
     )
     raise BedrockProvisioningError(
-        knowledge_base.external_last_error,
+        failure.code if cleanup.succeeded else "cleanup_failed",
         resource=failure.resource,
         classification=failure.classification,
+        aws_service=failure.aws_service if cleanup.succeeded else None,
+        aws_operation=failure.aws_operation if cleanup.succeeded else None,
+        aws_error_code=failure.aws_error_code if cleanup.succeeded else None,
+        aws_request_id=failure.aws_request_id if cleanup.succeeded else None,
     ) from failure
 
 
@@ -1223,16 +1419,22 @@ def delete_diaglob_knowledge_base(db: Session, knowledge_base: KnowledgeBase) ->
 
     org_id = knowledge_base.organization_id
     kb_id = knowledge_base.id
+    index_arn: str | None = None
     try:
+        index_arn = _vector_index_arn(kb_id)
         cleanup = _cleanup_remote_resources(
             org_id,
             kb_id,
-            _vector_index_arn(kb_id),
+            index_arn,
             knowledge_base.external_id,
             knowledge_base.external_data_source_id,
         )
         if not cleanup.succeeded:
-            raise BedrockProvisioningError("deletion_cleanup_failed", resource="knowledge_base")
+            if isinstance(cleanup.error, BedrockProvisioningError):
+                raise cleanup.error
+            raise BedrockProvisioningError(
+                "deletion_cleanup_failed", resource="knowledge_base"
+            ) from cleanup.error
         delete_knowledge_prefix(org_id, kb_id)
         db.query(KnowledgeSource).filter(
             KnowledgeSource.organization_id == org_id,
@@ -1243,16 +1445,34 @@ def delete_diaglob_knowledge_base(db: Session, knowledge_base: KnowledgeBase) ->
     except Exception as error:
         db.rollback()
         current = db.get(KnowledgeBase, kb_id)
+        original_error_code = (
+            error.code
+            if isinstance(error, BedrockProvisioningError)
+            else type(error).__name__
+        )
         if current:
             current.external_status = "deleting"
-            current.external_last_error = "deletion_failed"
+            current.external_last_error = f"deletion_failed:{original_error_code}"
             current.provisioning_stage = "deleting"
             current.provisioning_stage_started_at = datetime.now(timezone.utc)
             _commit_state(db, "deletion_state_persist_failed")
         logger.exception(
-            "Knowledge Base deletion failed: organization_id=%s knowledge_base_id=%s",
+            "knowledge_base_deletion_failed operation=%s aws_service=%s "
+            "organization_id=%s knowledge_base_id=%s provisioning_stage=deleting "
+            "error_code=%s aws_error_code=%s aws_error_message=%s "
+            "aws_request_id=%s vector_index_arn=%s bedrock_kb_id=%s "
+            "bedrock_data_source_id=%s",
+            error.aws_operation if isinstance(error, BedrockProvisioningError) else None,
+            error.aws_service if isinstance(error, BedrockProvisioningError) else None,
             org_id,
             kb_id,
+            original_error_code,
+            _client_error_code(error),
+            _client_error_message(error),
+            _client_error_request_id(error),
+            index_arn,
+            knowledge_base.external_id,
+            knowledge_base.external_data_source_id,
         )
         if isinstance(error, BedrockProvisioningError):
             raise

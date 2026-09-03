@@ -65,7 +65,8 @@
       "Sid": "CreateManagedBedrockKnowledgeBases",
       "Effect": "Allow",
       "Action": [
-        "bedrock:CreateKnowledgeBase"
+        "bedrock:CreateKnowledgeBase",
+        "bedrock:TagResource"
       ],
       "Resource": "*",
       "Condition": {
@@ -93,7 +94,6 @@
       "Sid": "ManageOwnedBedrockKnowledgeBases",
       "Effect": "Allow",
       "Action": [
-        "bedrock:GetKnowledgeBase",
         "bedrock:DeleteKnowledgeBase",
         "bedrock:ListTagsForResource"
       ],
@@ -104,6 +104,12 @@
           "aws:ResourceTag/diaglob:environment": "production"
         }
       }
+    },
+    {
+      "Sid": "ReadManagedBedrockKnowledgeBasesForCleanup",
+      "Effect": "Allow",
+      "Action": "bedrock:GetKnowledgeBase",
+      "Resource": "arn:aws:bedrock:us-east-2:765761474007:knowledge-base/*"
     },
     {
       "Sid": "ManageDataSourcesForOwnedKnowledgeBases",

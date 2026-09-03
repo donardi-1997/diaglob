@@ -459,11 +459,14 @@ def test_vector_index_create_failure_logs_safe_aws_diagnostics(caplog):
         ):
             with pytest.raises(provisioning.BedrockProvisioningError):
                 provisioning.create_s3_vectors_index(1, 1)
-    assert "stage=vector_index_create" in caplog.text
+    assert "operation=CreateIndex" in caplog.text
+    assert "aws_service=s3vectors" in caplog.text
+    assert "provisioning_stage=creating_vector_index" in caplog.text
     assert "organization_id=1" in caplog.text
     assert "knowledge_base_id=1" in caplog.text
     assert "aws_error_code=AccessDeniedException" in caplog.text
     assert "aws_error_message=TagResource permission is required" in caplog.text
+    assert "Traceback" in caplog.text
 
 
 def test_tag_resource_access_denied_is_platform_configuration_error():
@@ -509,6 +512,42 @@ def test_production_policy_allows_tagging_new_vector_indexes():
     assert set(statement["Action"]) == {
         "s3vectors:CreateIndex",
         "s3vectors:TagResource",
+    }
+
+
+def test_production_policy_allows_tagging_new_bedrock_knowledge_bases():
+    policy_path = Path(__file__).parents[1] / "diaglob-prod-knowledge-policy.json"
+    policy = json.loads(policy_path.read_text(encoding="utf-8"))
+    statement = next(
+        item
+        for item in policy["Statement"]
+        if item["Sid"] == "CreateManagedBedrockKnowledgeBases"
+    )
+    assert set(statement["Action"]) == {
+        "bedrock:CreateKnowledgeBase",
+        "bedrock:TagResource",
+    }
+
+
+def test_production_policy_can_poll_bedrock_kb_after_tags_disappear():
+    policy_path = Path(__file__).parents[1] / "diaglob-prod-knowledge-policy.json"
+    policy = json.loads(policy_path.read_text(encoding="utf-8"))
+    read_statement = next(
+        item
+        for item in policy["Statement"]
+        if item["Sid"] == "ReadManagedBedrockKnowledgeBasesForCleanup"
+    )
+    delete_statement = next(
+        item
+        for item in policy["Statement"]
+        if item["Sid"] == "ManageOwnedBedrockKnowledgeBases"
+    )
+    assert read_statement["Action"] == "bedrock:GetKnowledgeBase"
+    assert "Condition" not in read_statement
+    assert "bedrock:GetKnowledgeBase" not in delete_statement["Action"]
+    assert delete_statement["Condition"]["StringEquals"] == {
+        "aws:ResourceTag/diaglob:managed-by": "diaglob-backend",
+        "aws:ResourceTag/diaglob:environment": "production",
     }
 
 
@@ -623,6 +662,54 @@ def test_bedrock_create_and_get_payloads_validate_with_stubber():
             )
     assert created_kb["knowledgeBaseId"] == BEDROCK_KB_ID
     assert created_ds["dataSourceId"] == BEDROCK_DS_ID
+
+
+def test_bedrock_create_access_denied_is_diagnostic_and_logged(db, caplog):
+    org = _make_org(db)
+    kb = _make_local_kb(db, org)
+    request_id = "bedrock-request-123"
+    access_denied = ClientError(
+        {
+            "Error": {
+                "Code": "AccessDeniedException",
+                "Message": "bedrock:TagResource is not authorized",
+            },
+            "ResponseMetadata": {"RequestId": request_id},
+        },
+        "CreateKnowledgeBase",
+    )
+    client = MagicMock()
+    client.create_knowledge_base.side_effect = access_denied
+
+    with patch.object(
+        provisioning,
+        "create_s3_vectors_index",
+        return_value={"indexArn": _index_arn(kb.id)},
+    ), patch.object(
+        provisioning, "_get_bedrock_agent_client", return_value=client
+    ), patch.object(provisioning, "delete_s3_vectors_index"):
+        with pytest.raises(provisioning.BedrockProvisioningError) as exc:
+            provisioning.provision_diaglob_knowledge_base(db, kb)
+
+    assert exc.value.code == "bedrock_kb_create_failed"
+    assert exc.value.classification == (
+        provisioning.ProvisioningErrorClassification.PLATFORM_CONFIGURATION_ERROR
+    )
+    assert kb.external_status == "failed"
+    assert kb.provisioning_stage == "failed"
+    assert kb.external_last_error == (
+        "bedrock_kb_create_failed:AccessDeniedException"
+    )
+    assert "operation=CreateKnowledgeBase" in caplog.text
+    assert "aws_service=bedrock-agent" in caplog.text
+    assert "provisioning_stage=creating_knowledge_base" in caplog.text
+    assert f"organization_id={org.id}" in caplog.text
+    assert f"knowledge_base_id={kb.id}" in caplog.text
+    assert "aws_error_code=AccessDeniedException" in caplog.text
+    assert "aws_error_message=bedrock:TagResource is not authorized" in caplog.text
+    assert f"aws_request_id={request_id}" in caplog.text
+    assert f"vector_index_arn={_index_arn(kb.id)}" in caplog.text
+    assert "Traceback" in caplog.text
 
 
 def test_lost_kb_response_recovers_by_name_configuration_and_tags():
@@ -1098,6 +1185,43 @@ def test_delete_failed_kb_without_remote_resources_is_safe(db):
     assert db.get(KnowledgeBase, kb.id) is None
 
 
+def test_delete_failure_preserves_specific_cleanup_cause(db, caplog):
+    org = _make_org(db)
+    kb = _make_local_kb(
+        db,
+        org,
+        status="ready",
+        external_id=BEDROCK_KB_ID,
+        data_source_id=BEDROCK_DS_ID,
+    )
+    ownership_error = provisioning.BedrockProvisioningError(
+        "resource_ownership_mismatch",
+        resource="knowledge_base",
+    )
+    cleanup = provisioning.CleanupResult(
+        False,
+        BEDROCK_KB_ID,
+        BEDROCK_DS_ID,
+        ownership_error,
+    )
+
+    with patch.object(
+        provisioning, "_cleanup_remote_resources", return_value=cleanup
+    ):
+        with pytest.raises(provisioning.BedrockProvisioningError) as exc:
+            provisioning.delete_diaglob_knowledge_base(db, kb)
+
+    assert exc.value.code == "resource_ownership_mismatch"
+    assert kb.external_status == "deleting"
+    assert kb.external_last_error == (
+        "deletion_failed:resource_ownership_mismatch"
+    )
+    assert "knowledge_base_deletion_failed" in caplog.text
+    assert "error_code=resource_ownership_mismatch" in caplog.text
+    assert f"organization_id={org.id}" in caplog.text
+    assert f"knowledge_base_id={kb.id}" in caplog.text
+
+
 def test_delete_endpoint_hides_other_tenant_knowledge_base(api_client, db):
     client, _, _ = api_client
     other_org = _make_org(db, "other-delete-test")
@@ -1140,6 +1264,89 @@ def test_partial_retry_reuses_existing_kb_and_creates_data_source(db):
         provisioning.provision_diaglob_knowledge_base(db, kb)
     create_kb.assert_not_called()
     assert kb.external_status == "ready"
+
+
+def test_retry_reuses_partial_vector_index_and_completes(db):
+    org = _make_org(db)
+    kb = _make_local_kb(db, org)
+    vector_index_exists = False
+    vector_index_calls = 0
+
+    def create_or_reuse_vector_index(org_id, kb_id):
+        nonlocal vector_index_exists, vector_index_calls
+        assert org_id == org.id
+        assert kb_id == kb.id
+        vector_index_calls += 1
+        if vector_index_calls == 1:
+            vector_index_exists = True
+        else:
+            assert vector_index_exists
+        return {"indexArn": _index_arn(kb.id)}
+
+    access_denied = provisioning.BedrockProvisioningError(
+        "bedrock_kb_create_failed",
+        resource="knowledge_base",
+        classification=(
+            provisioning.ProvisioningErrorClassification.PLATFORM_CONFIGURATION_ERROR
+        ),
+        aws_service="bedrock-agent",
+        aws_operation="CreateKnowledgeBase",
+        aws_error_code="AccessDeniedException",
+    )
+    cleanup_failure = provisioning.BedrockProvisioningError(
+        "vector_index_delete_unconfirmed",
+        resource="vector_index",
+    )
+
+    with patch.object(
+        provisioning,
+        "create_s3_vectors_index",
+        side_effect=create_or_reuse_vector_index,
+    ), patch.object(
+        provisioning,
+        "create_bedrock_knowledge_base",
+        side_effect=access_denied,
+    ), patch.object(
+        provisioning,
+        "delete_s3_vectors_index",
+        side_effect=cleanup_failure,
+    ):
+        with pytest.raises(provisioning.BedrockProvisioningError) as exc:
+            provisioning.provision_diaglob_knowledge_base(db, kb)
+
+    assert exc.value.code == "cleanup_failed"
+    assert vector_index_exists
+    assert kb.external_status == "failed"
+
+    kb.external_status = "retrying"
+    kb.external_last_error = None
+    kb.provisioning_stage = "queued"
+    db.commit()
+    with patch.object(
+        provisioning,
+        "create_s3_vectors_index",
+        side_effect=create_or_reuse_vector_index,
+    ), patch.object(
+        provisioning,
+        "create_bedrock_knowledge_base",
+        return_value={"knowledgeBaseId": BEDROCK_KB_ID},
+    ), patch.object(
+        provisioning, "wait_for_bedrock_knowledge_base", return_value={}
+    ), patch.object(
+        provisioning,
+        "create_bedrock_data_source",
+        return_value={"dataSourceId": BEDROCK_DS_ID},
+    ), patch.object(
+        provisioning, "wait_for_bedrock_data_source", return_value={}
+    ):
+        provisioning.provision_diaglob_knowledge_base(db, kb)
+
+    assert vector_index_calls == 2
+    assert kb.external_id == BEDROCK_KB_ID
+    assert kb.external_data_source_id == BEDROCK_DS_ID
+    assert kb.external_status == "ready"
+    assert kb.provisioning_stage == "ready"
+    assert kb.external_last_error is None
 
 
 def test_provisioning_status_prevents_second_attempt(db):
@@ -1210,6 +1417,40 @@ def test_retry_endpoint_schedules_provisioning(api_client, db, status):
     assert response.json()["provisioning_stage"] == "queued"
     run.assert_called_once_with(kb.id)
     reconcile.assert_not_called()
+
+
+def test_manual_retry_worker_completes_provisioning(api_client, db):
+    client, org, _ = api_client
+    kb = _make_local_kb(db, org, status="failed")
+    kb.external_last_error = "bedrock_kb_create_failed:AccessDeniedException"
+    kb.provisioning_stage = "failed"
+    db.commit()
+    kb_id = kb.id
+    patches = _successful_remote_patches()
+
+    with patch.object(
+        api_main, "SessionLocal", TestingSessionLocal
+    ), patch.object(
+        api_main, "PROVISIONING_RETRY_DELAYS_SECONDS", (0,)
+    ), patches[0], patches[1], patches[2], patches[3], patches[4]:
+        response = client.post(
+            f"/api/knowledge-bases/{kb_id}/retry-provisioning"
+        )
+
+    assert response.status_code == 200
+    assert response.json()["external_status"] == "retrying"
+    assert response.json()["provisioning_stage"] == "queued"
+    assert response.json()["external_last_error"] is None
+    verify_db = TestingSessionLocal()
+    try:
+        retried = verify_db.get(KnowledgeBase, kb_id)
+        assert retried.external_id == BEDROCK_KB_ID
+        assert retried.external_data_source_id == BEDROCK_DS_ID
+        assert retried.external_status == "ready"
+        assert retried.provisioning_stage == "ready"
+        assert retried.external_last_error is None
+    finally:
+        verify_db.close()
 
 
 def test_duplicate_manual_retry_schedules_one_task(api_client, db):
