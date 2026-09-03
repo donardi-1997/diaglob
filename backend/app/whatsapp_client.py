@@ -13,6 +13,15 @@ GRAPH_API_BASE = (
 )
 
 
+class WhatsAppDeliveryError(RuntimeError):
+    """Sanitized provider failure with retry-safe classification metadata."""
+
+    def __init__(self, code: str, category: str, message: str):
+        super().__init__(message)
+        self.code = code
+        self.category = category
+
+
 def send_whatsapp_text_message(
     phone_number_id: str,
     access_token: str,
@@ -55,23 +64,20 @@ def send_whatsapp_text_message(
             timeout=20,
         )
 
+    except httpx.ConnectError as exc:
+        raise WhatsAppDeliveryError("connect_error", "transient", "WhatsApp connection failed") from exc
+    except httpx.TimeoutException as exc:
+        # A timeout can happen after Meta accepts the request. Never retry it automatically.
+        raise WhatsAppDeliveryError("timeout", "ambiguous", "WhatsApp response timed out") from exc
     except httpx.HTTPError as exc:
-        raise RuntimeError(
-            "Unable to reach WhatsApp "
-            "Graph API"
-        ) from exc
+        raise WhatsAppDeliveryError("transport_error", "ambiguous", "WhatsApp transport failed") from exc
 
     if response.status_code not in {
         200,
         201,
     }:
-        raise RuntimeError(
-            (
-                "WhatsApp Graph API "
-                "rejected the request "
-                f"(HTTP {response.status_code})"
-            )
-        )
+        category = "transient" if response.status_code == 429 or response.status_code >= 500 else "permanent"
+        raise WhatsAppDeliveryError(f"http_{response.status_code}", category, f"WhatsApp rejected the request ({response.status_code})")
 
     data = response.json()
 

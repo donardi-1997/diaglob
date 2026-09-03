@@ -1,0 +1,16 @@
+[Unit]
+Description=Diaglob Automation Worker
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/diaglob/backend
+EnvironmentFile=/opt/diaglob/.env
+ExecStart=/opt/diaglob/venv/bin/python -m app.automation_worker
+Restart=always
+RestartSec=5
+User=diaglob
+Group=diaglob
+
+[Install]
+WantedBy=multi-user.target

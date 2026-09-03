@@ -9383,6 +9383,86 @@ button:disabled {
   transition: background 0.15s;
 }
 
+.automation-campaigns {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 28px;
+}
+
+.automation-campaigns h2,
+.automation-campaigns p {
+  margin: 0;
+}
+
+.automation-campaign-stats,
+.wizard-steps,
+.automation-wizard-body {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.automation-campaign-stats span {
+  padding: 6px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  font-size: 0.8rem;
+}
+
+.automation-wizard {
+  max-width: 680px;
+}
+
+.wizard-steps button {
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  padding: 6px;
+}
+
+.wizard-steps button.active {
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.automation-wizard-body {
+  display: grid;
+  padding: 18px 0;
+}
+
+.automation-wizard-body label {
+  display: grid;
+  gap: 6px;
+  color: var(--text-muted);
+}
+
+.automation-wizard-body input,
+.automation-wizard-body select,
+.automation-wizard-body textarea {
+  min-width: 0;
+  padding: 9px;
+  color: var(--text-primary);
+  background: var(--input-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+}
+
+.automation-wizard-body textarea {
+  min-height: 120px;
+}
+
+.automation-message-preview {
+  white-space: pre-wrap;
+  padding: 12px;
+  background: var(--surface-muted);
+  border-radius: 6px;
+}
+
+@media (max-width: 640px) {
+  .automations-toolbar { align-items: flex-start; }
+  .automation-wizard { width: calc(100% - 24px); }
+}
+
 .knowledge-source-modal {
   width: min(760px, 100%);
 }

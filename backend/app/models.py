@@ -10,6 +10,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    JSON,
     Numeric,
     String,
     Table,
@@ -2338,6 +2339,124 @@ class AutomationExecution(Base):
         "Automation",
         back_populates="executions",
     )
+
+
+# ============================================================
+# AUTOMATION CAMPAIGNS V2.1
+# ============================================================
+
+
+class AutomationCampaign(Base):
+    __tablename__ = "automation_campaigns"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    store_id: Mapped[int] = mapped_column(ForeignKey("stores.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    automation_type: Mapped[str] = mapped_column(String(50), default="custom", nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="draft", nullable=False, index=True)
+    audience_type: Mapped[str] = mapped_column(String(20), default="dynamic", nullable=False)
+    audience_filters: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    schedule_type: Mapped[str] = mapped_column(String(30), default="once", nullable=False)
+    schedule_config: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    timezone: Mapped[str] = mapped_column(String(80), nullable=False)
+    send_window_start: Mapped[str | None] = mapped_column(String(5), nullable=True)
+    send_window_end: Mapped[str | None] = mapped_column(String(5), nullable=True)
+    cooldown_days: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    channel: Mapped[str] = mapped_column(String(30), default="whatsapp", nullable=False)
+    message_template: Mapped[str] = mapped_column(Text, nullable=False)
+    next_run_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    execution_enabled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    members = relationship("AutomationAudienceMember", back_populates="automation", cascade="all, delete-orphan")
+    runs = relationship("AutomationRun", back_populates="automation", cascade="all, delete-orphan")
+
+    __table_args__ = (UniqueConstraint("organization_id", "store_id", "name", name="uq_campaign_org_store_name"),)
+
+
+class AutomationAudienceMember(Base):
+    __tablename__ = "automation_audience_members"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    automation_id: Mapped[int] = mapped_column(ForeignKey("automation_campaigns.id", ondelete="CASCADE"), nullable=False, index=True)
+    customer_id: Mapped[int] = mapped_column(ForeignKey("customers.id", ondelete="CASCADE"), nullable=False, index=True)
+    included: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    automation = relationship("AutomationCampaign", back_populates="members")
+    __table_args__ = (UniqueConstraint("automation_id", "customer_id", name="uq_campaign_member"),)
+
+
+class AutomationRun(Base):
+    __tablename__ = "automation_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    automation_id: Mapped[int] = mapped_column(ForeignKey("automation_campaigns.id", ondelete="CASCADE"), nullable=False, index=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(20), default="simulated", nullable=False, index=True)
+    run_key: Mapped[str] = mapped_column(String(100), nullable=False)
+    matched_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    eligible_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    sent_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    failed_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    excluded_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    scheduled_for: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    automation = relationship("AutomationCampaign", back_populates="runs")
+    recipients = relationship("AutomationRecipientExecution", back_populates="run", cascade="all, delete-orphan")
+    __table_args__ = (UniqueConstraint("automation_id", "run_key", name="uq_campaign_run_key"),)
+
+
+class AutomationRecipientExecution(Base):
+    __tablename__ = "automation_recipient_executions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("automation_runs.id", ondelete="CASCADE"), nullable=False, index=True)
+    customer_id: Mapped[int] = mapped_column(ForeignKey("customers.id", ondelete="CASCADE"), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    exclusion_reason: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    rendered_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    provider_message_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    run = relationship("AutomationRun", back_populates="recipients")
+    __table_args__ = (UniqueConstraint("run_id", "customer_id", name="uq_campaign_run_customer"),)
+
+
+class AutomationDeliveryAttempt(Base):
+    __tablename__ = "automation_delivery_attempts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    recipient_execution_id: Mapped[int] = mapped_column(ForeignKey("automation_recipient_executions.id", ondelete="CASCADE"), nullable=False, index=True)
+    attempt_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False)
+    provider_message_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class AutomationRateLimit(Base):
+    __tablename__ = "automation_rate_limits"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    connection_id: Mapped[int] = mapped_column(ForeignKey("whatsapp_connections.id", ondelete="CASCADE"), nullable=False)
+    window_start: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    sent_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    __table_args__ = (UniqueConstraint("connection_id", "window_start", name="uq_automation_rate_limit_window"),)
 
 
 # ============================================================

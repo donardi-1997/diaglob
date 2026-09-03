@@ -6,10 +6,12 @@ import {
 } from "lucide-react";
 import AutomationsRules from "../components/AutomationsRules";
 import AutomationsExecutions from "../components/AutomationsExecutions";
+import AutomationCampaigns from "../components/AutomationCampaigns";
 
 
 interface AutomationsPageProps {
   canWrite: boolean;
+  storeId: number;
 }
 
 
@@ -38,6 +40,7 @@ const TABS: {
 
 export default function AutomationsPage({
   canWrite,
+  storeId,
 }: AutomationsPageProps) {
   const { t } = useTranslation();
 
@@ -80,15 +83,18 @@ export default function AutomationsPage({
       </div>
 
       <div className="commerce-content">
+        <AutomationCampaigns canWrite={canWrite} storeId={storeId} />
         {activeTab === "rules" && (
           <AutomationsRules
             canWrite={canWrite}
+            storeId={storeId}
           />
         )}
 
         {activeTab === "executions" && (
           <AutomationsExecutions
             canWrite={canWrite}
+            storeId={storeId}
           />
         )}
       </div>

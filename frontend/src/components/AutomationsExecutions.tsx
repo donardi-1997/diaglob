@@ -13,6 +13,7 @@ import {
 
 interface AutomationsExecutionsProps {
   canWrite: boolean;
+  storeId: number;
 }
 
 
@@ -41,6 +42,7 @@ function formatDuration(
 
 export default function AutomationsExecutions({
   canWrite: _canWrite,
+  storeId,
 }: AutomationsExecutionsProps) {
   const { t } = useTranslation();
 
@@ -62,7 +64,7 @@ export default function AutomationsExecutions({
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [storeId]);
 
 
   async function loadData() {
@@ -71,7 +73,7 @@ export default function AutomationsExecutions({
       setError("");
 
       const data =
-        await listAllAutomationExecutions(0);
+        await listAllAutomationExecutions(storeId);
 
       setExecutions(data.items);
     } catch {

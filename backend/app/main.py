@@ -74,6 +74,10 @@ from .db import Base, SessionLocal, engine, get_db
 from .models import (
     Agent,
     Automation,
+    AutomationCampaign,
+    AutomationAudienceMember,
+    AutomationRun,
+    AutomationRecipientExecution,
     AutomationExecution,
     CommerceConnection,
     Conversation,
@@ -183,6 +187,15 @@ from .google_drive_client import (
     is_google_doc,
     validate_folder_sync_limits,
 )
+from .automation_campaigns import (
+    audience_metrics,
+    explain,
+    json_load,
+    render_template,
+    simulate_campaign,
+    validate_campaign,
+)
+from .automation_execution_engine import initial_next_run
 
 from .bedrock_ingestion import (
     start_ingestion_job,
@@ -580,6 +593,29 @@ class AutomationUpdate(BaseModel):
 class AutomationRunRequest(BaseModel):
     event_type: str = "manual"
     payload: dict = {}
+
+
+class AutomationCampaignPayload(BaseModel):
+    name: str
+    automation_type: str = "custom"
+    status: str = "draft"
+    audience_type: str = "dynamic"
+    audience_filters: dict = {}
+    member_ids: list[int] = []
+    schedule_type: str = "once"
+    schedule_config: dict = {}
+    timezone: str | None = None
+    send_window_start: str | None = None
+    send_window_end: str | None = None
+    cooldown_days: int = 0
+    channel: str = "whatsapp"
+    message_template: str = ""
+
+
+class AudiencePreviewRequest(BaseModel):
+    audience_type: str = "dynamic"
+    audience_filters: dict = {}
+    member_ids: list[int] = []
 
 
 bearer_scheme = HTTPBearer(
@@ -7687,11 +7723,35 @@ def retry_knowledge_base_provisioning(
         knowledge_base.id,
         previous_status,
     )
-    knowledge_base.external_status = "retrying"
-    knowledge_base.external_last_error = None
-    knowledge_base.provisioning_stage = "queued"
-    knowledge_base.provisioning_started_at = datetime.now(timezone.utc)
-    knowledge_base.provisioning_stage_started_at = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc)
+    updated = (
+        db.query(KnowledgeBase)
+        .filter(
+            KnowledgeBase.id == knowledge_base.id,
+            KnowledgeBase.organization_id == knowledge_base.organization_id,
+            KnowledgeBase.external_status == previous_status,
+        )
+        .update(
+            {
+                KnowledgeBase.external_status: "retrying",
+                KnowledgeBase.external_last_error: None,
+                KnowledgeBase.provisioning_stage: "queued",
+                KnowledgeBase.provisioning_started_at: now,
+                KnowledgeBase.provisioning_stage_started_at: now,
+            },
+            synchronize_session=False,
+        )
+    )
+    if updated != 1:
+        db.rollback()
+        db.refresh(knowledge_base)
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "PROVISIONING_STATE_CHANGED",
+                "message": "Knowledge Base provisioning state changed. Try again.",
+            },
+        )
     db.commit()
     db.refresh(knowledge_base)
     background_tasks.add_task(run_knowledge_base_provisioning, knowledge_base.id)
@@ -8983,6 +9043,167 @@ def list_store_commerce_orders(
 # ============================================================
 # AUTOMATIONS ENDPOINTS
 # ============================================================
+
+
+def _campaign_store_or_404(db, organization_id, store_id):
+    store = db.query(Store).filter(Store.id == store_id, Store.organization_id == organization_id, Store.deleted.is_(False)).first()
+    if not store:
+        raise HTTPException(status_code=404, detail="Store not found")
+    return store
+
+
+def _serialize_campaign(campaign):
+    return {
+        "id": campaign.id, "organization_id": campaign.organization_id,
+        "store_id": campaign.store_id, "name": campaign.name,
+        "automation_type": campaign.automation_type, "status": campaign.status,
+        "audience_type": campaign.audience_type,
+        "audience_filters": json_load(campaign.audience_filters),
+        "member_count": sum(1 for member in campaign.members if member.included),
+        "schedule_type": campaign.schedule_type,
+        "schedule_config": json_load(campaign.schedule_config),
+        "timezone": campaign.timezone, "send_window_start": campaign.send_window_start,
+        "send_window_end": campaign.send_window_end, "cooldown_days": campaign.cooldown_days,
+        "channel": campaign.channel, "message_template": campaign.message_template,
+        "created_at": campaign.created_at.isoformat() + "Z",
+        "updated_at": campaign.updated_at.isoformat() + "Z",
+    }
+
+
+def _campaign_or_404(db, organization_id, store_id, campaign_id):
+    campaign = db.query(AutomationCampaign).filter(
+        AutomationCampaign.id == campaign_id,
+        AutomationCampaign.organization_id == organization_id,
+        AutomationCampaign.store_id == store_id,
+    ).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Automation campaign not found")
+    return campaign
+
+
+def _replace_campaign_members(db, campaign, organization_id, member_ids):
+    unique_ids = set(member_ids)
+    valid_count = db.query(Customer).filter(Customer.organization_id == organization_id, Customer.id.in_(unique_ids)).count() if unique_ids else 0
+    if valid_count != len(unique_ids):
+        raise HTTPException(status_code=400, detail="Customer is outside organization")
+    db.query(AutomationAudienceMember).filter(AutomationAudienceMember.automation_id == campaign.id).delete()
+    db.add_all([AutomationAudienceMember(automation_id=campaign.id, customer_id=customer_id) for customer_id in unique_ids])
+
+
+@app.post("/api/stores/{store_id}/automation-campaigns/audience/preview")
+def preview_automation_audience(
+    store_id: int,
+    payload: AudiencePreviewRequest,
+    membership: OrganizationMembership = Depends(require_permission("automations.read")),
+    db: Session = Depends(get_db),
+):
+    _campaign_store_or_404(db, membership.organization_id, store_id)
+    if payload.audience_type not in {"dynamic", "fixed"}:
+        raise HTTPException(400, "Invalid audience_type")
+    if payload.member_ids:
+        valid_count = db.query(Customer).filter(Customer.organization_id == membership.organization_id, Customer.id.in_(set(payload.member_ids))).count()
+        if valid_count != len(set(payload.member_ids)):
+            raise HTTPException(400, "Customer is outside organization")
+    metrics = audience_metrics(db, membership.organization_id, store_id, payload.audience_type, payload.audience_filters, payload.member_ids)
+    return {"eligible_count": len(metrics), "sample": [explain(item) for item in metrics[:20]]}
+
+
+@app.post("/api/stores/{store_id}/automation-campaigns")
+def create_automation_campaign(
+    store_id: int,
+    payload: AutomationCampaignPayload,
+    membership: OrganizationMembership = Depends(require_permission("automations.write")),
+    db: Session = Depends(get_db),
+):
+    store = _campaign_store_or_404(db, membership.organization_id, store_id)
+    data = payload.model_dump()
+    data["timezone"] = data["timezone"] or store.timezone
+    validate_campaign(data, store)
+    if data["status"] == "active" and not db.query(WhatsAppConnection).filter(WhatsAppConnection.organization_id == membership.organization_id, WhatsAppConnection.store_id == store_id, WhatsAppConnection.status == "connected").first():
+        raise HTTPException(400, "WhatsApp channel is not connected")
+    if db.query(AutomationCampaign).filter(AutomationCampaign.organization_id == membership.organization_id, AutomationCampaign.store_id == store_id, AutomationCampaign.name == payload.name).first():
+        raise HTTPException(409, "Automation campaign name already exists")
+    campaign = AutomationCampaign(
+        organization_id=membership.organization_id, store_id=store_id, created_by=membership.user_id,
+        **{key: data[key] for key in ("name", "automation_type", "status", "audience_type", "schedule_type", "timezone", "send_window_start", "send_window_end", "cooldown_days", "channel", "message_template")},
+        audience_filters=data["audience_filters"], schedule_config=data["schedule_config"],
+    )
+    if campaign.status == "active":
+        campaign.next_run_at = initial_next_run(campaign)
+        campaign.execution_enabled_at = datetime.utcnow()
+    db.add(campaign); db.flush()
+    _replace_campaign_members(db, campaign, membership.organization_id, data["member_ids"])
+    db.commit(); db.refresh(campaign)
+    return _serialize_campaign(campaign)
+
+
+@app.get("/api/stores/{store_id}/automation-campaigns")
+def list_automation_campaigns(
+    store_id: int,
+    membership: OrganizationMembership = Depends(require_permission("automations.read")),
+    db: Session = Depends(get_db),
+):
+    _campaign_store_or_404(db, membership.organization_id, store_id)
+    items = db.query(AutomationCampaign).filter(AutomationCampaign.organization_id == membership.organization_id, AutomationCampaign.store_id == store_id).order_by(AutomationCampaign.updated_at.desc()).all()
+    return {"items": [_serialize_campaign(item) for item in items], "total": len(items)}
+
+
+@app.get("/api/stores/{store_id}/automation-campaigns/{campaign_id}")
+def get_automation_campaign(campaign_id: int, store_id: int, membership: OrganizationMembership = Depends(require_permission("automations.read")), db: Session = Depends(get_db)):
+    _campaign_store_or_404(db, membership.organization_id, store_id)
+    return _serialize_campaign(_campaign_or_404(db, membership.organization_id, store_id, campaign_id))
+
+
+@app.put("/api/stores/{store_id}/automation-campaigns/{campaign_id}")
+def update_automation_campaign(campaign_id: int, store_id: int, payload: AutomationCampaignPayload, membership: OrganizationMembership = Depends(require_permission("automations.write")), db: Session = Depends(get_db)):
+    store = _campaign_store_or_404(db, membership.organization_id, store_id)
+    campaign = _campaign_or_404(db, membership.organization_id, store_id, campaign_id)
+    previous_status = campaign.status
+    data = payload.model_dump(); data["timezone"] = data["timezone"] or store.timezone
+    validate_campaign(data, store)
+    if data["status"] == "active" and not db.query(WhatsAppConnection).filter(WhatsAppConnection.organization_id == membership.organization_id, WhatsAppConnection.store_id == store_id, WhatsAppConnection.status == "connected").first():
+        raise HTTPException(400, "WhatsApp channel is not connected")
+    for key in ("name", "automation_type", "status", "audience_type", "schedule_type", "timezone", "send_window_start", "send_window_end", "cooldown_days", "channel", "message_template"):
+        setattr(campaign, key, data[key])
+    campaign.audience_filters = data["audience_filters"]; campaign.schedule_config = data["schedule_config"]
+    if campaign.status == "active":
+        if campaign.execution_enabled_at is None:
+            campaign.execution_enabled_at = datetime.utcnow()
+        if campaign.schedule_type == "once" and campaign.last_run_at is not None:
+            campaign.next_run_at = None
+        elif previous_status != "active" or campaign.next_run_at is None:
+            campaign.next_run_at = initial_next_run(campaign)
+    elif campaign.status in {"paused", "archived"}:
+        campaign.next_run_at = None
+    _replace_campaign_members(db, campaign, membership.organization_id, data["member_ids"])
+    db.commit(); db.refresh(campaign)
+    return _serialize_campaign(campaign)
+
+
+@app.post("/api/stores/{store_id}/automation-campaigns/{campaign_id}/simulate")
+def simulate_automation_campaign(campaign_id: int, store_id: int, membership: OrganizationMembership = Depends(require_permission("automations.write")), db: Session = Depends(get_db)):
+    store = _campaign_store_or_404(db, membership.organization_id, store_id)
+    campaign = _campaign_or_404(db, membership.organization_id, store_id, campaign_id)
+    return simulate_campaign(db, campaign, store)
+
+
+@app.post("/api/stores/{store_id}/automation-campaigns/{campaign_id}/duplicate")
+def duplicate_automation_campaign(campaign_id: int, store_id: int, membership: OrganizationMembership = Depends(require_permission("automations.write")), db: Session = Depends(get_db)):
+    _campaign_store_or_404(db, membership.organization_id, store_id)
+    source = _campaign_or_404(db, membership.organization_id, store_id, campaign_id)
+    copy = AutomationCampaign(organization_id=source.organization_id, store_id=source.store_id, name=f"{source.name} (copy)", automation_type=source.automation_type, status="draft", audience_type=source.audience_type, audience_filters=source.audience_filters, schedule_type=source.schedule_type, schedule_config=source.schedule_config, timezone=source.timezone, send_window_start=source.send_window_start, send_window_end=source.send_window_end, cooldown_days=source.cooldown_days, channel=source.channel, message_template=source.message_template, created_by=membership.user_id)
+    db.add(copy); db.flush()
+    _replace_campaign_members(db, copy, membership.organization_id, [member.customer_id for member in source.members if member.included])
+    db.commit(); db.refresh(copy)
+    return _serialize_campaign(copy)
+
+
+@app.get("/api/stores/{store_id}/automation-campaigns/{campaign_id}/runs")
+def list_automation_campaign_runs(campaign_id: int, store_id: int, membership: OrganizationMembership = Depends(require_permission("automations.read")), db: Session = Depends(get_db)):
+    _campaign_store_or_404(db, membership.organization_id, store_id)
+    campaign = _campaign_or_404(db, membership.organization_id, store_id, campaign_id)
+    runs = db.query(AutomationRun).filter(AutomationRun.automation_id == campaign.id).order_by(AutomationRun.id.desc()).all()
+    return {"items": [{"id": run.id, "status": run.status, "matched": run.matched_count, "eligible": run.eligible_count, "sent": run.sent_count, "failed": run.failed_count, "excluded": run.excluded_count, "started_at": run.started_at.isoformat() + "Z"} for run in runs]}
 
 
 @app.get(

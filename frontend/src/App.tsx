@@ -602,7 +602,7 @@ function App() {
                   )}
                   {activePage === "automations" && (
                     <Suspense fallback={<div className="page-loading">Cargando...</div>}>
-                      <AutomationsPage canWrite={can("automations.write")} />
+                       <AutomationsPage canWrite={can("automations.write")} storeId={Number(selectedStoreId) || 0} />
                     </Suspense>
                   )}
                   {activePage === "analytics" && (

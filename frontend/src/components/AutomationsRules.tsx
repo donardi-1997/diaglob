@@ -25,6 +25,7 @@ import {
 
 interface AutomationsRulesProps {
   canWrite: boolean;
+  storeId: number;
 }
 
 
@@ -88,6 +89,7 @@ const ACTION_TYPE_OPTIONS = [
 
 export default function AutomationsRules({
   canWrite,
+  storeId,
 }: AutomationsRulesProps) {
   const { t } = useTranslation();
 
@@ -133,7 +135,7 @@ export default function AutomationsRules({
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [storeId]);
 
 
   async function loadData() {
@@ -142,7 +144,7 @@ export default function AutomationsRules({
       setError("");
 
       const data =
-        await listAutomations(0);
+        await listAutomations(storeId);
 
       setAutomations(data.items);
     } catch {
@@ -204,12 +206,12 @@ export default function AutomationsRules({
 
       if (editing) {
         await updateAutomation(
-          0,
+          storeId,
           editing.id,
           payload,
         );
       } else {
-        await createAutomation(0, payload);
+        await createAutomation(storeId, payload);
       }
 
       closeModal();
@@ -229,7 +231,7 @@ export default function AutomationsRules({
 
     try {
       setError("");
-      await toggleAutomation(0, auto.id);
+      await toggleAutomation(storeId, auto.id);
       await loadData();
     } catch {
       setError(t("autoToggleError"));
@@ -243,7 +245,7 @@ export default function AutomationsRules({
     try {
       setError("");
       await deleteAutomation(
-        0,
+        storeId,
         deleteConfirm.id,
       );
       setDeleteConfirm(null);
@@ -304,7 +306,7 @@ export default function AutomationsRules({
       setRunResult(null);
 
       const result = await runAutomation(
-        0,
+        storeId,
         runningAutomation.id,
         {
           event_type:

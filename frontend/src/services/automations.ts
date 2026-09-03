@@ -61,6 +61,55 @@ export interface AutomationExecution {
   completed_at: string | null;
 }
 
+export interface AutomationCampaign {
+  id: number;
+  name: string;
+  automation_type: string;
+  status: "draft" | "active" | "paused" | "archived";
+  audience_type: "dynamic" | "fixed";
+  audience_filters: Record<string, unknown>;
+  member_count: number;
+  schedule_type: string;
+  schedule_config: Record<string, unknown>;
+  timezone: string;
+  send_window_start: string | null;
+  send_window_end: string | null;
+  cooldown_days: number;
+  channel: string;
+  message_template: string;
+}
+
+export interface AutomationCampaignPayload {
+  name: string;
+  automation_type: string;
+  status: "draft" | "active" | "paused" | "archived";
+  audience_type: "dynamic" | "fixed";
+  audience_filters: Record<string, unknown>;
+  member_ids: number[];
+  schedule_type: string;
+  schedule_config: Record<string, unknown>;
+  timezone?: string;
+  send_window_start?: string;
+  send_window_end?: string;
+  cooldown_days: number;
+  channel: "whatsapp";
+  message_template: string;
+}
+
+export interface AudiencePreview {
+  eligible_count: number;
+  sample: Array<Record<string, unknown>>;
+}
+
+export interface CampaignSimulation {
+  matched: number;
+  eligible: number;
+  excluded: number;
+  would_send: number;
+  exclusion_breakdown: Record<string, number>;
+  sample: Array<Record<string, unknown>>;
+}
+
 
 export async function listAutomations(
   storeId: number,
@@ -198,5 +247,30 @@ export async function listAllAutomationExecutions(
       `/api/stores/${storeId}/automation-executions`,
     );
 
+  return response.data;
+}
+
+export async function listAutomationCampaigns(storeId: number) {
+  const response = await api.get<{ items: AutomationCampaign[]; total: number }>(`/api/stores/${storeId}/automation-campaigns`);
+  return response.data;
+}
+
+export async function createAutomationCampaign(storeId: number, payload: AutomationCampaignPayload) {
+  const response = await api.post<AutomationCampaign>(`/api/stores/${storeId}/automation-campaigns`, payload);
+  return response.data;
+}
+
+export async function previewAutomationAudience(storeId: number, payload: Pick<AutomationCampaignPayload, "audience_type" | "audience_filters" | "member_ids">) {
+  const response = await api.post<AudiencePreview>(`/api/stores/${storeId}/automation-campaigns/audience/preview`, payload);
+  return response.data;
+}
+
+export async function simulateAutomationCampaign(storeId: number, campaignId: number) {
+  const response = await api.post<CampaignSimulation>(`/api/stores/${storeId}/automation-campaigns/${campaignId}/simulate`);
+  return response.data;
+}
+
+export async function duplicateAutomationCampaign(storeId: number, campaignId: number) {
+  const response = await api.post<AutomationCampaign>(`/api/stores/${storeId}/automation-campaigns/${campaignId}/duplicate`);
   return response.data;
 }
