@@ -2481,6 +2481,100 @@ class AutomationRateLimit(Base):
 
 
 # ============================================================
+# AUTOMATION FLOWS V2.2 — MULTI-STEP AUTOMATION ENGINE
+# ============================================================
+
+
+class AutomationFlow(Base):
+    __tablename__ = "automation_flows"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    store_id: Mapped[int] = mapped_column(ForeignKey("stores.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="draft", nullable=False, index=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    current_version_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    active_version_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    __table_args__ = (UniqueConstraint("organization_id", "store_id", "name", name="uq_flow_org_store_name"),)
+
+
+class AutomationFlowVersion(Base):
+    __tablename__ = "automation_flow_versions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    flow_id: Mapped[int] = mapped_column(ForeignKey("automation_flows.id", ondelete="CASCADE"), nullable=False, index=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
+    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    graph: Mapped[dict] = mapped_column(JSON, nullable=False)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    activated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    __table_args__ = (UniqueConstraint("flow_id", "version_number", name="uq_flow_version_number"),)
+
+
+class AutomationFlowRun(Base):
+    __tablename__ = "automation_flow_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    flow_id: Mapped[int] = mapped_column(ForeignKey("automation_flows.id", ondelete="CASCADE"), nullable=False, index=True)
+    flow_version_id: Mapped[int] = mapped_column(ForeignKey("automation_flow_versions.id", ondelete="CASCADE"), nullable=False)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    store_id: Mapped[int] = mapped_column(ForeignKey("stores.id", ondelete="CASCADE"), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False, index=True)
+    trigger_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    total_recipients: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    completed_recipients: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    failed_recipients: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class AutomationFlowRecipientExecution(Base):
+    __tablename__ = "automation_flow_recipient_executions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    flow_run_id: Mapped[int] = mapped_column(ForeignKey("automation_flow_runs.id", ondelete="CASCADE"), nullable=False, index=True)
+    flow_version_id: Mapped[int] = mapped_column(ForeignKey("automation_flow_versions.id", ondelete="CASCADE"), nullable=False)
+    customer_id: Mapped[int] = mapped_column(ForeignKey("customers.id", ondelete="CASCADE"), nullable=False, index=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="active", nullable=False, index=True)
+    current_node_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    next_action_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    claim_token: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    claim_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    error_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    __table_args__ = (UniqueConstraint("flow_run_id", "customer_id", name="uq_flow_recipient_run_customer"),)
+
+
+class AutomationNodeExecution(Base):
+    __tablename__ = "automation_node_executions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    flow_recipient_execution_id: Mapped[int] = mapped_column(ForeignKey("automation_flow_recipient_executions.id", ondelete="CASCADE"), nullable=False, index=True)
+    node_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    node_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    status: Mapped[str] = mapped_column(String(30), default="pending", nullable=False)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    outcome: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    provider_message_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    extra_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+# ============================================================
 # GOOGLE INTEGRATION
 # ============================================================
 

@@ -79,6 +79,11 @@ from .models import (
     AutomationRun,
     AutomationRecipientExecution,
     AutomationExecution,
+    AutomationFlow,
+    AutomationFlowVersion,
+    AutomationFlowRun,
+    AutomationFlowRecipientExecution,
+    AutomationNodeExecution,
     CommerceConnection,
     Conversation,
     Customer,
@@ -9437,6 +9442,378 @@ def retry_run_recipient(recipient_id: int, run_id: int, campaign_id: int, store_
         run.excluded_count = states.count("skipped")
     db.commit()
     return {"ok": True, "recipient_id": recipient.id, "status": recipient.status}
+
+
+# ============================================================
+# AUTOMATION FLOWS V2.2 — ENDPOINTS
+# ============================================================
+
+from pydantic import BaseModel as _PydanticBaseModel
+from .automation_flow_graph import validate_graph
+from .automation_flow_engine import (
+    materialize_flow_trigger as _materialize_flow_trigger,
+    utcnow as _utcnow,
+)
+from .automation_flow_helpers import (
+    serialize_flow as _sf, serialize_version as _sv,
+    serialize_run as _sr, serialize_recipient as _srec,
+)
+
+
+class _FlowCreate(_PydanticBaseModel):
+    name: str
+    description: str | None = None
+    graph: dict = {}
+
+
+class _FlowUpdate(_PydanticBaseModel):
+    name: str | None = None
+    description: str | None = None
+    graph: dict | None = None
+
+
+class _FlowVersionPublish(_PydanticBaseModel):
+    graph: dict
+
+
+class _FlowRunCreate(_PydanticBaseModel):
+    customer_ids: list[int]
+    trigger_key: str | None = None
+
+
+@app.post("/api/stores/{store_id}/automation-flows")
+def create_flow(store_id: int, payload: _FlowCreate, membership: OrganizationMembership = Depends(require_permission("automations.write")), db: Session = Depends(get_db)):
+    if payload.graph:
+        errors = validate_graph(payload.graph)
+        if errors:
+            raise HTTPException(422, detail={"errors": errors})
+    flow = AutomationFlow(
+        organization_id=membership.organization_id, store_id=store_id,
+        name=payload.name, description=payload.description,
+        status="draft", created_by=membership.user_id,
+    )
+    db.add(flow)
+    db.flush()
+    if payload.graph:
+        ver = AutomationFlowVersion(
+            flow_id=flow.id, organization_id=membership.organization_id,
+            version_number=1, graph=payload.graph,
+        )
+        db.add(ver)
+        db.flush()
+        flow.current_version_id = ver.id
+    db.commit()
+    return _sf(flow)
+
+
+@app.get("/api/stores/{store_id}/automation-flows")
+def list_flows(store_id: int, status: str | None = None, membership: OrganizationMembership = Depends(require_permission("automations.read")), db: Session = Depends(get_db)):
+    q = db.query(AutomationFlow).filter(
+        AutomationFlow.organization_id == membership.organization_id,
+        AutomationFlow.store_id == store_id,
+    )
+    if status:
+        q = q.filter(AutomationFlow.status == status)
+    return [_sf(f) for f in q.order_by(AutomationFlow.updated_at.desc()).all()]
+
+
+@app.get("/api/stores/{store_id}/automation-flows/{flow_id}")
+def get_flow(store_id: int, flow_id: int, membership: OrganizationMembership = Depends(require_permission("automations.read")), db: Session = Depends(get_db)):
+    flow = db.get(AutomationFlow, flow_id)
+    if not flow or flow.organization_id != membership.organization_id or flow.store_id != store_id:
+        raise HTTPException(404, detail="Flow not found")
+    result = _sf(flow)
+    if flow.current_version_id:
+        ver = db.get(AutomationFlowVersion, flow.current_version_id)
+        if ver:
+            result["current_version"] = _sv(ver)
+    return result
+
+
+@app.put("/api/stores/{store_id}/automation-flows/{flow_id}")
+def update_flow(store_id: int, flow_id: int, payload: _FlowUpdate, membership: OrganizationMembership = Depends(require_permission("automations.write")), db: Session = Depends(get_db)):
+    flow = db.get(AutomationFlow, flow_id)
+    if not flow or flow.organization_id != membership.organization_id or flow.store_id != store_id:
+        raise HTTPException(404, detail="Flow not found")
+    if flow.status == "active":
+        raise HTTPException(409, detail="Cannot edit active flow; duplicate or archive first")
+    if payload.name is not None:
+        flow.name = payload.name
+    if payload.description is not None:
+        flow.description = payload.description
+    if payload.graph is not None:
+        errors = validate_graph(payload.graph)
+        if errors:
+            raise HTTPException(422, detail={"errors": errors})
+        max_ver = db.query(AutomationFlowVersion.version_number).filter(
+            AutomationFlowVersion.flow_id == flow.id
+        ).order_by(AutomationFlowVersion.version_number.desc()).first()
+        next_num = (max_ver[0] if max_ver else 0) + 1
+        ver = AutomationFlowVersion(
+            flow_id=flow.id, organization_id=membership.organization_id,
+            version_number=next_num, graph=payload.graph,
+        )
+        db.add(ver)
+        db.flush()
+        flow.current_version_id = ver.id
+    flow.updated_at = _utcnow()
+    db.commit()
+    return _sf(flow)
+
+
+@app.delete("/api/stores/{store_id}/automation-flows/{flow_id}")
+def archive_flow(store_id: int, flow_id: int, membership: OrganizationMembership = Depends(require_permission("automations.write")), db: Session = Depends(get_db)):
+    flow = db.get(AutomationFlow, flow_id)
+    if not flow or flow.organization_id != membership.organization_id or flow.store_id != store_id:
+        raise HTTPException(404, detail="Flow not found")
+    flow.status = "archived"
+    flow.updated_at = _utcnow()
+    db.commit()
+    return {"status": "archived", "id": flow.id}
+
+
+@app.get("/api/stores/{store_id}/automation-flows/{flow_id}/versions")
+def list_versions(store_id: int, flow_id: int, membership: OrganizationMembership = Depends(require_permission("automations.read")), db: Session = Depends(get_db)):
+    flow = db.get(AutomationFlow, flow_id)
+    if not flow or flow.organization_id != membership.organization_id or flow.store_id != store_id:
+        raise HTTPException(404, detail="Flow not found")
+    versions = db.query(AutomationFlowVersion).filter(
+        AutomationFlowVersion.flow_id == flow_id
+    ).order_by(AutomationFlowVersion.version_number.desc()).all()
+    return [_sv(v) for v in versions]
+
+
+@app.post("/api/stores/{store_id}/automation-flows/{flow_id}/versions")
+def create_version(store_id: int, flow_id: int, payload: _FlowVersionPublish, membership: OrganizationMembership = Depends(require_permission("automations.write")), db: Session = Depends(get_db)):
+    flow = db.get(AutomationFlow, flow_id)
+    if not flow or flow.organization_id != membership.organization_id or flow.store_id != store_id:
+        raise HTTPException(404, detail="Flow not found")
+    errors = validate_graph(payload.graph)
+    if errors:
+        raise HTTPException(422, detail={"errors": errors})
+    max_ver = db.query(AutomationFlowVersion.version_number).filter(
+        AutomationFlowVersion.flow_id == flow_id
+    ).order_by(AutomationFlowVersion.version_number.desc()).first()
+    next_num = (max_ver[0] if max_ver else 0) + 1
+    ver = AutomationFlowVersion(
+        flow_id=flow_id, organization_id=membership.organization_id,
+        version_number=next_num, graph=payload.graph,
+    )
+    db.add(ver)
+    db.flush()
+    flow.current_version_id = ver.id
+    flow.updated_at = _utcnow()
+    db.commit()
+    return _sv(ver)
+
+
+@app.post("/api/stores/{store_id}/automation-flows/{flow_id}/versions/{version_id}/publish")
+def publish_version(store_id: int, flow_id: int, version_id: int, membership: OrganizationMembership = Depends(require_permission("automations.write")), db: Session = Depends(get_db)):
+    flow = db.get(AutomationFlow, flow_id)
+    if not flow or flow.organization_id != membership.organization_id or flow.store_id != store_id:
+        raise HTTPException(404, detail="Flow not found")
+    ver = db.get(AutomationFlowVersion, version_id)
+    if not ver or ver.flow_id != flow_id:
+        raise HTTPException(404, detail="Version not found")
+    if ver.published_at:
+        raise HTTPException(409, detail="Version already published")
+    ver.published_at = _utcnow()
+    flow.updated_at = _utcnow()
+    db.commit()
+    return _sv(ver)
+
+
+@app.post("/api/stores/{store_id}/automation-flows/{flow_id}/activate")
+def activate_flow(store_id: int, flow_id: int, membership: OrganizationMembership = Depends(require_permission("automations.write")), db: Session = Depends(get_db)):
+    flow = db.get(AutomationFlow, flow_id)
+    if not flow or flow.organization_id != membership.organization_id or flow.store_id != store_id:
+        raise HTTPException(404, detail="Flow not found")
+    if not flow.current_version_id:
+        raise HTTPException(409, detail="No version to activate")
+    ver = db.get(AutomationFlowVersion, flow.current_version_id)
+    if not ver:
+        raise HTTPException(404, detail="Current version not found")
+    if not ver.published_at:
+        raise HTTPException(409, detail="Version must be published before activation")
+    ver.activated_at = _utcnow()
+    flow.active_version_id = ver.id
+    flow.status = "active"
+    flow.updated_at = _utcnow()
+    db.commit()
+    return _sf(flow)
+
+
+@app.post("/api/stores/{store_id}/automation-flows/{flow_id}/deactivate")
+def deactivate_flow(store_id: int, flow_id: int, membership: OrganizationMembership = Depends(require_permission("automations.write")), db: Session = Depends(get_db)):
+    flow = db.get(AutomationFlow, flow_id)
+    if not flow or flow.organization_id != membership.organization_id or flow.store_id != store_id:
+        raise HTTPException(404, detail="Flow not found")
+    flow.status = "draft"
+    flow.updated_at = _utcnow()
+    db.commit()
+    return _sf(flow)
+
+
+@app.post("/api/stores/{store_id}/automation-flows/{flow_id}/runs")
+def trigger_flow_run(store_id: int, flow_id: int, payload: _FlowRunCreate, membership: OrganizationMembership = Depends(require_permission("automations.write")), db: Session = Depends(get_db)):
+    flow = db.get(AutomationFlow, flow_id)
+    if not flow or flow.organization_id != membership.organization_id or flow.store_id != store_id:
+        raise HTTPException(404, detail="Flow not found")
+    if flow.status != "active" or not flow.active_version_id:
+        raise HTTPException(409, detail="Flow must be active to trigger")
+    customers = db.query(Customer).filter(
+        Customer.id.in_(payload.customer_ids),
+        Customer.organization_id == membership.organization_id,
+    ).all()
+    found_ids = {c.id for c in customers}
+    missing = set(payload.customer_ids) - found_ids
+    if missing:
+        raise HTTPException(422, detail={"errors": [f"Customer {cid} not found" for cid in sorted(missing)]})
+    run = _materialize_flow_trigger(db, flow, payload.customer_ids, payload.trigger_key)
+    if not run:
+        raise HTTPException(409, detail="Trigger key already used or flow not materializable")
+    return _sr(run)
+
+
+@app.get("/api/stores/{store_id}/automation-flows/{flow_id}/runs")
+def list_flow_runs(store_id: int, flow_id: int, membership: OrganizationMembership = Depends(require_permission("automations.read")), db: Session = Depends(get_db)):
+    flow = db.get(AutomationFlow, flow_id)
+    if not flow or flow.organization_id != membership.organization_id or flow.store_id != store_id:
+        raise HTTPException(404, detail="Flow not found")
+    runs = db.query(AutomationFlowRun).filter(
+        AutomationFlowRun.flow_id == flow_id
+    ).order_by(AutomationFlowRun.created_at.desc()).all()
+    return [_sr(r) for r in runs]
+
+
+@app.get("/api/stores/{store_id}/automation-flows/{flow_id}/runs/{run_id}")
+def get_flow_run(store_id: int, flow_id: int, run_id: int, membership: OrganizationMembership = Depends(require_permission("automations.read")), db: Session = Depends(get_db)):
+    flow = db.get(AutomationFlow, flow_id)
+    if not flow or flow.organization_id != membership.organization_id or flow.store_id != store_id:
+        raise HTTPException(404, detail="Flow not found")
+    run = db.get(AutomationFlowRun, run_id)
+    if not run or run.flow_id != flow_id:
+        raise HTTPException(404, detail="Run not found")
+    recipients = db.query(AutomationFlowRecipientExecution).filter(
+        AutomationFlowRecipientExecution.flow_run_id == run_id
+    ).all()
+    result = _sr(run)
+    result["recipients"] = [_srec(r) for r in recipients]
+    return result
+
+
+@app.get("/api/stores/{store_id}/automation-flows/{flow_id}/runs/{run_id}/recipients")
+def list_flow_run_recipients(store_id: int,
+    flow_id: int, run_id: int,
+    status: str | None = None, search: str | None = None,
+    page: int = 1, size: int = 50,
+    membership: OrganizationMembership = Depends(require_permission("automations.read")),
+    db: Session = Depends(get_db),
+):
+    flow = db.get(AutomationFlow, flow_id)
+    if not flow or flow.organization_id != membership.organization_id or flow.store_id != store_id:
+        raise HTTPException(404, detail="Flow not found")
+    run = db.get(AutomationFlowRun, run_id)
+    if not run or run.flow_id != flow_id:
+        raise HTTPException(404, detail="Run not found")
+    q = db.query(AutomationFlowRecipientExecution).filter(
+        AutomationFlowRecipientExecution.flow_run_id == run_id,
+    )
+    if status:
+        q = q.filter(AutomationFlowRecipientExecution.status == status)
+    if search:
+        q = q.join(Customer).filter(
+            (Customer.name.ilike(f"%{search}%")) | (Customer.phone.ilike(f"%{search}%"))
+        )
+    total = q.count()
+    items = q.order_by(AutomationFlowRecipientExecution.id).offset((page - 1) * size).limit(size).all()
+    return {"items": [_srec(r) for r in items], "total": total, "page": page, "size": size, "pages": max(1, -(-total // size))}
+
+
+@app.get("/api/stores/{store_id}/automation-flows/{flow_id}/runs/{run_id}/recipients/{recipient_id}")
+def get_flow_recipient_detail(store_id: int, flow_id: int, run_id: int, recipient_id: int, membership: OrganizationMembership = Depends(require_permission("automations.read")), db: Session = Depends(get_db)):
+    flow = db.get(AutomationFlow, flow_id)
+    if not flow or flow.organization_id != membership.organization_id or flow.store_id != store_id:
+        raise HTTPException(404, detail="Flow not found")
+    recipient = db.get(AutomationFlowRecipientExecution, recipient_id)
+    if not recipient or recipient.flow_run_id != run_id:
+        raise HTTPException(404, detail="Recipient not found")
+    node_execs = db.query(AutomationNodeExecution).filter(
+        AutomationNodeExecution.flow_recipient_execution_id == recipient_id
+    ).order_by(AutomationNodeExecution.started_at).all()
+    result = _srec(recipient)
+    result["node_executions"] = [
+        {"id": ne.id, "node_id": ne.node_id, "node_type": ne.node_type,
+         "status": ne.status, "outcome": ne.outcome,
+         "provider_message_id": ne.provider_message_id,
+         "error_code": ne.error_code, "error_message": ne.error_message,
+         "metadata": ne.extra_data,
+         "started_at": ne.started_at.isoformat() if ne.started_at else None,
+         "completed_at": ne.completed_at.isoformat() if ne.completed_at else None}
+        for ne in node_execs
+    ]
+    return result
+
+
+@app.post("/api/stores/{store_id}/automation-flows/{flow_id}/runs/{run_id}/recipients/{recipient_id}/retry")
+def retry_flow_recipient(store_id: int, flow_id: int, run_id: int, recipient_id: int, membership: OrganizationMembership = Depends(require_permission("automations.write")), db: Session = Depends(get_db)):
+    flow = db.get(AutomationFlow, flow_id)
+    if not flow or flow.organization_id != membership.organization_id or flow.store_id != store_id:
+        raise HTTPException(404, detail="Flow not found")
+    recipient = db.get(AutomationFlowRecipientExecution, recipient_id)
+    if not recipient or recipient.flow_run_id != run_id:
+        raise HTTPException(404, detail="Recipient not found")
+    if recipient.status not in ("failed", "ambiguous", "completed"):
+        raise HTTPException(409, detail=f"Cannot retry recipient in '{recipient.status}' status")
+    now = _utcnow()
+    recipient.status = "active"
+    recipient.error_code = None
+    recipient.error_message = None
+    recipient.claim_token = None
+    recipient.claim_expires_at = None
+    recipient.next_action_at = now
+    recipient.started_at = now
+    recipient.completed_at = None
+    run = db.get(AutomationFlowRun, run_id)
+    statuses = [r[0] for r in db.query(AutomationFlowRecipientExecution.status).filter(
+        AutomationFlowRecipientExecution.flow_run_id == run_id,
+    ).all()]
+    run.failed_recipients = sum(1 for s in statuses if s in ("failed", "ambiguous"))
+    run.completed_recipients = sum(1 for s in statuses if s == "completed")
+    if run.status == "completed":
+        run.status = "pending"
+        run.completed_at = None
+    db.commit()
+    return _srec(recipient)
+
+
+@app.post("/api/stores/{store_id}/automation-flows/simulate")
+def simulate_flow(store_id: int, payload: _FlowCreate, membership: OrganizationMembership = Depends(require_permission("automations.write")), db: Session = Depends(get_db)):
+    graph = payload.graph
+    if not graph:
+        raise HTTPException(422, detail={"errors": ["Graph is required for simulation"]})
+    errors = validate_graph(graph)
+    if errors:
+        return {"valid": False, "errors": errors, "warnings": []}
+    warnings: list[str] = []
+    nodes = graph.get("nodes", [])
+    edges = graph.get("edges", [])
+    message_nodes = [n for n in nodes if n.get("type") == "message"]
+    wait_nodes = [n for n in nodes if n.get("type") == "wait"]
+    condition_nodes = [n for n in nodes if n.get("type") == "condition"]
+    end_nodes = [n for n in nodes if n.get("type") == "end"]
+    if len(message_nodes) == 0:
+        warnings.append("Flow has no message nodes")
+    if len(wait_nodes) > 5:
+        warnings.append(f"Flow has {len(wait_nodes)} wait nodes")
+    return {
+        "valid": True, "errors": [], "warnings": warnings,
+        "summary": {
+            "total_nodes": len(nodes), "message_nodes": len(message_nodes),
+            "wait_nodes": len(wait_nodes), "condition_nodes": len(condition_nodes),
+            "end_nodes": len(end_nodes),
+        },
+    }
 
 
 @app.get(

@@ -1,14 +1,17 @@
 import { useTranslation } from "react-i18next";
-import { useState } from "react";
+import { useState, lazy, Suspense } from "react";
 import {
   History,
   Workflow,
   PlayCircle,
+  GitBranch,
 } from "lucide-react";
 import AutomationsRules from "../components/AutomationsRules";
 import AutomationsExecutions from "../components/AutomationsExecutions";
 import AutomationCampaigns from "../components/AutomationCampaigns";
 import AutomationRunExplorer from "../components/AutomationRunExplorer";
+
+const FlowList = lazy(() => import("../components/automation-flows/FlowList"));
 
 
 interface AutomationsPageProps {
@@ -20,7 +23,8 @@ interface AutomationsPageProps {
 type AutomationTab =
   | "rules"
   | "runs"
-  | "executions";
+  | "executions"
+  | "flows";
 
 
 const TABS: {
@@ -42,6 +46,11 @@ const TABS: {
     key: "executions",
     labelKey: "autoTabExecutions",
     icon: History,
+  },
+  {
+    key: "flows",
+    labelKey: "autoTabFlows",
+    icon: GitBranch,
   },
 ];
 
@@ -111,6 +120,12 @@ export default function AutomationsPage({
             canWrite={canWrite}
             storeId={storeId}
           />
+        )}
+
+        {activeTab === "flows" && (
+          <Suspense fallback={<div className="page-loading">{t("commonLoading")}</div>}>
+            <FlowList canWrite={canWrite} storeId={storeId} />
+          </Suspense>
         )}
       </div>
     </div>
