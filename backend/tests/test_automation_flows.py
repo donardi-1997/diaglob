@@ -19,7 +19,7 @@ from app.models import (
     AutomationFlow, AutomationFlowVersion, AutomationFlowRun,
     AutomationFlowRecipientExecution, AutomationNodeExecution,
     AutomationRateLimit, Customer, Organization, OrganizationMembership,
-    Store, User, WhatsAppConnection,
+    CustomerStoreProfile, Store, User, WhatsAppConnection,
 )
 
 
@@ -382,6 +382,35 @@ class TestFlowCRUD:
         finally:
             app.dependency_overrides.clear()
 
+    def test_create_flow_rejects_store_from_other_organization(self, db):
+        session, org, store = db
+        user, mem = _user_and_membership(session, org, store)
+        other_org = Organization(name="Other Org", slug="other-org")
+        session.add(other_org)
+        session.flush()
+        other_store = Store(
+            organization_id=other_org.id, name="Other Store",
+            slug="other-store", country_code="CO", currency="COP",
+            timezone="America/Bogota", default_language="es",
+        )
+        session.add(other_store)
+        session.commit()
+        client = TestClient(app)
+        app.dependency_overrides[get_current_user] = lambda: user
+        app.dependency_overrides[get_current_membership] = lambda: mem
+        app.dependency_overrides[get_db] = lambda: session
+        try:
+            response = client.post(
+                f"/api/stores/{other_store.id}/automation-flows",
+                json={"name": "Invalid Flow"},
+            )
+            assert response.status_code == 404
+            assert session.query(AutomationFlow).filter(
+                AutomationFlow.store_id == other_store.id,
+            ).count() == 0
+        finally:
+            app.dependency_overrides.clear()
+
     def test_list_flows(self, db):
         session, org, store = db
         user, mem = _user_and_membership(session, org, store)
@@ -599,7 +628,18 @@ class TestFlowExecution:
         c = Customer(organization_id=org.id, name=name, phone=phone)
         session.add(c)
         session.flush()
+        session.add(CustomerStoreProfile(
+            organization_id=org.id, customer_id=c.id, store_id=store.id,
+            currency=store.currency,
+        ))
+        session.flush()
         return c
+
+    def _process_claimed(self, session, recipient_id, **kwargs):
+        recipient = session.get(AutomationFlowRecipientExecution, recipient_id)
+        return process_flow_recipient(
+            session, recipient_id, claim_token=recipient.claim_token, **kwargs,
+        )
 
     def test_materialize_trigger(self, db):
         flow, ver = self._active_flow(db)
@@ -640,8 +680,42 @@ class TestFlowExecution:
         run = materialize_flow_trigger(session, flow, [c.id])
         ids = claim_flow_recipients(session)
         assert len(ids) > 0
-        result = process_flow_recipient(session, ids[0])
+        result = self._process_claimed(session, ids[0])
         assert result in ("waiting", "completed", "advanced", "sent")
+
+    def test_two_claim_attempts_only_one_gets_due_recipient(self, db):
+        flow, ver = self._active_flow(db)
+        session, org, store = db
+        c = self._customer(db)
+        materialize_flow_trigger(session, flow, [c.id])
+        first = claim_flow_recipients(session, include_tokens=True)
+        second = claim_flow_recipients(session, include_tokens=True)
+        assert len(first) == 1
+        assert second == []
+
+    def test_stale_claim_token_cannot_process(self, db):
+        flow, ver = self._active_flow(db)
+        session, org, store = db
+        c = self._customer(db)
+        materialize_flow_trigger(session, flow, [c.id])
+        first = claim_flow_recipients(session, include_tokens=True)
+        recipient_id, token_a = first[0]
+        session.query(AutomationFlowRecipientExecution).filter(
+            AutomationFlowRecipientExecution.id == recipient_id
+        ).update({"claim_token": "token-b"})
+        session.commit()
+        calls = []
+        result = process_flow_recipient(
+            session, recipient_id, claim_token=token_a,
+            sender=lambda *args: calls.append(args),
+        )
+        recipient = session.get(AutomationFlowRecipientExecution, recipient_id)
+        assert result == "not_claimed"
+        assert calls == []
+        assert recipient.attempt_count == 0
+        assert session.query(AutomationNodeExecution).filter(
+            AutomationNodeExecution.flow_recipient_execution_id == recipient_id
+        ).count() == 0
 
     def test_wait_node(self, db):
         flow, ver = self._active_flow(db)
@@ -649,7 +723,7 @@ class TestFlowExecution:
         c = self._customer(db)
         run = materialize_flow_trigger(session, flow, [c.id])
         ids = claim_flow_recipients(session)
-        result = process_flow_recipient(session, ids[0])
+        result = self._process_claimed(session, ids[0])
         assert result == "waiting"
         recip = session.query(AutomationFlowRecipientExecution).filter(
             AutomationFlowRecipientExecution.flow_run_id == run.id
@@ -717,7 +791,7 @@ class TestFlowExecution:
         session.commit()
         run = materialize_flow_trigger(session, flow, [c.id])
         ids = claim_flow_recipients(session)
-        result = process_flow_recipient(session, ids[0])
+        result = self._process_claimed(session, ids[0])
         assert result in ("advanced", "sent")
         recip = session.query(AutomationFlowRecipientExecution).filter(
             AutomationFlowRecipientExecution.flow_run_id == run.id
@@ -749,7 +823,7 @@ class TestFlowExecution:
         session.commit()
         run = materialize_flow_trigger(session, flow, [c.id])
         ids = claim_flow_recipients(session)
-        result = process_flow_recipient(session, ids[0])
+        result = self._process_claimed(session, ids[0])
         assert result in ("advanced", "sent")
         recip = session.query(AutomationFlowRecipientExecution).filter(
             AutomationFlowRecipientExecution.flow_run_id == run.id
@@ -783,7 +857,7 @@ class TestFlowExecution:
             AutomationFlowRecipientExecution.id.in_(ids)
         ).update({"current_node_id": "msg1"})
         session.commit()
-        result = process_flow_recipient(session, ids[0])
+        result = self._process_claimed(session, ids[0])
         assert result == "failed"
 
     def test_process_nonexistent_recipient(self, db):
@@ -851,6 +925,18 @@ class TestFlowSimulation:
 # ═══════════════════════════════════════════════════════════════
 
 class TestFlowTriggerEndpoints:
+    def _customer(self, db, name="C1", phone="+573001234567"):
+        session, org, store = db
+        customer = Customer(organization_id=org.id, name=name, phone=phone)
+        session.add(customer)
+        session.flush()
+        session.add(CustomerStoreProfile(
+            organization_id=org.id, customer_id=customer.id,
+            store_id=store.id, currency=store.currency,
+        ))
+        session.flush()
+        return customer
+
     def _active_flow(self, db):
         session, org, store = db
         user, _ = _user_and_membership(session, org, store)
@@ -877,8 +963,7 @@ class TestFlowTriggerEndpoints:
     def test_trigger_run(self, db):
         flow, ver, user = self._active_flow(db)
         session, org, store = db
-        c = Customer(organization_id=org.id, name="C1", phone="+573001234567")
-        session.add(c)
+        c = self._customer(db, name="C1")
         session.commit()
         mem = session.query(OrganizationMembership).filter(OrganizationMembership.user_id == user.id).first()
         client = TestClient(app)
@@ -910,11 +995,81 @@ class TestFlowTriggerEndpoints:
         finally:
             app.dependency_overrides.clear()
 
+    def test_trigger_rejects_customer_from_other_store(self, db):
+        flow, ver, user = self._active_flow(db)
+        session, org, store = db
+        other_store = Store(
+            organization_id=org.id, name="Other Store",
+            slug="other-store", country_code="CO", currency="COP",
+            timezone="America/Bogota", default_language="es",
+        )
+        session.add(other_store)
+        session.flush()
+        customer = Customer(
+            organization_id=org.id, name="Other Store Customer",
+            phone="+573001234567",
+        )
+        session.add(customer)
+        session.flush()
+        session.add(CustomerStoreProfile(
+            organization_id=org.id, customer_id=customer.id,
+            store_id=other_store.id, currency=other_store.currency,
+        ))
+        session.commit()
+        mem = session.query(OrganizationMembership).filter(
+            OrganizationMembership.user_id == user.id,
+        ).first()
+        client = TestClient(app)
+        app.dependency_overrides[get_current_user] = lambda: user
+        app.dependency_overrides[get_current_membership] = lambda: mem
+        app.dependency_overrides[get_db] = lambda: session
+        try:
+            response = client.post(
+                f"/api/stores/{store.id}/automation-flows/{flow.id}/runs",
+                json={"customer_ids": [customer.id]},
+            )
+            assert response.status_code == 422
+            assert session.query(AutomationFlowRun).filter(
+                AutomationFlowRun.flow_id == flow.id,
+            ).count() == 0
+        finally:
+            app.dependency_overrides.clear()
+
+    def test_trigger_rejects_customer_from_other_organization(self, db):
+        flow, ver, user = self._active_flow(db)
+        session, org, store = db
+        other_org = Organization(name="Other Org", slug="other-org")
+        session.add(other_org)
+        session.flush()
+        customer = Customer(
+            organization_id=other_org.id, name="Other Org Customer",
+            phone="+573001234567",
+        )
+        session.add(customer)
+        session.commit()
+        mem = session.query(OrganizationMembership).filter(
+            OrganizationMembership.user_id == user.id,
+        ).first()
+        client = TestClient(app)
+        app.dependency_overrides[get_current_user] = lambda: user
+        app.dependency_overrides[get_current_membership] = lambda: mem
+        app.dependency_overrides[get_db] = lambda: session
+        try:
+            response = client.post(
+                f"/api/stores/{store.id}/automation-flows/{flow.id}/runs",
+                json={"customer_ids": [customer.id]},
+            )
+            assert response.status_code == 422
+            assert session.query(AutomationFlowRun).filter(
+                AutomationFlowRun.flow_id == flow.id,
+            ).count() == 0
+        finally:
+            app.dependency_overrides.clear()
+
     def test_trigger_duplicate_key(self, db):
         flow, ver, user = self._active_flow(db)
         session, org, store = db
-        c = Customer(organization_id=org.id, name="C1", phone="+573001234567")
-        session.add(c)
+        c = self._customer(db, name="C1")
         session.commit()
         mem = session.query(OrganizationMembership).filter(OrganizationMembership.user_id == user.id).first()
         client = TestClient(app)
@@ -935,8 +1090,7 @@ class TestFlowTriggerEndpoints:
     def test_list_runs(self, db):
         flow, ver, user = self._active_flow(db)
         session, org, store = db
-        c = Customer(organization_id=org.id, name="C1", phone="+573001234567")
-        session.add(c)
+        c = self._customer(db, name="C1")
         session.commit()
         mem = session.query(OrganizationMembership).filter(OrganizationMembership.user_id == user.id).first()
         client = TestClient(app)
@@ -954,8 +1108,7 @@ class TestFlowTriggerEndpoints:
     def test_get_run_detail(self, db):
         flow, ver, user = self._active_flow(db)
         session, org, store = db
-        c = Customer(organization_id=org.id, name="C1", phone="+573001234567")
-        session.add(c)
+        c = self._customer(db, name="C1")
         session.commit()
         mem = session.query(OrganizationMembership).filter(OrganizationMembership.user_id == user.id).first()
         client = TestClient(app)
@@ -974,8 +1127,7 @@ class TestFlowTriggerEndpoints:
     def test_list_recipients(self, db):
         flow, ver, user = self._active_flow(db)
         session, org, store = db
-        c = Customer(organization_id=org.id, name="C1", phone="+573001234567")
-        session.add(c)
+        c = self._customer(db, name="C1")
         session.commit()
         mem = session.query(OrganizationMembership).filter(OrganizationMembership.user_id == user.id).first()
         client = TestClient(app)
@@ -994,8 +1146,7 @@ class TestFlowTriggerEndpoints:
     def test_get_recipient_detail(self, db):
         flow, ver, user = self._active_flow(db)
         session, org, store = db
-        c = Customer(organization_id=org.id, name="C1", phone="+573001234567")
-        session.add(c)
+        c = self._customer(db, name="C1")
         session.commit()
         mem = session.query(OrganizationMembership).filter(OrganizationMembership.user_id == user.id).first()
         client = TestClient(app)
@@ -1016,8 +1167,7 @@ class TestFlowTriggerEndpoints:
     def test_retry_recipient(self, db):
         flow, ver, user = self._active_flow(db)
         session, org, store = db
-        c = Customer(organization_id=org.id, name="C1", phone="+573001234567")
-        session.add(c)
+        c = self._customer(db)
         session.commit()
         mem = session.query(OrganizationMembership).filter(OrganizationMembership.user_id == user.id).first()
         client = TestClient(app)

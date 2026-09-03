@@ -18,32 +18,14 @@ def _stop(*_args):
 def _flow_worker_cycle(db):
     """Process one cycle of flow recipient executions."""
     reclaim_expired_flow_leases(db)
-    claim_flow_recipients(db)
-    import uuid
-    from datetime import timedelta
-    from .automation_flow_engine import LEASE_SECONDS
-    from .models import AutomationFlowRecipientExecution
+    claims = claim_flow_recipients(db, include_tokens=True)
     from .automation_flow_engine import utcnow
 
     now = utcnow()
-    claim_expires_at = now + timedelta(seconds=LEASE_SECONDS)
-    recipient_ids = db.query(AutomationFlowRecipientExecution.id).filter(
-        AutomationFlowRecipientExecution.status == "active",
-        AutomationFlowRecipientExecution.next_action_at <= now,
-    ).order_by(AutomationFlowRecipientExecution.id).limit(50).with_for_update(skip_locked=True).all()
-    db.query(AutomationFlowRecipientExecution).filter(
-        AutomationFlowRecipientExecution.id.in_([r[0] for r in recipient_ids])
-    ).update({
-        "status": "waiting",
-        "claim_token": str(uuid.uuid4()),
-        "claim_expires_at": claim_expires_at,
-    }, synchronize_session=False)
-    db.commit()
-
     processed = 0
-    for (rid,) in recipient_ids:
+    for rid, claim_token in claims:
         try:
-            result = process_flow_recipient(db, rid, now)
+            result = process_flow_recipient(db, rid, now, claim_token=claim_token)
             processed += 1
         except Exception:
             logging.exception("flow recipient %d failed", rid)

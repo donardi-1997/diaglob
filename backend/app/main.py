@@ -9483,6 +9483,7 @@ class _FlowRunCreate(_PydanticBaseModel):
 
 @app.post("/api/stores/{store_id}/automation-flows")
 def create_flow(store_id: int, payload: _FlowCreate, membership: OrganizationMembership = Depends(require_permission("automations.write")), db: Session = Depends(get_db)):
+    _campaign_store_or_404(db, membership.organization_id, store_id)
     if payload.graph:
         errors = validate_graph(payload.graph)
         if errors:
@@ -9661,9 +9662,13 @@ def trigger_flow_run(store_id: int, flow_id: int, payload: _FlowRunCreate, membe
         raise HTTPException(404, detail="Flow not found")
     if flow.status != "active" or not flow.active_version_id:
         raise HTTPException(409, detail="Flow must be active to trigger")
-    customers = db.query(Customer).filter(
+    customers = db.query(Customer).join(
+        CustomerStoreProfile,
+        CustomerStoreProfile.customer_id == Customer.id,
+    ).filter(
         Customer.id.in_(payload.customer_ids),
         Customer.organization_id == membership.organization_id,
+        CustomerStoreProfile.store_id == store_id,
     ).all()
     found_ids = {c.id for c in customers}
     missing = set(payload.customer_ids) - found_ids
@@ -17601,4 +17606,3 @@ def get_source_freshness(
         "sync_status": source.sync_status,
         "source_type": source.source_type,
     }
-

@@ -6,6 +6,7 @@ import os
 import uuid
 from datetime import datetime, timedelta
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .automation_flow_graph import get_next_node, get_entry_node
@@ -59,25 +60,41 @@ def materialize_flow_trigger(db: Session, flow: AutomationFlow, customer_ids: li
         status="pending", trigger_key=trigger_key,
         total_recipients=len(customer_ids), started_at=now,
     )
-    db.add(run)
-    db.flush()
-    entry_after_trigger = get_next_node(graph, entry["id"])
-    first_node_id = entry_after_trigger["id"] if entry_after_trigger else entry["id"]
-    for cid in customer_ids:
-        existing_recip = db.query(AutomationFlowRecipientExecution).filter(
-            AutomationFlowRecipientExecution.flow_run_id == run.id,
-            AutomationFlowRecipientExecution.customer_id == cid,
-        ).first()
-        if existing_recip:
-            continue
-        recipient = AutomationFlowRecipientExecution(
-            flow_run_id=run.id, flow_version_id=version.id,
-            customer_id=cid, organization_id=flow.organization_id,
-            status="active", current_node_id=first_node_id,
-            next_action_at=now, started_at=now,
+    try:
+        db.add(run)
+        db.flush()
+        entry_after_trigger = get_next_node(graph, entry["id"])
+        first_node_id = entry_after_trigger["id"] if entry_after_trigger else entry["id"]
+        for cid in customer_ids:
+            existing_recip = db.query(AutomationFlowRecipientExecution).filter(
+                AutomationFlowRecipientExecution.flow_run_id == run.id,
+                AutomationFlowRecipientExecution.customer_id == cid,
+            ).first()
+            if existing_recip:
+                continue
+            recipient = AutomationFlowRecipientExecution(
+                flow_run_id=run.id, flow_version_id=version.id,
+                customer_id=cid, organization_id=flow.organization_id,
+                status="active", current_node_id=first_node_id,
+                next_action_at=now, started_at=now,
+            )
+            db.add(recipient)
+        db.commit()
+    except IntegrityError as exc:
+        constraint_name = getattr(getattr(exc.orig, "diag", None), "constraint_name", None)
+        message = str(exc.orig).lower()
+        expected_collision = (
+            trigger_key is not None
+            and (
+                constraint_name == "uq_flow_run_trigger_key"
+                or "uq_flow_run_trigger_key" in message
+                or ("automation_flow_runs" in message and "trigger_key" in message)
+            )
         )
-        db.add(recipient)
-    db.commit()
+        db.rollback()
+        if not expected_collision:
+            raise
+        return None
     return run
 
 
@@ -86,7 +103,13 @@ def materialize_flow_trigger(db: Session, flow: AutomationFlow, customer_ids: li
 # ============================================================
 
 
-def claim_flow_recipients(db: Session, now: datetime | None = None, limit: int = FLOW_POLL_BATCH) -> list[int]:
+def claim_flow_recipients(
+    db: Session,
+    now: datetime | None = None,
+    limit: int = FLOW_POLL_BATCH,
+    *,
+    include_tokens: bool = False,
+) -> list[int] | list[tuple[int, str]]:
     """Claim due flow recipient executions with FOR UPDATE SKIP LOCKED."""
     now = now or utcnow()
     query = db.query(AutomationFlowRecipientExecution.id).join(
@@ -94,29 +117,41 @@ def claim_flow_recipients(db: Session, now: datetime | None = None, limit: int =
     ).filter(
         AutomationFlowRecipientExecution.status.in_(("active", "waiting")),
         AutomationFlowRecipientExecution.next_action_at <= now,
-        AutomationFlowRecipientExecution.claim_expires_at.is_(None),
+        (
+            AutomationFlowRecipientExecution.claim_token.is_(None)
+            | (AutomationFlowRecipientExecution.claim_expires_at <= now)
+        ),
         AutomationFlowRun.status.in_(("pending", "running")),
     )
     if db.bind and db.bind.dialect.name == "postgresql":
         query = query.with_for_update(skip_locked=True)
     ids = [row[0] for row in query.order_by(AutomationFlowRecipientExecution.id).limit(limit).all()]
+    claims: list[tuple[int, str]] = []
     if ids:
-        db.query(AutomationFlowRecipientExecution).filter(
-            AutomationFlowRecipientExecution.id.in_(ids),
-        ).update({
-            "claim_token": str(uuid.uuid4()),
-            "claim_expires_at": now + timedelta(seconds=LEASE_SECONDS),
-        }, synchronize_session=False)
+        for recipient_id in ids:
+            token = str(uuid.uuid4())
+            updated = db.query(AutomationFlowRecipientExecution).filter(
+                AutomationFlowRecipientExecution.id == recipient_id,
+                (
+                    AutomationFlowRecipientExecution.claim_token.is_(None)
+                    | (AutomationFlowRecipientExecution.claim_expires_at <= now)
+                ),
+            ).update({
+                "claim_token": token,
+                "claim_expires_at": now + timedelta(seconds=LEASE_SECONDS),
+            }, synchronize_session=False)
+            if updated:
+                claims.append((recipient_id, token))
         db.query(AutomationFlowRun).filter(
             AutomationFlowRun.id.in_(
                 db.query(AutomationFlowRun.id).join(AutomationFlowRecipientExecution).filter(
-                    AutomationFlowRecipientExecution.id.in_(ids)
+                    AutomationFlowRecipientExecution.id.in_([claim[0] for claim in claims])
                 )
             ),
             AutomationFlowRun.status == "pending",
         ).update({"status": "running"}, synchronize_session=False)
     db.commit()
-    return ids
+    return claims if include_tokens else [claim[0] for claim in claims]
 
 
 def reclaim_expired_flow_leases(db: Session, now: datetime | None = None) -> None:
@@ -148,11 +183,19 @@ def reclaim_expired_flow_leases(db: Session, now: datetime | None = None) -> Non
 # ============================================================
 
 
-def process_flow_recipient(db: Session, recipient_id: int, now: datetime | None = None, sender=send_whatsapp_text_message) -> str:
+def process_flow_recipient(
+    db: Session,
+    recipient_id: int,
+    now: datetime | None = None,
+    sender=send_whatsapp_text_message,
+    claim_token: str | None = None,
+) -> str:
     """Process a single flow recipient at its current node."""
     now = now or utcnow()
     recipient = db.get(AutomationFlowRecipientExecution, recipient_id)
     if not recipient or recipient.status not in ("active", "waiting"):
+        return "not_claimed"
+    if claim_token is None or recipient.claim_token != claim_token:
         return "not_claimed"
     if recipient.claim_expires_at and recipient.claim_expires_at < now:
         return "claim_expired"
