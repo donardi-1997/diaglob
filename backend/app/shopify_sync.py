@@ -62,7 +62,7 @@ query ($cursor: String) {
               price
               compareAtPrice
               inventoryQuantity
-              available
+              availableForSale
             }
           }
         }
@@ -418,7 +418,7 @@ def sync_shopify_products(
                             inv_qty
                         ),
                         available=vnode.get(
-                            "available",
+                            "availableForSale",
                             True,
                         ),
                         currency=currency,

@@ -217,7 +217,7 @@ def _mock_product_edge(
                 "price": "29.99",
                 "compareAtPrice": None,
                 "inventoryQuantity": 10,
-                "available": True,
+                "availableForSale": False,
             }
         ]
 
@@ -699,6 +699,12 @@ class TestShopifySyncProducts:
         shopify_connection,
         db,
     ):
+        queries = []
+
+        def mock_query(query, variables=None):
+            queries.append(query)
+            return PAGE1 if len(queries) == 1 else PAGE2
+
         with patch(
             "app.shopify_sync"
             ".decrypt_shopify_secret",
@@ -706,7 +712,7 @@ class TestShopifySyncProducts:
         ), patch(
             "app.shopify_sync"
             ".ShopifyGraphQLClient.query",
-            side_effect=[PAGE1, PAGE2],
+            side_effect=mock_query,
         ):
             resp = client.post(
                 f"/api/stores/"
@@ -724,6 +730,10 @@ class TestShopifySyncProducts:
             assert data["updated"] == 0
             assert data["failed"] == 0
 
+        assert len(queries) == 2
+        assert "availableForSale" in queries[0]
+        assert "available\n" not in queries[0]
+
         products = (
             db.query(Product)
             .filter(
@@ -734,6 +744,17 @@ class TestShopifySyncProducts:
         )
 
         assert len(products) == 3
+
+        variant = (
+            db.query(ProductVariant)
+            .filter(
+                ProductVariant.shopify_variant_id
+                == "101",
+            )
+            .first()
+        )
+        assert variant is not None
+        assert variant.available is False
 
     def test_second_sync_updates(
         self,
