@@ -9,6 +9,11 @@ export interface CommerceConnectionStatus {
   connected_at: string | null;
   last_sync_at: string | null;
   last_error: string | null;
+  dropi_detection: {
+    status: "detected" | "not_detected";
+    label: string;
+    evidence: string[];
+  };
 }
 
 

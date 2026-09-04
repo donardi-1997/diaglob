@@ -8709,6 +8709,7 @@ def get_store_commerce_connection(
             == store.id,
             CommerceConnection.organization_id
             == membership.organization_id,
+            CommerceConnection.provider == "shopify",
         )
         .first()
     )
@@ -8722,6 +8723,11 @@ def get_store_commerce_connection(
             "connected_at": None,
             "last_sync_at": None,
             "last_error": None,
+            "dropi_detection": {
+                "status": "not_detected",
+                "label": "Dropi no detectado",
+                "evidence": [],
+            },
         }
 
     return {
@@ -8756,6 +8762,11 @@ def get_store_commerce_connection(
 
         "last_error":
             connection.last_error,
+        "dropi_detection": {
+            "status": "not_detected",
+            "label": "Dropi no detectado",
+            "evidence": [],
+        },
     }
 
 

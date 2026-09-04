@@ -11,26 +11,21 @@ import {
   MessageCircle,
   Phone,
   Plug,
-  PlugZap,
   ShoppingBag,
   Trash2,
   Truck,
 } from "lucide-react";
 
 import {
-  connectDropi,
   connectShopify,
   connectWhatsApp,
-  disconnectDropi,
   disconnectShopify,
   disconnectWhatsApp,
   getCommerceStatus,
-  getDropiStatus,
   getWhatsAppStatus,
   testShopifyConnection,
   syncShopifyProducts,
   type CommerceConnectionStatus,
-  type DropiConnectionStatus,
   type WhatsAppConnectionStatus,
   type ShopifyTestResult,
   type ShopifySyncResult,
@@ -56,17 +51,11 @@ export default function StoreIntegrations({
   const [commerce, setCommerce] =
     useState<CommerceConnectionStatus | null>(null);
 
-  const [dropi, setDropi] =
-    useState<DropiConnectionStatus | null>(null);
-
   const [whatsapp, setWhatsApp] =
     useState<WhatsAppConnectionStatus | null>(null);
 
   const [loading, setLoading] =
     useState(true);
-
-  const [dropiToken, setDropiToken] =
-    useState("");
 
   const [whatsappPhoneId, setWhatsAppPhoneId] =
     useState("");
@@ -81,12 +70,6 @@ export default function StoreIntegrations({
     useState(false);
 
   const [disconnectingShopify, setDisconnectingShopify] =
-    useState(false);
-
-  const [connectingDropi, setConnectingDropi] =
-    useState(false);
-
-  const [disconnectingDropi, setDisconnectingDropi] =
     useState(false);
 
   const [connectingWhatsApp, setConnectingWhatsApp] =
@@ -107,9 +90,6 @@ export default function StoreIntegrations({
   const [shopifySyncResult, setShopifySyncResult] =
     useState<ShopifySyncResult | null>(null);
 
-  const [copied, setCopied] =
-    useState(false);
-
   const [whatsappCopied, setWhatsAppCopied] =
     useState(false);
 
@@ -127,16 +107,13 @@ export default function StoreIntegrations({
 
       const [
         commerceData,
-        dropiData,
         whatsappData,
       ] = await Promise.all([
         getCommerceStatus(storeId),
-        getDropiStatus(storeId),
         getWhatsAppStatus(storeId),
       ]);
 
       setCommerce(commerceData);
-      setDropi(dropiData);
       setWhatsApp(whatsappData);
     } catch (err) {
       console.error(err);
@@ -297,118 +274,6 @@ export default function StoreIntegrations({
   }
 
 
-  async function handleConnectDropi(
-    event: React.FormEvent,
-  ) {
-    event.preventDefault();
-
-    clearMessages();
-
-    const token =
-      dropiToken.trim();
-
-    if (!token) {
-      setError(
-        t("integrationsDropiTokenRequired"),
-      );
-
-      return;
-    }
-
-    try {
-      setConnectingDropi(true);
-
-      const result =
-        await connectDropi(
-          storeId,
-          token,
-        );
-
-      // Limpia el token inmediatamente:
-      // nunca se guarda ni queda en memoria.
-      setDropiToken("");
-
-      setDropi({
-        connected: true,
-        status: "connected",
-        external_store_id: null,
-        api_url: null,
-        webhook_url:
-          result.webhook_url,
-        connected_at: null,
-        last_sync_at: null,
-        last_error: null,
-      });
-
-      setSuccess(
-        t("integrationsDropiConnected"),
-      );
-
-      await load();
-    } catch (err: any) {
-      console.error(err);
-
-      setError(
-        formatError(err)
-        || t("integrationsDropiConnectError"),
-      );
-    } finally {
-      setConnectingDropi(false);
-    }
-  }
-
-
-  async function handleDisconnectDropi() {
-    clearMessages();
-
-    try {
-      setDisconnectingDropi(true);
-
-      await disconnectDropi(storeId);
-
-      setDropi(null);
-      setSuccess(
-        t("integrationsDropiDisconnected"),
-      );
-
-      await load();
-    } catch (err: any) {
-      console.error(err);
-
-      setError(
-        formatError(err)
-        || t("integrationsDisconnectError"),
-      );
-    } finally {
-      setDisconnectingDropi(false);
-    }
-  }
-
-
-  async function copyWebhook() {
-    const url =
-      dropi?.webhook_url;
-
-    if (!url) {
-      return;
-    }
-
-    try {
-      await navigator.clipboard.writeText(url);
-
-      setCopied(true);
-
-      setTimeout(
-        () => setCopied(false),
-        1800,
-      );
-    } catch {
-      setError(
-        t("integrationsCopyError"),
-      );
-    }
-  }
-
 
   const WHATSAPP_WEBHOOK_URL =
     "https://api.diaglob.tech/api/webhooks/whatsapp";
@@ -557,7 +422,7 @@ export default function StoreIntegrations({
   }
 
 
-  if (loading && !commerce && !dropi && !whatsapp) {
+  if (loading && !commerce && !whatsapp) {
     return (
       <div className="store-integrations loading">
         <Loader2
@@ -730,96 +595,25 @@ export default function StoreIntegrations({
         <div className="store-integration-header">
           <div className="store-integration-title">
             <Truck size={17} />
-
-            <strong>
-              Dropi
-            </strong>
-
+            <strong>Dropi vía Shopify</strong>
             <span
               className={
-                dropi?.connected
+                commerce?.dropi_detection?.status === "detected"
                   ? "integration-status connected"
                   : "integration-status disconnected"
               }
             >
-              {dropi?.connected
-                ? t("integrationsConnected")
-                : t("integrationsDisconnected")}
+              {commerce?.dropi_detection?.status === "detected"
+                ? "Conectado vía Shopify"
+                : "No detectado"}
             </span>
           </div>
         </div>
-
-        {dropi?.connected && dropi.webhook_url ? (
-          <>
-            <div className="store-integration-webhook">
-              <code>
-                {dropi.webhook_url}
-              </code>
-
-              {canWrite && (
-                <button
-                  type="button"
-                  className="store-integration-copy"
-                  onClick={copyWebhook}
-                  title={t("integrationsCopyWebhook")}
-                >
-                  {copied
-                    ? <Check size={15} />
-                    : <Copy size={15} />}
-                </button>
-              )}
-            </div>
-
-            {canWrite && (
-              <div className="store-integration-actions">
-                <button
-                  type="button"
-                  className="store-integration-button danger"
-                  onClick={handleDisconnectDropi}
-                  disabled={disconnectingDropi}
-                >
-                  {disconnectingDropi
-                    ? <Loader2 className="spin" size={15} />
-                    : <PlugZap size={15} />}
-
-                  {t("integrationsDisconnect")}
-                </button>
-              </div>
-            )}
-          </>
-        ) : null}
-
-
-        {canWrite && !dropi?.connected && (
-          <form
-            className="store-integration-dropi-form"
-            onSubmit={handleConnectDropi}
-          >
-            <input
-              type="password"
-              value={dropiToken}
-              onChange={(event) =>
-                setDropiToken(
-                  event.target.value,
-                )
-              }
-              placeholder={t("integrationsDropiTokenPlaceholder")}
-              autoComplete="off"
-            />
-
-            <button
-              type="submit"
-              className="store-integration-button primary"
-              disabled={connectingDropi}
-            >
-              {connectingDropi
-                ? <Loader2 className="spin" size={15} />
-                : <Plug size={15} />}
-
-              {t("integrationsConnect")}
-            </button>
-          </form>
-        )}
+        <div className="store-integration-detail">
+          {commerce?.connected
+            ? "Shopify está conectado, pero no hay evidencia verificable de Dropify mediante Shopify."
+            : "Dropi se evaluará únicamente después de conectar Shopify."}
+        </div>
       </div>
 
 
