@@ -8817,7 +8817,7 @@ button:disabled {
   padding: 3px;
 
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--control-bg);
 }
 
 .analytics-range-btn {
@@ -8826,7 +8826,7 @@ button:disabled {
   border-radius: 8px;
 
   background: transparent;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--text-secondary);
   font-size: 13px;
   font-weight: 500;
 
@@ -8837,13 +8837,13 @@ button:disabled {
 }
 
 .analytics-range-btn:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.8);
+  background: var(--control-hover);
+  color: var(--text);
 }
 
 .analytics-range-btn.active {
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
+  background: var(--accent-soft);
+  color: var(--text);
 }
 
 .analytics-date-inputs {
@@ -8854,20 +8854,30 @@ button:disabled {
 
 .analytics-date-inputs input[type="date"] {
   padding: 6px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.04);
-  color: #fff;
+  background: var(--panel);
+  color: var(--text);
   font-size: 13px;
 }
 
+.analytics-date-inputs input[type="date"]:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
 .analytics-date-inputs
+  input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.6);
+}
+
+[data-theme="dark"] .analytics-date-inputs
   input[type="date"]::-webkit-calendar-picker-indicator {
   filter: invert(1);
 }
 
 .analytics-date-sep {
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--text-muted);
   font-size: 14px;
 }
 
@@ -8889,9 +8899,9 @@ button:disabled {
   gap: 12px;
   padding: 16px;
 
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--border);
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--panel);
 }
 
 .analytics-stat-icon {
@@ -8903,8 +8913,8 @@ button:disabled {
   flex-shrink: 0;
 
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.6);
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .analytics-stat-info {
@@ -8916,12 +8926,12 @@ button:disabled {
 .analytics-stat-value {
   font-size: 20px;
   font-weight: 600;
-  color: #fff;
+  color: var(--text);
 }
 
 .analytics-stat-label {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -8942,16 +8952,16 @@ button:disabled {
   padding: 18px 20px;
   margin-bottom: 16px;
 
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--border);
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--panel);
 }
 
 .analytics-card h3 {
   margin: 0 0 14px 0;
   font-size: 13px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.65);
+  color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -9007,7 +9017,7 @@ button:disabled {
 
 .analytics-bar-label {
   font-size: 10px;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -9020,7 +9030,7 @@ button:disabled {
   align-items: center;
   justify-content: center;
   height: 120px;
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--text-muted);
   font-size: 13px;
 }
 
@@ -9041,24 +9051,24 @@ button:disabled {
   justify-content: space-between;
   padding: 8px 12px;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--control-bg);
 }
 
 .analytics-breakdown-label {
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--text-secondary);
   text-transform: capitalize;
 }
 
 .analytics-breakdown-value {
   font-size: 14px;
   font-weight: 600;
-  color: #fff;
+  color: var(--text);
 }
 
 .analytics-empty-note {
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--text-muted);
   font-style: italic;
 }
 
@@ -9078,7 +9088,7 @@ button:disabled {
   align-items: center;
   justify-content: space-between;
   padding: 8px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid var(--border);
 }
 
 .analytics-metric-item:last-child {
@@ -9087,13 +9097,13 @@ button:disabled {
 
 .analytics-metric-label {
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--text-secondary);
 }
 
 .analytics-metric-value {
   font-size: 16px;
   font-weight: 600;
-  color: #fff;
+  color: var(--text);
 }
 
 
@@ -9103,7 +9113,7 @@ button:disabled {
 
 .analytics-table-wrapper {
   overflow-x: auto;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border);
   border-radius: 10px;
 }
 
@@ -9114,7 +9124,7 @@ button:disabled {
 }
 
 .analytics-table thead {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--control-bg);
 }
 
 .analytics-table th {
@@ -9122,16 +9132,16 @@ button:disabled {
   text-align: left;
   font-size: 11px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--border);
 }
 
 .analytics-table td {
   padding: 10px 14px;
-  color: rgba(255, 255, 255, 0.8);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
 }
 
 .analytics-table tbody tr:last-child td {
@@ -9149,7 +9159,7 @@ button:disabled {
   border-radius: 4px;
   overflow: hidden;
   margin-top: 12px;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--control-bg);
 }
 
 .analytics-progress-segment {
