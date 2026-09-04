@@ -136,17 +136,58 @@
 .sidebar-bottom {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 6px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
 }
 
 .workspace-card {
-  padding: 10px;
+  width: 100%;
+  padding: 10px 11px;
   display: flex;
   align-items: center;
   gap: 9px;
   border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--control-bg);
+  border-radius: 10px;
+  background: var(--elevated);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: background 160ms ease;
+}
+
+.workspace-card:hover {
+  background: var(--control-hover);
+}
+
+.workspace-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.workspace-card svg {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+
+.workspace-card:hover svg {
+  color: var(--text);
+}
+
+.workspace-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.workspace-card > svg:last-child {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform 160ms ease;
 }
 
 .workspace-avatar {
