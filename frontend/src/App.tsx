@@ -19,6 +19,7 @@ import {
   ChevronDown,
   LayoutDashboard,
   LogOut,
+  Menu,
   MessageSquareText,
   Moon,
   Settings,
@@ -27,6 +28,7 @@ import {
   Sun,
   Users,
   Workflow,
+  X,
 } from "lucide-react";
 import ConversationsPage from "./pages/ConversationsPage";
 import AgentsPage from "./pages/AgentsPage";
@@ -554,8 +556,102 @@ function App() {
                   </button>
                 </div>
               </aside>
+
+              {mobileMenuOpen && (
+                <div className="mobile-drawer-overlay" onClick={() => setMobileMenuOpen(false)}>
+                  <div className="mobile-drawer" onClick={(e) => e.stopPropagation()}>
+                    <div className="mobile-drawer-header">
+                      <div className="brand">
+                        <div className="brand-mark">
+                          <Sparkles size={20} />
+                        </div>
+                        <div>
+                          <div className="brand-name">DIAGLOB</div>
+                          <div className="brand-version">AI COMMERCE</div>
+                        </div>
+                      </div>
+                      <button
+                        className="mobile-drawer-close"
+                        onClick={() => setMobileMenuOpen(false)}
+                        aria-label="Cerrar menú"
+                      >
+                        <X size={20} />
+                      </button>
+                    </div>
+                    <nav className="mobile-drawer-nav">
+                      {visibleNavigation.map(({ key, icon: Icon }) => (
+                        <button
+                          key={key}
+                          onClick={() => {
+                            setActivePage(key);
+                            setMobileMenuOpen(false);
+                          }}
+                          className={`nav-item ${activePage === key ? "active" : ""}`}
+                        >
+                          <Icon size={18} />
+                          <span>{t(key)}</span>
+                        </button>
+                      ))}
+                    </nav>
+                    <div className="mobile-drawer-bottom">
+                      {can("stores.read") && (
+                        <button
+                          className={activePage === "settings" ? "nav-item active" : "nav-item"}
+                          onClick={() => {
+                            setActivePage("settings");
+                            setMobileMenuOpen(false);
+                          }}
+                        >
+                          <Settings size={18} />
+                          <span>{t("settings")}</span>
+                        </button>
+                      )}
+                      <div className="store-switcher">
+                        <button
+                          className="workspace-card"
+                          onClick={() => setStoreMenuOpen(!storeMenuOpen)}
+                        >
+                          <ShoppingBag size={16} />
+                          <span className="workspace-name">
+                            {selectedStore?.name || "Sin tienda"}
+                          </span>
+                          <ChevronDown size={14} />
+                        </button>
+                        {storeMenuOpen && (
+                          <div className="store-menu">
+                            {stores.filter((s) => s.active).map((s) => (
+                              <button
+                                key={s.id}
+                                onClick={() => {
+                                  changeStore(String(s.id));
+                                  setStoreMenuOpen(false);
+                                }}
+                                className={String(s.id) === selectedStoreId ? "active" : ""}
+                              >
+                                {s.name}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <button className="nav-item" onClick={handleLogout}>
+                        <LogOut size={18} />
+                        <span>{t("logout")}</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <main className="main">
                 <div className="topbar">
+                  <button
+                    className="mobile-menu-button"
+                    onClick={() => setMobileMenuOpen(true)}
+                    aria-label="Abrir menú"
+                  >
+                    <Menu size={20} />
+                  </button>
                   <div className="status">
                     <span className="status-dot"></span>
                     {currentUser?.email}
