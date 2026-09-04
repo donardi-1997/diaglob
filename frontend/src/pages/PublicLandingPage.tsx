@@ -94,31 +94,37 @@ const features = [
     icon: MessageSquare,
     title: "landingFeatureConversationsTitle",
     description: "landingFeatureConversationsDesc",
+    innovation: true,
   },
   {
     icon: Bot,
     title: "landingFeatureAgentsTitle",
     description: "landingFeatureAgentsDesc",
+    innovation: true,
   },
   {
     icon: ShoppingBag,
     title: "landingFeatureCommerceTitle",
     description: "landingFeatureCommerceDesc",
+    innovation: false,
   },
   {
     icon: Workflow,
     title: "landingFeatureAutomationsTitle",
     description: "landingFeatureAutomationsDesc",
+    innovation: true,
   },
   {
     icon: BarChart3,
     title: "landingFeatureAnalyticsTitle",
     description: "landingFeatureAnalyticsDesc",
+    innovation: false,
   },
   {
     icon: Users,
     title: "landingFeatureMultiStoreTitle",
     description: "landingFeatureMultiStoreDesc",
+    innovation: false,
   },
 ];
 
@@ -137,30 +143,6 @@ const howItWorks = [
     step: 3,
     title: "landingHowStep3Title",
     description: "landingHowStep3Desc",
-  },
-  {
-    step: 4,
-    title: "landingHowStep4Title",
-    description: "landingHowStep4Desc",
-  },
-];
-
-const problemSolutions = [
-  {
-    problem: "landingProblem1",
-    solution: "landingSolution1",
-  },
-  {
-    problem: "landingProblem2",
-    solution: "landingSolution2",
-  },
-  {
-    problem: "landingProblem3",
-    solution: "landingSolution3",
-  },
-  {
-    problem: "landingProblem4",
-    solution: "landingSolution4",
   },
 ];
 
@@ -232,7 +214,7 @@ export default function PublicLandingPage({
   };
 
   const navLinks = [
-    { label: t("landingNavProduct"), target: "problem" },
+    { label: t("landingNavProduct"), target: "innovation" },
     { label: t("landingNavHow"), target: "how-it-works" },
     { label: t("landingNavFeatures"), target: "features" },
     { label: t("landingNavIntegrations"), target: "integrations" },
@@ -430,18 +412,69 @@ export default function PublicLandingPage({
           </div>
         </section>
 
-        {/* PROBLEM / SOLUTION */}
-        <section className="landing-section landing-problem" id="problem">
+        {/* SOCIAL PROOF BAR */}
+        <section className="landing-section landing-social-proof" id="social-proof">
           <div className="landing-container">
-            <h2 className="landing-section-title">{t("landingProblemTitle")}</h2>
-            <div className="landing-problem-grid">
-              {problemSolutions.map((item, i) => (
-                <div key={i} className="landing-problem-card">
-                  <div className="landing-problem-from">{t(item.problem)}</div>
-                  <div className="landing-problem-arrow"><Check size={16} /></div>
-                  <div className="landing-problem-to">{t(item.solution)}</div>
+            <h2 className="landing-section-title">{t("landingSocialProofTitle")}</h2>
+            <div className="landing-social-proof-grid">
+              <div className="landing-social-proof-card">
+                <div className="landing-social-proof-value">{t("landingSocialProofStat1Value")}</div>
+                <div className="landing-social-proof-label">{t("landingSocialProofStat1Label")}</div>
+              </div>
+              <div className="landing-social-proof-card">
+                <div className="landing-social-proof-value">{t("landingSocialProofStat2Value")}</div>
+                <div className="landing-social-proof-label">{t("landingSocialProofStat2Label")}</div>
+              </div>
+              <div className="landing-social-proof-card">
+                <div className="landing-social-proof-value">{t("landingSocialProofStat3Value")}</div>
+                <div className="landing-social-proof-label">{t("landingSocialProofStat3Label")}</div>
+              </div>
+              <div className="landing-social-proof-card">
+                <div className="landing-social-proof-value">{t("landingSocialProofStat4Value")}</div>
+                <div className="landing-social-proof-label">{t("landingSocialProofStat4Label")}</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* INNOVATION SHOWCASE */}
+        <section className="landing-section landing-innovation" id="innovation">
+          <div className="landing-container">
+            <h2 className="landing-section-title">{t("landingInnovationTitle")}</h2>
+            <p className="landing-section-subtitle">{t("landingInnovationSubtitle")}</p>
+            <div className="landing-innovation-grid">
+              <div className="landing-innovation-card">
+                <div className="landing-innovation-icon">
+                  <BrainCircuit size={28} />
                 </div>
-              ))}
+                <div className="landing-innovation-tag">{t("landingInnovationRagTag")}</div>
+                <h3>{t("landingInnovationRagTitle")}</h3>
+                <p>{t("landingInnovationRagDesc")}</p>
+              </div>
+              <div className="landing-innovation-card">
+                <div className="landing-innovation-icon">
+                  <Bot size={28} />
+                </div>
+                <div className="landing-innovation-tag">{t("landingInnovationAgentTag")}</div>
+                <h3>{t("landingInnovationAgentTitle")}</h3>
+                <p>{t("landingInnovationAgentDesc")}</p>
+              </div>
+              <div className="landing-innovation-card">
+                <div className="landing-innovation-icon">
+                  <Workflow size={28} />
+                </div>
+                <div className="landing-innovation-tag">{t("landingInnovationFlowTag")}</div>
+                <h3>{t("landingInnovationFlowTitle")}</h3>
+                <p>{t("landingInnovationFlowDesc")}</p>
+              </div>
+              <div className="landing-innovation-card">
+                <div className="landing-innovation-icon">
+                  <Globe size={28} />
+                </div>
+                <div className="landing-innovation-tag">{t("landingInnovationMultiTag")}</div>
+                <h3>{t("landingInnovationMultiTitle")}</h3>
+                <p>{t("landingInnovationMultiDesc")}</p>
+              </div>
             </div>
           </div>
         </section>
@@ -452,16 +485,11 @@ export default function PublicLandingPage({
             <h2 className="landing-section-title">{t("landingHowTitle")}</h2>
             <p className="landing-section-subtitle">{t("landingHowSubtitle")}</p>
             <div className="landing-how-flow">
-              {howItWorks.map((step, i) => (
+              {howItWorks.map((step) => (
                 <div key={step.step} className="landing-how-step">
                   <div className="landing-how-step-number">{step.step}</div>
                   <h3 className="landing-how-step-title">{t(step.title)}</h3>
                   <p className="landing-how-step-desc">{t(step.description)}</p>
-                  {i < howItWorks.length - 1 && (
-                    <div className="landing-how-arrow">
-                      <ChevronDown size={16} />
-                    </div>
-                  )}
                 </div>
               ))}
             </div>
@@ -479,6 +507,9 @@ export default function PublicLandingPage({
                   <div className="landing-feature-icon">
                     <f.icon size={24} />
                   </div>
+                  {f.innovation && (
+                    <div className="landing-feature-innovation-tag">{t("landingFeatureInnovationTag")}</div>
+                  )}
                   <h3>{t(f.title)}</h3>
                   <p>{t(f.description)}</p>
                 </div>

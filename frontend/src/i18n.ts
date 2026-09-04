@@ -1393,9 +1393,6 @@ const resources = {
       landingNavLogin: "Iniciar sesión",
       landingNavRegister: "Crear cuenta",
 
-      landingHeroEyebrow: "Plataforma de operaciones para ecommerce",
-      landingHeroTitle: "Convierte tus conversaciones en una operación de ventas organizada.",
-      landingHeroSubtitle: "Centraliza WhatsApp, automatiza tareas, gestiona pedidos y entiende qué está pasando en tus tiendas desde un solo lugar.",
       landingHeroCta: "Crear cuenta",
       landingHeroCtaSecondary: "Ver cómo funciona",
       landingHeroPricingNote: "Planes desde $19 USD/mes",
@@ -1408,17 +1405,6 @@ const resources = {
       landingProblem5: "Varias tiendas completamente desconectadas",
       landingProblem6: "Poca claridad sobre qué está funcionando",
       landingProblemResolution: "Diaglob une todo.",
-
-      landingHowTitle: "Cómo funciona",
-      landingHowSubtitle: "Un flujo claro que conecta conversación con operación.",
-      landingHowStep1Title: "Cliente escribe por WhatsApp",
-      landingHowStep1Desc: "Un contacto te escribe con una consulta o pedido.",
-      landingHowStep2Title: "Diaglob organiza y ayuda a responder",
-      landingHowStep2Desc: "La conversación se registra y la IA responde o asiste automáticamente.",
-      landingHowStep3Title: "Comercio y automatizaciones procesan",
-      landingHowStep3Desc: "Productos, pedidos y reglas se vinculan a la conversación.",
-      landingHowStep4Title: "Analytics muestra qué está pasando",
-      landingHowStep4Desc: "Métricas en tiempo real de conversaciones, comercio y automatizaciones.",
 
       landingFeaturesTitle: "Todo en una sola plataforma",
       landingFeaturesSubtitle: "Módulos diseñados para que tu operación funcione de forma organizada.",
@@ -1666,6 +1652,51 @@ const resources = {
       landingOpsCenterDesc: "Analytics, automatizations y equipo centralizados.",
 
       landingBuiltEachStore: "Cada tienda opera con su propio contexto, configuración e integraciones, mientras tú mantienes una visión central.",
+
+      // ── Social Proof Bar ──
+      landingSocialProofTitle: "Todo lo que tu operación necesita, en una sola plataforma.",
+      landingSocialProofStat1Value: "24/7",
+      landingSocialProofStat1Label: "IA respondiendo tus clientes sin descanso",
+      landingSocialProofStat2Value: "+3",
+      landingSocialProofStat2Label: "Países y monedas gestionados desde un solo lugar",
+      landingSocialProofStat3Value: "100%",
+      landingSocialProofStat3Label: "Datos de cada tienda separados y seguros",
+      landingSocialProofStat4Value: "<2min",
+      landingSocialProofStat4Label: "De tiempo promedio de setup inicial",
+
+      // ── Innovation Showcase ──
+      landingInnovationTitle: "Lo que hace diferente a Diaglob.",
+      landingInnovationSubtitle: "No somos solo un chatbot. Somos una plataforma de inteligencia artificial construida para vender más.",
+      landingInnovationRagTitle: "IA que conoce tu negocio de verdad",
+      landingInnovationRagDesc: "Nuestra inteligencia artificial no adivina. Usa la información real de tus productos, precios, políticas y catálogos para dar respuestas correctas. Si un cliente pregunta por un producto, la IA sabe exactamente qué ofrecer.",
+      landingInnovationRagTag: "Sin alucinaciones",
+      landingInnovationAgentTitle: "Agentes de IA que venden por ti",
+      landingInnovationAgentDesc: "Configura agentes inteligentes para cada tienda. Ellos responden preguntas, recomiendan productos, registran pedidos y escalan al equipo humano cuando es necesario. Tu negocio vende mientras duermes.",
+      landingInnovationAgentTag: "Disponible 24/7",
+      landingInnovationFlowTitle: "Automatizaciones visuales sin escribir código",
+      landingInnovationFlowDesc: "Dibuja flujos con arrastrar y soltar. Define reglas como 'cuando llega un mensaje, hacer esto' o 'cuando se crea un pedido, notificar al equipo'. Sin programar, sin complicaciones.",
+      landingInnovationFlowTag: "No necesitas programar",
+      landingInnovationMultiTitle: "Un centro de operaciones para todo el mundo",
+      landingInnovationMultiDesc: "Maneja tiendas en Colombia, México, USA o donde sea. Cada tienda con su moneda, idioma e integraciones. Todo se ve junto en un solo panel. Una vista para tomar decisiones.",
+      landingInnovationMultiTag: "Multi-país y multi-monedas",
+
+      // ── Improved Hero ──
+      landingHeroEyebrow: "Plataforma de IA para ecommerce",
+      landingHeroTitle: "Tu equipo de ventas con inteligencia artificial, disponible 24 horas.",
+      landingHeroSubtitle: "Diaglob conecta WhatsApp con inteligencia artificial, comercio y automatizaciones. Tus clientes reciben respuestas inmediatas. Tus productos se recomiendan solos. Tus pedidos se procesan sin interrupciones.",
+
+      // ── Simplified How It Works (3 steps) ──
+      landingHowTitle: "Cómo funciona en la vida real",
+      landingHowSubtitle: "3 pasos simples. Sin configuraciones complicadas.",
+      landingHowStep1Title: "Un cliente te escribe por WhatsApp",
+      landingHowStep1Desc: "Alguien pregunta por un producto, hace un pedido o necesita ayuda. Diaglob recibe el mensaje automáticamente.",
+      landingHowStep2Title: "La IA responde con información real",
+      landingHowStep2Desc: "El agente de inteligencia artificial conoce tus productos, precios y políticas. Responde como un experto en tu negocio, los 365 días del año.",
+      landingHowStep3Title: "Todo se organiza solo",
+      landingHowStep3Desc: "El pedido se registra, el equipo se notifica si es necesario, y tú ves todo en un solo lugar: conversaciones, ventas, métricas.",
+
+      // ── Feature Innovation Tags ──
+      landingFeatureInnovationTag: "Innovación",
 
       flowNodeTypeTrigger: "Disparador",
       flowNodeTypeWait: "Espera",
@@ -3159,9 +3190,6 @@ const resources = {
       landingNavLogin: "Sign in",
       landingNavRegister: "Create account",
 
-      landingHeroEyebrow: "Operations platform for ecommerce",
-      landingHeroTitle: "Turn your conversations into an organized sales operation.",
-      landingHeroSubtitle: "Centralize WhatsApp, automate tasks, manage orders and understand what's happening across your stores from one place.",
       landingHeroCta: "Create account",
       landingHeroCtaSecondary: "See how it works",
       landingHeroPricingNote: "Plans from $19 USD/month",
@@ -3174,17 +3202,6 @@ const resources = {
       landingProblem5: "Multiple stores completely disconnected",
       landingProblem6: "Little clarity on what's working",
       landingProblemResolution: "Diaglob brings it all together.",
-
-      landingHowTitle: "How it works",
-      landingHowSubtitle: "A clear flow that connects conversation with operations.",
-      landingHowStep1Title: "Customer writes on WhatsApp",
-      landingHowStep1Desc: "A contact messages you with a question or order.",
-      landingHowStep2Title: "Diaglob organizes and helps respond",
-      landingHowStep2Desc: "The conversation is logged and AI responds or assists automatically.",
-      landingHowStep3Title: "Commerce and automations process",
-      landingHowStep3Desc: "Products, orders and rules are linked to the conversation.",
-      landingHowStep4Title: "Analytics shows what's happening",
-      landingHowStep4Desc: "Real-time metrics for conversations, commerce and automations.",
 
       landingFeaturesTitle: "Everything you need in one platform",
       landingFeaturesSubtitle: "Modules designed to keep your operation running smoothly.",
@@ -3432,6 +3449,51 @@ const resources = {
       landingOpsCenterDesc: "Analytics, automations and team centralized.",
 
       landingBuiltEachStore: "Each store operates with its own context, settings and integrations while you keep centralized visibility.",
+
+      // ── Social Proof Bar ──
+      landingSocialProofTitle: "Everything your operation needs, in one platform.",
+      landingSocialProofStat1Value: "24/7",
+      landingSocialProofStat1Label: "AI responding to your customers non-stop",
+      landingSocialProofStat2Value: "+3",
+      landingSocialProofStat2Label: "Countries and currencies managed from one place",
+      landingSocialProofStat3Value: "100%",
+      landingSocialProofStat3Label: "Data from each store kept separate and secure",
+      landingSocialProofStat4Value: "<2min",
+      landingSocialProofStat4Label: "Average initial setup time",
+
+      // ── Innovation Showcase ──
+      landingInnovationTitle: "What makes Diaglob different.",
+      landingInnovationSubtitle: "We are not just a chatbot. We are an AI platform built to help you sell more.",
+      landingInnovationRagTitle: "AI that truly knows your business",
+      landingInnovationRagDesc: "Our AI does not guess. It uses real information from your products, prices, policies and catalogs to give accurate answers. If a customer asks about a product, the AI knows exactly what to offer.",
+      landingInnovationRagTag: "No hallucinations",
+      landingInnovationAgentTitle: "AI agents that sell for you",
+      landingInnovationAgentDesc: "Set up smart agents for each store. They answer questions, recommend products, register orders and escalate to your human team when needed. Your business sells while you sleep.",
+      landingInnovationAgentTag: "Available 24/7",
+      landingInnovationFlowTitle: "Visual automations without writing code",
+      landingInnovationFlowDesc: "Draw flows with drag and drop. Define rules like 'when a message arrives, do this' or 'when an order is created, notify the team'. No programming, no complications.",
+      landingInnovationFlowTag: "No coding needed",
+      landingInnovationMultiTitle: "One operations center for the whole world",
+      landingInnovationMultiDesc: "Manage stores in Colombia, Mexico, USA or anywhere. Each store with its own currency, language and integrations. Everything is seen together in one dashboard. One view to make decisions.",
+      landingInnovationMultiTag: "Multi-country and multi-currency",
+
+      // ── Improved Hero ──
+      landingHeroEyebrow: "AI platform for ecommerce",
+      landingHeroTitle: "Your sales team powered by artificial intelligence, available 24 hours.",
+      landingHeroSubtitle: "Diaglob connects WhatsApp with AI, commerce and automations. Your customers get instant answers. Your products get recommended automatically. Your orders process without interruptions.",
+
+      // ── Simplified How It Works (3 steps) ──
+      landingHowTitle: "How it works in real life",
+      landingHowSubtitle: "3 simple steps. No complicated setup.",
+      landingHowStep1Title: "A customer messages you on WhatsApp",
+      landingHowStep1Desc: "Someone asks about a product, places an order or needs help. Diaglob receives the message automatically.",
+      landingHowStep2Title: "The AI responds with real information",
+      landingHowStep2Desc: "The AI agent knows your products, prices and policies. It responds like an expert in your business, 365 days a year.",
+      landingHowStep3Title: "Everything gets organized automatically",
+      landingHowStep3Desc: "The order is registered, the team is notified if needed, and you see everything in one place: conversations, sales, metrics.",
+
+      // ── Feature Innovation Tags ──
+      landingFeatureInnovationTag: "Innovation",
 
       flowNodeTypeTrigger: "Trigger",
       flowNodeTypeWait: "Wait",

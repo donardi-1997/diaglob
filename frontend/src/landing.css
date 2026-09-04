@@ -443,9 +443,171 @@
 .landing-problem-resolution svg { color: var(--accent); }
 .landing-problem-resolution h3 { font-size: 1rem; font-weight: 600; color: var(--text); margin: 0; }
 
+/* ── Social Proof Bar ────────────────────────────────────────────── */
+.landing-social-proof {
+  padding: 32px 0;
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.landing-social-proof-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  max-width: 900px;
+  margin: 24px auto 0;
+}
+
+@media (min-width: 768px) {
+  .landing-social-proof-grid {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 20px;
+  }
+}
+
+.landing-social-proof-card {
+  text-align: center;
+  padding: 20px 12px;
+  border-radius: 12px;
+  background: var(--control-bg);
+  border: 1px solid var(--border);
+  transition: border-color 0.2s, transform 0.2s;
+}
+
+.landing-social-proof-card:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+}
+
+.landing-social-proof-value {
+  font-size: 1.75rem;
+  font-weight: 800;
+  color: var(--accent);
+  line-height: 1;
+  margin-bottom: 8px;
+  letter-spacing: -0.03em;
+}
+
+@media (min-width: 768px) {
+  .landing-social-proof-value { font-size: 2rem; }
+}
+
+.landing-social-proof-label {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+/* ── Innovation Showcase ─────────────────────────────────────────── */
+.landing-innovation { padding: 48px 0; }
+@media (min-width: 768px) { .landing-innovation { padding: 64px 0; } }
+
+.landing-innovation-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+
+@media (min-width: 480px) {
+  .landing-innovation-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (min-width: 1024px) {
+  .landing-innovation-grid { grid-template-columns: repeat(2, 1fr); gap: 20px; }
+}
+
+.landing-innovation-card {
+  position: relative;
+  padding: 28px 24px;
+  border-radius: 14px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
+  overflow: hidden;
+}
+
+.landing-innovation-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent), rgba(124, 108, 255, 0.3));
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.landing-innovation-card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 8px 32px rgba(124, 108, 255, 0.1);
+  transform: translateY(-3px);
+}
+
+.landing-innovation-card:hover::before { opacity: 1; }
+
+.landing-innovation-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  background: var(--accent-soft);
+  color: var(--accent);
+  margin-bottom: 16px;
+}
+
+.landing-innovation-tag {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 100px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  background: rgba(34, 197, 94, 0.12);
+  color: #22c55e;
+  margin-bottom: 12px;
+}
+
+.landing-innovation-card h3 {
+  font-size: 1.0625rem;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 8px;
+  line-height: 1.3;
+}
+
+.landing-innovation-card p {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  line-height: 1.65;
+  margin: 0;
+}
+
+/* ── Feature Innovation Tag ──────────────────────────────────────── */
+.landing-feature-innovation-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 100px;
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  background: rgba(34, 197, 94, 0.12);
+  color: #22c55e;
+  margin-bottom: 8px;
+}
+
 /* ── How It Works ──────────────────────────────────────────────── */
-.landing-how-flow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
-@media (max-width: 768px) { .landing-how-flow { grid-template-columns: 1fr; } }
+.landing-how-flow {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+@media (max-width: 768px) {
+  .landing-how-flow { grid-template-columns: 1fr; }
+}
 
 .landing-how-step {
   display: flex;
