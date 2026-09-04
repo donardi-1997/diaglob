@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Bot,
   BrainCircuit,
@@ -51,6 +51,14 @@ export default function ConversationsPage({
   const [sendingMessage, setSendingMessage] = useState(false);
   const [whatsappConnected, setWhatsAppConnected] = useState(false);
   const [sendChannel, setSendChannel] = useState<"auto" | "whatsapp">("auto");
+
+  const chatBodyRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = chatBodyRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [conversation?.messages]);
 
   useEffect(() => {
     loadConversations();
@@ -393,7 +401,7 @@ export default function ConversationsPage({
                 </button>
               </header>
 
-              <div className="chat-body">
+              <div className="chat-body" ref={chatBodyRef}>
                 <div className="chat-day">
                   {t("chatToday")}
                 </div>

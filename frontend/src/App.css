@@ -182,6 +182,10 @@
 .main {
   width: calc(100% - 248px);
   margin-left: 248px;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .topbar {
@@ -265,6 +269,11 @@
   width: min(1440px, 100%);
   margin: 0 auto;
   padding: 40px 38px 60px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .page-heading {
@@ -273,6 +282,7 @@
   justify-content: space-between;
   align-items: flex-end;
   gap: 20px;
+  flex-shrink: 0;
 }
 
 .eyebrow {
@@ -644,8 +654,8 @@
 }
 
 .inbox-layout {
-  min-height: 680px;
-  height: calc(100vh - 190px);
+  flex: 1;
+  min-height: 0;
   display: grid;
   grid-template-columns: 310px minmax(420px, 1fr) 290px;
   border: 1px solid var(--border);
@@ -856,6 +866,7 @@
 
 .chat-body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 25px;
 }
@@ -2002,6 +2013,7 @@
 @media (max-width: 620px) {
   .conversations-content {
     padding-inline: 0;
+    padding-bottom: 0;
   }
 
   .conversations-heading {
@@ -2023,7 +2035,7 @@
   }
 
   .chat-panel {
-    min-height: 620px;
+    min-height: 0;
   }
 }
 
@@ -7927,7 +7939,7 @@ button:disabled {
   padding: 4px;
 
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--control-bg);
 }
 
 .commerce-tab {
@@ -7940,7 +7952,7 @@ button:disabled {
   border-radius: 10px;
 
   background: transparent;
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--text-secondary);
 
   font-size: 14px;
   font-weight: 500;
@@ -7953,13 +7965,13 @@ button:disabled {
 }
 
 .commerce-tab:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.8);
+  background: var(--control-hover);
+  color: var(--text);
 }
 
 .commerce-tab.active {
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
+  background: var(--accent-soft);
+  color: var(--text);
 }
 
 .commerce-content {
@@ -7972,14 +7984,14 @@ button:disabled {
   justify-content: center;
 
   padding: 60px 0;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--text-muted);
 }
 
 .commerce-empty {
   padding: 60px 0;
 
   text-align: center;
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--text-secondary);
 
   font-size: 14px;
 }
@@ -7998,7 +8010,7 @@ button:disabled {
 .commerce-count {
   margin-bottom: 16px;
 
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--text-muted);
   font-size: 13px;
 }
 
@@ -8022,10 +8034,10 @@ button:disabled {
 
   padding: 20px;
 
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--border);
   border-radius: 14px;
 
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--panel);
 }
 
 .commerce-stat-icon {
@@ -8038,8 +8050,8 @@ button:disabled {
   flex-shrink: 0;
 
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.6);
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .commerce-stat-info {
@@ -8051,12 +8063,12 @@ button:disabled {
 .commerce-stat-value {
   font-size: 22px;
   font-weight: 600;
-  color: #fff;
+  color: var(--text);
 }
 
 .commerce-stat-label {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -8081,10 +8093,10 @@ button:disabled {
 
   padding: 14px 16px;
 
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border);
   border-radius: 12px;
 
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--panel);
 }
 
 .commerce-status-dot {
@@ -8114,12 +8126,12 @@ button:disabled {
 .commerce-status-count {
   font-size: 20px;
   font-weight: 600;
-  color: #fff;
+  color: var(--text);
 }
 
 .commerce-status-text {
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--text-secondary);
 }
 
 
@@ -8136,7 +8148,7 @@ button:disabled {
 
   font-size: 14px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.75);
+  color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -8155,7 +8167,7 @@ button:disabled {
   padding: 12px 16px;
 
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--panel);
 }
 
 .commerce-recent-title {
@@ -8163,12 +8175,12 @@ button:disabled {
 
   font-size: 14px;
   font-weight: 500;
-  color: #fff;
+  color: var(--text);
 }
 
 .commerce-recent-value {
   font-size: 14px;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--text-secondary);
 }
 
 
@@ -8191,22 +8203,22 @@ button:disabled {
 
 .commerce-badge.created {
   background: rgba(34, 197, 94, 0.12);
-  color: #22c55e;
+  color: var(--green);
 }
 
 .commerce-badge.pending {
   background: rgba(245, 158, 11, 0.12);
-  color: #f59e0b;
+  color: #d97706;
 }
 
 .commerce-badge.failed {
   background: rgba(239, 68, 68, 0.12);
-  color: #ef4444;
+  color: #dc2626;
 }
 
 .commerce-badge.unknown {
   background: rgba(148, 163, 184, 0.12);
-  color: #94a3b8;
+  color: var(--text-muted);
 }
 
 .commerce-recent-badge {
@@ -8224,22 +8236,22 @@ button:disabled {
 
 .commerce-recent-badge.created {
   background: rgba(34, 197, 94, 0.12);
-  color: #22c55e;
+  color: var(--green);
 }
 
 .commerce-recent-badge.pending {
   background: rgba(245, 158, 11, 0.12);
-  color: #f59e0b;
+  color: #d97706;
 }
 
 .commerce-recent-badge.failed {
   background: rgba(239, 68, 68, 0.12);
-  color: #ef4444;
+  color: #dc2626;
 }
 
 .commerce-recent-badge.unknown {
   background: rgba(148, 163, 184, 0.12);
-  color: #94a3b8;
+  color: var(--text-muted);
 }
 
 
@@ -8255,10 +8267,10 @@ button:disabled {
   margin-bottom: 20px;
   padding: 10px 14px;
 
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border);
   border-radius: 12px;
 
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--control-bg);
 }
 
 .commerce-search-bar input {
@@ -8267,17 +8279,17 @@ button:disabled {
   outline: none;
 
   background: transparent;
-  color: #fff;
+  color: var(--text);
 
   font-size: 14px;
 }
 
 .commerce-search-bar input::placeholder {
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--text-muted);
 }
 
 .commerce-search-bar svg {
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--text-muted);
   flex-shrink: 0;
 }
 
@@ -8286,8 +8298,8 @@ button:disabled {
   border: none;
   border-radius: 8px;
 
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
+  background: var(--accent-soft);
+  color: var(--text);
 
   font-size: 13px;
   font-weight: 500;
@@ -8297,7 +8309,7 @@ button:disabled {
 }
 
 .commerce-search-bar button:hover {
-  background: rgba(255, 255, 255, 0.16);
+  background: var(--control-hover);
 }
 
 .commerce-product-grid {
@@ -8313,9 +8325,9 @@ button:disabled {
 
   padding: 16px;
 
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--border);
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--panel);
 }
 
 .commerce-product-image {
@@ -8325,7 +8337,7 @@ button:disabled {
 
   border-radius: 10px;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--control-bg);
 }
 
 .commerce-product-image img {
@@ -8344,7 +8356,7 @@ button:disabled {
 
   font-size: 22px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--text-muted);
 }
 
 .commerce-product-info {
@@ -8357,7 +8369,7 @@ button:disabled {
 
   font-size: 14px;
   font-weight: 600;
-  color: #fff;
+  color: var(--text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -8367,7 +8379,7 @@ button:disabled {
   margin: 0 0 8px 0;
 
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--text-muted);
 }
 
 .commerce-product-variants {
@@ -8384,17 +8396,17 @@ button:disabled {
   gap: 10px;
 
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--text-secondary);
 }
 
 .commerce-variant-price {
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.75);
+  color: var(--text);
 }
 
 .commerce-variant-more {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--text-muted);
 }
 
 
@@ -8405,7 +8417,7 @@ button:disabled {
 .commerce-orders-table-wrapper {
   overflow-x: auto;
 
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--border);
   border-radius: 14px;
 }
 
@@ -8417,26 +8429,26 @@ button:disabled {
 }
 
 .commerce-orders-table thead {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--control-bg);
 }
 
 .commerce-orders-table th {
   padding: 12px 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--border);
 
   text-align: left;
   font-size: 12px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
 .commerce-orders-table td {
   padding: 12px 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid var(--border);
 
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--text-secondary);
 }
 
 .commerce-orders-table tbody tr {
@@ -8444,7 +8456,7 @@ button:disabled {
 }
 
 .commerce-orders-table tbody tr:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--control-hover);
 }
 
 .commerce-orders-table tbody tr:last-child td {
@@ -8453,7 +8465,7 @@ button:disabled {
 
 .commerce-order-number {
   font-weight: 600;
-  color: #fff;
+  color: var(--text);
 }
 
 .commerce-order-source {
@@ -8461,7 +8473,7 @@ button:disabled {
 }
 
 .commerce-order-date {
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--text-muted);
   font-size: 13px;
 }
 
@@ -8474,7 +8486,7 @@ button:disabled {
 
   border-radius: 6px;
 
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--text-muted);
 
   transition:
     background 0.16s ease,
@@ -8482,8 +8494,8 @@ button:disabled {
 }
 
 .commerce-link:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
+  background: var(--control-hover);
+  color: var(--text);
 }
 
 
