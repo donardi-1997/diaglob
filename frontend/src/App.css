@@ -8101,6 +8101,13 @@ button:disabled {
 
   border-radius: 12px;
   background: var(--control-bg);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.commerce-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .commerce-tab {
@@ -8117,6 +8124,8 @@ button:disabled {
 
   font-size: 14px;
   font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
 
   cursor: pointer;
 
@@ -8837,13 +8846,14 @@ button:disabled {
   align-items: center;
   gap: 8px;
   margin-bottom: 8px;
+  flex-wrap: wrap;
 }
 
 .automation-condition-row select,
 .automation-condition-row input,
 .automation-action-row select,
 .automation-action-row input {
-  flex: 1;
+  flex: 1 1 140px;
   min-width: 0;
 }
 
@@ -10515,6 +10525,196 @@ button:disabled {
 
   .flow-sidebar {
     width: 100% !important;
+  }
+}
+
+/* =========================================================
+   AUTOMATIONS RESPONSIVE — TABLET (≤ 768px)
+   ========================================================= */
+
+@media (max-width: 768px) {
+  .automation-run-campaign-grid {
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  }
+
+  .automation-run-counter-grid {
+    gap: 8px;
+  }
+
+  .automation-run-counter {
+    padding: 10px 14px;
+    min-width: 80px;
+  }
+
+  .automation-recipient-filters {
+    flex-direction: column;
+  }
+
+  .automation-recipient-filters input,
+  .automation-recipient-filters select {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .automation-recipient-pagination {
+    justify-content: center;
+  }
+
+  .flow-canvas-container {
+    height: 400px !important;
+  }
+
+  .flow-simulation .management-modal {
+    max-width: calc(100vw - 24px);
+  }
+
+  .automation-selector-filters {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .automation-selector-filters input {
+    grid-column: 1 / -1;
+  }
+}
+
+/* =========================================================
+   AUTOMATIONS RESPONSIVE — MOBILE (≤ 480px)
+   ========================================================= */
+
+@media (max-width: 480px) {
+  .commerce-tab {
+    padding: 8px 14px;
+    font-size: 13px;
+    gap: 6px;
+  }
+
+  .commerce-tab svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .automation-card {
+    padding: 14px 16px;
+  }
+
+  .automation-card-header {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .automation-card-meta {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .automation-card-actions {
+    flex-wrap: wrap;
+  }
+
+  .automation-run-campaign-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .automation-run-detail-header {
+    flex-direction: column;
+  }
+
+  .automation-run-counter-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+
+  .automation-run-counter {
+    min-width: 0;
+  }
+
+  .automation-recipient-filters {
+    gap: 6px;
+  }
+
+  .automation-recipient-pagination {
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+  }
+
+  .automation-recipient-detail-modal {
+    width: calc(100vw - 16px);
+    max-height: calc(100dvh - 16px);
+  }
+
+  .automation-recipient-detail-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .automation-attempt-meta {
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .automation-wizard {
+    width: calc(100% - 16px);
+  }
+
+  .automation-condition-row,
+  .automation-action-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .automation-condition-row select,
+  .automation-condition-row input,
+  .automation-action-row select,
+  .automation-action-row input {
+    flex: none;
+    width: 100%;
+  }
+
+  .flow-canvas-container {
+    height: 320px !important;
+  }
+
+  .flow-builder-toolbar {
+    gap: 10px;
+  }
+
+  .flow-builder-toolbar .secondary-button,
+  .flow-builder-toolbar .primary-button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .flow-list-header {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .flow-list-header .primary-button {
+    width: 100%;
+  }
+
+  .flow-card-actions {
+    flex-wrap: wrap;
+  }
+
+  .automation-selector-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .automation-selector-filters input {
+    grid-column: auto;
+  }
+
+  .automation-selector-table {
+    min-width: 600px;
+  }
+
+  .automation-run-status-badge,
+  .automation-recipient-status-badge {
+    font-size: 0.65rem;
+    padding: 2px 7px;
   }
 }
 
