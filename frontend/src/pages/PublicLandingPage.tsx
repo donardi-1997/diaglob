@@ -535,7 +535,21 @@ export default function PublicLandingPage({
                       <div className="landing-kb-source-icon"><Table size={16} /></div>
                       <div className="landing-kb-source-info">
                         <span className="landing-kb-source-name">{t("landingSourceGoogleSheets")}</span>
-                        <span className="landing-kb-badge coming-soon">{t("landingSourceGoogleSheetsStatus")}</span>
+                        <span className="landing-kb-badge available">{t("landingSourceGoogleSheetsStatus")}</span>
+                      </div>
+                    </div>
+                    <div className="landing-kb-source">
+                      <div className="landing-kb-source-icon"><FileSpreadsheet size={16} /></div>
+                      <div className="landing-kb-source-info">
+                        <span className="landing-kb-source-name">{t("landingSourceGoogleDocs")}</span>
+                        <span className="landing-kb-badge available">{t("landingSourceGoogleDocsStatus")}</span>
+                      </div>
+                    </div>
+                    <div className="landing-kb-source">
+                      <div className="landing-kb-source-icon"><Database size={16} /></div>
+                      <div className="landing-kb-source-info">
+                        <span className="landing-kb-source-name">{t("landingSourceGoogleDrive")}</span>
+                        <span className="landing-kb-badge available">{t("landingSourceGoogleDriveStatus")}</span>
                       </div>
                     </div>
                     <div className="landing-kb-source">
@@ -699,12 +713,15 @@ export default function PublicLandingPage({
           <div className="landing-container">
             <h2 className="landing-section-title">{t("landingIntegrationsTitle")}</h2>
             <p className="landing-section-subtitle">{t("landingIntegrationsSubtitle")}</p>
+
+            {/* Main integrations grid */}
             <div className="landing-integrations-grid">
               <div className="landing-integration-card">
                 <div className="landing-integration-icon">
                   <MessageSquare size={28} />
                 </div>
                 <h3>{t("landingIntegrationWhatsapp")}</h3>
+                <p>{t("landingIntegrationWhatsappDesc")}</p>
                 <div className="landing-integration-status available">
                   <Check size={14} /> {t("landingIntegrationAvailable")}
                 </div>
@@ -714,17 +731,119 @@ export default function PublicLandingPage({
                   <ShoppingBag size={28} />
                 </div>
                 <h3>{t("landingIntegrationShopify")}</h3>
+                <p>{t("landingIntegrationShopifyDesc")}</p>
                 <div className="landing-integration-status available">
                   <Check size={14} /> {t("landingIntegrationAvailable")}
                 </div>
               </div>
               <div className="landing-integration-card">
                 <div className="landing-integration-icon">
-                  <Globe size={28} />
+                  <ShoppingBag size={28} />
+                </div>
+                <h3>{t("landingIntegrationWoocommerce")}</h3>
+                <p>{t("landingIntegrationWoocommerceDesc")}</p>
+                <div className="landing-integration-status available">
+                  <Check size={14} /> {t("landingIntegrationAvailable")}
+                </div>
+              </div>
+              <div className="landing-integration-card">
+                <div className="landing-integration-icon">
+                  <Table size={28} />
+                </div>
+                <h3>{t("landingIntegrationGoogleSheets")}</h3>
+                <p>{t("landingIntegrationGoogleSheetsDesc")}</p>
+                <div className="landing-integration-status available">
+                  <Check size={14} /> {t("landingIntegrationAvailable")}
+                </div>
+              </div>
+              <div className="landing-integration-card">
+                <div className="landing-integration-icon">
+                  <FileSpreadsheet size={28} />
+                </div>
+                <h3>{t("landingIntegrationGoogleDocs")}</h3>
+                <p>{t("landingIntegrationGoogleDocsDesc")}</p>
+                <div className="landing-integration-status available">
+                  <Check size={14} /> {t("landingIntegrationAvailable")}
+                </div>
+              </div>
+              <div className="landing-integration-card">
+                <div className="landing-integration-icon">
+                  <Database size={28} />
+                </div>
+                <h3>{t("landingIntegrationGoogleDrive")}</h3>
+                <p>{t("landingIntegrationGoogleDriveDesc")}</p>
+                <div className="landing-integration-status available">
+                  <Check size={14} /> {t("landingIntegrationAvailable")}
+                </div>
+              </div>
+              <div className="landing-integration-card">
+                <div className="landing-integration-icon">
+                  <Package size={28} />
+                </div>
+                <h3>{t("landingIntegrationDropiIndirect")}</h3>
+                <p>{t("landingIntegrationDropiIndirectDesc")}</p>
+                <div className="landing-integration-status available">
+                  <Check size={14} /> {t("landingIntegrationAvailable")}
+                </div>
+              </div>
+              <div className="landing-integration-card landing-integration-featured">
+                <div className="landing-integration-icon">
+                  <Package size={28} />
                 </div>
                 <h3>{t("landingIntegrationDropi")}</h3>
+                <p>{t("landingIntegrationDropiDesc")}</p>
                 <div className="landing-integration-status coming-soon">
                   {t("landingIntegrationComingSoon")}
+                </div>
+              </div>
+            </div>
+
+            {/* Dropi Coming Soon Section */}
+            <div className="landing-dropi-preview">
+              <h3 className="landing-dropi-preview-title">{t("landingDropiComingSoonTitle")}</h3>
+              <p className="landing-dropi-preview-subtitle">{t("landingDropiComingSoonSubtitle")}</p>
+              <div className="landing-dropi-utilities-grid">
+                <div className="landing-dropi-utility">
+                  <div className="landing-dropi-utility-icon"><ShoppingBag size={18} /></div>
+                  <div>
+                    <strong>{t("landingDropiUtility1Title")}</strong>
+                    <span>{t("landingDropiUtility1Desc")}</span>
+                  </div>
+                </div>
+                <div className="landing-dropi-utility">
+                  <div className="landing-dropi-utility-icon"><Package size={18} /></div>
+                  <div>
+                    <strong>{t("landingDropiUtility2Title")}</strong>
+                    <span>{t("landingDropiUtility2Desc")}</span>
+                  </div>
+                </div>
+                <div className="landing-dropi-utility">
+                  <div className="landing-dropi-utility-icon"><BarChart3 size={18} /></div>
+                  <div>
+                    <strong>{t("landingDropiUtility3Title")}</strong>
+                    <span>{t("landingDropiUtility3Desc")}</span>
+                  </div>
+                </div>
+                <div className="landing-dropi-utility">
+                  <div className="landing-dropi-utility-icon"><Users size={18} /></div>
+                  <div>
+                    <strong>{t("landingDropiUtility4Title")}</strong>
+                    <span>{t("landingDropiUtility4Desc")}</span>
+                  </div>
+                </div>
+                <div className="landing-dropi-utility">
+                  <div className="landing-dropi-utility-icon"><Workflow size={18} /></div>
+                  <div>
+                    <strong>{t("landingDropiUtility5Title")}</strong>
+                    <span>{t("landingDropiUtility5Desc")}</span>
+                  </div>
+                </div>
+                <div className="landing-dropi-utility">
+                  <div className="landing-dropi-utility-icon"><Globe size={18} /></div>
+                  <div>
+                    <strong>{t("landingDropiUtility6Title")}</strong>
+                    <span>{t("landingDropiUtility6Desc")}</span>
+                  </div>
                 </div>
               </div>
             </div>
