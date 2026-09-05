@@ -786,66 +786,6 @@ export default function PublicLandingPage({
                   <Check size={14} /> {t("landingIntegrationAvailable")}
                 </div>
               </div>
-              <div className="landing-integration-card landing-integration-featured">
-                <div className="landing-integration-icon">
-                  <Package size={28} />
-                </div>
-                <h3>{t("landingIntegrationDropi")}</h3>
-                <p>{t("landingIntegrationDropiDesc")}</p>
-                <div className="landing-integration-status coming-soon">
-                  {t("landingIntegrationComingSoon")}
-                </div>
-              </div>
-            </div>
-
-            {/* Dropi Coming Soon Section */}
-            <div className="landing-dropi-preview">
-              <h3 className="landing-dropi-preview-title">{t("landingDropiComingSoonTitle")}</h3>
-              <p className="landing-dropi-preview-subtitle">{t("landingDropiComingSoonSubtitle")}</p>
-              <div className="landing-dropi-utilities-grid">
-                <div className="landing-dropi-utility">
-                  <div className="landing-dropi-utility-icon"><ShoppingBag size={18} /></div>
-                  <div>
-                    <strong>{t("landingDropiUtility1Title")}</strong>
-                    <span>{t("landingDropiUtility1Desc")}</span>
-                  </div>
-                </div>
-                <div className="landing-dropi-utility">
-                  <div className="landing-dropi-utility-icon"><Package size={18} /></div>
-                  <div>
-                    <strong>{t("landingDropiUtility2Title")}</strong>
-                    <span>{t("landingDropiUtility2Desc")}</span>
-                  </div>
-                </div>
-                <div className="landing-dropi-utility">
-                  <div className="landing-dropi-utility-icon"><BarChart3 size={18} /></div>
-                  <div>
-                    <strong>{t("landingDropiUtility3Title")}</strong>
-                    <span>{t("landingDropiUtility3Desc")}</span>
-                  </div>
-                </div>
-                <div className="landing-dropi-utility">
-                  <div className="landing-dropi-utility-icon"><Users size={18} /></div>
-                  <div>
-                    <strong>{t("landingDropiUtility4Title")}</strong>
-                    <span>{t("landingDropiUtility4Desc")}</span>
-                  </div>
-                </div>
-                <div className="landing-dropi-utility">
-                  <div className="landing-dropi-utility-icon"><Workflow size={18} /></div>
-                  <div>
-                    <strong>{t("landingDropiUtility5Title")}</strong>
-                    <span>{t("landingDropiUtility5Desc")}</span>
-                  </div>
-                </div>
-                <div className="landing-dropi-utility">
-                  <div className="landing-dropi-utility-icon"><Globe size={18} /></div>
-                  <div>
-                    <strong>{t("landingDropiUtility6Title")}</strong>
-                    <span>{t("landingDropiUtility6Desc")}</span>
-                  </div>
-                </div>
-              </div>
             </div>
           </div>
         </section>
