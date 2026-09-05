@@ -1498,7 +1498,7 @@ const resources = {
       landingDropiCapAvailable2: "Ver productos y catálogo",
       landingDropiCapAvailable3: "Consultar inventario y stock",
       landingDropiCapAvailable4: "La IA termina compras y genera órdenes",
-      landingDropiCapComingSoon: "Seguimiento de envíos",
+      landingDropiCapComingSoon: "Seguimiento de envíos (Próximamente)",
 
       landingIntegrationAvailable: "Disponible",
       landingIntegrationComingSoon: "Próximamente",
@@ -3321,7 +3321,7 @@ const resources = {
       landingDropiCapAvailable2: "View products and catalog",
       landingDropiCapAvailable3: "Check inventory and stock",
       landingDropiCapAvailable4: "AI finishes purchases and generates orders",
-      landingDropiCapComingSoon: "Shipping tracking",
+      landingDropiCapComingSoon: "Shipping tracking (Coming soon)",
 
       landingIntegrationAvailable: "Available",
       landingIntegrationComingSoon: "Coming soon",
