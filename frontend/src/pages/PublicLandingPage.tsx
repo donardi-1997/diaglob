@@ -776,14 +776,28 @@ export default function PublicLandingPage({
                   <Check size={14} /> {t("landingIntegrationAvailable")}
                 </div>
               </div>
-              <div className="landing-integration-card">
+              <div className="landing-integration-card landing-integration-dropi">
                 <div className="landing-integration-icon">
                   <Package size={28} />
                 </div>
                 <h3>{t("landingIntegrationDropiIndirect")}</h3>
                 <p>{t("landingIntegrationDropiIndirectDesc")}</p>
-                <div className="landing-integration-status available">
-                  <Check size={14} /> {t("landingIntegrationAvailable")}
+                <div className="landing-dropi-caps">
+                  <div className="landing-dropi-cap available">
+                    <Check size={14} /> {t("landingDropiCapAvailable1")}
+                  </div>
+                  <div className="landing-dropi-cap available">
+                    <Check size={14} /> {t("landingDropiCapAvailable2")}
+                  </div>
+                  <div className="landing-dropi-cap available">
+                    <Check size={14} /> {t("landingDropiCapAvailable3")}
+                  </div>
+                  <div className="landing-dropi-cap available">
+                    <Check size={14} /> {t("landingDropiCapAvailable4")}
+                  </div>
+                  <div className="landing-dropi-cap coming-soon">
+                    <span className="landing-dropi-cap-dot"></span> {t("landingDropiCapComingSoon")}
+                  </div>
                 </div>
               </div>
             </div>
