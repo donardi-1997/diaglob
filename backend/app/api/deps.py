@@ -240,6 +240,19 @@ def get_store_scope(
     return store
 
 
+def get_allowed_store_ids(
+    membership: OrganizationMembership,
+):
+    if membership.all_stores:
+        return None
+
+    return [
+        store.id
+        for store in membership.stores
+        if store.active
+    ]
+
+
 def serialize_store_short(
     store: Store,
 ):
