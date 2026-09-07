@@ -16,6 +16,7 @@ from sqlalchemy.orm import sessionmaker
 from app import bedrock_knowledge_base as provisioning
 from app import main as api_main
 from app.api import knowledge as api_knowledge
+from app.services import knowledge_provisioning as api_knowledge_provisioning
 from app.db import Base, get_db
 from app.main import app, get_current_membership, get_current_user
 from app.models import (
@@ -492,12 +493,12 @@ def test_transient_provisioning_failure_retries_automatically():
     def succeed(_db, kb):
         kb.external_status = "ready"
 
-    with patch.object(api_knowledge, "SessionLocal", return_value=db), patch.object(
-        api_knowledge, "PROVISIONING_RETRY_DELAYS_SECONDS", (0, 0)
+    with patch.object(api_knowledge_provisioning, "SessionLocal", return_value=db), patch.object(
+        api_knowledge_provisioning, "PROVISIONING_RETRY_DELAYS_SECONDS", (0, 0)
     ), patch.object(
-        api_knowledge, "provision_diaglob_knowledge_base", side_effect=[transient, succeed]
+        api_knowledge_provisioning, "provision_diaglob_knowledge_base", side_effect=[transient, succeed]
     ) as provision:
-        api_knowledge.run_knowledge_base_provisioning(1)
+        api_knowledge_provisioning.run_knowledge_base_provisioning(1)
     assert provision.call_count == 2
     assert db.commit.called
 
@@ -1408,7 +1409,7 @@ def test_retry_endpoint_schedules_provisioning(api_client, db, status):
     kb = _make_local_kb(db, org, status=status)
 
     with patch("app.api.knowledge.run_knowledge_base_provisioning") as run, patch.object(
-        api_knowledge, "reconcile_knowledge_base_provisioning"
+        api_knowledge_provisioning, "reconcile_knowledge_base_provisioning"
     ) as reconcile:
         response = client.post(
             f"/api/knowledge-bases/{kb.id}/retry-provisioning"
@@ -1430,9 +1431,9 @@ def test_manual_retry_worker_completes_provisioning(api_client, db):
     patches = _successful_remote_patches()
 
     with patch.object(
-        api_knowledge, "SessionLocal", TestingSessionLocal
+        api_knowledge_provisioning, "SessionLocal", TestingSessionLocal
     ), patch.object(
-        api_knowledge, "PROVISIONING_RETRY_DELAYS_SECONDS", (0,)
+        api_knowledge_provisioning, "PROVISIONING_RETRY_DELAYS_SECONDS", (0,)
     ), patches[0], patches[1], patches[2], patches[3], patches[4]:
         response = client.post(
             f"/api/knowledge-bases/{kb_id}/retry-provisioning"
@@ -1490,12 +1491,12 @@ def test_manual_retry_task_persists_aws_failure(db):
         ),
     )
 
-    with patch.object(api_knowledge, "SessionLocal", return_value=db), patch.object(
-        api_knowledge, "PROVISIONING_RETRY_DELAYS_SECONDS", (0,)
+    with patch.object(api_knowledge_provisioning, "SessionLocal", return_value=db), patch.object(
+        api_knowledge_provisioning, "PROVISIONING_RETRY_DELAYS_SECONDS", (0,)
     ), patch.object(
         provisioning, "create_s3_vectors_index", side_effect=failure
     ) as create_index:
-        api_knowledge.run_knowledge_base_provisioning(kb_id)
+        api_knowledge_provisioning.run_knowledge_base_provisioning(kb_id)
 
     verify_db = TestingSessionLocal()
     try:
@@ -1539,10 +1540,10 @@ def test_startup_reconciler_resumes_active_states_and_skips_deleting(db):
         inactive.id,
     )
 
-    with patch.object(api_knowledge, "SessionLocal", return_value=db), patch.object(
-        api_knowledge, "schedule_knowledge_base_provisioning"
+    with patch.object(api_knowledge_provisioning, "SessionLocal", return_value=db), patch.object(
+        api_knowledge_provisioning, "schedule_knowledge_base_provisioning"
     ) as schedule:
-        api_knowledge.reconcile_knowledge_base_provisioning()
+        api_knowledge_provisioning.reconcile_knowledge_base_provisioning()
 
     verify_db = TestingSessionLocal()
     try:

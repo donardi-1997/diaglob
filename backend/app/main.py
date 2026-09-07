@@ -37,7 +37,7 @@ app = FastAPI(
 
 @app.on_event("startup")
 def reconcile_knowledge_base_provisioning_on_startup() -> None:
-    from .api.knowledge import reconcile_knowledge_base_provisioning
+    from .services.knowledge_provisioning import reconcile_knowledge_base_provisioning
     reconcile_knowledge_base_provisioning()
 
 # ============================================================
