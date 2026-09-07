@@ -1,86 +1,29 @@
-import json
-import os
+"""Diaglob API — FastAPI application bootstrap."""
+
 import logging
-import re
 import time
-from typing import Literal
+from collections import defaultdict
 
-from datetime import datetime, timedelta, timezone
-
-from fastapi import (
-    BackgroundTasks,
-    Depends,
-    FastAPI,
-    File,
-    HTTPException,
-    Request,
-    UploadFile,
-)
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import PlainTextResponse, RedirectResponse
-from fastapi.security import (
-    HTTPAuthorizationCredentials,
-    HTTPBearer,
-)
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
-from pydantic import BaseModel, Field, field_validator
-from sqlalchemy.orm import Session
 
-from .auth import verify_cognito_access_token
+from .db import Base, engine
+from .models import OrganizationMembership
 
-from .markets import AMERICA_MARKETS, get_market
-from .plan_limits import get_organization_limits
-from .permissions import (
-    get_permissions_for_role,
-    has_permission,
-)
-from .db import Base, SessionLocal, engine, get_db
-from .models import (
-    Agent,
-    Automation,
-    AutomationCampaign,
-    AutomationAudienceMember,
-    AutomationRun,
-    AutomationRecipientExecution,
-    AutomationExecution,
-    AutomationFlow,
-    AutomationFlowVersion,
-    AutomationFlowRun,
-    AutomationFlowRecipientExecution,
-    AutomationNodeExecution,
-    CommerceConnection,
-    Customer,
-    CustomerStoreProfile,
-    KnowledgeBase,
-    Order,
-    Product,
-    ProductVariant,
-    Message,
-    Organization,
-    OrganizationInvitation,
-    OrganizationMembership,
-    Store,
-    User,
-)
-
-from .automations import (
-    safe_emit_event,
-)
-
-
-
-
-
-
-
-
+# ============================================================
+# DB BOOTSTRAP
+# ============================================================
 
 Base.metadata.create_all(bind=engine)
 
 logger = logging.getLogger(__name__)
 
+# ============================================================
+# APP CREATION
+# ============================================================
 
 app = FastAPI(
     title="Diaglob API",
@@ -88,12 +31,18 @@ app = FastAPI(
     description="Backend API for Diaglob",
 )
 
+# ============================================================
+# STARTUP
+# ============================================================
 
 @app.on_event("startup")
 def reconcile_knowledge_base_provisioning_on_startup() -> None:
     from .api.knowledge import reconcile_knowledge_base_provisioning
     reconcile_knowledge_base_provisioning()
 
+# ============================================================
+# MIDDLEWARE
+# ============================================================
 
 app.add_middleware(
     CORSMiddleware,
@@ -111,10 +60,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-# ============================================================
-# SECURITY HEADERS MIDDLEWARE
-# ============================================================
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(
@@ -140,9 +85,6 @@ app.add_middleware(SecurityHeadersMiddleware)
 # ============================================================
 # RATE LIMITING (simple in-memory)
 # ============================================================
-
-import time
-from collections import defaultdict
 
 _rate_limit_store: dict[str, list[float]] = defaultdict(list)
 
@@ -215,23 +157,24 @@ app.add_middleware(RateLimitMiddleware)
 # API ROUTERS
 # ============================================================
 
-from .api.health import router as health_router
-from .api.auth import router as auth_router
-from .api.organizations import router as organizations_router
-from .api.stores import router as stores_router
-from .api.customers import router as customers_router
-from .api.products import router as products_router
-from .api.orders import router as orders_router
-from .api.commerce import router as commerce_router
-from .api.shopify import router as shopify_router
-from .api.google import router as google_router
-from .api.knowledge import router as knowledge_router
-from .api.billing import router as billing_router
-from .api.automations import router as automations_router
-from .api.whatsapp import router as whatsapp_router
-from .api.conversations import router as conversations_router
-from .api.analytics import router as analytics_router
-from .api.dropi import router as dropi_router
+from .api.analytics import router as analytics_router  # noqa: E402
+from .api.automations import router as automations_router  # noqa: E402
+from .api.auth import router as auth_router  # noqa: E402
+from .api.billing import router as billing_router  # noqa: E402
+from .api.commerce import router as commerce_router  # noqa: E402
+from .api.conversations import router as conversations_router  # noqa: E402
+from .api.customers import router as customers_router  # noqa: E402
+from .api.dropi import router as dropi_router  # noqa: E402
+from .api.google import router as google_router  # noqa: E402
+from .api.health import router as health_router  # noqa: E402
+from .api.knowledge import router as knowledge_router  # noqa: E402
+from .api.markets import router as markets_router  # noqa: E402
+from .api.orders import router as orders_router  # noqa: E402
+from .api.organizations import router as organizations_router  # noqa: E402
+from .api.products import router as products_router  # noqa: E402
+from .api.shopify import router as shopify_router  # noqa: E402
+from .api.stores import router as stores_router  # noqa: E402
+from .api.whatsapp import router as whatsapp_router  # noqa: E402
 
 app.include_router(health_router)
 app.include_router(auth_router)
@@ -250,615 +193,16 @@ app.include_router(whatsapp_router)
 app.include_router(conversations_router)
 app.include_router(analytics_router)
 app.include_router(dropi_router)
+app.include_router(markets_router)
 
-# Re-export dependency functions from deps so that
-# tests importing from app.main get the same function
-# objects used by the routers.
-from .api.deps import (  # noqa: F811
-    get_allowed_store_ids,
+# ============================================================
+# TEST COMPATIBILITY RE-EXPORTS
+# ============================================================
+# Tests import these from app.main for dependency overrides.
+# Keep until tests are migrated to import from api.deps directly.
+
+from .api.deps import (  # noqa: E402, F401
     get_current_user,
     get_current_membership,
-    get_current_organization,
-    get_store_scope,
     require_permission,
 )
-
-# Re-export Google helpers from api/google for deferred
-# endpoints still in main.py (KB/Bedrock endpoints).
-from .api.google import (  # noqa: F811
-    _get_valid_google_token,
-    _require_drive_scope,
-)
-
-# Re-export google_security functions for backward
-# compatibility (tests mock via app.main.*).
-from .google_security import (  # noqa: F811
-    encrypt_google_secret,
-    decrypt_google_secret,
-)
-
-# Re-export google_drive_client functions for backward
-# compatibility (tests mock via app.main.*).
-from .google_drive_client import (  # noqa: F811
-    list_drive_files,
-    list_drive_folders,
-)
-
-
-
-class AgentAskRequest(BaseModel):
-    question: str
-    number_of_results: int = 5
-
-
-class AgentCreate(BaseModel):
-    name: str
-    role: str
-    active: bool = True
-    store_ids: list[int] = []
-    knowledge_base_ids: list[int] = []
-
-
-class AgentUpdate(BaseModel):
-    name: str | None = None
-    role: str | None = None
-    active: bool | None = None
-    store_ids: list[int] | None = None
-    knowledge_base_ids: list[int] | None = None
-
-
-bearer_scheme = HTTPBearer(
-    auto_error=False,
-)
-
-
-
-
-
-def get_active_member_usage(
-    db: Session,
-    organization_id: int,
-):
-    """
-    Cuenta los miembros activos de toda la organización.
-
-    El owner también consume un cupo.
-    Miembros inactivos no consumen capacidad.
-    """
-
-    return (
-        db.query(OrganizationMembership)
-        .filter(
-            OrganizationMembership.organization_id
-            == organization_id,
-            OrganizationMembership.active.is_(True),
-        )
-        .count()
-    )
-
-
-def ensure_member_capacity(
-    db: Session,
-    organization_id: int,
-):
-    """
-    Valida capacidad global de miembros
-    para toda la organización.
-    """
-
-    organization = (
-        db.query(Organization)
-        .filter(
-            Organization.id
-            == organization_id
-        )
-        .first()
-    )
-
-    if not organization:
-        raise HTTPException(
-            status_code=404,
-            detail="Organization not found",
-        )
-
-    limits = get_organization_limits(
-        organization
-    )
-
-    active_members = (
-        get_active_member_usage(
-            db,
-            organization_id,
-        )
-    )
-
-    limit = limits.members
-
-    if active_members >= limit:
-        plan_name = (
-            (organization.plan or "none")
-            .strip()
-            .lower()
-            .capitalize()
-        )
-
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "code":
-                    "MEMBER_LIMIT_REACHED",
-
-                "message":
-                    (
-                        f"Tu plan {plan_name} "
-                        f"permite hasta {limit} "
-                        "miembros activos. "
-                        f"Actualmente tienes "
-                        f"{active_members}. "
-                        "Desactiva un miembro o mejora "
-                        "tu plan para agregar otro."
-                    ),
-
-                "resource":
-                    "members",
-
-                "used":
-                    active_members,
-
-                "limit":
-                    limit,
-
-                "remaining":
-                    max(
-                        limit - active_members,
-                        0,
-                    ),
-            },
-        )
-
-
-def get_active_store_usage(
-    db: Session,
-    organization_id: int,
-):
-    return (
-        db.query(Store)
-        .filter(
-            Store.organization_id
-            == organization_id,
-            Store.deleted.is_(False),
-            Store.active.is_(True),
-        )
-        .count()
-    )
-
-
-def ensure_active_store_capacity(
-    db: Session,
-    organization_id: int,
-):
-    organization = (
-        db.query(Organization)
-        .filter(
-            Organization.id
-            == organization_id
-        )
-        .first()
-    )
-
-    if not organization:
-        raise HTTPException(
-            status_code=404,
-            detail="Organization not found",
-        )
-
-    if organization.subscription_status in {
-        "past_due",
-        "paused",
-        "canceled",
-    }:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "Tu suscripción no está activa. "
-                "Actualiza tu método de pago o "
-                "renueva tu plan para activar tiendas."
-            ),
-        )
-
-    limits = get_organization_limits(
-        organization
-    )
-
-    active_stores = (
-        get_active_store_usage(
-            db,
-            organization_id,
-        )
-    )
-
-    limit = limits.active_stores
-
-    if active_stores >= limit:
-        plan_name = (
-            (organization.plan or "none")
-            .strip()
-            .lower()
-            .capitalize()
-        )
-
-        store_word = (
-            "tienda activa"
-            if limit == 1
-            else "tiendas activas"
-        )
-
-        current_word = (
-            "tienda activa"
-            if active_stores == 1
-            else "tiendas activas"
-        )
-
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "code":
-                    "ACTIVE_STORE_LIMIT_REACHED",
-
-                "message":
-                    (
-                        f"Tu plan {plan_name} "
-                        f"permite hasta {limit} "
-                        f"{store_word}. "
-                        f"Actualmente tienes "
-                        f"{active_stores} "
-                        f"{current_word}. "
-                        "Suspende una tienda o mejora "
-                        "tu plan para activar otra."
-                    ),
-
-                "resource":
-                    "stores",
-
-                "used":
-                    active_stores,
-
-                "limit":
-                    limit,
-
-                "remaining":
-                    max(
-                        limit - active_stores,
-                        0,
-                    ),
-            },
-        )
-
-
-def serialize_store_short(
-    store: Store,
-):
-    return {
-        "id": store.id,
-        "name": store.name,
-        "country_code": store.country_code,
-        "currency": store.currency,
-    }
-
-
-def serialize_agent(
-    agent: Agent,
-):
-    return {
-        "id": agent.id,
-        "organization_id": agent.organization_id,
-        "name": agent.name,
-        "role": agent.role,
-        "active": agent.active,
-        "stores": [
-            serialize_store_short(store)
-            for store in agent.stores
-            if store.active
-        ],
-        "knowledge_bases": [
-            {
-                "id": knowledge_base.id,
-                "name": knowledge_base.name,
-                "scope": knowledge_base.scope,
-                "active": knowledge_base.active,
-            }
-            for knowledge_base in agent.knowledge_bases
-        ],
-    }
-
-
-def serialize_team_invitation(
-    invitation: OrganizationInvitation,
-):
-    status = invitation.status
-
-    if (
-        status == "pending"
-        and invitation.expires_at
-        <= datetime.utcnow()
-    ):
-        status = "expired"
-
-    return {
-        "id":
-            invitation.id,
-
-        "organization_id":
-            invitation.organization_id,
-
-        "email":
-            invitation.email,
-
-        "role":
-            invitation.role,
-
-        "all_stores":
-            bool(
-                invitation.all_stores
-            ),
-
-        "active":
-            status == "pending",
-
-        "status":
-            status,
-
-        "stores": [
-            serialize_store_short(store)
-            for store in invitation.stores
-            if not store.deleted
-        ],
-
-        "expires_at":
-            invitation.expires_at.isoformat(),
-
-        "accepted_at":
-            (
-                invitation.accepted_at.isoformat()
-                if invitation.accepted_at
-                else None
-            ),
-
-        "created_at":
-            invitation.created_at.isoformat(),
-    }
-
-
-def serialize_team_member(
-    membership: OrganizationMembership,
-):
-    return {
-        "id": membership.id,
-        "user_id": membership.user_id,
-        "name": membership.user.name,
-        "email": membership.user.email,
-        "role": membership.role,
-        "all_stores": bool(
-            membership.all_stores
-        ),
-        "active": bool(
-            membership.active
-        ),
-        "stores": [
-            serialize_store_short(store)
-            for store in membership.stores
-            if not store.deleted
-        ],
-        "created_at":
-            membership.created_at.isoformat(),
-    }
-
-
-def resolve_team_member_stores(
-    organization_id: int,
-    store_ids: list[int],
-    db: Session,
-):
-    requested_ids = sorted(
-        set(store_ids)
-    )
-
-    if not requested_ids:
-        return []
-
-    stores = (
-        db.query(Store)
-        .filter(
-            Store.organization_id
-            == organization_id,
-            Store.id.in_(requested_ids),
-            Store.deleted.is_(False),
-        )
-        .all()
-    )
-
-    found_ids = {
-        store.id
-        for store in stores
-    }
-
-    if found_ids != set(requested_ids):
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "code":
-                    "INVALID_TEAM_STORE",
-
-                "message":
-                    (
-                        "Una o más tiendas no pertenecen "
-                        "a esta organización."
-                    ),
-            },
-        )
-
-    return stores
-
-
-def resolve_member_stores(
-    membership: OrganizationMembership,
-    store_ids: list[int],
-    db: Session,
-):
-    requested_ids = sorted(
-        set(store_ids)
-    )
-
-    if not requested_ids:
-        return []
-
-    stores = (
-        db.query(Store)
-        .filter(
-            Store.organization_id
-            == membership.organization_id,
-            Store.id.in_(requested_ids),
-            Store.active.is_(True),
-        )
-        .all()
-    )
-
-    found_ids = {
-        store.id
-        for store in stores
-    }
-
-    if found_ids != set(requested_ids):
-        raise HTTPException(
-            status_code=400,
-            detail="One or more stores are invalid",
-        )
-
-    allowed_ids = get_allowed_store_ids(
-        membership
-    )
-
-    if (
-        allowed_ids is not None
-        and not set(requested_ids).issubset(
-            set(allowed_ids)
-        )
-    ):
-        raise HTTPException(
-            status_code=403,
-            detail="Store access denied",
-        )
-
-    return stores
-
-
-def resolve_organization_knowledge_bases(
-    organization_id: int,
-    knowledge_base_ids: list[int],
-    db: Session,
-):
-    requested_ids = sorted(
-        set(knowledge_base_ids)
-    )
-
-    if not requested_ids:
-        return []
-
-    knowledge_bases = (
-        db.query(KnowledgeBase)
-        .filter(
-            KnowledgeBase.organization_id
-            == organization_id,
-            KnowledgeBase.id.in_(requested_ids),
-        )
-        .all()
-    )
-
-    found_ids = {
-        knowledge_base.id
-        for knowledge_base in knowledge_bases
-    }
-
-    if found_ids != set(requested_ids):
-        raise HTTPException(
-            status_code=400,
-            detail="One or more knowledge bases are invalid",
-        )
-
-    return knowledge_bases
-
-
-# ============================================================
-# MARKETS
-# ============================================================
-
-@app.get("/api/markets")
-def list_markets(
-    membership: OrganizationMembership = Depends(
-        require_permission(
-            "stores.read"
-        )
-    ),
-):
-    return {
-        "items":
-            AMERICA_MARKETS,
-
-        "total":
-            len(
-                AMERICA_MARKETS
-            ),
-    }
-
-
-@app.get("/api/markets/{country_code}")
-def get_market_detail(
-    country_code: str,
-    membership: OrganizationMembership = Depends(
-        require_permission(
-            "stores.read"
-        )
-    ),
-):
-    market = get_market(
-        country_code
-    )
-
-    if not market:
-        raise HTTPException(
-            status_code=404,
-            detail=(
-                "Market not supported"
-            ),
-        )
-
-    return market
-
-
-def _slugify_store_name(
-    value: str,
-):
-    import re
-    import unicodedata
-
-    normalized = (
-        unicodedata.normalize(
-            "NFKD",
-            value,
-        )
-        .encode(
-            "ascii",
-            "ignore",
-        )
-        .decode(
-            "ascii"
-        )
-        .lower()
-    )
-
-    slug = re.sub(
-        r"[^a-z0-9]+",
-        "-",
-        normalized,
-    ).strip("-")
-
