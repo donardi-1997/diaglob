@@ -197,7 +197,7 @@ class TestOrganizationEndpoint:
             {"PADDLE_API_KEY": "test_key"},
             clear=False,
         ), patch(
-            "app.main.httpx.get",
+            "app.api.billing.httpx.get",
             side_effect=httpx.ReadTimeout(
                 "timeout"
             ),
@@ -224,7 +224,7 @@ class TestOrganizationEndpoint:
             {"PADDLE_API_KEY": "test_key"},
             clear=False,
         ), patch(
-            "app.main.httpx.get",
+            "app.api.billing.httpx.get",
             side_effect=httpx.ConnectError(
                 "connection refused"
             ),
@@ -371,7 +371,7 @@ class TestOrganizationEndpoint:
             {"PADDLE_API_KEY": "test_key"},
             clear=False,
         ), patch(
-            "app.main.httpx.get",
+            "app.api.billing.httpx.get",
             return_value=mock_response,
         ):
             resp = client.get("/api/organization")
