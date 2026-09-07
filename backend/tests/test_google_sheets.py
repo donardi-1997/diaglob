@@ -815,11 +815,11 @@ class TestGoogleDisconnect:
         client = client_factory(org)
 
         with patch(
-            "app.main.decrypt_google_secret",
+            "app.api.google.decrypt_google_secret",
             return_value="decrypted-token",
         ):
             with patch(
-                "app.main.httpx"
+                "app.api.google.httpx"
             ) as mock_httpx:
                 mock_httpx.post = MagicMock(
                     return_value=MagicMock(
@@ -874,11 +874,11 @@ class TestGoogleSheetsList:
         )
 
         with patch(
-            "app.main._get_valid_google_token",
+            "app.api.google._get_valid_google_token",
             return_value="valid-token",
         ):
             with patch(
-                "app.main.httpx.AsyncClient"
+                "app.api.google.httpx.AsyncClient"
             ) as mock_httpx:
                 mock_httpx.return_value.__aenter__ = (
                     AsyncMock(
@@ -962,11 +962,11 @@ class TestGoogleSheetTabs:
         )
 
         with patch(
-            "app.main._get_valid_google_token",
+            "app.api.google._get_valid_google_token",
             return_value="valid-token",
         ):
             with patch(
-                "app.main.httpx.AsyncClient"
+                "app.api.google.httpx.AsyncClient"
             ) as mock_httpx:
                 mock_httpx.return_value.__aenter__ = (
                     AsyncMock(
@@ -2476,7 +2476,7 @@ class TestGoogleOAuthCallbackCorrectness:
             "GOOGLE_CLIENT_ID": "client-id",
             "GOOGLE_CLIENT_SECRET": "client-secret",
         }), patch(
-            "app.main.httpx.post",
+            "app.api.google.httpx.post",
             side_effect=RuntimeError("exchange failed"),
         ):
             first = client.get(
@@ -2562,13 +2562,13 @@ class TestGoogleOAuthCallbackCorrectness:
             "GOOGLE_CLIENT_ID": "client-id",
             "GOOGLE_CLIENT_SECRET": "client-secret",
         }), patch(
-            "app.main.httpx.post",
+            "app.api.google.httpx.post",
             return_value=token_response,
         ), patch(
-            "app.main.httpx.get",
+            "app.api.google.httpx.get",
             return_value=user_response,
         ), patch(
-            "app.main.encrypt_google_secret",
+            "app.api.google.encrypt_google_secret",
             side_effect=lambda value: f"encrypted-{value}",
         ):
             response = client.get(
@@ -2684,10 +2684,10 @@ class TestGoogleDrivePhase2:
         client = client_factory(org)
 
         with patch(
-            "app.main._get_valid_google_token",
+            "app.api.google._get_valid_google_token",
             return_value="token",
         ), patch(
-            "app.main.list_drive_files",
+            "app.google_drive_client.list_drive_files",
             return_value={
                 "files": [{
                     "id": "file-1",
