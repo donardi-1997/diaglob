@@ -992,7 +992,7 @@ class TestGoogleSheetTabs:
 
 class TestAddGoogleSheetSource:
     def test_workbook_content_uses_visible_non_empty_tabs(self):
-        from app.api.knowledge import _fetch_google_workbook_content
+        from app.services.google_sheet_sources import _fetch_google_workbook_content
 
         metadata = {
             "title": "Operations",
@@ -1010,10 +1010,10 @@ class TestAddGoogleSheetSource:
             }[tab_name]
 
         with patch(
-            "app.services.knowledge_sources.get_spreadsheet_metadata",
+            "app.services.google_sheet_sources.get_spreadsheet_metadata",
             AsyncMock(return_value=metadata),
         ), patch(
-            "app.services.knowledge_sources.fetch_sheet_values",
+            "app.services.google_sheet_sources.fetch_sheet_values",
             AsyncMock(side_effect=values),
         ) as fetch_values:
             title, content = asyncio.run(
@@ -1030,16 +1030,16 @@ class TestAddGoogleSheetSource:
         ]
 
     def test_workbook_content_rejects_only_empty_visible_tabs(self):
-        from app.api.knowledge import _fetch_google_workbook_content
+        from app.services.google_sheet_sources import _fetch_google_workbook_content
 
         with patch(
-            "app.services.knowledge_sources.get_spreadsheet_metadata",
+            "app.services.google_sheet_sources.get_spreadsheet_metadata",
             AsyncMock(return_value={
                 "title": "Empty Book",
                 "sheets": [{"title": "Empty", "hidden": False}],
             }),
         ), patch(
-            "app.services.knowledge_sources.fetch_sheet_values",
+            "app.services.google_sheet_sources.fetch_sheet_values",
             AsyncMock(return_value=[]),
         ):
             with pytest.raises(
@@ -1072,16 +1072,16 @@ class TestAddGoogleSheetSource:
         with patch(
             "app.api.knowledge._get_valid_google_token", return_value="token"
         ), patch(
-            "app.api.knowledge._fetch_google_workbook_content",
+            "app.services.google_sheet_sources._fetch_google_workbook_content",
             AsyncMock(return_value=(
                 "Operations",
                 "# Spreadsheet: Operations\n\n## Sheet: Data\nName\nAlice\n",
             )),
         ), patch(
-            "app.api.knowledge.upload_knowledge_file",
+            "app.services.google_sheet_sources.upload_knowledge_file",
             return_value={"bucket": "bucket", "key": "workbook-key"},
         ), patch(
-            "app.api.knowledge.start_ingestion_job", return_value="job-workbook"
+            "app.services.google_sheet_sources.start_ingestion_job", return_value="job-workbook"
         ):
             resp = client.post(
                 f"/api/knowledge-bases/{kb.id}/sources/google-sheet",
@@ -1191,14 +1191,14 @@ class TestAddGoogleSheetSource:
                     AsyncMock(return_value=False)
                 )
                 with patch(
-                    "app.api.knowledge.upload_knowledge_file"
+                    "app.services.google_sheet_sources.upload_knowledge_file"
                 ) as mock_upload:
                     mock_upload.return_value = {
                         "bucket": "diaglob-bucket",
                         "key": "google/sheet-key/Sheet1.csv",
                     }
                     with patch(
-                        "app.api.knowledge.start_ingestion_job",
+                        "app.services.google_sheet_sources.start_ingestion_job",
                         return_value="job-789",
                     ):
                         resp = client.post(
@@ -1295,7 +1295,7 @@ class TestAddGoogleSheetSource:
         db.commit()
         client = client_factory(org)
 
-        with patch("app.services.knowledge_sources._fetch_google_workbook_content") as fetch:
+        with patch("app.services.google_sheet_sources._fetch_google_workbook_content") as fetch:
             resp = client.post(
                 f"/api/knowledge-bases/{kb.id}/sources/google-sheet",
                 json={
@@ -1343,17 +1343,17 @@ class TestSyncGoogleSheetSource:
             "app.api.knowledge._get_valid_google_token",
             return_value="valid-token",
         ), patch(
-            "app.api.knowledge._fetch_google_workbook_content",
+            "app.services.google_sheet_sources._fetch_google_workbook_content",
             AsyncMock(return_value=(
                 "New Workbook Name",
                 "# Spreadsheet: New Workbook Name\n\n"
                 "## Sheet: Data\nName\nAlice\n",
             )),
         ), patch(
-            "app.api.knowledge.upload_knowledge_file",
+            "app.services.google_sheet_sources.upload_knowledge_file",
             return_value={"bucket": "diaglob-bucket", "key": "new-key"},
         ) as upload, patch(
-            "app.api.knowledge.start_ingestion_job", return_value="job-workbook"
+            "app.services.google_sheet_sources.start_ingestion_job", return_value="job-workbook"
         ):
             resp = client.post(
                 f"/api/knowledge-bases/{kb.id}/sources/{source.id}/sync"
@@ -1436,14 +1436,14 @@ class TestSyncGoogleSheetSource:
                     AsyncMock(return_value=False)
                 )
                 with patch(
-                    "app.api.knowledge.upload_knowledge_file"
+                    "app.services.google_sheet_sources.upload_knowledge_file"
                 ) as mock_upload:
                     mock_upload.return_value = {
                         "bucket": "diaglob-bucket",
                         "key": "google/sheet-key/Sheet1.csv",
                     }
                     with patch(
-                        "app.api.knowledge.start_ingestion_job",
+                        "app.services.google_sheet_sources.start_ingestion_job",
                         return_value="job-new",
                     ):
                         resp = client.post(

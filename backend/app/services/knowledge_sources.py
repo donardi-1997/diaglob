@@ -19,11 +19,6 @@ from ..google_drive_client import (
     list_folder_children,
     validate_folder_sync_limits,
 )
-from ..google_sheets_client import (
-    fetch_sheet_values,
-    get_spreadsheet_metadata,
-    normalize_to_csv,
-)
 from ..knowledge_storage import delete_knowledge_file, upload_knowledge_file
 from ..models import GoogleConnection, KnowledgeBase, KnowledgeSource
 
@@ -174,39 +169,6 @@ def _derive_freshness(
 # ============================================================
 # DB + EXTERNAL API HELPERS
 # ============================================================
-
-
-async def _fetch_google_workbook_content(
-    access_token: str,
-    spreadsheet_id: str,
-    spreadsheet_title: str,
-) -> tuple[str, str]:
-    metadata = await get_spreadsheet_metadata(
-        access_token, spreadsheet_id
-    )
-    spreadsheet_title = metadata.get("title", spreadsheet_title)
-    sections = []
-    for tab in metadata.get("sheets", []):
-        if tab.get("hidden", False):
-            continue
-        tab_name = tab.get("title", "")
-        values = await fetch_sheet_values(
-            access_token, spreadsheet_id, tab_name
-        )
-        csv_content = normalize_to_csv(
-            values, spreadsheet_title, tab_name
-        )
-        if csv_content.strip():
-            sections.append(f"## Sheet: {tab_name}\n{csv_content.strip()}")
-
-    if not sections:
-        raise ValueError("Workbook has no non-empty visible sheets")
-
-    return spreadsheet_title, (
-        f"# Spreadsheet: {spreadsheet_title}\n\n"
-        + "\n\n".join(sections)
-        + "\n"
-    )
 
 
 def _find_active_drive_source(

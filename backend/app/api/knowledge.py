@@ -40,7 +40,6 @@ from ..services.knowledge_sources import (
     _delete_artifact_best_effort,
     _download_drive_child,
     _drive_conflict_reason,
-    _fetch_google_workbook_content,
     _find_active_drive_source,
     _finish_folder_operation,
     _folder_file_record,
@@ -63,6 +62,10 @@ from ..services.drive_file_sources import (
     _EmptyContentError,
     DriveSourceConflictError,
 )
+from ..services.google_sheet_sources import (
+    add_google_sheet,
+    sync_google_sheet,
+)
 from ..db import SessionLocal, get_db
 from ..google_drive_client import (
     GoogleDriveFileTooLarge,
@@ -74,12 +77,7 @@ from ..google_drive_client import (
     list_folder_children,
     validate_folder_sync_limits,
 )
-from ..google_sheets_client import (
-    extract_spreadsheet_id,
-    fetch_sheet_values,
-    get_spreadsheet_metadata,
-    normalize_to_csv,
-)
+from ..google_sheets_client import extract_spreadsheet_id
 from ..knowledge_storage import (
     delete_knowledge_file,
     upload_knowledge_file,
@@ -1090,27 +1088,18 @@ async def add_google_sheet_source(
         )
 
     spreadsheet_title = payload.spreadsheet_name or sheet_id
+
     try:
-        if payload.import_mode == "workbook":
-            spreadsheet_title, csv_content = (
-                await _fetch_google_workbook_content(
-                    access_token, sheet_id, spreadsheet_title
-                )
-            )
-        else:
-            try:
-                metadata = await get_spreadsheet_metadata(
-                    access_token, sheet_id
-                )
-                spreadsheet_title = metadata.get("title", spreadsheet_title)
-            except Exception:
-                pass
-            values = await fetch_sheet_values(
-                access_token, sheet_id, source_sheet_name
-            )
-            csv_content = normalize_to_csv(
-                values, spreadsheet_title, source_sheet_name
-            )
+        return await add_google_sheet(
+            db=db,
+            org_id=org_id,
+            kb=kb,
+            sheet_id=sheet_id,
+            import_mode=payload.import_mode,
+            sheet_name=source_sheet_name,
+            spreadsheet_title=spreadsheet_title,
+            access_token=access_token,
+        )
     except httpx.HTTPStatusError as exc:
         code, msg = map_google_api_error(exc.response.status_code)
         raise HTTPException(
@@ -1122,82 +1111,6 @@ async def add_google_sheet_source(
             status_code=400,
             detail=str(exc),
         ) from exc
-
-    if not csv_content.strip():
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Workbook has no non-empty visible sheets"
-                if payload.import_mode == "workbook"
-                else "Sheet is empty"
-            ),
-        )
-
-    # Upload to S3
-    filename = f"{sheet_id}_{source_sheet_name or 'workbook'}.csv"
-    try:
-        s3_result = upload_knowledge_file(
-            organization_id=org_id,
-            knowledge_base_id=knowledge_base_id,
-            filename=filename,
-            content=csv_content.encode("utf-8"),
-            content_type="text/csv",
-        )
-    except Exception as exc:
-        raise HTTPException(
-            status_code=500,
-            detail=f"S3 upload failed: {exc}",
-        ) from exc
-
-    # Create KnowledgeSource
-    source = KnowledgeSource(
-        organization_id=org_id,
-        knowledge_base_id=knowledge_base_id,
-        name=(
-            spreadsheet_title
-            if payload.import_mode == "workbook"
-            else f"{spreadsheet_title} — {source_sheet_name}"
-        ),
-        source_type="google_sheet",
-        content_type="text/csv",
-        s3_bucket=s3_result["bucket"],
-        s3_key=s3_result["key"],
-        size_bytes=len(csv_content.encode("utf-8")),
-        status="uploaded",
-        external_id=sheet_id,
-        external_name=spreadsheet_title,
-        sheet_name=source_sheet_name,
-        sync_status="uploaded",
-        metadata_json=json.dumps({"import_mode": payload.import_mode}),
-    )
-    db.add(source)
-    db.flush()
-
-    # Start Bedrock ingestion
-    ingestion_job_id = None
-    sync_status = "uploaded"
-
-    ingestion_job_id = start_ingestion_job(
-        kb.external_id,
-        kb.external_data_source_id,
-    )
-    if ingestion_job_id:
-        sync_status = "indexing"
-        source.ingestion_job_id = ingestion_job_id
-        source.sync_status = "indexing"
-    else:
-        sync_status = "uploaded"
-        source.sync_status = "uploaded"
-
-    db.commit()
-    db.refresh(source)
-
-    return {
-        "source_id": source.id,
-        "sync_status": sync_status,
-        "ingestion_job_id": ingestion_job_id,
-        "name": source.name,
-    }
 
 
 # ============================================================
@@ -1277,115 +1190,25 @@ async def sync_google_sheet_source(
             },
         )
 
-    # Mark as syncing
-    source.sync_status = "syncing"
-    source.sync_error = None
-    db.flush()
-
-    import_mode = _google_source_import_mode(source)
-
-    # Fetch the selected tab or every visible workbook tab.
     try:
-        if import_mode == "workbook":
-            spreadsheet_title, csv_content = (
-                await _fetch_google_workbook_content(
-                    access_token,
-                    source.external_id,
-                    source.external_name or source.external_id,
-                )
-            )
-            source.external_name = spreadsheet_title
-        else:
-            values = await fetch_sheet_values(
-                access_token,
-                source.external_id,
-                source.sheet_name,
-            )
-            csv_content = normalize_to_csv(
-                values,
-                source.external_name or "",
-                source.sheet_name or "",
-            )
+        return await sync_google_sheet(
+            db=db,
+            org_id=org_id,
+            kb=kb,
+            source=source,
+            access_token=access_token,
+        )
     except httpx.HTTPStatusError as exc:
         code, msg = map_google_api_error(exc.response.status_code)
-        source.sync_status = "failed"
-        source.sync_error = msg
-        db.commit()
         raise HTTPException(
             status_code=exc.response.status_code,
             detail={"code": code, "message": msg},
         ) from exc
     except ValueError as exc:
-        source.sync_status = "failed"
-        source.sync_error = str(exc)
-        db.commit()
         raise HTTPException(
             status_code=400,
             detail=str(exc),
         ) from exc
-
-    if not csv_content.strip():
-        source.sync_status = "failed"
-        source.sync_error = (
-            "Workbook has no non-empty visible sheets"
-            if import_mode == "workbook" else "Sheet is empty"
-        )
-        db.commit()
-        raise HTTPException(
-            status_code=400,
-            detail=source.sync_error,
-        )
-
-    # Upload to S3
-    filename = f"{source.external_id}_{source.sheet_name or 'workbook'}.csv"
-    try:
-        s3_result = upload_knowledge_file(
-            organization_id=org_id,
-            knowledge_base_id=knowledge_base_id,
-            filename=filename,
-            content=csv_content.encode("utf-8"),
-            content_type="text/csv",
-        )
-    except Exception as exc:
-        source.sync_status = "failed"
-        source.sync_error = f"S3 upload failed: {exc}"
-        db.commit()
-        raise HTTPException(
-            status_code=500,
-            detail=f"S3 upload failed: {exc}",
-        ) from exc
-
-    # Update source
-    source.s3_bucket = s3_result["bucket"]
-    source.s3_key = s3_result["key"]
-    source.size_bytes = len(csv_content.encode("utf-8"))
-    source.status = "uploaded"
-    source.last_synced_at = datetime.utcnow()
-
-    # Start Bedrock ingestion
-    ingestion_job_id = None
-    sync_status = "uploaded"
-
-    ingestion_job_id = start_ingestion_job(
-        kb.external_id,
-        kb.external_data_source_id,
-    )
-    if ingestion_job_id:
-        sync_status = "indexing"
-        source.ingestion_job_id = ingestion_job_id
-        source.sync_status = "indexing"
-    else:
-        sync_status = "uploaded"
-        source.sync_status = "uploaded"
-
-    db.commit()
-    db.refresh(source)
-
-    return {
-        "source_id": source.id,
-        "sync_status": sync_status,
-        "ingestion_job_id": ingestion_job_id,
-    }
 
 
 # ============================================================
