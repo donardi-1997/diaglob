@@ -628,3 +628,159 @@ def get_analytics_automations(
         date_from=d_from,
         date_to=d_to,
     )
+
+
+# ============================================================
+# ROUTES — Automation Templates
+# ============================================================
+
+
+@router.get("/api/stores/{store_id}/automation-templates")
+def list_automation_templates(
+    store_id: int,
+    category: str | None = None,
+    membership: OrganizationMembership = Depends(require_permission("automations.read")),
+    db: Session = Depends(get_db),
+):
+    from ..automation_templates import (
+        get_all_templates,
+        get_categories,
+        get_templates_by_category,
+        validate_template_availability,
+    )
+    from ..models import WhatsAppConnection, CommerceConnection
+
+    # Determine connected integrations
+    connected = set()
+
+    whatsapp = (
+        db.query(WhatsAppConnection)
+        .filter(
+            WhatsAppConnection.store_id == store_id,
+            WhatsAppConnection.organization_id == membership.organization_id,
+            WhatsAppConnection.status == "connected",
+        )
+        .first()
+    )
+    if whatsapp:
+        connected.add("whatsapp")
+
+    commerce = (
+        db.query(CommerceConnection)
+        .filter(
+            CommerceConnection.store_id == store_id,
+            CommerceConnection.organization_id == membership.organization_id,
+            CommerceConnection.status == "connected",
+        )
+        .first()
+    )
+    if commerce:
+        connected.add("shopify")
+
+    if category:
+        templates = get_templates_by_category(category)
+    else:
+        templates = get_all_templates()
+
+    # Add availability info to each template
+    for tmpl in templates:
+        avail = validate_template_availability(tmpl["id"], connected)
+        tmpl["availability"] = avail
+
+    return {
+        "items": templates,
+        "total": len(templates),
+        "categories": get_categories(),
+    }
+
+
+class AutomationFromTemplateRequest(BaseModel):
+    template_id: str
+
+
+@router.post("/api/stores/{store_id}/automation-templates")
+def create_automation_from_template(
+    store_id: int,
+    payload: AutomationFromTemplateRequest,
+    membership: OrganizationMembership = Depends(require_permission("automations.write")),
+    db: Session = Depends(get_db),
+):
+    from ..automation_templates import (
+        template_to_automation_data,
+        validate_template_availability,
+    )
+    from ..models import WhatsAppConnection, CommerceConnection
+    from ..services.product_analytics import track_first_automation_created
+
+    # Determine connected integrations
+    connected = set()
+
+    whatsapp = (
+        db.query(WhatsAppConnection)
+        .filter(
+            WhatsAppConnection.store_id == store_id,
+            WhatsAppConnection.organization_id == membership.organization_id,
+            WhatsAppConnection.status == "connected",
+        )
+        .first()
+    )
+    if whatsapp:
+        connected.add("whatsapp")
+
+    commerce = (
+        db.query(CommerceConnection)
+        .filter(
+            CommerceConnection.store_id == store_id,
+            CommerceConnection.organization_id == membership.organization_id,
+            CommerceConnection.status == "connected",
+        )
+        .first()
+    )
+    if commerce:
+        connected.add("shopify")
+
+    # Validate template availability
+    avail = validate_template_availability(payload.template_id, connected)
+    if not avail["available"]:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "TEMPLATE_INTEGRATION_REQUIRED",
+                "message": f"Missing integrations: {', '.join(avail['missing'])}",
+                "missing": avail["missing"],
+            },
+        )
+
+    # Get automation data from template
+    auto_data = template_to_automation_data(payload.template_id, store_id)
+    if auto_data is None:
+        raise HTTPException(status_code=404, detail="Template not found")
+
+    # Create automation
+    try:
+        result = create_legacy_automation(
+            db,
+            membership.organization_id,
+            store_id,
+            membership.user_id,
+            auto_data,
+        )
+    except CampaignConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except (CampaignValidationError, StoreNotFoundError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    # Analytics: template created
+    from ..services.product_analytics import capture
+    capture(
+        "automation_template_created",
+        distinct_id=str(membership.user_id),
+        properties={
+            "organization_id": membership.organization_id,
+            "store_id": store_id,
+            "template_id": payload.template_id,
+            "template_version": auto_data.get("template_version", 1),
+        },
+    )
+
+    return result

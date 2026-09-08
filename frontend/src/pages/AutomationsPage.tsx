@@ -5,11 +5,13 @@ import {
   Workflow,
   PlayCircle,
   GitBranch,
+  LayoutTemplate,
 } from "lucide-react";
 import AutomationsRules from "../components/AutomationsRules";
 import AutomationsExecutions from "../components/AutomationsExecutions";
 import AutomationCampaigns from "../components/AutomationCampaigns";
 import AutomationRunExplorer from "../components/AutomationRunExplorer";
+import AutomationTemplates from "../components/AutomationTemplates";
 
 const FlowList = lazy(() => import("../components/automation-flows/FlowList"));
 
@@ -21,6 +23,7 @@ interface AutomationsPageProps {
 
 
 type AutomationTab =
+  | "templates"
   | "rules"
   | "runs"
   | "executions"
@@ -32,6 +35,11 @@ const TABS: {
   labelKey: string;
   icon: typeof Workflow;
 }[] = [
+  {
+    key: "templates",
+    labelKey: "autoTabTemplates",
+    icon: LayoutTemplate,
+  },
   {
     key: "rules",
     labelKey: "autoTabRules",
@@ -62,7 +70,7 @@ export default function AutomationsPage({
   const { t } = useTranslation();
 
   const [activeTab, setActiveTab] =
-    useState<AutomationTab>("rules");
+    useState<AutomationTab>("templates");
 
   return (
     <div className="content">
@@ -101,6 +109,13 @@ export default function AutomationsPage({
 
       <div className="commerce-content">
         <AutomationCampaigns canWrite={canWrite} storeId={storeId} />
+        {activeTab === "templates" && (
+          <AutomationTemplates
+            canWrite={canWrite}
+            storeId={storeId}
+          />
+        )}
+
         {activeTab === "rules" && (
           <AutomationsRules
             canWrite={canWrite}

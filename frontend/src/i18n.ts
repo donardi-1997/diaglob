@@ -1222,6 +1222,23 @@ const resources = {
 
       autoTabRules: "Reglas",
       autoTabExecutions: "Ejecuciones",
+      autoTabTemplates: "Plantillas",
+      autoTabFlows: "Flujos",
+
+      // Automation templates
+      autoTemplateCategoryAll: "Todas",
+      autoTemplateCategorySales: "Ventas",
+      autoTemplateCategoryOrders: "Pedidos",
+      autoTemplateCategoryRetention: "Retención",
+      autoTemplateCategoryOperations: "Operaciones",
+      autoTemplateCreate: "Crear automatización",
+      autoTemplateCreating: "Creando...",
+      autoTemplateCreated: "Automatización creada como borrador.",
+      autoTemplateRequires: "Requiere",
+      autoTemplateMissingIntegration: "Faltan integraciones requeridas",
+      autoTemplateMinutes: "min",
+      autoTemplateEmptyTitle: "No se encontraron plantillas",
+      autoTemplateEmptyHelp: "Intenta con otra categoría.",
       autoLoadError:
         "No se pudieron cargar las automatizaciones.",
       autoNoRules:
@@ -3166,6 +3183,23 @@ const resources = {
 
       autoTabRules: "Rules",
       autoTabExecutions: "Executions",
+      autoTabTemplates: "Templates",
+      autoTabFlows: "Flows",
+
+      // Automation templates
+      autoTemplateCategoryAll: "All",
+      autoTemplateCategorySales: "Sales",
+      autoTemplateCategoryOrders: "Orders",
+      autoTemplateCategoryRetention: "Retention",
+      autoTemplateCategoryOperations: "Operations",
+      autoTemplateCreate: "Create automation",
+      autoTemplateCreating: "Creating...",
+      autoTemplateCreated: "Automation created as draft.",
+      autoTemplateRequires: "Requires",
+      autoTemplateMissingIntegration: "Missing required integrations",
+      autoTemplateMinutes: "min",
+      autoTemplateEmptyTitle: "No templates found",
+      autoTemplateEmptyHelp: "Try a different category.",
       autoLoadError:
         "Could not load automations.",
       autoNoRules:

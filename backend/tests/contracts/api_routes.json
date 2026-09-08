@@ -249,6 +249,10 @@
   ],
   [
     "GET",
+    "/api/stores/{store_id}/automation-templates"
+  ],
+  [
+    "GET",
     "/api/stores/{store_id}/automations"
   ],
   [
@@ -506,6 +510,10 @@
   [
     "POST",
     "/api/stores/{store_id}/automation-flows/{flow_id}/versions/{version_id}/publish"
+  ],
+  [
+    "POST",
+    "/api/stores/{store_id}/automation-templates"
   ],
   [
     "POST",

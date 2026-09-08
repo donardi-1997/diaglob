@@ -595,7 +595,7 @@ export default function StoreIntegrations({
         <div className="store-integration-header">
           <div className="store-integration-title">
             <Truck size={17} />
-            <strong>Dropi vía Shopify</strong>
+            <strong>Dropi</strong>
             <span
               className={
                 commerce?.dropi_detection?.status === "detected"
@@ -604,16 +604,50 @@ export default function StoreIntegrations({
               }
             >
               {commerce?.dropi_detection?.status === "detected"
-                ? "Conectado vía Shopify"
+                ? "Detectado vía Shopify"
                 : "No detectado"}
             </span>
           </div>
         </div>
+
         <div className="store-integration-detail">
-          {commerce?.connected
-            ? "Shopify está conectado, pero no hay evidencia verificable de Dropify mediante Shopify."
-            : "Dropi se evaluará únicamente después de conectar Shopify."}
+          {commerce?.dropi_detection?.status === "detected" ? (
+            <>
+              <p>
+                Dropi fue detectado como proveedor de tu tienda Shopify.
+                Los productos de Dropi están disponibles en tu catálogo
+                y pueden ser recomendados por la IA cuando un cliente pregunta.
+              </p>
+              <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginTop: 8 }}>
+                <strong>Próximamente:</strong> sincronización directa de productos,
+                gestión de pedidos, y actualización automática de inventario.
+              </p>
+            </>
+          ) : commerce?.connected ? (
+            <>
+              <p>
+                Shopify está conectado, pero no se detectó Dropi como proveedor.
+              </p>
+              <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginTop: 8 }}>
+                Si usas Dropi, asegúrate de que tu tienda Shopify tenga
+                productos importados desde Dropi.
+              </p>
+            </>
+          ) : (
+            <p>
+              Conecta Shopify primero para evaluar si Dropi está configurado como proveedor.
+            </p>
+          )}
         </div>
+
+        {commerce?.dropi_detection?.status === "detected" && (
+          <div className="store-integration-detail" style={{ marginTop: 8, padding: "8px 12px", background: "var(--control-bg)", borderRadius: 8 }}>
+            <div style={{ fontSize: "0.78rem", color: "var(--green)", display: "flex", alignItems: "center", gap: 6 }}>
+              <Check size={14} />
+              <span>Tus productos de Dropi están disponibles para la IA</span>
+            </div>
+          </div>
+        )}
       </div>
 
 
