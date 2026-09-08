@@ -1,7 +1,7 @@
 """Alembic environment for Diaglob.
 
 Imports all models to ensure target_metadata is complete.
-Uses DATABASE_URL from app.db_config.
+Uses DATABASE_URL from app.db_config at runtime.
 Does NOT import app.main or start FastAPI.
 """
 from logging.config import fileConfig
@@ -22,10 +22,14 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
+# Use DATABASE_URL from app config unless overridden in alembic.ini
+if not config.get_main_option("sqlalchemy.url"):
+    config.set_main_option("sqlalchemy.url", DATABASE_URL)
+
 
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode."""
-    url = DATABASE_URL
+    url = config.get_main_option("sqlalchemy.url")
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -43,7 +47,6 @@ def run_migrations_online() -> None:
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
-        url=DATABASE_URL,
     )
 
     with connectable.connect() as connection:

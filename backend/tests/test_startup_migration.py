@@ -61,8 +61,8 @@ class TestAlembicConfiguration:
 
     def test_baseline_revision_exists(self):
         versions = Path(__file__).resolve().parent.parent / "alembic" / "versions"
-        baseline = list(versions.glob("0001_baseline*"))
-        assert len(baseline) >= 1, "Baseline revision not found"
+        baseline = list(versions.glob("*initial_schema*"))
+        assert len(baseline) >= 1, "Initial schema migration not found"
 
     def test_target_metadata_contains_tables(self):
         """Alembic target_metadata must see all application tables."""
@@ -79,28 +79,15 @@ class TestAlembicConfiguration:
         assert "products" in tables
         assert len(tables) >= 30, f"Expected 30+ tables, got {len(tables)}"
 
-    def test_baseline_is_noop(self):
-        """Baseline revision upgrade() must be a no-op."""
-        baseline_path = (
-            Path(__file__).resolve().parent.parent
-            / "alembic"
-            / "versions"
-            / "0001_baseline.py"
-        )
-        text = baseline_path.read_text(encoding="utf-8")
+    def test_initial_schema_creates_tables(self):
+        """Initial schema migration must contain create_table operations."""
+        versions = Path(__file__).resolve().parent.parent / "alembic" / "versions"
+        schema_files = list(versions.glob("*initial_schema*"))
+        assert len(schema_files) >= 1, "Initial schema migration not found"
 
-        # Verify upgrade function is pass-only using AST
-        tree = ast.parse(text)
-        for node in ast.walk(tree):
-            if isinstance(node, ast.FunctionDef) and node.name == "upgrade":
-                body = node.body
-                # Filter out docstrings
-                real_body = [
-                    stmt for stmt in body
-                    if not (isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant))
-                ]
-                if len(real_body) != 1 or not isinstance(real_body[0], ast.Pass):
-                    pytest.fail("Baseline upgrade() is not a no-op")
+        text = schema_files[0].read_text(encoding="utf-8")
+        assert "create_table" in text, "Initial schema must create tables"
+        assert "organizations" in text, "Initial schema must create organizations table"
 
 
 class TestCreateAllRemoved:

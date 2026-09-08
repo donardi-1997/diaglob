@@ -1,0 +1,28 @@
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+# Exclude common non-application paths
+exclude = [
+    ".git",
+    "__pycache__",
+    ".mypy_cache",
+    ".ruff_cache",
+    "node_modules",
+    "dist",
+    "build",
+    "*.egg-info",
+    "alembic/versions",
+]
+
+[tool.ruff.lint]
+# Conservative high-signal rules only
+# E9: Runtime syntax errors
+# F63: Invalid assertions
+# F7: Syntax errors in type comments
+# F82: Undefined names
+select = ["E9", "F63", "F7", "F82"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests may have intentional unused imports/fixtures
+"tests/*" = ["F811"]

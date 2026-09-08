@@ -10,7 +10,12 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from ..billing import verify_paddle_signature
+from ..billing import (
+    verify_paddle_signature,
+    get_subscription_price_id,
+    get_plan_from_price_id,
+    get_billing_period_from_price_id,
+)
 from ..plans import get_plan
 from ..plan_limits import get_organization_limits, get_limits_for_plan
 from ..db import get_db
@@ -191,6 +196,8 @@ async def paddle_billing_webhook(
         billing_period_months = get_billing_period_from_price_id(price_id)
 
     update_billing_fields(organization, customer_id, subscription_id, price_id, billing_period_months)
+
+    status = data.get("status")
 
     if is_transaction_event:
         result = process_transaction_event(
