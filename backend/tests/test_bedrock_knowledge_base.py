@@ -1745,7 +1745,7 @@ def test_ingestion_status_ready_kb_with_ids_calls_bedrock(api_client, db):
     )
     source = _make_source(db, kb)
     with patch(
-        "app.api.knowledge.get_ingestion_status", return_value="synced"
+        "app.services.knowledge_ingestion.get_ingestion_status", return_value="synced"
     ) as mock_status:
         response = client.get(
             f"/api/knowledge-bases/{kb.id}/sources/{source.id}/ingestion-status"

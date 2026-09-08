@@ -18,11 +18,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..bedrock_ingestion import (
-    STATUS_FAILED,
-    STATUS_SYNCED,
-    get_ingestion_status,
     map_google_api_error,
-    start_ingestion_job,
 )
 from ..bedrock_knowledge_base import (
     BedrockProvisioningError,
@@ -38,6 +34,12 @@ from ..services.knowledge_bases import (
     list_knowledge_bases as svc_list_knowledge_bases,
     retry_knowledge_base_provisioning as svc_retry_knowledge_base_provisioning,
     update_knowledge_base as svc_update_knowledge_base,
+)
+from ..services.knowledge_ingestion import (
+    SourceNotFoundError as IngestionSourceNotFoundError,
+    refresh_source_ingestion_status as svc_refresh_source_ingestion_status,
+    trigger_source_reindex as svc_trigger_source_reindex,
+    is_source_sync_in_progress as svc_is_source_sync_in_progress,
 )
 from ..services.knowledge_provisioning import (
     PROVISIONING_RETRY_DELAYS_SECONDS,
@@ -881,18 +883,7 @@ def delete_knowledge_source(
     db.flush()
 
     # Trigger Bedrock reindex to remove deleted content from vector index
-    ingestion_job_id = None
-    reindex_status = "not_configured"
-
-    job_id = start_ingestion_job(
-        kb.external_id,
-        kb.external_data_source_id,
-    )
-    if job_id:
-        ingestion_job_id = job_id
-        reindex_status = "indexing"
-    else:
-        reindex_status = "reindex_failed"
+    ingestion_job_id, reindex_status = svc_trigger_source_reindex(kb)
 
     db.commit()
 
@@ -1061,7 +1052,7 @@ async def sync_google_sheet_source(
         )
 
     # Idempotency: don't re-sync if already syncing
-    if source.sync_status in ("syncing", "indexing"):
+    if svc_is_source_sync_in_progress(source):
         return {
             "source_id": source.id,
             "sync_status": source.sync_status,
@@ -1137,105 +1128,23 @@ def check_ingestion_status(
     ),
     db: Session = Depends(get_db),
 ):
-    org_id = membership.organization_id
-
-    kb = (
-        db.query(KnowledgeBase)
-        .filter(
-            KnowledgeBase.id == knowledge_base_id,
-            KnowledgeBase.organization_id == org_id,
+    try:
+        return svc_refresh_source_ingestion_status(
+            db,
+            organization_id=membership.organization_id,
+            knowledge_base_id=knowledge_base_id,
+            source_id=source_id,
         )
-        .first()
-    )
-
-    if not kb:
+    except IngestionSourceNotFoundError as exc:
+        detail = str(exc)
+        if "Knowledge Base" in detail:
+            detail = "Knowledge Base not found"
+        else:
+            detail = "Source not found"
         raise HTTPException(
             status_code=404,
-            detail="Knowledge Base not found",
-        )
-
-    source = (
-        db.query(KnowledgeSource)
-        .filter(
-            KnowledgeSource.id == source_id,
-            KnowledgeSource.knowledge_base_id == knowledge_base_id,
-            KnowledgeSource.organization_id == org_id,
-        )
-        .first()
-    )
-
-    if not source:
-        raise HTTPException(
-            status_code=404,
-            detail="Source not found",
-        )
-
-    # If not in indexing state, return current status
-    if source.sync_status != "indexing":
-        return {
-            "source_id": source.id,
-            "sync_status": source.sync_status,
-            "last_synced_at": (
-                source.last_synced_at.isoformat()
-                if source.last_synced_at
-                else None
-            ),
-            "sync_error": source.sync_error,
-        }
-
-    # Guard: do not call Bedrock if KB is not ready.
-    if kb.external_status != "ready":
-        return {
-            "source_id": source.id,
-            "sync_status": source.sync_status,
-            "last_synced_at": (
-                source.last_synced_at.isoformat()
-                if source.last_synced_at
-                else None
-            ),
-            "sync_error": source.sync_error,
-        }
-
-    # Check Bedrock ingestion status
-    if (
-        not source.ingestion_job_id
-        or not kb.external_id
-        or not kb.external_data_source_id
-    ):
-        return {
-            "source_id": source.id,
-            "sync_status": source.sync_status,
-            "last_synced_at": (
-                source.last_synced_at.isoformat()
-                if source.last_synced_at
-                else None
-            ),
-        }
-
-    new_status = get_ingestion_status(
-        kb.external_id,
-        kb.external_data_source_id,
-        source.ingestion_job_id,
-    )
-
-    if new_status != source.sync_status:
-        source.sync_status = new_status
-        if new_status == STATUS_SYNCED:
-            source.last_synced_at = datetime.utcnow()
-        elif new_status == STATUS_FAILED:
-            source.sync_error = "Bedrock ingestion failed"
-        db.commit()
-
-    return {
-        "source_id": source.id,
-        "sync_status": source.sync_status,
-        "last_synced_at": (
-            source.last_synced_at.isoformat()
-            if source.last_synced_at
-            else None
-        ),
-        "sync_error": source.sync_error,
-    }
+            detail=detail,
+        ) from exc
 
 
 # ============================================================
@@ -1572,7 +1481,7 @@ async def sync_drive_folder(
         )
 
     # Idempotency
-    if source.sync_status in ("syncing", "indexing"):
+    if svc_is_source_sync_in_progress(source):
         return {
             "source_id": source.id,
             "sync_status": source.sync_status,
@@ -1701,7 +1610,7 @@ async def sync_drive_file_source(
             )
 
     # Idempotency
-    if source.sync_status in ("syncing", "indexing"):
+    if svc_is_source_sync_in_progress(source):
         return {
             "source_id": source.id,
             "sync_status": source.sync_status,

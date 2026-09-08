@@ -1659,7 +1659,7 @@ class TestDeleteSourceBedrockReindex:
         with patch(
             "app.api.knowledge.delete_knowledge_file"
         ) as mock_delete, patch(
-            "app.api.knowledge.start_ingestion_job",
+            "app.services.knowledge_ingestion.start_ingestion_job",
             return_value="job-cleanup-123",
         ) as mock_ingest:
             resp = client.delete(
@@ -2389,7 +2389,7 @@ class TestDeleteSourceBedrockReindex:
             "app.services.knowledge_sources.delete_knowledge_file",
             side_effect=[None, RuntimeError("delete failed")],
         ), patch(
-            "app.api.knowledge.start_ingestion_job"
+            "app.services.knowledge_ingestion.start_ingestion_job"
         ) as start_job:
             response = client.delete(
                 f"/api/knowledge-bases/{kb.id}/sources/{folder.id}"
@@ -2756,7 +2756,7 @@ class TestGoogleDrivePhase2:
         with patch(
             "app.api.knowledge.delete_knowledge_file"
         ) as delete_file, patch(
-            "app.api.knowledge.start_ingestion_job",
+            "app.services.knowledge_ingestion.start_ingestion_job",
             return_value="job-1",
         ) as start_job:
             response = client.delete(
@@ -2810,7 +2810,7 @@ class TestGoogleDrivePhase2:
         with patch(
             "app.services.knowledge_sources.delete_knowledge_file"
         ) as mock_delete, patch(
-            "app.api.knowledge.start_ingestion_job"
+            "app.services.knowledge_ingestion.start_ingestion_job"
         ) as mock_ingest:
             resp = client.delete(
                 f"/api/knowledge-bases/{kb_no_bedrock.id}/sources/{source.id}",
@@ -2853,7 +2853,7 @@ class TestGoogleDrivePhase2:
         with patch(
             "app.api.knowledge.delete_knowledge_file"
         ), patch(
-            "app.api.knowledge.start_ingestion_job",
+            "app.services.knowledge_ingestion.start_ingestion_job",
             return_value=None,
         ):
             resp = client.delete(
@@ -2900,7 +2900,7 @@ class TestGoogleDrivePhase2:
         with patch(
             "app.services.knowledge_sources.delete_knowledge_file"
         ) as mock_delete, patch(
-            "app.api.knowledge.start_ingestion_job"
+            "app.services.knowledge_ingestion.start_ingestion_job"
         ) as mock_ingest:
             resp = client_a.delete(
                 f"/api/knowledge-bases/{kb_b.id}/sources/{source_b.id}",
@@ -2936,7 +2936,7 @@ class TestGoogleDrivePhase2:
         with patch(
             "app.api.knowledge.delete_knowledge_file"
         ) as mock_delete, patch(
-            "app.api.knowledge.start_ingestion_job",
+            "app.services.knowledge_ingestion.start_ingestion_job",
             return_value="job-file-cleanup",
         ) as mock_ingest:
             resp = client.delete(
