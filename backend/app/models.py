@@ -2062,6 +2062,12 @@ class Order(Base):
         nullable=True,
     )
 
+    external_order_id: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+    )
+
     order_number: Mapped[str] = mapped_column(
         String(100),
         nullable=False,
@@ -2080,6 +2086,18 @@ class Order(Base):
     financial_status: Mapped[str | None] = mapped_column(
         String(50),
         nullable=True,
+    )
+
+    payment_method: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+        index=True,
+    )
+
+    payment_status: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+        index=True,
     )
 
     fulfillment_status: Mapped[str | None] = mapped_column(
