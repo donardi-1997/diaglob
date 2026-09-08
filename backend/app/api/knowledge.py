@@ -2,7 +2,7 @@ import json
 import logging
 import re
 import time
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Literal
 
 import httpx
@@ -26,7 +26,18 @@ from ..bedrock_ingestion import (
 )
 from ..bedrock_knowledge_base import (
     BedrockProvisioningError,
-    delete_diaglob_knowledge_base,
+)
+from ..services.knowledge_bases import (
+    KnowledgeBaseAccessError,
+    KnowledgeBaseNotFoundError,
+    InvalidKnowledgeBaseScopeError,
+    InvalidStoreSelectionError,
+    create_knowledge_base as svc_create_knowledge_base,
+    delete_knowledge_base as svc_delete_knowledge_base,
+    get_knowledge_base as svc_get_knowledge_base,
+    list_knowledge_bases as svc_list_knowledge_bases,
+    retry_knowledge_base_provisioning as svc_retry_knowledge_base_provisioning,
+    update_knowledge_base as svc_update_knowledge_base,
 )
 from ..services.knowledge_provisioning import (
     PROVISIONING_RETRY_DELAYS_SECONDS,
@@ -369,16 +380,9 @@ def list_knowledge_bases(
     ),
     db: Session = Depends(get_db),
 ):
-    query = (
-        db.query(KnowledgeBase)
-        .filter(
-            KnowledgeBase.organization_id
-            == membership.organization_id
-        )
-        .order_by(KnowledgeBase.name.asc())
+    knowledge_bases = svc_list_knowledge_bases(
+        db, membership.organization_id,
     )
-
-    knowledge_bases = query.all()
 
     allowed_store_ids = get_allowed_store_ids(membership)
 
@@ -418,17 +422,13 @@ def get_knowledge_base(
     ),
     db: Session = Depends(get_db),
 ):
-    knowledge_base = (
-        db.query(KnowledgeBase)
-        .filter(
-            KnowledgeBase.id == knowledge_base_id,
-            KnowledgeBase.organization_id
-            == membership.organization_id,
+    try:
+        knowledge_base = svc_get_knowledge_base(
+            db,
+            membership.organization_id,
+            knowledge_base_id,
         )
-        .first()
-    )
-
-    if not knowledge_base:
+    except KnowledgeBaseNotFoundError:
         raise HTTPException(
             status_code=404,
             detail="Knowledge base not found",
@@ -462,66 +462,41 @@ def create_knowledge_base(
     ),
     db: Session = Depends(get_db),
 ):
-    name = payload.name.strip()
-    scope = payload.scope.strip()
-
-    if not name:
-        raise HTTPException(
-            status_code=400,
-            detail="Knowledge base name is required",
+    def _resolve_stores(store_ids: list[int]):
+        return resolve_member_stores(
+            membership, store_ids, db,
         )
 
-    if scope not in {"organization", "selected_stores"}:
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid knowledge base scope",
+    try:
+        knowledge_base = svc_create_knowledge_base(
+            db,
+            organization_id=membership.organization_id,
+            name=payload.name,
+            scope=payload.scope,
+            active=payload.active,
+            store_ids=payload.store_ids,
+            is_owner=membership.role == "owner",
+            all_stores=membership.all_stores,
+            resolve_stores_fn=_resolve_stores,
         )
-
-    if (
-        scope == "organization"
-        and not membership.all_stores
-        and membership.role != "owner"
-    ):
+    except InvalidKnowledgeBaseScopeError as exc:
+        status = 400
+        if "require all-store access" in str(exc):
+            status = 403
+        raise HTTPException(
+            status_code=status,
+            detail=str(exc),
+        ) from exc
+    except KnowledgeBaseAccessError as exc:
         raise HTTPException(
             status_code=403,
-            detail=(
-                "Organization-wide knowledge bases "
-                "require all-store access"
-            ),
-        )
-
-    if scope == "organization":
-        stores = []
-    else:
-        stores = resolve_member_stores(
-            membership, payload.store_ids, db
-        )
-
-        if not stores:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "Selected-store knowledge bases "
-                    "require at least one store"
-                ),
-            )
-
-    knowledge_base = KnowledgeBase(
-        organization_id=membership.organization_id,
-        name=name,
-        scope=scope,
-        external_status="pending",
-        provisioning_stage="queued",
-        provisioning_started_at=datetime.now(timezone.utc),
-        provisioning_stage_started_at=datetime.now(timezone.utc),
-        active=payload.active,
-    )
-
-    knowledge_base.stores = stores
-
-    db.add(knowledge_base)
-    db.commit()
-    db.refresh(knowledge_base)
+            detail=str(exc),
+        ) from exc
+    except InvalidStoreSelectionError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
 
     background_tasks.add_task(run_knowledge_base_provisioning, knowledge_base.id)
 
@@ -539,84 +514,53 @@ def update_knowledge_base(
     ),
     db: Session = Depends(get_db),
 ):
-    knowledge_base = (
-        db.query(KnowledgeBase)
-        .filter(
-            KnowledgeBase.id == knowledge_base_id,
-            KnowledgeBase.organization_id
-            == membership.organization_id,
+    try:
+        knowledge_base = svc_get_knowledge_base(
+            db,
+            membership.organization_id,
+            knowledge_base_id,
         )
-        .first()
-    )
-
-    if not knowledge_base:
+    except KnowledgeBaseNotFoundError:
         raise HTTPException(
             status_code=404,
             detail="Knowledge base not found",
         )
 
-    if payload.name is not None:
-        name = payload.name.strip()
-
-        if not name:
-            raise HTTPException(
-                status_code=400,
-                detail="Knowledge base name is required",
-            )
-
-        knowledge_base.name = name
-
-    next_scope = (
-        payload.scope.strip()
-        if payload.scope is not None
-        else knowledge_base.scope
-    )
-
-    if next_scope not in {"organization", "selected_stores"}:
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid knowledge base scope",
+    def _resolve_stores(store_ids: list[int]):
+        return resolve_member_stores(
+            membership, store_ids, db,
         )
 
-    if (
-        next_scope == "organization"
-        and not membership.all_stores
-        and membership.role != "owner"
-    ):
+    try:
+        knowledge_base = svc_update_knowledge_base(
+            db,
+            knowledge_base,
+            name=payload.name,
+            scope=payload.scope,
+            active=payload.active,
+            store_ids=payload.store_ids,
+            is_owner=membership.role == "owner",
+            all_stores=membership.all_stores,
+            resolve_stores_fn=_resolve_stores,
+        )
+    except InvalidKnowledgeBaseScopeError as exc:
+        status = 400
+        if "require all-store access" in str(exc):
+            status = 403
+        raise HTTPException(
+            status_code=status,
+            detail=str(exc),
+        ) from exc
+    except KnowledgeBaseAccessError as exc:
         raise HTTPException(
             status_code=403,
-            detail=(
-                "Organization-wide knowledge bases "
-                "require all-store access"
-            ),
-        )
-
-    knowledge_base.scope = next_scope
-
-    if payload.active is not None:
-        knowledge_base.active = payload.active
-
-    if next_scope == "organization":
-        knowledge_base.stores = []
-
-    elif payload.store_ids is not None:
-        stores = resolve_member_stores(
-            membership, payload.store_ids, db
-        )
-
-        if not stores:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "Selected-store knowledge bases "
-                    "require at least one store"
-                ),
-            )
-
-        knowledge_base.stores = stores
-
-    db.commit()
-    db.refresh(knowledge_base)
+            detail=str(exc),
+        ) from exc
+    except InvalidStoreSelectionError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
 
     return serialize_knowledge_base(knowledge_base)
 
@@ -629,14 +573,19 @@ def delete_knowledge_base(
     ),
     db: Session = Depends(get_db),
 ):
-    knowledge_base = db.query(KnowledgeBase).filter(
-        KnowledgeBase.id == knowledge_base_id,
-        KnowledgeBase.organization_id == membership.organization_id,
-    ).first()
-    if not knowledge_base:
-        raise HTTPException(status_code=404, detail="Knowledge base not found")
     try:
-        delete_diaglob_knowledge_base(db, knowledge_base)
+        knowledge_base = svc_get_knowledge_base(
+            db,
+            membership.organization_id,
+            knowledge_base_id,
+        )
+    except KnowledgeBaseNotFoundError:
+        raise HTTPException(
+            status_code=404,
+            detail="Knowledge base not found",
+        )
+    try:
+        svc_delete_knowledge_base(db, knowledge_base)
     except BedrockProvisioningError as error:
         raise HTTPException(
             status_code=500,
@@ -645,10 +594,6 @@ def delete_knowledge_base(
                 "message": "Knowledge Base deletion could not be completed.",
             },
         ) from error
-    logger.info(
-        "Knowledge Base deleted: organization_id=%s knowledge_base_id=%s actor_user_id=%s",
-        membership.organization_id, knowledge_base_id, membership.user_id,
-    )
     return {"id": knowledge_base_id, "deleted": True}
 
 
@@ -668,86 +613,49 @@ def retry_knowledge_base_provisioning(
     ),
     db: Session = Depends(get_db),
 ):
-    knowledge_base = (
-        db.query(KnowledgeBase)
-        .filter(
-            KnowledgeBase.id == knowledge_base_id,
-            KnowledgeBase.organization_id == membership.organization_id,
+    try:
+        knowledge_base = svc_get_knowledge_base(
+            db,
+            membership.organization_id,
+            knowledge_base_id,
         )
-        .first()
-    )
-
-    if not knowledge_base:
+    except KnowledgeBaseNotFoundError:
         raise HTTPException(
             status_code=404,
             detail="Knowledge base not found",
         )
 
-    if knowledge_base.external_status in ("provisioning", "retrying"):
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "code": "PROVISIONING_IN_PROGRESS",
-                "message": "Knowledge Base provisioning is already in progress.",
-            },
+    try:
+        knowledge_base = svc_retry_knowledge_base_provisioning(
+            db, knowledge_base,
         )
-
-    if knowledge_base.external_status not in ("pending", "failed"):
+    except InvalidKnowledgeBaseScopeError as exc:
+        msg = str(exc)
+        if "already in progress" in msg:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "PROVISIONING_IN_PROGRESS",
+                    "message": msg,
+                },
+            ) from exc
         raise HTTPException(
             status_code=400,
             detail={
                 "code": "INVALID_PROVISIONING_STATE",
-                "message": f"Cannot retry provisioning for KnowledgeBase with status: {knowledge_base.external_status}",
+                "message": msg,
             },
-        )
-
-    previous_status = knowledge_base.external_status
-    logger.info(
-        "knowledge_base_manual_retry_requested organization_id=%s knowledge_base_id=%s previous_status=%s",
-        knowledge_base.organization_id,
-        knowledge_base.id,
-        previous_status,
-    )
-    now = datetime.now(timezone.utc)
-    updated = (
-        db.query(KnowledgeBase)
-        .filter(
-            KnowledgeBase.id == knowledge_base.id,
-            KnowledgeBase.organization_id == knowledge_base.organization_id,
-            KnowledgeBase.external_status == previous_status,
-        )
-        .update(
-            {
-                KnowledgeBase.external_status: "retrying",
-                KnowledgeBase.external_last_error: None,
-                KnowledgeBase.provisioning_stage: "queued",
-                KnowledgeBase.provisioning_started_at: now,
-                KnowledgeBase.provisioning_stage_started_at: now,
-            },
-            synchronize_session=False,
-        )
-    )
-    if updated != 1:
-        db.rollback()
-        db.refresh(knowledge_base)
+        ) from exc
+    except KnowledgeBaseAccessError as exc:
         raise HTTPException(
             status_code=409,
             detail={
                 "code": "PROVISIONING_STATE_CHANGED",
-                "message": "Knowledge Base provisioning state changed. Try again.",
+                "message": str(exc),
             },
-        )
-    db.commit()
-    db.refresh(knowledge_base)
+        ) from exc
+
     background_tasks.add_task(run_knowledge_base_provisioning, knowledge_base.id)
-    logger.info(
-        "knowledge_base_manual_retry_scheduled organization_id=%s knowledge_base_id=%s previous_status=%s status=%s stage=%s",
-        knowledge_base.organization_id,
-        knowledge_base.id,
-        previous_status,
-        knowledge_base.external_status,
-        knowledge_base.provisioning_stage,
-    )
 
     return serialize_knowledge_base(knowledge_base)
 
