@@ -188,7 +188,9 @@ function setMetadata(title: string, description: string, path: string) {
 
 export default function LegalPage({ kind }: { kind: LegalPageKind }) {
   const { i18n } = useTranslation();
-  const language = i18n.language.startsWith("en") ? "en" : "es";
+  const rawLanguage = i18n.language.startsWith("en") ? "en" : i18n.language.startsWith("pt") ? "pt-BR" : "es";
+  // Legal documents fall back to English for pt-BR
+  const language: "es" | "en" = rawLanguage === "pt-BR" ? "en" : rawLanguage as "es" | "en";
   const documentContent = documents[kind][language];
   const [theme, setTheme] = useState(
     localStorage.getItem("diaglob-theme") || "dark",
@@ -210,7 +212,7 @@ export default function LegalPage({ kind }: { kind: LegalPageKind }) {
     );
   }, [kind]);
 
-  const changeLanguage = (nextLanguage: "es" | "en") => {
+  const changeLanguage = (nextLanguage: "es" | "en" | "pt-BR") => {
     i18n.changeLanguage(nextLanguage);
     localStorage.setItem("diaglob-language", nextLanguage);
   };
@@ -229,8 +231,9 @@ export default function LegalPage({ kind }: { kind: LegalPageKind }) {
             </Link>
             <div className="landing-controls">
               <div className="landing-lang-switch" aria-label="Language">
-                <button className={language === "es" ? "active" : ""} onClick={() => changeLanguage("es")}>ES</button>
-                <button className={language === "en" ? "active" : ""} onClick={() => changeLanguage("en")}>EN</button>
+                <button className={rawLanguage === "es" ? "active" : ""} onClick={() => changeLanguage("es")}>ES</button>
+                <button className={rawLanguage === "en" ? "active" : ""} onClick={() => changeLanguage("en")}>EN</button>
+                <button className={rawLanguage === "pt-BR" ? "active" : ""} onClick={() => changeLanguage("pt-BR")}>PT-BR</button>
               </div>
               <button className="theme-toggle" onClick={() => setTheme((current) => current === "dark" ? "light" : "dark")} aria-label="Toggle theme">
                 {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
@@ -249,11 +252,11 @@ export default function LegalPage({ kind }: { kind: LegalPageKind }) {
             <p className="legal-lede">{documentContent.intro}</p>
           </div>
           <div className="legal-sections">
-            {documentContent.sections.map((section) => (
+            {documentContent.sections.map((section: LegalSection) => (
               <section key={section.title} className="legal-section">
                 <h2>{section.title}</h2>
-                {section.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
-                {section.bullets && <ul>{section.bullets.map((bullet) => <li key={bullet}>{bullet}</li>)}</ul>}
+                {section.paragraphs.map((paragraph: string) => <p key={paragraph}>{paragraph}</p>)}
+                {section.bullets && <ul>{section.bullets.map((bullet: string) => <li key={bullet}>{bullet}</li>)}</ul>}
               </section>
             ))}
           </div>

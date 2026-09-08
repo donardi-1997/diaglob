@@ -3972,6 +3972,274 @@ const resources = {
       allStores: "All stores",
     },
   },
+
+  "pt-BR": {
+    translation: {
+      brandTagline: "Conversas inteligentes para comércio global",
+
+      overview: "Visão geral",
+      plans: "Planos",
+
+      plansTitle: "Planos",
+      plansBillingEyebrow: "FATURAMENTO",
+      plansChoosePayment: "Escolha como deseja pagar",
+      plansPaymentHelp: "Pague por um período mais longo e obtenha melhor preço.",
+      plansSubtitle: "Escolha a capacidade e o período de faturamento que melhor se adaptem à sua operação.",
+
+      plansRecommended: "Recomendado",
+      plansCurrentPlan: "Plano atual",
+      plansChoosePlan: "Escolher plano",
+      plansUpgrade: "Melhorar plano",
+      plansDowngrade: "Alterar na renovação",
+
+      plansMonthlyPrice: "Preço mensal",
+      plansPeriodPrice: "Preço do período",
+      plansCurrentPeriod: "Período atual",
+
+      plansImmediateUpgrade: "Upgrade disponível agora",
+      plansCalculating: "Calculando...",
+      plansCheckingProration: "Consultando a proporcionalidade com Paddle",
+      plansPayDifferenceToday: "Você paga apenas a diferença proporcional hoje.",
+      plansNextRenewalFullPrice: "Na sua próxima renovação, o cobro será pelo valor completo do novo plano conforme seu período de faturamento.",
+      plansPriceUnavailable: "Preço não disponível",
+      plansProrationUnavailable: "Não foi possível calcular a proporcionalidade. Tente novamente.",
+
+      plansChangeAtRenewal: "Alteração na renovação",
+      plansNoProrationDowngrade: "Você mantém seu plano atual até o final do período pago. Não se aplica proporcionalidade.",
+      plansNewPeriodAtRenewal: "Novo período na renovação",
+      plansDurationAtRenewal: "A mudança de duração começará na sua próxima renovação. Não se aplica proporcionalidade.",
+
+      plansActiveStore: "loja ativa",
+      plansActiveStores: "lojas ativas",
+
+      plansScheduledChange: "Alteração programada",
+      plansScheduledChangeTitle: "Alteração de plano programada",
+      plansCanceling: "Cancelando...",
+      plansCancelChange: "Cancelar alteração",
+      plansNoActivePlan: "Sem plano ativo",
+      plansNoActivePlanHelp: "Escolha um plano para ativar as funcionalidades do DIAGLOB.",
+
+      // AI usage
+      aiResponses: "Respostas de IA",
+      aiResponsesUsed: "Respostas de IA usadas",
+      aiResponsesIncluded: "Respostas de IA incluídas",
+      aiResponsesRemaining: "Respostas de IA restantes",
+      aiUsageWarning80: "Você usou 80% das suas respostas de IA incluídas.",
+      aiUsageWarning95: "Você está quase sem respostas de IA incluídas.",
+      aiUsageExhausted: "Respostas de IA incluídas esgotadas.",
+      aiOverage: "Consumo adicional",
+
+      // Navigation
+      conversations: "Conversas",
+      customers: "Clientes",
+      commerce: "Comércio",
+      products: "Produtos",
+      orders: "Pedidos",
+      team: "Equipe",
+      agents: "Agentes",
+      knowledge: "Base de conhecimento",
+      automations: "Automações",
+      analytics: "Análises",
+      settings: "Configurações",
+      logout: "Sair",
+
+      // Common
+      connected: "Conectado",
+      notConnected: "Não conectado",
+      save: "Salvar",
+      cancel: "Cancelar",
+      delete: "Excluir",
+      edit: "Editar",
+      create: "Criar",
+      search: "Buscar",
+      loading: "Carregando...",
+      error: "Erro",
+      success: "Sucesso",
+      confirm: "Confirmar",
+      back: "Voltar",
+      next: "Próximo",
+      all: "Todos",
+      none: "Nenhum",
+      yes: "Sim",
+      no: "Não",
+      ok: "OK",
+      close: "Fechar",
+
+      // Onboarding
+      onboardingTitle: "Primeiros passos",
+      onboardingSubtitle: "Configure sua loja e comece a vender",
+      onboardingProgress: "{{done}} de {{total}} concluído",
+      onboardingComplete: "Configuração completa!",
+      onboardingCompleteHelp: "Sua loja está pronta. Continue explorando o DIAGLOB.",
+      onboardingDismiss: "Ocultar guia",
+      onboardingShowGuide: "Mostrar guia",
+
+      onboardingStepStore: "Crie sua primeira loja",
+      onboardingStepStoreHelp: "Uma loja representa seu negócio ou marca.",
+      onboardingStepStoreAction: "Criar loja",
+
+      onboardingStepShopify: "Conecte o Shopify",
+      onboardingStepShopifyHelp: "Sincronize produtos, variantes e inventário automaticamente.",
+      onboardingStepShopifyAction: "Conectar Shopify",
+      onboardingStepShopifyHint: "Você precisa do seu domínio .myshopify.com (ex: minhaloja.myshopify.com)",
+
+      onboardingStepCatalog: "Sincronize seu catálogo",
+      onboardingStepCatalogHelp: "Seus produtos estarão disponíveis no DIAGLOB.",
+      onboardingStepCatalogAction: "Sincronizar produtos",
+
+      onboardingStepWhatsApp: "Conecte o WhatsApp",
+      onboardingStepWhatsAppHelp: "Receba mensagens de clientes e responda com IA.",
+      onboardingStepWhatsAppAction: "Conectar WhatsApp",
+      onboardingStepWhatsAppAssisted: "Precisa de ajuda para conectar o WhatsApp?",
+      onboardingStepWhatsAppAssistedAction: "Contatar suporte",
+
+      onboardingStepKnowledge: "Adicione conhecimento",
+      onboardingStepKnowledgeHelp: "Documentos, Google Drive ou informações do negócio para que a IA entenda sua loja.",
+      onboardingStepKnowledgeAction: "Criar base de conhecimento",
+
+      onboardingStepAutomation: "Crie sua primeira automação",
+      onboardingStepAutomationHelp: "Acompanhamento automático de clientes ou ações programadas.",
+      onboardingStepAutomationAction: "Criar automação",
+
+      onboardingSupportHelp: "Precisa de ajuda?",
+      onboardingSupportAction: "Contatar suporte",
+
+      // Empty states
+      emptyNoStoreTitle: "Crie sua primeira loja",
+      emptyNoStoreHelp: "Uma loja permite gerenciar produtos, pedidos e conversas.",
+      emptyNoStoreAction: "Criar loja",
+
+      emptyNoProductsTitle: "Sem produtos",
+      emptyNoProductsHelp: "Conecte o Shopify e sincronize seu catálogo para ver produtos aqui.",
+      emptyNoProductsAction: "Sincronizar produtos",
+
+      emptyNoConversationsNoWhatsAppTitle: "Sem conversas",
+      emptyNoConversationsNoWhatsAppHelp: "Conecte o WhatsApp para receber mensagens de clientes.",
+      emptyNoConversationsNoWhatsAppAction: "Conectar WhatsApp",
+
+      emptyNoConversationsWhatsAppTitle: "Sem mensagens ainda",
+      emptyNoConversationsWhatsAppHelp: "Quando um cliente te escrever pelo WhatsApp, aparecerá aqui.",
+
+      emptyNoKnowledgeTitle: "Sem base de conhecimento",
+      emptyNoKnowledgeHelp: "Adicione documentos ou informações do negócio para que a IA responda melhor.",
+      emptyNoKnowledgeAction: "Criar base de conhecimento",
+
+      emptyNoAutomationsTitle: "Sem automações",
+      emptyNoAutomationsHelp: "Crie automações para acompanhar clientes ou executar ações.",
+      emptyNoAutomationsAction: "Criar automação",
+
+      // Support
+      supportLabel: "Suporte",
+      supportHelp: "Precisa de ajuda? Entre em contato com nossa equipe.",
+
+      // Unified inbox
+      allStores: "Todas as lojas",
+
+      // WhatsApp
+      waGuideTitle: "Ative o WhatsApp",
+      waGuideSubtitle: "Conecte o WhatsApp para receber mensagens de clientes e responder com IA.",
+      waRequirementsTitle: "O que você precisa?",
+      waRequirement1: "Uma conta Meta Business verificada",
+      waRequirement2: "Uma conta WhatsApp Business ativa",
+      waRequirement3: "Um número de telefone associado",
+      waRequirement4: "Credenciais da API do WhatsApp (Phone Number ID, Business Account ID, Access Token)",
+
+      waCredentialsTitle: "Onde obtenho as credenciais?",
+      waCredentialPhoneId: "Phone Number ID",
+      waCredentialPhoneIdHelp: "Encontre no Meta Business Suite → Configurações → Números de telefone.",
+      waCredentialBizId: "Business Account ID",
+      waCredentialBizIdHelp: "Está no Meta Business Suite → Informações da conta.",
+      waCredentialToken: "Access Token",
+      waCredentialTokenHelp: "É gerado no Meta Business Suite → Sistema → Usuários do sistema → Tokens.",
+      waCredentialMetaLink: "Abrir Meta Business Suite",
+
+      waConnectTitle: "Conectar WhatsApp",
+      waConnectHelp: "Insira as credenciais da sua conta Meta para conectar o WhatsApp.",
+
+      waConnectedTitle: "WhatsApp conectado",
+      waConnectedHelp: "Seu número está vinculado ao Diaglob.",
+
+      waTestTitle: "Teste a conexão",
+      waTestHelp: "Envie uma mensagem de WhatsApp para o seu número de negócio. O Diaglob detectará automaticamente.",
+      waTestExample: "Tente enviar: \"Olá, quais produtos vocês têm disponíveis?\"",
+      waTestWaiting: "Aguardando mensagem de teste...",
+      waTestReceived: "Mensagem recebida!",
+      waTestAiReply: "A IA gerou uma resposta.",
+      waTestSuccess: "Seu assistente de IA está funcionando!",
+      waTestSuccessHelp: "O Diaglob agora pode ajudar a responder mensagens de clientes usando seu catálogo.",
+      waTestViewConversation: "Ver conversa",
+
+      waCatalogWarning: "Você não tem produtos sincronizados.",
+      waCatalogWarningHelp: "A IA pode usar seu catálogo para responder melhor. Sincronize produtos do Shopify.",
+      waCatalogAction: "Sincronizar produtos",
+
+      waKnowledgeTip: "Adicione conhecimento para melhorar as respostas da IA.",
+      waKnowledgeAction: "Criar base de conhecimento",
+
+      waAiModeTitle: "Modo de resposta",
+      waAiModeHelp: "Em modo IA, o Diaglob pode responder automaticamente. Em modo humano, você controla as respostas.",
+      waAiModeAi: "IA automática",
+      waAiModeHuman: "Humano",
+
+      waErrorInvalidCredentials: "As credenciais não são válidas. Verifique o Phone Number ID, Business Account ID e Access Token.",
+      waErrorProviderRejected: "A Meta rejeitou a conexão. Verifique se sua conta WhatsApp Business está ativa.",
+      waErrorWebhookNotVerified: "O webhook não pôde ser verificado. Certifique-se de configurar a URL do webhook na Meta.",
+      waErrorExpiredToken: "O token de acesso expirou. Gere um novo token no Meta Business Suite.",
+      waErrorGeneric: "Não foi possível conectar o WhatsApp. Tente novamente.",
+
+      // Integrations
+      integrationsTitle: "Integrações",
+      integrationsConnected: "Conectado",
+      integrationsDisconnected: "Desconectado",
+      integrationsShopifyConnectError: "Erro ao conectar Shopify",
+      integrationsWhatsAppConnectError: "Erro ao conectar WhatsApp",
+      integrationsDisconnectError: "Erro ao desconectar",
+
+      // Automation templates
+      autoTabTemplates: "Modelos",
+      autoTabRules: "Regras",
+      autoTabRuns: "Execuções",
+      autoTabExecutions: "Histórico",
+      autoTabFlows: "Fluxos",
+
+      autoTemplateCategoryAll: "Todos",
+      autoTemplateCategorySales: "Vendas",
+      autoTemplateCategoryOrders: "Pedidos",
+      autoTemplateCategoryRetention: "Retenção",
+      autoTemplateCategoryOperations: "Operações",
+      autoTemplateCreate: "Criar automação",
+      autoTemplateCreating: "Criando...",
+      autoTemplateCreated: "Automação criada como rascunho.",
+      autoTemplateRequires: "Requer",
+      autoTemplateMissingIntegration: "Faltam integrações necessárias",
+      autoTemplateMinutes: "min",
+
+      // Conversations
+      conversationsTitle: "Conversas",
+      conversationsSubtitle: "Gerencie mensagens de todas as suas lojas",
+      conversationsLoadError: "Não foi possível carregar as conversas",
+
+      // Analytics
+      analyticsOverview: "Visão geral",
+      analyticsConversations: "Conversas",
+      analyticsCommerce: "Comércio",
+      analyticsAutomations: "Automações",
+
+      // Stores
+      storesI18nActive: "Ativa",
+      storesI18nSuspended: "Suspensa",
+      storesI18nCreateStore: "Criar loja",
+
+      // Billing
+      billingPeriod1Month: "Mensal",
+      billingPeriod3Month: "Trimestral",
+      billingPeriod6Month: "Semestral",
+      billingPeriod12Month: "Anual",
+      billingUpgrade: "Melhorar plano",
+      billingDowngrade: "Alterar na renovação",
+      billingCheckout: "Ir para pagamento",
+    },
+  },
 };
 
 i18n
@@ -3979,7 +4247,7 @@ i18n
   .init({
     resources,
     lng: localStorage.getItem("diaglob-language") || "es",
-    fallbackLng: "es",
+    fallbackLng: "en",
     interpolation: {
       escapeValue: false,
     },

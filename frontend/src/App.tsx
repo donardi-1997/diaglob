@@ -680,6 +680,12 @@ function App() {
                       >
                         EN
                       </button>
+                      <button
+                        className={i18n.language === "pt-BR" ? "active" : ""}
+                        onClick={() => changeLanguage("pt-BR")}
+                      >
+                        PT-BR
+                      </button>
                     </div>
                     <button className="theme-button" onClick={toggleTheme}>
                       {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}

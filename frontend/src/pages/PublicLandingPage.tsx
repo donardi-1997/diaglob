@@ -263,6 +263,13 @@ export default function PublicLandingPage({
                   >
                     EN
                   </button>
+                  <button
+                    className={i18n.language === "pt-BR" ? "active" : ""}
+                    onClick={() => changeLanguage("pt-BR")}
+                    aria-label="Português (Brasil)"
+                  >
+                    PT-BR
+                  </button>
                 </div>
                 <button
                   className="theme-toggle"
@@ -313,6 +320,13 @@ export default function PublicLandingPage({
                     aria-label="English"
                   >
                     EN
+                  </button>
+                  <button
+                    className={i18n.language === "pt-BR" ? "active" : ""}
+                    onClick={() => changeLanguage("pt-BR")}
+                    aria-label="Português (Brasil)"
+                  >
+                    PT-BR
                   </button>
                 </div>
                 <button
