@@ -1009,10 +1009,10 @@ class TestAddGoogleSheetSource:
             }[tab_name]
 
         with patch(
-            "app.api.knowledge.get_spreadsheet_metadata",
+            "app.services.knowledge_sources.get_spreadsheet_metadata",
             AsyncMock(return_value=metadata),
         ), patch(
-            "app.api.knowledge.fetch_sheet_values",
+            "app.services.knowledge_sources.fetch_sheet_values",
             AsyncMock(side_effect=values),
         ) as fetch_values:
             title, content = asyncio.run(
@@ -1032,13 +1032,13 @@ class TestAddGoogleSheetSource:
         from app.api.knowledge import _fetch_google_workbook_content
 
         with patch(
-            "app.api.knowledge.get_spreadsheet_metadata",
+            "app.services.knowledge_sources.get_spreadsheet_metadata",
             AsyncMock(return_value={
                 "title": "Empty Book",
                 "sheets": [{"title": "Empty", "hidden": False}],
             }),
         ), patch(
-            "app.api.knowledge.fetch_sheet_values",
+            "app.services.knowledge_sources.fetch_sheet_values",
             AsyncMock(return_value=[]),
         ):
             with pytest.raises(
@@ -1294,7 +1294,7 @@ class TestAddGoogleSheetSource:
         db.commit()
         client = client_factory(org)
 
-        with patch("app.api.knowledge._fetch_google_workbook_content") as fetch:
+        with patch("app.services.knowledge_sources._fetch_google_workbook_content") as fetch:
             resp = client.post(
                 f"/api/knowledge-bases/{kb.id}/sources/google-sheet",
                 json={
@@ -1742,7 +1742,7 @@ class TestDeleteSourceBedrockReindex:
         uploaded = {"bucket": "bucket", "key": "new-key"}
 
         with patch(
-            "app.api.knowledge.delete_knowledge_file"
+            "app.services.knowledge_sources.delete_knowledge_file"
         ) as delete_file:
             with pytest.raises(RuntimeError, match="db down"):
                 _persist_new_drive_source(
@@ -1807,7 +1807,7 @@ class TestDeleteSourceBedrockReindex:
             "app.api.knowledge.upload_knowledge_file",
             return_value={"bucket": "bucket", "key": "new-1"},
         ), patch(
-            "app.api.knowledge.start_ingestion_job",
+            "app.services.knowledge_sources.start_ingestion_job",
             return_value="job-1",
         ) as start_job:
             response = client.post(
@@ -2142,7 +2142,7 @@ class TestDeleteSourceBedrockReindex:
         ), patch(
             "app.api.knowledge.delete_knowledge_file"
         ), patch(
-            "app.api.knowledge.start_ingestion_job",
+            "app.services.knowledge_sources.start_ingestion_job",
             return_value="job-mixed",
         ) as start_job:
             response = client.post(
@@ -2329,14 +2329,14 @@ class TestDeleteSourceBedrockReindex:
             "app.api.knowledge.list_folder_children",
             return_value={"files": files},
         ), patch(
-            "app.api.knowledge.export_google_doc", return_value=b"1234"
+            "app.services.knowledge_sources.export_google_doc", return_value=b"1234"
         ) as export_doc, patch(
-            "app.api.knowledge.download_drive_file", return_value=b"5678"
+            "app.services.knowledge_sources.download_drive_file", return_value=b"5678"
         ), patch(
             "app.api.knowledge.upload_knowledge_file",
             return_value={"bucket": "bucket", "key": "doc-key"},
         ) as upload, patch(
-            "app.api.knowledge.start_ingestion_job", return_value="job-1"
+            "app.services.knowledge_sources.start_ingestion_job", return_value="job-1"
         ):
             response = client.post(
                 f"/api/knowledge-bases/{kb.id}/sources/"
