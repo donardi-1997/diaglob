@@ -3,6 +3,7 @@
 import logging
 import time
 from collections import defaultdict
+from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,13 +14,28 @@ from starlette.responses import Response
 from .db import Base, engine
 from .models import OrganizationMembership
 
-# ============================================================
-# DB BOOTSTRAP
-# ============================================================
-
-Base.metadata.create_all(bind=engine)
-
 logger = logging.getLogger(__name__)
+
+
+# ============================================================
+# LIFESPAN
+# ============================================================
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan: runs startup/shutdown logic.
+
+    CRITICAL: Base.metadata.create_all is NOT called here.
+    Schema is managed by Alembic. For local/test environments
+    that need automatic schema creation, use alembic upgrade head
+    or the test-local create_all fixtures.
+    """
+    from .services.knowledge_provisioning import reconcile_knowledge_base_provisioning
+
+    reconcile_knowledge_base_provisioning()
+
+    yield
+
 
 # ============================================================
 # APP CREATION
@@ -29,16 +45,8 @@ app = FastAPI(
     title="Diaglob API",
     version="0.5.0",
     description="Backend API for Diaglob",
+    lifespan=lifespan,
 )
-
-# ============================================================
-# STARTUP
-# ============================================================
-
-@app.on_event("startup")
-def reconcile_knowledge_base_provisioning_on_startup() -> None:
-    from .services.knowledge_provisioning import reconcile_knowledge_base_provisioning
-    reconcile_knowledge_base_provisioning()
 
 # ============================================================
 # MIDDLEWARE
