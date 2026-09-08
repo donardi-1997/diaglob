@@ -1907,6 +1907,59 @@ const resources = {
       onboardingSupportHelp: "¿Necesitas ayuda?",
       onboardingSupportAction: "Contactar soporte",
 
+      // WhatsApp activation guide
+      waGuideTitle: "Activa WhatsApp",
+      waGuideSubtitle: "Conecta WhatsApp para recibir mensajes de clientes y responder con IA.",
+
+      waRequirementsTitle: "¿Qué necesitas?",
+      waRequirement1: "Una cuenta de Meta Business verificada",
+      waRequirement2: "Una cuenta de WhatsApp Business activa",
+      waRequirement3: "Un número de teléfono asociado",
+      waRequirement4: "Credenciales de la API de WhatsApp (Phone Number ID, Business Account ID, Access Token)",
+
+      waCredentialsTitle: "¿Dónde obtengo las credenciales?",
+      waCredentialPhoneId: "Phone Number ID",
+      waCredentialPhoneIdHelp: "Lo encuentras en Meta Business Suite → Configuración → Números de teléfono.",
+      waCredentialBizId: "Business Account ID",
+      waCredentialBizIdHelp: "Está en Meta Business Suite → Información de la cuenta.",
+      waCredentialToken: "Access Token",
+      waCredentialTokenHelp: "Se genera en Meta Business Suite → Sistema → Usuarios del sistema → Tokens.",
+      waCredentialMetaLink: "Abrir Meta Business Suite",
+
+      waConnectTitle: "Conectar WhatsApp",
+      waConnectHelp: "Ingresa las credenciales de tu cuenta de Meta para conectar WhatsApp.",
+
+      waConnectedTitle: "WhatsApp conectado",
+      waConnectedHelp: "Tu número está vinculado a Diaglob.",
+
+      waTestTitle: "Prueba la conexión",
+      waTestHelp: "Envía un mensaje de WhatsApp a tu número de negocio. Diaglob lo detectará automáticamente.",
+      waTestExample: "Prueba enviar: \"Hola, ¿qué productos tienen disponibles?\"",
+      waTestWaiting: "Esperando mensaje de prueba...",
+      waTestReceived: "¡Mensaje recibido!",
+      waTestAiReply: "IA generó una respuesta.",
+      waTestSuccess: "¡Tu asistente de IA está funcionando!",
+      waTestSuccessHelp: "Diaglob ya puede ayudar a responder mensajes de clientes usando tu catálogo.",
+      waTestViewConversation: "Ver conversación",
+
+      waCatalogWarning: "No tienes productos sincronizados.",
+      waCatalogWarningHelp: "La IA puede usar tu catálogo para responder mejor. Sincroniza productos desde Shopify.",
+      waCatalogAction: "Sincronizar productos",
+
+      waKnowledgeTip: "Agrega conocimiento para mejorar las respuestas de la IA.",
+      waKnowledgeAction: "Crear base de conocimiento",
+
+      waAiModeTitle: "Modo de respuesta",
+      waAiModeHelp: "En modo IA, Diaglob puede responder automáticamente. En modo humano, tú controlas las respuestas.",
+      waAiModeAi: "IA automática",
+      waAiModeHuman: "Humano",
+
+      waErrorInvalidCredentials: "Las credenciales no son válidas. Verifica el Phone Number ID, Business Account ID y Access Token.",
+      waErrorProviderRejected: "Meta rechazó la conexión. Verifica que tu cuenta de WhatsApp Business esté activa.",
+      waErrorWebhookNotVerified: "El webhook no pudo ser verificado. Asegúrate de configurar la URL del webhook en Meta.",
+      waErrorExpiredToken: "El token de acceso expiró. Genera un nuevo token en Meta Business Suite.",
+      waErrorGeneric: "No se pudo conectar WhatsApp. Intenta nuevamente.",
+
       // Empty states
       emptyNoStoreTitle: "Crea tu primera tienda",
       emptyNoStoreHelp: "Una tienda te permite gestionar productos, pedidos y conversaciones.",
@@ -3796,6 +3849,59 @@ const resources = {
 
       onboardingSupportHelp: "Need help?",
       onboardingSupportAction: "Contact support",
+
+      // WhatsApp activation guide
+      waGuideTitle: "Activate WhatsApp",
+      waGuideSubtitle: "Connect WhatsApp to receive customer messages and reply with AI.",
+
+      waRequirementsTitle: "What do you need?",
+      waRequirement1: "A verified Meta Business account",
+      waRequirement2: "An active WhatsApp Business account",
+      waRequirement3: "An associated phone number",
+      waRequirement4: "WhatsApp API credentials (Phone Number ID, Business Account ID, Access Token)",
+
+      waCredentialsTitle: "Where do I get credentials?",
+      waCredentialPhoneId: "Phone Number ID",
+      waCredentialPhoneIdHelp: "Found in Meta Business Suite → Settings → Phone numbers.",
+      waCredentialBizId: "Business Account ID",
+      waCredentialBizIdHelp: "Located in Meta Business Suite → Account information.",
+      waCredentialToken: "Access Token",
+      waCredentialTokenHelp: "Generated in Meta Business Suite → System → System users → Tokens.",
+      waCredentialMetaLink: "Open Meta Business Suite",
+
+      waConnectTitle: "Connect WhatsApp",
+      waConnectHelp: "Enter your Meta account credentials to connect WhatsApp.",
+
+      waConnectedTitle: "WhatsApp connected",
+      waConnectedHelp: "Your number is linked to Diaglob.",
+
+      waTestTitle: "Test the connection",
+      waTestHelp: "Send a WhatsApp message to your business number. Diaglob will detect it automatically.",
+      waTestExample: "Try sending: \"Hi, what products do you have available?\"",
+      waTestWaiting: "Waiting for test message...",
+      waTestReceived: "Message received!",
+      waTestAiReply: "AI generated a response.",
+      waTestSuccess: "Your AI assistant is working!",
+      waTestSuccessHelp: "Diaglob can now help answer customer messages using your catalog.",
+      waTestViewConversation: "View conversation",
+
+      waCatalogWarning: "No products synced yet.",
+      waCatalogWarningHelp: "AI can use your catalog to respond better. Sync products from Shopify.",
+      waCatalogAction: "Sync products",
+
+      waKnowledgeTip: "Add knowledge to improve AI responses.",
+      waKnowledgeAction: "Create knowledge base",
+
+      waAiModeTitle: "Response mode",
+      waAiModeHelp: "In AI mode, Diaglob may answer automatically. In human mode, you control responses.",
+      waAiModeAi: "AI automatic",
+      waAiModeHuman: "Human",
+
+      waErrorInvalidCredentials: "Credentials are not valid. Verify Phone Number ID, Business Account ID, and Access Token.",
+      waErrorProviderRejected: "Meta rejected the connection. Verify your WhatsApp Business account is active.",
+      waErrorWebhookNotVerified: "Webhook could not be verified. Make sure to configure the webhook URL in Meta.",
+      waErrorExpiredToken: "Access token expired. Generate a new token in Meta Business Suite.",
+      waErrorGeneric: "Could not connect WhatsApp. Please try again.",
 
       // Empty states
       emptyNoStoreTitle: "Create your first store",

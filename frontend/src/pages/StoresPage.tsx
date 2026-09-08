@@ -44,6 +44,7 @@ import {
 } from "../utils/markets";
 
 import StoreIntegrations from "../components/StoreIntegrations";
+import WhatsAppActivationGuide from "../components/WhatsAppActivationGuide";
 
 
 interface StoresPageProps {
@@ -824,6 +825,15 @@ export default function StoresPage({
                   </div>
                 </div>
 
+
+                {store.active && (
+                  <WhatsAppActivationGuide
+                    storeId={store.id}
+                    onViewConversation={() => {}}
+                    onNavigateToCommerce={() => {}}
+                    onNavigateToKnowledge={() => {}}
+                  />
+                )}
 
                 <StoreIntegrations
                   storeId={store.id}

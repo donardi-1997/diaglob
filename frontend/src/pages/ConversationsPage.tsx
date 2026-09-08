@@ -317,6 +317,10 @@ export default function ConversationsPage({
                   <>
                     <h4>{t("emptyNoConversationsWhatsAppTitle") || "Sin mensajes aún"}</h4>
                     <p>{t("emptyNoConversationsWhatsAppHelp") || "Cuando un cliente te escriba por WhatsApp, aparecerá aquí."}</p>
+                    <div className="conversation-empty-test">
+                      <MessageCircle size={14} />
+                      <span>{t("waTestExample") || 'Prueba enviar: "Hola, ¿qué productos tienen disponibles?"'}</span>
+                    </div>
                   </>
                 ) : (
                   <>

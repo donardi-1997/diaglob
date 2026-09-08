@@ -10748,6 +10748,24 @@ button:disabled {
   line-height: 1.4;
 }
 
+.conversation-empty-test {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 8px 12px;
+  background: var(--accent-soft);
+  border-radius: 8px;
+  font-size: 0.78rem;
+  color: var(--accent);
+  font-style: italic;
+  max-width: 280px;
+}
+
+.conversation-empty-test svg {
+  flex-shrink: 0;
+}
+
 /* ============================================================
    AUTH LEGAL LINKS
    ============================================================ */
@@ -10770,6 +10788,331 @@ button:disabled {
 
 .auth-legal-links a:hover {
   color: var(--accent);
+}
+
+/* ============================================================
+   WHATSAPP ACTIVATION GUIDE
+   ============================================================ */
+
+.wa-activation-guide {
+  margin-bottom: 20px;
+}
+
+.wa-guide-section {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px 24px;
+  margin-bottom: 16px;
+}
+
+.wa-guide-section.wa-guide-success {
+  border-color: var(--green);
+  background: rgba(61, 220, 151, 0.04);
+}
+
+.wa-guide-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+  color: var(--text);
+}
+
+.wa-guide-header h4 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.wa-check-icon {
+  color: var(--green);
+}
+
+.wa-guide-subtitle {
+  margin: 0 0 16px 0;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.wa-requirements {
+  margin-bottom: 16px;
+}
+
+.wa-requirements h5 {
+  margin: 0 0 8px 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.wa-requirements ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.wa-requirements li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.wa-requirements li svg {
+  color: var(--green);
+  flex-shrink: 0;
+}
+
+.wa-credentials-guide {
+  margin-bottom: 16px;
+  padding: 16px;
+  background: var(--control-bg);
+  border-radius: 10px;
+}
+
+.wa-credentials-guide h5 {
+  margin: 0 0 12px 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.wa-credential-items {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.wa-credential-item strong {
+  display: block;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+
+.wa-credential-item p {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.wa-meta-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 500;
+  transition: opacity 0.15s;
+}
+
+.wa-meta-link:hover {
+  opacity: 0.8;
+}
+
+.wa-connect-hint {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.wa-connected-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  font-size: 0.82rem;
+}
+
+.wa-phone-label {
+  color: var(--text-muted);
+}
+
+.wa-connected-info code {
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  background: var(--control-bg);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.wa-test-prompt {
+  margin-bottom: 16px;
+}
+
+.wa-test-prompt h5 {
+  margin: 0 0 6px 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.wa-test-prompt p {
+  margin: 0 0 10px 0;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.wa-test-example {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: var(--accent-soft);
+  border-radius: 8px;
+  font-size: 0.82rem;
+  color: var(--accent);
+  font-style: italic;
+}
+
+.wa-test-example svg {
+  flex-shrink: 0;
+}
+
+.wa-context-tips {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.wa-context-tip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+}
+
+.wa-context-tip.warning {
+  background: rgba(255, 180, 0, 0.08);
+  color: #ffb400;
+  border: 1px solid rgba(255, 180, 0, 0.2);
+}
+
+.wa-context-tip.info {
+  background: var(--control-bg);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+}
+
+.wa-context-tip svg {
+  flex-shrink: 0;
+}
+
+.wa-context-tip span {
+  flex: 1;
+}
+
+.wa-context-tip button {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+
+.wa-context-tip button:hover {
+  background: var(--accent-soft);
+}
+
+.wa-support-fallback {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.wa-support-fallback a {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: opacity 0.15s;
+}
+
+.wa-support-fallback a:hover {
+  opacity: 0.8;
+}
+
+.wa-success-details {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.wa-success-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  color: var(--green);
+}
+
+.wa-view-conversation {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--green);
+  color: var(--bg);
+  border: none;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 10px 20px;
+  border-radius: 10px;
+  cursor: pointer;
+  margin-bottom: 14px;
+  transition: opacity 0.15s, transform 0.1s;
+}
+
+.wa-view-conversation:hover {
+  opacity: 0.9;
+}
+
+.wa-view-conversation:active {
+  transform: scale(0.97);
+}
+
+@media (max-width: 768px) {
+  .wa-guide-section {
+    padding: 16px;
+  }
+
+  .wa-credential-items {
+    gap: 10px;
+  }
+
+  .wa-success-details {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .wa-view-conversation {
+    width: 100%;
+    justify-content: center;
+  }
 }
 
 /* ============================================================
