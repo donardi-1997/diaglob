@@ -61,6 +61,7 @@ from ..services.drive_file_sources import (
     sync_drive_file,
     check_standalone_conflict,
     _EmptyContentError,
+    DriveSourceConflictError,
 )
 from ..db import SessionLocal, get_db
 from ..google_drive_client import (
@@ -1575,7 +1576,7 @@ async def add_google_doc_source(
             status_code=400,
             detail=str(exc),
         ) from exc
-    except ValueError as exc:
+    except DriveSourceConflictError as exc:
         raise HTTPException(
             status_code=409,
             detail={
@@ -1583,16 +1584,16 @@ async def add_google_doc_source(
                 "message": str(exc),
             },
         ) from exc
+    except (GoogleDriveFileTooLarge, ValueError) as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "FILE_TOO_LARGE", "message": str(exc)},
+        ) from exc
     except httpx.HTTPStatusError as exc:
         code, msg = map_google_api_error(exc.response.status_code)
         raise HTTPException(
             status_code=exc.response.status_code,
             detail={"code": code, "message": msg},
-        ) from exc
-    except (GoogleDriveFileTooLarge, ValueError) as exc:
-        raise HTTPException(
-            status_code=400,
-            detail={"code": "FILE_TOO_LARGE", "message": str(exc)},
         ) from exc
     except Exception as exc:
         raise HTTPException(
@@ -1681,7 +1682,7 @@ async def add_google_drive_file_source(
             status_code=400,
             detail=str(exc),
         ) from exc
-    except ValueError as exc:
+    except DriveSourceConflictError as exc:
         raise HTTPException(
             status_code=409,
             detail={

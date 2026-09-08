@@ -29,6 +29,7 @@ from app.main import (
     _rate_limit_store,
 )
 from app.api import knowledge as api_knowledge
+from app.google_drive_client import GoogleDriveFileTooLarge
 from app.models import (
     Organization,
     OrganizationMembership,
@@ -2955,3 +2956,159 @@ class TestGoogleDrivePhase2:
             "bedrock-kb-123",
             "bedrock-ds-456",
         )
+
+
+class TestDriveErrorContractRegression:
+    """Regression tests for Block 4.1 error contract fix.
+
+    GoogleDriveFileTooLarge inherits from ValueError. After Block 4,
+    `except ValueError` was placed before `except (GoogleDriveFileTooLarge, ValueError)`,
+    causing GoogleDriveFileTooLarge to be misclassified as DRIVE_SOURCE_CONFLICT (409)
+    instead of FILE_TOO_LARGE (400).
+    """
+
+    def _connection(self, db, org, user, scopes="https://www.googleapis.com/auth/drive.readonly"):
+        conn = GoogleConnection(
+            organization_id=org.id,
+            user_id=user.id,
+            access_token_encrypted="enc-access",
+            refresh_token_encrypted="enc-refresh",
+            token_expiry=datetime.utcnow() + timedelta(hours=1),
+            scopes=scopes,
+            status="connected",
+        )
+        db.add(conn)
+        db.commit()
+        return conn
+
+    def test_google_doc_too_large_preserves_contract(
+        self, client_factory, db
+    ):
+        org = _make_org(db)
+        user, _ = _make_user(db, org)
+        kb = _make_kb(db, org)
+        self._connection(db, org, user)
+        client = client_factory(org)
+
+        with patch(
+            "app.api.knowledge._get_valid_google_token",
+            return_value="token",
+        ), patch(
+            "app.services.drive_file_sources.export_google_doc",
+            side_effect=GoogleDriveFileTooLarge("File exceeds 50MB limit"),
+        ):
+            response = client.post(
+                f"/api/knowledge-bases/{kb.id}/sources/google-doc",
+                json={
+                    "file_id": "doc-1",
+                    "file_name": "Large Doc",
+                    "mime_type": "application/vnd.google-apps.document",
+                },
+            )
+
+        assert response.status_code == 400
+        data = response.json()
+        detail = data.get("detail", data)
+        assert detail["code"] == "FILE_TOO_LARGE"
+        assert "50MB" in detail["message"]
+
+    def test_drive_file_too_large_preserves_contract(
+        self, client_factory, db
+    ):
+        org = _make_org(db)
+        user, _ = _make_user(db, org)
+        kb = _make_kb(db, org)
+        self._connection(db, org, user)
+        client = client_factory(org)
+
+        with patch(
+            "app.api.knowledge._get_valid_google_token",
+            return_value="token",
+        ), patch(
+            "app.services.drive_file_sources.download_drive_file",
+            side_effect=GoogleDriveFileTooLarge("File exceeds 50MB limit"),
+        ):
+            response = client.post(
+                f"/api/knowledge-bases/{kb.id}/sources/google-drive-file",
+                json={
+                    "file_id": "file-1",
+                    "file_name": "Large File.pdf",
+                    "mime_type": "application/pdf",
+                },
+            )
+
+        assert response.status_code == 400
+        data = response.json()
+        detail = data.get("detail", data)
+        assert detail["code"] == "FILE_TOO_LARGE"
+        assert "50MB" in detail["message"]
+
+    def test_drive_source_conflict_remains_409(
+        self, client_factory, db
+    ):
+        org = _make_org(db)
+        user, _ = _make_user(db, org)
+        kb = _make_kb(db, org)
+        self._connection(db, org, user)
+
+        existing = KnowledgeSource(
+            organization_id=org.id,
+            knowledge_base_id=kb.id,
+            name="Existing.pdf",
+            source_type="google_drive_file",
+            s3_bucket="bucket",
+            s3_key="key",
+            external_id="file-1",
+            status="uploaded",
+            sync_status="synced",
+        )
+        db.add(existing)
+        db.commit()
+
+        client = client_factory(org)
+
+        with patch(
+            "app.api.knowledge._get_valid_google_token",
+            return_value="token",
+        ):
+            response = client.post(
+                f"/api/knowledge-bases/{kb.id}/sources/google-drive-file",
+                json={
+                    "file_id": "file-1",
+                    "file_name": "Existing.pdf",
+                    "mime_type": "application/pdf",
+                },
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["source_id"] == existing.id
+        assert "already exists" in data["message"]
+
+    def test_provider_valueerror_not_misclassified_as_conflict(
+        self, client_factory, db
+    ):
+        org = _make_org(db)
+        user, _ = _make_user(db, org)
+        kb = _make_kb(db, org)
+        self._connection(db, org, user)
+        client = client_factory(org)
+
+        with patch(
+            "app.api.knowledge._get_valid_google_token",
+            return_value="token",
+        ), patch(
+            "app.services.drive_file_sources.download_drive_file",
+            side_effect=ValueError("Invalid file ID format"),
+        ):
+            response = client.post(
+                f"/api/knowledge-bases/{kb.id}/sources/google-drive-file",
+                json={
+                    "file_id": "bad-id",
+                    "file_name": "Bad File",
+                    "mime_type": "application/pdf",
+                },
+            )
+
+        assert response.status_code != 409
+        assert response.status_code != 200

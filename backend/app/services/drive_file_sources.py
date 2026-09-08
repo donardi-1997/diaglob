@@ -35,6 +35,10 @@ class _EmptyContentError(Exception):
     """Raised when downloaded content is empty."""
 
 
+class DriveSourceConflictError(Exception):
+    """Raised when a Drive object conflicts with an existing source."""
+
+
 def check_standalone_conflict(
     existing: KnowledgeSource,
 ) -> dict | None:
@@ -43,7 +47,7 @@ def check_standalone_conflict(
         existing.parent_source_id is not None
         or existing.source_type == "google_drive_folder"
     ):
-        raise ValueError(
+        raise DriveSourceConflictError(
             "Drive object already exists in this "
             "knowledge base with a conflicting "
             "folder relationship."
