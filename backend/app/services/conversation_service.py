@@ -172,6 +172,14 @@ def create_message_with_ai(
         db.commit()
         db.refresh(ai_message)
 
+        # Analytics: first WhatsApp AI reply
+        from .product_analytics import track_first_whatsapp_ai_reply
+        track_first_whatsapp_ai_reply(
+            organization_id=conversation.organization_id,
+            store_id=conversation.store_id,
+            conversation_id=conversation.id,
+        )
+
     except Exception:
         db.rollback()
 

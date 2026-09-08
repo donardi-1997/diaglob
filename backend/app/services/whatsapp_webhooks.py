@@ -215,6 +215,8 @@ def process_webhook_payload(db: Session, payload: dict) -> dict:
 
 def emit_webhook_events(db: Session, new_conversations: list, new_messages: list):
     """Emit automation events for new conversations and messages."""
+    from .product_analytics import track_first_whatsapp_inbound
+
     for conversation, connection in new_conversations:
         safe_emit_event(
             db=db,
@@ -231,6 +233,13 @@ def emit_webhook_events(db: Session, new_conversations: list, new_messages: list
                 }
             },
             event_id=f"conversation:{conversation.id}:created",
+        )
+
+        # Analytics: first WhatsApp inbound (new conversation = first contact)
+        track_first_whatsapp_inbound(
+            organization_id=conversation.organization_id,
+            store_id=conversation.store_id,
+            conversation_id=conversation.id,
         )
 
     for message, conversation, connection in new_messages:

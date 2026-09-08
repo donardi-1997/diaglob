@@ -165,6 +165,14 @@ def create_knowledge_base(
     db.commit()
     db.refresh(knowledge_base)
 
+    # Analytics: knowledge created
+    from .product_analytics import track_knowledge_created
+    track_knowledge_created(
+        user_id=0,  # No user context in service
+        organization_id=organization_id,
+        kb_id=knowledge_base.id,
+    )
+
     return knowledge_base
 
 

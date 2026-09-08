@@ -797,6 +797,14 @@ def create_checkout(
             detail={"message": "Paddle no devolvió una URL de checkout"},
         )
 
+    # Analytics: checkout started
+    from .product_analytics import track_checkout_started
+    track_checkout_started(
+        user_id=0,  # No user context in service
+        organization_id=organization.id,
+        plan=plan_key,
+    )
+
     return {
         "plan": plan_key,
         "transaction_id": data.get("id"),

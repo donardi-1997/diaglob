@@ -174,6 +174,14 @@ def connect(db: Session, organization_id: int, store_id: int, phone_number_id: s
         db.rollback()
         raise WhatsAppConnectionError("WHATSAPP_SAVE_FAILED")
 
+    # Analytics: WhatsApp connected
+    from .product_analytics import track_whatsapp_connected
+    track_whatsapp_connected(
+        user_id=0,  # No user context in connect
+        organization_id=organization_id,
+        store_id=store_id,
+    )
+
     return {
         "ok": True,
         "connected": True,

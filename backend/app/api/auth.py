@@ -629,6 +629,14 @@ def provision_registration(
         db.rollback()
         raise
 
+    # Analytics: signup completed
+    from ..services.product_analytics import track_signup_completed
+    track_signup_completed(
+        user_id=user.id,
+        organization_id=organization.id,
+        role=membership.role,
+    )
+
     return {
         "created": True,
 

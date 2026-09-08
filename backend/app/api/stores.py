@@ -405,6 +405,16 @@ def create_store(
     db.commit()
     db.refresh(store)
 
+    # Analytics: store created
+    from ..services.product_analytics import track_store_created
+    track_store_created(
+        user_id=membership.user_id,
+        organization_id=membership.organization_id,
+        store_id=store.id,
+        country=country_code,
+        currency=currency,
+    )
+
     return {
         "id":
             store.id,

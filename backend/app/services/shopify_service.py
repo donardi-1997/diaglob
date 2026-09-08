@@ -255,6 +255,15 @@ def process_oauth_callback(db: Session, query_params: dict) -> str:
     )
 
     db.commit()
+
+    # Analytics: Shopify connected
+    from .product_analytics import track_shopify_connected
+    track_shopify_connected(
+        user_id=oauth_state.user_id,
+        organization_id=oauth_state.organization_id,
+        store_id=oauth_state.store_id,
+    )
+
     return _shopify_connect_frontend_url(connected=True)
 
 

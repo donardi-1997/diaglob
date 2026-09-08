@@ -261,6 +261,14 @@ def process_transaction_event(
 
     db.commit()
 
+    # Analytics: checkout completed
+    from .product_analytics import track_checkout_completed
+    track_checkout_completed(
+        organization_id=organization.id,
+        plan=organization.plan or "",
+        subscription_id=organization.billing_subscription_id,
+    )
+
     return {
         "ok": True,
         "organization_id": organization.id,

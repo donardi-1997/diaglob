@@ -443,6 +443,16 @@ def sync_shopify_products(
 
     db.commit()
 
+    # Analytics: catalog synced
+    from .services.product_analytics import track_catalog_synced
+    if store:
+        track_catalog_synced(
+            user_id=0,  # No user context in sync
+            organization_id=connection.organization_id,
+            store_id=connection.store_id,
+            products_synced=created + updated,
+        )
+
     return {
         "ok": True,
         "fetched": fetched,

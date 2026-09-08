@@ -581,6 +581,15 @@ def create_legacy_automation(db: Session, organization_id: int, store_id: int, u
     db.commit()
     db.refresh(automation)
 
+    # Analytics: first automation created
+    from .product_analytics import track_first_automation_created
+    track_first_automation_created(
+        user_id=user_id,
+        organization_id=organization_id,
+        store_id=store_id,
+        automation_id=automation.id,
+    )
+
     return {
         "id": automation.id, "organization_id": automation.organization_id,
         "store_id": automation.store_id, "name": automation.name,
