@@ -678,7 +678,14 @@ function App() {
                 </div>
                 <div className="content">
                   {activePage === "overview" && (
-                    <DashboardPage storeId={selectedStoreId ? Number(selectedStoreId) : null} />
+                    <DashboardPage
+                      storeId={selectedStoreId ? Number(selectedStoreId) : null}
+                      onNavigateToStores={() => setActivePage("settings")}
+                      onNavigateToCommerce={() => setActivePage("commerce")}
+                      onNavigateToWhatsApp={() => setActivePage("settings")}
+                      onNavigateToKnowledge={() => setActivePage("knowledge")}
+                      onNavigateToAutomations={() => setActivePage("automations")}
+                    />
                   )}
                   {activePage === "plans" && <PlansPage />}
                   {activePage === "conversations" && <ConversationsPage canWrite={can("conversations.write")} />}

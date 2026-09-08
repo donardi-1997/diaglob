@@ -546,6 +546,16 @@ export default function LoginPage({
                   : t("loginI18nCreateAccount")}
               </button>
 
+              <div className="auth-legal-links">
+                <a href="/privacy" target="_blank" rel="noopener noreferrer">
+                  {t("loginI18nPrivacy") || "Política de privacidad"}
+                </a>
+                <span>·</span>
+                <a href="/terms" target="_blank" rel="noopener noreferrer">
+                  {t("loginI18nTerms") || "Términos de servicio"}
+                </a>
+              </div>
+
               <button
                 type="button"
                 className="auth-secondary-action"

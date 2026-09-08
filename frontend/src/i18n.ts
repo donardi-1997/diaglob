@@ -1867,6 +1867,73 @@ const resources = {
       flowValidationEdgeInvalidTarget: "Una conexión tiene un destino inválido.",
       flowValidationSelfEdge: "Un nodo no puede conectarse a sí mismo.",
       flowValidationCycle: "El flujo contiene un ciclo.",
+
+      // Onboarding
+      onboardingTitle: "Primeros pasos",
+      onboardingSubtitle: "Configura tu tienda y empieza a vender",
+      onboardingProgress: "{{done}} de {{total}} completado",
+      onboardingComplete: "¡Configuración completa!",
+      onboardingCompleteHelp: "Tu tienda está lista. Sigue explorando DIAGLOB.",
+      onboardingDismiss: "Ocultar guía",
+      onboardingShowGuide: "Mostrar guía",
+
+      onboardingStepStore: "Crea tu primera tienda",
+      onboardingStepStoreHelp: "Una tienda representa tu negocio o marca.",
+      onboardingStepStoreAction: "Crear tienda",
+
+      onboardingStepShopify: "Conecta Shopify",
+      onboardingStepShopifyHelp: "Sincroniza productos, variantes e inventario automáticamente.",
+      onboardingStepShopifyAction: "Conectar Shopify",
+      onboardingStepShopifyHint: "Necesitas tu dominio .myshopify.com (ej: mitienda.myshopify.com)",
+
+      onboardingStepCatalog: "Sincroniza tu catálogo",
+      onboardingStepCatalogHelp: "Tus productos estarán disponibles en DIAGLOB.",
+      onboardingStepCatalogAction: "Sincronizar productos",
+
+      onboardingStepWhatsApp: "Conecta WhatsApp",
+      onboardingStepWhatsAppHelp: "Recibe mensajes de clientes y responde con IA.",
+      onboardingStepWhatsAppAction: "Conectar WhatsApp",
+      onboardingStepWhatsAppAssisted: "¿Necesitas ayuda para conectar WhatsApp?",
+      onboardingStepWhatsAppAssistedAction: "Contactar soporte",
+
+      onboardingStepKnowledge: "Agrega conocimiento",
+      onboardingStepKnowledgeHelp: "Documentos, Google Drive o información del negocio para que la IA entienda tu tienda.",
+      onboardingStepKnowledgeAction: "Crear base de conocimiento",
+
+      onboardingStepAutomation: "Crea tu primera automatización",
+      onboardingStepAutomationHelp: "Seguimiento automático a clientes o acciones programadas.",
+      onboardingStepAutomationAction: "Crear automatización",
+
+      onboardingSupportHelp: "¿Necesitas ayuda?",
+      onboardingSupportAction: "Contactar soporte",
+
+      // Empty states
+      emptyNoStoreTitle: "Crea tu primera tienda",
+      emptyNoStoreHelp: "Una tienda te permite gestionar productos, pedidos y conversaciones.",
+      emptyNoStoreAction: "Crear tienda",
+
+      emptyNoProductsTitle: "Sin productos",
+      emptyNoProductsHelp: "Conecta Shopify y sincroniza tu catálogo para ver productos aquí.",
+      emptyNoProductsAction: "Sincronizar productos",
+
+      emptyNoConversationsNoWhatsAppTitle: "Sin conversaciones",
+      emptyNoConversationsNoWhatsAppHelp: "Conecta WhatsApp para recibir mensajes de clientes.",
+      emptyNoConversationsNoWhatsAppAction: "Conectar WhatsApp",
+
+      emptyNoConversationsWhatsAppTitle: "Sin mensajes aún",
+      emptyNoConversationsWhatsAppHelp: "Cuando un cliente te escriba por WhatsApp, aparecerá aquí.",
+
+      emptyNoKnowledgeTitle: "Sin base de conocimiento",
+      emptyNoKnowledgeHelp: "Agrega documentos o información del negocio para que la IA responda mejor.",
+      emptyNoKnowledgeAction: "Crear base de conocimiento",
+
+      emptyNoAutomationsTitle: "Sin automatizaciones",
+      emptyNoAutomationsHelp: "Crea automatizaciones para seguir con clientes o ejecutar acciones.",
+      emptyNoAutomationsAction: "Crear automatización",
+
+      // Support
+      supportLabel: "Soporte",
+      supportHelp: "¿Necesitas ayuda? Contacta a nuestro equipo.",
     },
   },
 
@@ -3690,6 +3757,73 @@ const resources = {
       flowValidationEdgeInvalidTarget: "A connection has an invalid target.",
       flowValidationSelfEdge: "A node cannot connect to itself.",
       flowValidationCycle: "The flow contains a cycle.",
+
+      // Onboarding
+      onboardingTitle: "Getting started",
+      onboardingSubtitle: "Set up your store and start selling",
+      onboardingProgress: "{{done}} of {{total}} completed",
+      onboardingComplete: "Setup complete!",
+      onboardingCompleteHelp: "Your store is ready. Keep exploring DIAGLOB.",
+      onboardingDismiss: "Hide guide",
+      onboardingShowGuide: "Show guide",
+
+      onboardingStepStore: "Create your first store",
+      onboardingStepStoreHelp: "A store represents your business or brand.",
+      onboardingStepStoreAction: "Create store",
+
+      onboardingStepShopify: "Connect Shopify",
+      onboardingStepShopifyHelp: "Sync products, variants, and inventory automatically.",
+      onboardingStepShopifyAction: "Connect Shopify",
+      onboardingStepShopifyHint: "You need your .myshopify.com domain (e.g., mystore.myshopify.com)",
+
+      onboardingStepCatalog: "Sync your catalog",
+      onboardingStepCatalogHelp: "Your products will be available in DIAGLOB.",
+      onboardingStepCatalogAction: "Sync products",
+
+      onboardingStepWhatsApp: "Connect WhatsApp",
+      onboardingStepWhatsAppHelp: "Receive customer messages and reply with AI.",
+      onboardingStepWhatsAppAction: "Connect WhatsApp",
+      onboardingStepWhatsAppAssisted: "Need help connecting WhatsApp?",
+      onboardingStepWhatsAppAssistedAction: "Contact support",
+
+      onboardingStepKnowledge: "Add knowledge",
+      onboardingStepKnowledgeHelp: "Documents, Google Drive, or business info so AI understands your store.",
+      onboardingStepKnowledgeAction: "Create knowledge base",
+
+      onboardingStepAutomation: "Create your first automation",
+      onboardingStepAutomationHelp: "Automatic follow-ups or scheduled actions.",
+      onboardingStepAutomationAction: "Create automation",
+
+      onboardingSupportHelp: "Need help?",
+      onboardingSupportAction: "Contact support",
+
+      // Empty states
+      emptyNoStoreTitle: "Create your first store",
+      emptyNoStoreHelp: "A store lets you manage products, orders, and conversations.",
+      emptyNoStoreAction: "Create store",
+
+      emptyNoProductsTitle: "No products",
+      emptyNoProductsHelp: "Connect Shopify and sync your catalog to see products here.",
+      emptyNoProductsAction: "Sync products",
+
+      emptyNoConversationsNoWhatsAppTitle: "No conversations",
+      emptyNoConversationsNoWhatsAppHelp: "Connect WhatsApp to receive customer messages.",
+      emptyNoConversationsNoWhatsAppAction: "Connect WhatsApp",
+
+      emptyNoConversationsWhatsAppTitle: "No messages yet",
+      emptyNoConversationsWhatsAppHelp: "When a customer messages you on WhatsApp, it will appear here.",
+
+      emptyNoKnowledgeTitle: "No knowledge base",
+      emptyNoKnowledgeHelp: "Add documents or business info so AI responds better.",
+      emptyNoKnowledgeAction: "Create knowledge base",
+
+      emptyNoAutomationsTitle: "No automations",
+      emptyNoAutomationsHelp: "Create automations to follow up with customers or trigger actions.",
+      emptyNoAutomationsAction: "Create automation",
+
+      // Support
+      supportLabel: "Support",
+      supportHelp: "Need help? Contact our team.",
     },
   },
 };

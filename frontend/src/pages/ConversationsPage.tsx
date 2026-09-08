@@ -310,6 +310,21 @@ export default function ConversationsPage({
                   size={20}
                 />
               </div>
+            ) : filteredConversations.length === 0 ? (
+              <div className="conversation-empty">
+                <MessageCircle size={32} />
+                {whatsappConnected ? (
+                  <>
+                    <h4>{t("emptyNoConversationsWhatsAppTitle") || "Sin mensajes aún"}</h4>
+                    <p>{t("emptyNoConversationsWhatsAppHelp") || "Cuando un cliente te escriba por WhatsApp, aparecerá aquí."}</p>
+                  </>
+                ) : (
+                  <>
+                    <h4>{t("emptyNoConversationsNoWhatsAppTitle") || "Sin conversaciones"}</h4>
+                    <p>{t("emptyNoConversationsNoWhatsAppHelp") || "Conecta WhatsApp para recibir mensajes de clientes."}</p>
+                  </>
+                )}
+              </div>
             ) : (
               filteredConversations.map((item) => (
                 <button

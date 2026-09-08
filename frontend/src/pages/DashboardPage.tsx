@@ -12,16 +12,31 @@ import {
   getOperationsSummary,
   type OperationsSummary,
 } from "../services/operations";
+import { getStores, type Store } from "../services/stores";
+import GettingStarted from "../components/GettingStarted";
 
 interface DashboardPageProps {
   storeId: number | null;
+  onNavigateToStores?: () => void;
+  onNavigateToCommerce?: () => void;
+  onNavigateToWhatsApp?: () => void;
+  onNavigateToKnowledge?: () => void;
+  onNavigateToAutomations?: () => void;
 }
 
-export default function DashboardPage({ storeId }: DashboardPageProps) {
+export default function DashboardPage({
+  storeId,
+  onNavigateToStores,
+  onNavigateToCommerce,
+  onNavigateToWhatsApp,
+  onNavigateToKnowledge,
+  onNavigateToAutomations,
+}: DashboardPageProps) {
   const { t } = useTranslation();
   const [data, setData] = useState<OperationsSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [stores, setStores] = useState<Store[]>([]);
 
   useEffect(() => {
     if (!storeId) {
@@ -60,6 +75,19 @@ export default function DashboardPage({ storeId }: DashboardPageProps) {
     };
   }, [storeId]);
 
+  // Load stores for onboarding
+  useEffect(() => {
+    let mounted = true;
+    getStores()
+      .then((res) => {
+        if (mounted) setStores(res.items);
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   if (!storeId) {
     return (
       <div className="content">
@@ -71,8 +99,13 @@ export default function DashboardPage({ storeId }: DashboardPageProps) {
         </section>
         <div className="empty-state">
           <Settings size={48} />
-          <h3>{t("dashboardNoStore") || "Selecciona una tienda para comenzar."}</h3>
-          <p>{t("dashboardNoStoreHelp") || "Activa o selecciona una tienda desde el selector inferior."}</p>
+          <h3>{t("emptyNoStoreTitle") || "Crea tu primera tienda"}</h3>
+          <p>{t("emptyNoStoreHelp") || "Una tienda te permite gestionar productos, pedidos y conversaciones."}</p>
+          {onNavigateToStores && (
+            <button className="primary-button" onClick={onNavigateToStores}>
+              {t("emptyNoStoreAction") || "Crear tienda"}
+            </button>
+          )}
         </div>
       </div>
     );
@@ -143,6 +176,16 @@ export default function DashboardPage({ storeId }: DashboardPageProps) {
           <p>{t("brandTagline")}</p>
         </div>
       </section>
+
+      <GettingStarted
+        stores={stores}
+        selectedStoreId={storeId}
+        onNavigateToStores={onNavigateToStores || (() => {})}
+        onNavigateToCommerce={onNavigateToCommerce || (() => {})}
+        onNavigateToWhatsApp={onNavigateToWhatsApp || (() => {})}
+        onNavigateToKnowledge={onNavigateToKnowledge || (() => {})}
+        onNavigateToAutomations={onNavigateToAutomations || (() => {})}
+      />
 
       <section className="stats-grid">
         <div className="stat-card">
