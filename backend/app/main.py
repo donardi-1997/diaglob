@@ -166,6 +166,7 @@ app.add_middleware(RateLimitMiddleware)
 # ============================================================
 
 from .api.analytics import router as analytics_router  # noqa: E402
+from .api.admin import router as admin_router  # noqa: E402
 from .api.automations import router as automations_router  # noqa: E402
 from .api.auth import router as auth_router  # noqa: E402
 from .api.billing import router as billing_router  # noqa: E402
@@ -202,6 +203,7 @@ app.include_router(conversations_router)
 app.include_router(analytics_router)
 app.include_router(dropi_router)
 app.include_router(markets_router)
+app.include_router(admin_router)
 
 # ============================================================
 # TEST COMPATIBILITY RE-EXPORTS

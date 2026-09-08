@@ -57,6 +57,22 @@
   ],
   [
     "GET",
+    "/api/admin/attention"
+  ],
+  [
+    "GET",
+    "/api/admin/organizations"
+  ],
+  [
+    "GET",
+    "/api/admin/organizations/{org_id}"
+  ],
+  [
+    "GET",
+    "/api/admin/overview"
+  ],
+  [
+    "GET",
     "/api/commerce/products"
   ],
   [
