@@ -1,5 +1,4 @@
 import os
-from datetime import datetime, timedelta
 
 from fastapi import (
     APIRouter,
@@ -12,31 +11,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..models import (
-    CommerceConnection,
-    OrganizationMembership,
-    ShopifyOAuthState,
-    Store,
-)
-from ..shopify_oauth import (
-    SHOPIFY_SCOPES,
-    build_authorization_url,
-    exchange_access_token,
-    generate_oauth_state,
-    normalize_shop_domain,
-    verify_shopify_hmac,
-)
-from ..shopify_security import encrypt_shopify_secret
-from ..shopify_sync import (
-    sync_shopify_products,
-    test_shopify_connection,
-)
-from ..shopify_orders import (
-    create_shopify_draft_order,
-    get_shopify_order,
-    list_shopify_orders,
-)
-from ..shopify_poc import create_poc_order
+from ..models import OrganizationMembership
 from ..shopify_client import (
     ShopifyAPIError,
     ShopifyAuthError,
@@ -45,6 +20,21 @@ from ..shopify_client import (
     ShopifyUserError,
 )
 from .deps import require_permission
+from ..services.shopify_service import (
+    ShopifyConnectionError,
+    ShopifyNotFoundError,
+    ShopifyOAuthError,
+    ShopifyProviderError,
+    create_order as svc_create_order,
+    create_poc as svc_create_poc,
+    disconnect as svc_disconnect,
+    get_order as svc_get_order,
+    list_orders as svc_list_orders,
+    process_oauth_callback as svc_process_oauth_callback,
+    start_oauth as svc_start_oauth,
+    sync_products as svc_sync_products,
+    test_connection as svc_test_connection,
+)
 
 router = APIRouter()
 
@@ -108,27 +98,37 @@ class ShopifyPocOrderRequest(BaseModel):
         return value
 
 
-# --- Helper ---
+# --- Error mapping ---
 
 
-def _shopify_connect_frontend_url(
-    connected: bool,
-) -> str:
-    base_url = os.getenv(
-        "FRONTEND_URL",
-        "https://diaglob.tech",
-    ).strip().rstrip("/")
-
-    status = (
-        "connected"
-        if connected
-        else "already-connected"
-    )
-
-    return (
-        f"{base_url}"
-        f"?shopify={status}"
-    )
+def _map_oauth_error(exc: Exception):
+    if isinstance(exc, ShopifyNotFoundError):
+        raise HTTPException(status_code=404, detail=str(exc))
+    if isinstance(exc, ShopifyOAuthError):
+        code = str(exc)
+        detail_map = {
+            "Invalid Shopify HMAC": (403, "Invalid Shopify HMAC"),
+            "Missing required Shopify OAuth parameters": (400, "Missing required Shopify OAuth parameters"),
+            "Invalid or already used OAuth state": (400, "Invalid or already used OAuth state"),
+            "OAuth state expired": (400, "OAuth state expired"),
+            "Invalid shop domain": (400, "Invalid shop domain"),
+            "OAuth state does not match the shop domain": (400, "OAuth state does not match the shop domain"),
+            "INVALID_SHOPIFY_DOMAIN": (400, {"code": "INVALID_SHOPIFY_DOMAIN", "message": "Dominio Shopify inválido."}),
+        }
+        status, detail = detail_map.get(code, (400, code))
+        raise HTTPException(status_code=status, detail=detail)
+    if isinstance(exc, ShopifyConnectionError):
+        code = str(exc)
+        if code == "COMMERCE_ALREADY_CONNECTED":
+            raise HTTPException(status_code=409, detail={"code": code, "message": "Esta tienda ya tiene una integración de comercio."})
+        if code == "SHOPIFY_STORE_ALREADY_CONNECTED":
+            raise HTTPException(status_code=409, detail={"code": code, "message": "Esta tienda Shopify ya está conectada a DIAGLOB."})
+        if code == "SHOPIFY_NOT_CONFIGURED":
+            raise HTTPException(status_code=503, detail={"code": code, "message": str(exc)})
+        raise HTTPException(status_code=409, detail=str(exc))
+    if isinstance(exc, ShopifyProviderError):
+        raise HTTPException(status_code=502, detail=str(exc))
+    raise exc
 
 
 # --- Endpoints ---
@@ -138,201 +138,15 @@ def _shopify_connect_frontend_url(
 def start_shopify_connection(
     store_id: int,
     payload: ShopifyConnectRequest,
-    membership: OrganizationMembership = Depends(
-        require_permission(
-            "stores.write"
-        )
-    ),
+    membership: OrganizationMembership = Depends(require_permission("stores.write")),
     db: Session = Depends(get_db),
 ):
-    store = (
-        db.query(Store)
-        .filter(
-            Store.id == store_id,
-            Store.organization_id
-            == membership.organization_id,
-            Store.deleted.is_(False),
-        )
-        .first()
-    )
-
-    if not store:
-        raise HTTPException(
-            status_code=404,
-            detail="Store not found",
-        )
-
-    if not store.active:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "La tienda debe estar activa "
-                "para conectar Shopify."
-            ),
-        )
-
-    existing_connection = (
-        db.query(CommerceConnection)
-        .filter(
-            CommerceConnection.store_id
-            == store.id,
-        )
-        .first()
-    )
-
-    if existing_connection:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "code":
-                    "COMMERCE_ALREADY_CONNECTED",
-
-                "message":
-                    (
-                        "Esta tienda ya tiene una "
-                        "integración de comercio."
-                    ),
-
-                "provider":
-                    existing_connection.provider,
-            },
-        )
-
     try:
-        shop_domain = (
-            normalize_shop_domain(
-                payload.shop_domain
-            )
+        return svc_start_oauth(
+            db, membership.organization_id, store_id, membership.user_id, payload.shop_domain
         )
-
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "code":
-                    "INVALID_SHOPIFY_DOMAIN",
-
-                "message":
-                    "Dominio Shopify inválido.",
-            },
-        ) from exc
-
-    conflicting_connection = (
-        db.query(CommerceConnection)
-        .filter(
-            CommerceConnection.provider
-            == "shopify",
-            CommerceConnection.external_store_url
-            == shop_domain,
-        )
-        .first()
-    )
-
-    if conflicting_connection:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "code":
-                    "SHOPIFY_STORE_ALREADY_CONNECTED",
-
-                "message":
-                    (
-                        "Esta tienda Shopify ya "
-                        "está conectada a DIAGLOB."
-                    ),
-            },
-        )
-
-    state = generate_oauth_state()
-
-    now = datetime.utcnow()
-
-    oauth_state = ShopifyOAuthState(
-        state=state,
-
-        organization_id=
-            membership.organization_id,
-
-        store_id=
-            store.id,
-
-        user_id=
-            membership.user_id,
-
-        shop_domain=
-            shop_domain,
-
-        expires_at=
-            now + timedelta(
-                minutes=10
-            ),
-
-        used=False,
-
-        created_at=now,
-    )
-
-    db.add(oauth_state)
-
-    # Limpiamos estados antiguos del mismo
-    # usuario/tienda para evitar acumulación.
-    (
-        db.query(ShopifyOAuthState)
-        .filter(
-            ShopifyOAuthState.store_id
-            == store.id,
-
-            ShopifyOAuthState.user_id
-            == membership.user_id,
-
-            ShopifyOAuthState.state
-            != state,
-
-            ShopifyOAuthState.used
-            .is_(False),
-        )
-        .update(
-            {
-                ShopifyOAuthState.used:
-                    True,
-            },
-            synchronize_session=False,
-        )
-    )
-
-    try:
-        authorization_url = (
-            build_authorization_url(
-                shop_domain,
-                state,
-            )
-        )
-
-    except RuntimeError as exc:
-        db.rollback()
-
-        raise HTTPException(
-            status_code=503,
-            detail={
-                "code":
-                    "SHOPIFY_NOT_CONFIGURED",
-
-                "message":
-                    str(exc),
-            },
-        ) from exc
-
-    db.commit()
-
-    return {
-        "ok": True,
-        "provider": "shopify",
-        "store_id": store.id,
-        "shop_domain": shop_domain,
-        "expires_in_seconds": 600,
-        "authorization_url":
-            authorization_url,
-    }
+    except (ShopifyNotFoundError, ShopifyConnectionError, ShopifyOAuthError) as exc:
+        _map_oauth_error(exc)
 
 
 @router.get("/api/shopify/callback")
@@ -340,503 +154,72 @@ def shopify_oauth_callback(
     request: Request,
     db: Session = Depends(get_db),
 ):
-    query_params = dict(
-        request.query_params
-    )
-
-    if not verify_shopify_hmac(
-        query_params
-    ):
-        raise HTTPException(
-            status_code=403,
-            detail="Invalid Shopify HMAC",
-        )
-
-    code = query_params.get(
-        "code",
-        "",
-    )
-
-    state = query_params.get(
-        "state",
-        "",
-    )
-
-    shop = query_params.get(
-        "shop",
-        "",
-    )
-
-    if not (code and state and shop):
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Missing required Shopify "
-                "OAuth parameters"
-            ),
-        )
-
-    oauth_state = (
-        db.query(ShopifyOAuthState)
-        .filter(
-            ShopifyOAuthState.state
-            == state,
-            ShopifyOAuthState.used
-            .is_(False),
-        )
-        .first()
-    )
-
-    if not oauth_state:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Invalid or already used "
-                "OAuth state"
-            ),
-        )
-
-    if (
-        oauth_state.expires_at
-        < datetime.utcnow()
-    ):
-        raise HTTPException(
-            status_code=400,
-            detail="OAuth state expired",
-        )
+    query_params = dict(request.query_params)
 
     try:
-        normalized_shop = (
-            normalize_shop_domain(
-                shop
-            )
-        )
+        redirect_url = svc_process_oauth_callback(db, query_params)
+    except (ShopifyOAuthError, ShopifyProviderError) as exc:
+        _map_oauth_error(exc)
 
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid shop domain",
-        ) from exc
-
-    if (
-        oauth_state.shop_domain
-        != normalized_shop
-    ):
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "OAuth state does not match "
-                "the shop domain"
-            ),
-        )
-
-    try:
-        access_token = (
-            exchange_access_token(
-                normalized_shop,
-                code,
-            )
-        )
-
-    except RuntimeError as exc:
-        raise HTTPException(
-            status_code=502,
-            detail=str(exc),
-        ) from exc
-
-    encrypted_token = (
-        encrypt_shopify_secret(
-            access_token
-        )
-    )
-
-    existing_connection = (
-        db.query(CommerceConnection)
-        .filter(
-            CommerceConnection.store_id
-            == oauth_state.store_id,
-        )
-        .first()
-    )
-
-    if existing_connection:
-        (
-            db.query(ShopifyOAuthState)
-            .filter(
-                ShopifyOAuthState.id
-                == oauth_state.id,
-            )
-            .update(
-                {
-                    ShopifyOAuthState.used:
-                        True,
-                },
-                synchronize_session=False,
-            )
-        )
-
-        db.commit()
-
-        return RedirectResponse(
-            _shopify_connect_frontend_url(
-                connected=False
-            )
-        )
-
-    now = datetime.utcnow()
-
-    connection = CommerceConnection(
-        organization_id=
-            oauth_state.organization_id,
-
-        store_id=
-            oauth_state.store_id,
-
-        provider="shopify",
-
-        external_store_url=
-            normalized_shop,
-
-        access_token_encrypted=
-            encrypted_token,
-
-        scopes=SHOPIFY_SCOPES,
-
-        status="connected",
-
-        connected_at=now,
-    )
-
-    db.add(connection)
-
-    (
-        db.query(ShopifyOAuthState)
-        .filter(
-            ShopifyOAuthState.id
-            == oauth_state.id,
-        )
-        .update(
-            {
-                ShopifyOAuthState.used:
-                    True,
-            },
-            synchronize_session=False,
-        )
-    )
-
-    db.commit()
-
-    return RedirectResponse(
-        _shopify_connect_frontend_url(
-            connected=True
-        )
-    )
+    return RedirectResponse(redirect_url)
 
 
 @router.delete("/api/stores/{store_id}/shopify/disconnect")
 def disconnect_shopify(
     store_id: int,
-    membership: OrganizationMembership = Depends(
-        require_permission(
-            "stores.write"
-        )
-    ),
+    membership: OrganizationMembership = Depends(require_permission("stores.write")),
     db: Session = Depends(get_db),
 ):
-    store = (
-        db.query(Store)
-        .filter(
-            Store.id == store_id,
-            Store.organization_id
-            == membership.organization_id,
-            Store.deleted.is_(False),
-        )
-        .first()
-    )
-
-    if not store:
-        raise HTTPException(
-            status_code=404,
-            detail="Store not found",
-        )
-
-    connection = (
-        db.query(CommerceConnection)
-        .filter(
-            CommerceConnection.store_id
-            == store.id,
-            CommerceConnection.organization_id
-            == membership.organization_id,
-            CommerceConnection.provider
-            == "shopify",
-        )
-        .first()
-    )
-
-    if not connection:
-        raise HTTPException(
-            status_code=404,
-            detail={
-                "code":
-                    "SHOPIFY_NOT_CONNECTED",
-
-                "message":
-                    (
-                        "Esta tienda no tiene "
-                        "Shopify conectado."
-                    ),
-            },
-        )
-
-    db.delete(connection)
-    db.commit()
-
-    return {
-        "ok": True,
-        "connected": False,
-        "store_id": store.id,
-    }
+    try:
+        return svc_disconnect(db, membership.organization_id, store_id)
+    except ShopifyNotFoundError as exc:
+        _map_oauth_error(exc)
 
 
-@router.post(
-    "/api/stores/{store_id}"
-    "/shopify/test"
-)
+@router.post("/api/stores/{store_id}/shopify/test")
 def shopify_test_connection(
     store_id: int,
-    membership: OrganizationMembership = Depends(
-        require_permission(
-            "stores.write"
-        )
-    ),
+    membership: OrganizationMembership = Depends(require_permission("stores.write")),
     db: Session = Depends(get_db),
 ):
-    store = (
-        db.query(Store)
-        .filter(
-            Store.id == store_id,
-            Store.organization_id
-            == membership.organization_id,
-            Store.deleted.is_(False),
-        )
-        .first()
-    )
-
-    if not store:
-        raise HTTPException(
-            status_code=404,
-            detail="Store not found",
-        )
-
-    connection = (
-        db.query(CommerceConnection)
-        .filter(
-            CommerceConnection.store_id
-            == store.id,
-            CommerceConnection.organization_id
-            == membership.organization_id,
-            CommerceConnection.provider
-            == "shopify",
-            CommerceConnection.status
-            == "connected",
-        )
-        .first()
-    )
-
-    if not connection:
-        raise HTTPException(
-            status_code=404,
-            detail={
-                "code":
-                    "SHOPIFY_NOT_CONNECTED",
-                "message":
-                    (
-                        "Shopify no está "
-                        "conectado."
-                    ),
-            },
-        )
-
     try:
-        result = (
-            test_shopify_connection(
-                connection
-            )
-        )
-
+        return svc_test_connection(db, membership.organization_id, store_id)
+    except ShopifyNotFoundError as exc:
+        raise HTTPException(status_code=404, detail={"code": "SHOPIFY_NOT_CONNECTED", "message": "Shopify no está conectado."})
     except ShopifyAuthError as exc:
-        connection.status = "error"
-        connection.last_error = str(exc)
-        db.commit()
-
-        raise HTTPException(
-            status_code=401,
-            detail={
-                "connected": False,
-                "error": str(exc),
-            },
-        ) from exc
-
-    except (
-        ShopifyAPIError,
-        ShopifyGraphQLError,
-    ) as exc:
-        connection.status = "error"
-        connection.last_error = str(exc)
-        db.commit()
-
-        raise HTTPException(
-            status_code=502,
-            detail={
-                "connected": False,
-                "error": str(exc),
-            },
-        ) from exc
-
-    connection.status = "connected"
-    connection.last_error = None
-    db.commit()
-
-    return result
+        raise HTTPException(status_code=401, detail={"connected": False, "error": str(exc)})
+    except (ShopifyAPIError, ShopifyGraphQLError) as exc:
+        raise HTTPException(status_code=502, detail={"connected": False, "error": str(exc)})
 
 
-@router.post(
-    "/api/stores/{store_id}"
-    "/shopify/sync/products"
-)
+@router.post("/api/stores/{store_id}/shopify/sync/products")
 def shopify_sync_products(
     store_id: int,
-    membership: OrganizationMembership = Depends(
-        require_permission(
-            "stores.write"
-        )
-    ),
+    membership: OrganizationMembership = Depends(require_permission("stores.write")),
     db: Session = Depends(get_db),
 ):
-    store = (
-        db.query(Store)
-        .filter(
-            Store.id == store_id,
-            Store.organization_id
-            == membership.organization_id,
-            Store.deleted.is_(False),
-        )
-        .first()
-    )
-
-    if not store:
-        raise HTTPException(
-            status_code=404,
-            detail="Store not found",
-        )
-
-    connection = (
-        db.query(CommerceConnection)
-        .filter(
-            CommerceConnection.store_id
-            == store.id,
-            CommerceConnection.organization_id
-            == membership.organization_id,
-            CommerceConnection.provider
-            == "shopify",
-            CommerceConnection.status
-            == "connected",
-        )
-        .first()
-    )
-
-    if not connection:
-        raise HTTPException(
-            status_code=404,
-            detail={
-                "code":
-                    "SHOPIFY_NOT_CONNECTED",
-                "message":
-                    (
-                        "Shopify no está "
-                        "conectado."
-                    ),
-            },
-        )
-
     try:
-        result = sync_shopify_products(
-            db, connection
-        )
-
+        return svc_sync_products(db, membership.organization_id, store_id)
+    except ShopifyNotFoundError as exc:
+        raise HTTPException(status_code=404, detail={"code": "SHOPIFY_NOT_CONNECTED", "message": "Shopify no está conectado."})
     except ShopifyAuthError as exc:
-        connection.status = "error"
-        connection.last_error = str(exc)
-        db.commit()
-
-        raise HTTPException(
-            status_code=401,
-            detail={
-                "ok": False,
-                "error": str(exc),
-            },
-        ) from exc
-
-    except (
-        ShopifyAPIError,
-        ShopifyGraphQLError,
-    ) as exc:
-        connection.last_error = str(exc)
-        db.commit()
-
-        raise HTTPException(
-            status_code=502,
-            detail={
-                "ok": False,
-                "error": str(exc),
-            },
-        ) from exc
-
-    return result
+        raise HTTPException(status_code=401, detail={"ok": False, "error": str(exc)})
+    except (ShopifyAPIError, ShopifyGraphQLError) as exc:
+        raise HTTPException(status_code=502, detail={"ok": False, "error": str(exc)})
 
 
 @router.post("/api/stores/{store_id}/shopify/poc/order")
 def create_shopify_poc_order(
     store_id: int,
     payload: ShopifyPocOrderRequest,
-    membership: OrganizationMembership = Depends(
-        require_permission("commerce.write")
-    ),
+    membership: OrganizationMembership = Depends(require_permission("commerce.write")),
     db: Session = Depends(get_db),
 ):
-    store = (
-        db.query(Store)
-        .filter(
-            Store.id == store_id,
-            Store.organization_id == membership.organization_id,
-            Store.deleted.is_(False),
-        )
-        .first()
-    )
-    if not store:
-        raise HTTPException(status_code=404, detail="Store not found")
-
-    connection = (
-        db.query(CommerceConnection)
-        .filter(
-            CommerceConnection.store_id == store.id,
-            CommerceConnection.organization_id == membership.organization_id,
-            CommerceConnection.provider == "shopify",
-            CommerceConnection.status == "connected",
-        )
-        .first()
-    )
-    if not connection:
-        raise HTTPException(
-            status_code=404,
-            detail={"code": "SHOPIFY_NOT_CONNECTED", "message": "Shopify no está conectado."},
-        )
-
     try:
-        return create_poc_order(
+        return svc_create_poc(
             db=db,
-            store=store,
-            connection=connection,
+            organization_id=membership.organization_id,
+            store_id=store_id,
             variant_id=payload.variant_id,
             quantity=payload.quantity,
             customer_email=payload.customer_email,
@@ -846,257 +229,90 @@ def create_shopify_poc_order(
             note=payload.note,
             idempotency_key=payload.idempotency_key,
         )
+    except ShopifyNotFoundError as exc:
+        raise HTTPException(status_code=404, detail={"code": "SHOPIFY_NOT_CONNECTED", "message": "Shopify no está conectado."})
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=str(exc))
     except ShopifyAuthError as exc:
-        connection.status = "error"
-        connection.last_error = str(exc)
-        db.commit()
-        raise HTTPException(status_code=401, detail={"success": False, "error": str(exc)}) from exc
+        raise HTTPException(status_code=401, detail={"success": False, "error": str(exc)})
     except ShopifyUserError as exc:
-        raise HTTPException(status_code=422, detail={"success": False, "error": str(exc)}) from exc
+        raise HTTPException(status_code=422, detail={"success": False, "error": str(exc)})
     except ShopifyTimeoutError as exc:
-        raise HTTPException(status_code=504, detail={"success": False, "error": str(exc)}) from exc
+        raise HTTPException(status_code=504, detail={"success": False, "error": str(exc)})
     except (ShopifyAPIError, ShopifyGraphQLError) as exc:
-        connection.last_error = str(exc)
-        db.commit()
-        raise HTTPException(status_code=502, detail={"success": False, "error": str(exc)}) from exc
+        raise HTTPException(status_code=502, detail={"success": False, "error": str(exc)})
 
 
-@router.post(
-    "/api/stores/{store_id}"
-    "/shopify/orders"
-)
+@router.post("/api/stores/{store_id}/shopify/orders")
 def create_shopify_order(
     store_id: int,
     payload: ShopifyOrderCreateRequest,
-    membership: OrganizationMembership = Depends(
-        require_permission(
-            "commerce.write"
-        )
-    ),
+    membership: OrganizationMembership = Depends(require_permission("commerce.write")),
     db: Session = Depends(get_db),
 ):
-    store = (
-        db.query(Store)
-        .filter(
-            Store.id == store_id,
-            Store.organization_id
-            == membership.organization_id,
-            Store.deleted.is_(False),
-        )
-        .first()
-    )
-
-    if not store:
-        raise HTTPException(
-            status_code=404,
-            detail="Store not found",
-        )
-
-    connection = (
-        db.query(CommerceConnection)
-        .filter(
-            CommerceConnection.store_id
-            == store.id,
-            CommerceConnection.organization_id
-            == membership.organization_id,
-            CommerceConnection.provider
-            == "shopify",
-            CommerceConnection.status
-            == "connected",
-        )
-        .first()
-    )
-
-    if not connection:
-        raise HTTPException(
-            status_code=404,
-            detail={
-                "code":
-                    "SHOPIFY_NOT_CONNECTED",
-                "message":
-                    (
-                        "Shopify no está "
-                        "conectado."
-                    ),
-            },
-        )
-
     if not payload.items:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "At least one item is required"
-            ),
-        )
+        raise HTTPException(status_code=400, detail="At least one item is required")
 
     for item in payload.items:
         if item.quantity <= 0:
             raise HTTPException(
                 status_code=400,
-                detail=(
-                    f"Quantity must be > 0 for "
-                    f"variant "
-                    f"{item.variant_local_id}"
-                ),
+                detail=f"Quantity must be > 0 for variant {item.variant_local_id}",
             )
 
     try:
-        result = create_shopify_draft_order(
+        return svc_create_order(
             db=db,
-            store=store,
-            connection=connection,
+            organization_id=membership.organization_id,
+            store_id=store_id,
             items_payload=[
-                {
-                    "variant_local_id":
-                        item.variant_local_id,
-                    "quantity": item.quantity,
-                }
+                {"variant_local_id": item.variant_local_id, "quantity": item.quantity}
                 for item in payload.items
             ],
-            customer_email=(
-                payload.customer_email
-            ),
-            customer_name=(
-                payload.customer_name
-            ),
+            customer_email=payload.customer_email,
+            customer_name=payload.customer_name,
             note=payload.note,
-            idempotency_key=(
-                payload.idempotency_key
-            ),
+            idempotency_key=payload.idempotency_key,
         )
-
+    except ShopifyNotFoundError as exc:
+        raise HTTPException(status_code=404, detail={"code": "SHOPIFY_NOT_CONNECTED", "message": "Shopify no está conectado."})
     except ValueError as exc:
-        raise HTTPException(
-            status_code=400,
-            detail=str(exc),
-        ) from exc
-
+        raise HTTPException(status_code=400, detail=str(exc))
     except ShopifyAuthError as exc:
-        connection.status = "error"
-        connection.last_error = str(exc)
-        db.commit()
-
-        raise HTTPException(
-            status_code=401,
-            detail={
-                "ok": False,
-                "error": str(exc),
-            },
-        ) from exc
-
+        raise HTTPException(status_code=401, detail={"ok": False, "error": str(exc)})
     except ShopifyUserError as exc:
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "ok": False,
-                "error": str(exc),
-            },
-        ) from exc
-
-    except (
-        ShopifyAPIError,
-        ShopifyGraphQLError,
-    ) as exc:
-        connection.last_error = str(exc)
-        db.commit()
-
-        raise HTTPException(
-            status_code=502,
-            detail={
-                "ok": False,
-                "error": str(exc),
-            },
-        ) from exc
-
-    return result
+        raise HTTPException(status_code=422, detail={"ok": False, "error": str(exc)})
+    except (ShopifyAPIError, ShopifyGraphQLError) as exc:
+        raise HTTPException(status_code=502, detail={"ok": False, "error": str(exc)})
 
 
-@router.get(
-    "/api/stores/{store_id}"
-    "/shopify/orders"
-)
+@router.get("/api/stores/{store_id}/shopify/orders")
 def list_orders(
     store_id: int,
-    membership: OrganizationMembership = Depends(
-        require_permission(
-            "commerce.read"
-        )
-    ),
+    membership: OrganizationMembership = Depends(require_permission("commerce.read")),
     db: Session = Depends(get_db),
 ):
-    store = (
-        db.query(Store)
-        .filter(
-            Store.id == store_id,
-            Store.organization_id
-            == membership.organization_id,
-            Store.deleted.is_(False),
-        )
-        .first()
-    )
+    try:
+        orders = svc_list_orders(db, membership.organization_id, store_id)
+    except ShopifyNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
 
-    if not store:
-        raise HTTPException(
-            status_code=404,
-            detail="Store not found",
-        )
-
-    orders = list_shopify_orders(
-        db=db,
-        store_id=store.id,
-        organization_id=store.organization_id,
-    )
-
-    return {
-        "items": orders,
-        "total": len(orders),
-    }
+    return {"items": orders, "total": len(orders)}
 
 
-@router.get(
-    "/api/stores/{store_id}"
-    "/shopify/orders/{order_id}"
-)
+@router.get("/api/stores/{store_id}/shopify/orders/{order_id}")
 def get_order(
     store_id: int,
     order_id: int,
-    membership: OrganizationMembership = Depends(
-        require_permission(
-            "commerce.read"
-        )
-    ),
+    membership: OrganizationMembership = Depends(require_permission("commerce.read")),
     db: Session = Depends(get_db),
 ):
-    store = (
-        db.query(Store)
-        .filter(
-            Store.id == store_id,
-            Store.organization_id
-            == membership.organization_id,
-            Store.deleted.is_(False),
-        )
-        .first()
-    )
-
-    if not store:
-        raise HTTPException(
-            status_code=404,
-            detail="Store not found",
-        )
-
-    order = get_shopify_order(
-        db=db,
-        order_id=order_id,
-        store_id=store.id,
-        organization_id=store.organization_id,
-    )
+    try:
+        order = svc_get_order(db, membership.organization_id, store_id, order_id)
+    except ShopifyNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
 
     if not order:
-        raise HTTPException(
-            status_code=404,
-            detail="Order not found",
-        )
+        raise HTTPException(status_code=404, detail="Order not found")
 
     return order
