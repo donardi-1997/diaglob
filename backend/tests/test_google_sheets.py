@@ -1657,7 +1657,7 @@ class TestDeleteSourceBedrockReindex:
         client = client_factory(org)
 
         with patch(
-            "app.api.knowledge.delete_knowledge_file"
+            "app.services.knowledge_source_lifecycle.delete_knowledge_file"
         ) as mock_delete, patch(
             "app.services.knowledge_ingestion.start_ingestion_job",
             return_value="job-cleanup-123",
@@ -2754,7 +2754,7 @@ class TestGoogleDrivePhase2:
         client = client_factory(org)
 
         with patch(
-            "app.api.knowledge.delete_knowledge_file"
+            "app.services.knowledge_source_lifecycle.delete_knowledge_file"
         ) as delete_file, patch(
             "app.services.knowledge_ingestion.start_ingestion_job",
             return_value="job-1",
@@ -2851,7 +2851,7 @@ class TestGoogleDrivePhase2:
         client = client_factory(org)
 
         with patch(
-            "app.api.knowledge.delete_knowledge_file"
+            "app.services.knowledge_source_lifecycle.delete_knowledge_file"
         ), patch(
             "app.services.knowledge_ingestion.start_ingestion_job",
             return_value=None,
@@ -2934,7 +2934,7 @@ class TestGoogleDrivePhase2:
         client = client_factory(org)
 
         with patch(
-            "app.api.knowledge.delete_knowledge_file"
+            "app.services.knowledge_source_lifecycle.delete_knowledge_file"
         ) as mock_delete, patch(
             "app.services.knowledge_ingestion.start_ingestion_job",
             return_value="job-file-cleanup",

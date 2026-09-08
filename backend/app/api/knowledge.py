@@ -1,8 +1,5 @@
-import json
 import logging
 import re
-import time
-from datetime import datetime
 from typing import Literal
 
 import httpx
@@ -42,28 +39,22 @@ from ..services.knowledge_ingestion import (
     is_source_sync_in_progress as svc_is_source_sync_in_progress,
 )
 from ..services.knowledge_provisioning import (
-    PROVISIONING_RETRY_DELAYS_SECONDS,
     run_knowledge_base_provisioning,
-    schedule_knowledge_base_provisioning,
-    reconcile_knowledge_base_provisioning,
+)
+from ..services.knowledge_source_lifecycle import (
+    SourceNotFoundError as SourceLifecycleNotFoundError,
+    SourceDeletionError,
+    list_knowledge_sources as svc_list_knowledge_sources,
+    upload_source_file as svc_upload_source_file,
+    collect_sources_to_delete as svc_collect_sources_to_delete,
+    delete_source_artifacts as svc_delete_source_artifacts,
+    deactivate_sources as svc_deactivate_sources,
 )
 from ..services.knowledge_sources import (
-    DRIVE_SOURCE_TYPES,
     _derive_freshness,
-    _delete_artifact_best_effort,
-    _download_drive_child,
-    _drive_conflict_reason,
     _find_active_drive_source,
-    _finish_folder_operation,
-    _folder_file_record,
-    _folder_summary,
-    _folder_sync_error,
     _google_source_import_mode,
-    _is_remote_file_modified,
     _mark_drive_source_failed,
-    _parse_google_modified_at,
-    _persist_new_drive_source,
-    _start_drive_source_ingestion,
     add_google_drive_folder,
     sync_google_drive_folder,
 )
@@ -71,7 +62,6 @@ from ..services.drive_file_sources import (
     add_google_doc,
     add_drive_file,
     sync_drive_file,
-    check_standalone_conflict,
     _EmptyContentError,
     DriveSourceConflictError,
 )
@@ -79,22 +69,12 @@ from ..services.google_sheet_sources import (
     add_google_sheet,
     sync_google_sheet,
 )
-from ..db import SessionLocal, get_db
+from ..db import get_db
 from ..google_drive_client import (
     GoogleDriveFileTooLarge,
-    MAX_TOTAL_SYNC_BYTES,
-    download_drive_file,
-    export_google_doc,
-    get_file_metadata,
     is_supported_mime_type,
-    list_folder_children,
-    validate_folder_sync_limits,
 )
 from ..google_sheets_client import extract_spreadsheet_id
-from ..knowledge_storage import (
-    delete_knowledge_file,
-    upload_knowledge_file,
-)
 from ..models import (
     GoogleConnection,
     KnowledgeBase,
@@ -102,7 +82,6 @@ from ..models import (
     OrganizationMembership,
     Store,
 )
-from ..permissions import has_permission
 from .deps import get_allowed_store_ids, require_permission
 from .google import _get_valid_google_token, _require_drive_scope
 
@@ -677,43 +656,17 @@ def list_knowledge_sources(
     ),
     db: Session = Depends(get_db),
 ):
-    knowledge_base = (
-        db.query(KnowledgeBase)
-        .filter(
-            KnowledgeBase.id == knowledge_base_id,
-            KnowledgeBase.organization_id
-            == membership.organization_id,
+    try:
+        knowledge_base, sources, google_connection = svc_list_knowledge_sources(
+            db,
+            organization_id=membership.organization_id,
+            knowledge_base_id=knowledge_base_id,
         )
-        .first()
-    )
-
-    if not knowledge_base:
+    except SourceLifecycleNotFoundError as exc:
         raise HTTPException(
             status_code=404,
-            detail="Knowledge base not found",
-        )
-
-    sources = (
-        db.query(KnowledgeSource)
-        .filter(
-            KnowledgeSource.organization_id
-            == membership.organization_id,
-            KnowledgeSource.knowledge_base_id
-            == knowledge_base_id,
-            KnowledgeSource.active.is_(True),
-        )
-        .order_by(KnowledgeSource.created_at.desc())
-        .all()
-    )
-
-    google_connection = (
-        db.query(GoogleConnection)
-        .filter(
-            GoogleConnection.organization_id
-            == membership.organization_id,
-        )
-        .first()
-    )
+            detail=str(exc),
+        ) from exc
 
     return {
         "items": [
@@ -781,35 +734,19 @@ async def upload_knowledge_source(
         )
 
     try:
-        uploaded = upload_knowledge_file(
+        source = svc_upload_source_file(
+            db,
             organization_id=membership.organization_id,
-            knowledge_base_id=knowledge_base.id,
+            knowledge_base=knowledge_base,
             filename=filename,
             content=content,
             content_type=file.content_type,
         )
-    except Exception as exc:
+    except SourceDeletionError as exc:
         raise HTTPException(
             status_code=502,
-            detail="Unable to upload knowledge document",
+            detail=str(exc),
         ) from exc
-
-    source = KnowledgeSource(
-        organization_id=membership.organization_id,
-        knowledge_base_id=knowledge_base.id,
-        name=filename,
-        source_type="file",
-        content_type=file.content_type,
-        s3_bucket=uploaded["bucket"],
-        s3_key=uploaded["key"],
-        size_bytes=len(content),
-        status="uploaded",
-        active=True,
-    )
-
-    db.add(source)
-    db.commit()
-    db.refresh(source)
 
     return serialize_knowledge_source(source)
 
@@ -848,41 +785,24 @@ def delete_knowledge_source(
             detail="Knowledge source not found",
         )
 
-    sources_to_delete = [source]
-    if source.source_type == "google_drive_folder":
-        sources_to_delete.extend(
-            db.query(KnowledgeSource)
-            .filter(
-                KnowledgeSource.parent_source_id == source.id,
-                KnowledgeSource.organization_id
-                == membership.organization_id,
-                KnowledgeSource.knowledge_base_id
-                == knowledge_base_id,
-                KnowledgeSource.active.is_(True),
-            )
-            .all()
-        )
+    sources_to_delete = svc_collect_sources_to_delete(
+        db,
+        organization_id=membership.organization_id,
+        knowledge_base_id=knowledge_base_id,
+        source=source,
+    )
 
-    # A folder is metadata only; its children own the S3 artifacts.
     try:
-        for item in sources_to_delete:
-            if item.s3_bucket and item.s3_key:
-                delete_knowledge_file(
-                    item.s3_bucket, item.s3_key,
-                )
-    except Exception as exc:
+        svc_delete_source_artifacts(sources_to_delete)
+    except SourceDeletionError as exc:
         db.rollback()
         raise HTTPException(
             status_code=502,
-            detail="Unable to delete knowledge document",
+            detail=str(exc),
         ) from exc
 
-    for item in sources_to_delete:
-        item.active = False
-        item.status = "deleted"
-    db.flush()
+    svc_deactivate_sources(db, sources_to_delete)
 
-    # Trigger Bedrock reindex to remove deleted content from vector index
     ingestion_job_id, reindex_status = svc_trigger_source_reindex(kb)
 
     db.commit()

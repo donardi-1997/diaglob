@@ -1665,7 +1665,7 @@ def test_ready_kb_file_upload_remains_allowed(api_client, db):
         data_source_id=BEDROCK_DS_ID,
     )
     with patch(
-        "app.api.knowledge.upload_knowledge_file",
+        "app.services.knowledge_source_lifecycle.upload_knowledge_file",
         return_value={"bucket": KNOWLEDGE_BUCKET, "key": "safe/test.txt"},
     ):
         response = client.post(
