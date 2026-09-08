@@ -99,8 +99,7 @@ export default function GettingStarted({
   const whatsappConnected = whatsappStatus?.connected ?? false;
   const hasProducts = productCount > 0;
 
-  // TODO: Check knowledge and automation state from existing APIs
-  // For now, we'll check if the store has any knowledge bases or automations
+  // Check knowledge and automation state from existing APIs
   const [hasKnowledge, setHasKnowledge] = useState(false);
   const [hasAutomations, setHasAutomations] = useState(false);
 

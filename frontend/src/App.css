@@ -10791,6 +10791,20 @@ button:disabled {
 }
 
 /* ============================================================
+   SUPPORT LINK
+   ============================================================ */
+
+.support-link {
+  text-decoration: none;
+  color: var(--text-secondary);
+  transition: color 0.15s;
+}
+
+.support-link:hover {
+  color: var(--accent);
+}
+
+/* ============================================================
    WHATSAPP ACTIVATION GUIDE
    ============================================================ */
 

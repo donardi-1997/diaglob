@@ -17,6 +17,7 @@ import {
   Bot,
   BrainCircuit,
   ChevronDown,
+  HelpCircle,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -522,6 +523,15 @@ function App() {
                       <span>{t("settings")}</span>
                     </button>
                   )}
+                  <a
+                    href={import.meta.env.VITE_SUPPORT_URL || "#"}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="nav-item support-link"
+                  >
+                    <HelpCircle size={18} />
+                    <span>{t("supportLabel") || "Soporte"}</span>
+                  </a>
                   <div className="store-switcher">
                     <button
                       className="workspace-card"
