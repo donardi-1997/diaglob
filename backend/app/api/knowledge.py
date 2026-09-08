@@ -55,6 +55,13 @@ from ..services.knowledge_sources import (
     add_google_drive_folder,
     sync_google_drive_folder,
 )
+from ..services.drive_file_sources import (
+    add_google_doc,
+    add_drive_file,
+    sync_drive_file,
+    check_standalone_conflict,
+    _EmptyContentError,
+)
 from ..db import SessionLocal, get_db
 from ..google_drive_client import (
     GoogleDriveFileTooLarge,
@@ -1558,11 +1565,24 @@ async def add_google_doc_source(
             },
         )
 
-    # Export Google Doc to text/plain
     try:
-        content = await export_google_doc(
-            access_token, request.file_id, "text/plain",
+        result = await add_google_doc(
+            db, org_id, kb, access_token,
+            request.file_id, request.file_name,
         )
+    except _EmptyContentError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "DRIVE_SOURCE_CONFLICT",
+                "message": str(exc),
+            },
+        ) from exc
     except httpx.HTTPStatusError as exc:
         code, msg = map_google_api_error(exc.response.status_code)
         raise HTTPException(
@@ -1580,78 +1600,7 @@ async def add_google_doc_source(
             detail={"code": "GOOGLE_DOWNLOAD_FAILED", "message": str(exc)},
         ) from exc
 
-    if not content:
-        raise HTTPException(
-            status_code=400,
-            detail="Document is empty",
-        )
-
-    # Upload to S3
-    filename = f"{request.file_name}.txt"
-    try:
-        s3_result = upload_knowledge_file(
-            organization_id=org_id,
-            knowledge_base_id=knowledge_base_id,
-            filename=filename,
-            content=content,
-            content_type="text/plain",
-        )
-    except Exception as exc:
-        raise HTTPException(
-            status_code=500,
-            detail=f"S3 upload failed: {exc}",
-        ) from exc
-
-    # Get remote modified time
-    remote_meta = None
-    try:
-        remote_meta = await get_file_metadata(
-            access_token, request.file_id
-        )
-    except Exception:
-        pass
-
-    modified_at = _parse_google_modified_at(
-        remote_meta.get("modifiedTime") if remote_meta else None
-    )
-
-    source = KnowledgeSource(
-        knowledge_base_id=knowledge_base_id,
-        organization_id=org_id,
-        name=request.file_name,
-        source_type="google_doc",
-        s3_bucket=s3_result["bucket"],
-        s3_key=s3_result["key"],
-        size_bytes=len(content),
-        status="uploaded",
-        external_id=request.file_id,
-        external_name=request.file_name,
-        external_mime_type="application/vnd.google-apps.document",
-        external_modified_at=modified_at,
-        last_synced_at=datetime.utcnow(),
-        sync_status="uploaded",
-    )
-    try:
-        _persist_new_drive_source(db, source, s3_result)
-    except Exception as exc:
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "code": "SOURCE_PERSISTENCE_FAILED",
-                "message": str(exc),
-            },
-        ) from exc
-
-    sync_status, ingestion_job_id = _start_drive_source_ingestion(
-        db, source, kb
-    )
-
-    return {
-        "source_id": source.id,
-        "name": source.name,
-        "sync_status": sync_status,
-        "ingestion_job_id": ingestion_job_id,
-    }
+    return result
 
 
 # ============================================================
@@ -1722,9 +1671,24 @@ async def add_google_drive_file_source(
             },
         )
 
-    # Download file from Drive
     try:
-        content = await download_drive_file(access_token, request.file_id)
+        result = await add_drive_file(
+            db, org_id, kb, access_token,
+            request.file_id, request.file_name, request.mime_type,
+        )
+    except _EmptyContentError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "DRIVE_SOURCE_CONFLICT",
+                "message": str(exc),
+            },
+        ) from exc
     except (GoogleDriveFileTooLarge, ValueError) as exc:
         raise HTTPException(
             status_code=400,
@@ -1742,86 +1706,7 @@ async def add_google_drive_file_source(
             detail={"code": "GOOGLE_DOWNLOAD_FAILED", "message": str(exc)},
         ) from exc
 
-    if not content:
-        raise HTTPException(
-            status_code=400,
-            detail="File is empty",
-        )
-
-    # Upload to S3
-    safe_name = re.sub(r"[^A-Za-z0-9._-]+", "-", request.file_name)
-    filename = f"{safe_name}"
-    try:
-        s3_result = upload_knowledge_file(
-            organization_id=org_id,
-            knowledge_base_id=knowledge_base_id,
-            filename=filename,
-            content=content,
-            content_type=request.mime_type,
-        )
-    except Exception as exc:
-        raise HTTPException(
-            status_code=500,
-            detail=f"S3 upload failed: {exc}",
-        ) from exc
-
-    # Get remote metadata
-    remote_meta = None
-    try:
-        remote_meta = await get_file_metadata(access_token, request.file_id)
-    except Exception:
-        pass
-
-    modified_at = _parse_google_modified_at(
-        remote_meta.get("modifiedTime") if remote_meta else None
-    )
-    ext_size = None
-    if remote_meta:
-        if remote_meta.get("size"):
-            try:
-                ext_size = int(remote_meta["size"])
-            except (TypeError, ValueError):
-                pass
-
-    source = KnowledgeSource(
-        knowledge_base_id=knowledge_base_id,
-        organization_id=org_id,
-        name=request.file_name,
-        source_type="google_drive_file",
-        content_type=request.mime_type,
-        s3_bucket=s3_result["bucket"],
-        s3_key=s3_result["key"],
-        size_bytes=len(content),
-        status="uploaded",
-        external_id=request.file_id,
-        external_name=request.file_name,
-        external_mime_type=request.mime_type,
-        external_modified_at=modified_at,
-        external_size=ext_size,
-        last_synced_at=datetime.utcnow(),
-        sync_status="uploaded",
-    )
-    try:
-        _persist_new_drive_source(db, source, s3_result)
-    except Exception as exc:
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "code": "SOURCE_PERSISTENCE_FAILED",
-                "message": str(exc),
-            },
-        ) from exc
-
-    sync_status, ingestion_job_id = _start_drive_source_ingestion(
-        db, source, kb
-    )
-
-    return {
-        "source_id": source.id,
-        "name": source.name,
-        "sync_status": sync_status,
-        "ingestion_job_id": ingestion_job_id,
-    }
+    return result
 
 
 # ============================================================
@@ -2121,36 +2006,15 @@ async def sync_drive_file_source(
             },
         )
 
-    source.sync_status = "syncing"
-    source.sync_error = None
     try:
-        db.commit()
-    except Exception as exc:
-        db.rollback()
+        result = await sync_drive_file(
+            db, org_id, kb, source, access_token,
+        )
+    except _EmptyContentError as exc:
         raise HTTPException(
-            status_code=500,
-            detail={
-                "code": "SYNC_STATE_PERSISTENCE_FAILED",
-                "message": str(exc),
-            },
+            status_code=400,
+            detail=str(exc),
         ) from exc
-
-    # Re-download content
-    try:
-        if source.source_type == "google_doc":
-            content = await export_google_doc(
-                access_token, source.external_id, "text/plain",
-            )
-            new_mime = "text/plain"
-        else:
-            content = await download_drive_file(
-                access_token, source.external_id
-            )
-            new_mime = (
-                source.external_mime_type
-                or source.content_type
-                or "application/octet-stream"
-            )
     except httpx.HTTPStatusError as exc:
         code, msg = map_google_api_error(exc.response.status_code)
         _mark_drive_source_failed(db, source, msg)
@@ -2166,144 +2030,31 @@ async def sync_drive_file_source(
             detail={"code": "FILE_TOO_LARGE", "message": error},
         ) from exc
     except Exception as exc:
-        error = f"Google Drive download failed: {exc}"
-        _mark_drive_source_failed(db, source, error)
-        raise HTTPException(
-            status_code=502,
-            detail={"code": "GOOGLE_DOWNLOAD_FAILED", "message": error},
-        ) from exc
-
-    if not content:
-        _mark_drive_source_failed(db, source, "File is empty")
-        raise HTTPException(
-            status_code=400,
-            detail="File is empty",
-        )
-
-    # Upload and durably repoint before deleting the old artifact.
-    old_bucket = source.s3_bucket
-    old_key = source.s3_key
-    safe_name = re.sub(
-        r"[^A-Za-z0-9._-]+", "-",
-        source.external_name or source.name,
-    )
-    try:
-        s3_result = upload_knowledge_file(
-            organization_id=org_id,
-            knowledge_base_id=knowledge_base_id,
-            filename=safe_name,
-            content=content,
-            content_type=new_mime,
-        )
-    except Exception as exc:
-        error = f"S3 upload failed: {exc}"
+        error = str(exc)
+        if "DB persistence failed" in error:
+            _mark_drive_source_failed(db, source, error)
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "code": "SOURCE_PERSISTENCE_FAILED",
+                    "message": error,
+                },
+            ) from exc
+        if "Ingestion state persistence failed" in error:
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "code": "INGESTION_STATE_FAILED",
+                    "message": error,
+                },
+            ) from exc
         _mark_drive_source_failed(db, source, error)
         raise HTTPException(
             status_code=500,
             detail=error,
         ) from exc
 
-    # Get remote metadata
-    remote_meta = None
-    try:
-        remote_meta = await get_file_metadata(access_token, source.external_id)
-    except Exception:
-        pass
-
-    if remote_meta:
-        source.external_modified_at = (
-            _parse_google_modified_at(remote_meta.get("modifiedTime"))
-            or source.external_modified_at
-        )
-
-    source.s3_bucket = s3_result["bucket"]
-    source.s3_key = s3_result["key"]
-    source.size_bytes = len(content)
-    source.content_type = new_mime
-    source.status = "uploaded"
-    source.last_synced_at = datetime.utcnow()
-    source.sync_status = "uploaded"
-    source.sync_error = None
-    source.ingestion_job_id = None
-    try:
-        db.commit()
-    except Exception as exc:
-        db.rollback()
-        _delete_artifact_best_effort(
-            s3_result.get("bucket"), s3_result.get("key"),
-            "Failed to clean new Drive sync artifact",
-        )
-        persisted_source = (
-            db.query(KnowledgeSource)
-            .filter(
-                KnowledgeSource.id == source_id,
-                KnowledgeSource.organization_id == org_id,
-                KnowledgeSource.knowledge_base_id == knowledge_base_id,
-            )
-            .first()
-        )
-        if persisted_source:
-            _mark_drive_source_failed(
-                db, persisted_source, f"DB persistence failed: {exc}",
-            )
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "code": "SOURCE_PERSISTENCE_FAILED",
-                "message": str(exc),
-            },
-        ) from exc
-
-    cleanup_warning = None
-    if (old_bucket, old_key) != (
-        s3_result.get("bucket"), s3_result.get("key")
-    ):
-        cleanup_warning = _delete_artifact_best_effort(
-            old_bucket, old_key, "Failed to delete replaced artifact",
-        )
-
-    try:
-        sync_status, ingestion_job_id = (
-            _start_drive_source_ingestion(
-                db, source, kb, cleanup_warning,
-            )
-        )
-        db.refresh(source)
-    except Exception as exc:
-        db.rollback()
-        persisted_source = (
-            db.query(KnowledgeSource)
-            .filter(
-                KnowledgeSource.id == source_id,
-                KnowledgeSource.organization_id == org_id,
-                KnowledgeSource.knowledge_base_id == knowledge_base_id,
-            )
-            .first()
-        )
-        if persisted_source:
-            persisted_source.sync_status = "uploaded"
-            persisted_source.sync_error = (
-                f"Ingestion state persistence failed: {exc}"
-            )
-            try:
-                db.commit()
-            except Exception:
-                db.rollback()
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "code": "INGESTION_STATE_FAILED",
-                "message": str(exc),
-            },
-        ) from exc
-
-    return {
-        "source_id": source.id,
-        "sync_status": sync_status,
-        "ingestion_job_id": ingestion_job_id,
-        "sync_error": source.sync_error,
-        "warning": cleanup_warning,
-    }
+    return result
 
 
 # ============================================================

@@ -1711,10 +1711,10 @@ class TestDeleteSourceBedrockReindex:
             "app.api.knowledge._get_valid_google_token",
             return_value="token",
         ), patch(
-            "app.api.knowledge.download_drive_file",
+            "app.services.drive_file_sources.download_drive_file",
             return_value=b"new-content",
         ), patch(
-            "app.api.knowledge.upload_knowledge_file",
+            "app.services.drive_file_sources.upload_knowledge_file",
             side_effect=RuntimeError("upload unavailable"),
         ), patch(
             "app.services.knowledge_sources.delete_knowledge_file"
@@ -1734,7 +1734,7 @@ class TestDeleteSourceBedrockReindex:
     def test_new_artifact_cleaned_on_db_persistence_failure(
         self,
     ):
-        from app.api.knowledge import _persist_new_drive_source
+        from app.services.knowledge_sources import _persist_new_drive_source
 
         fake_db = MagicMock()
         fake_db.commit.side_effect = RuntimeError("db down")
@@ -1867,7 +1867,7 @@ class TestDeleteSourceBedrockReindex:
             "app.services.knowledge_sources.delete_knowledge_file",
             side_effect=RuntimeError("delete denied"),
         ), patch(
-            "app.api.knowledge.start_ingestion_job"
+            "app.services.knowledge_sources.start_ingestion_job"
         ) as start_job:
             response = client.post(
                 f"/api/knowledge-bases/{kb.id}/sources/"
@@ -1921,18 +1921,18 @@ class TestDeleteSourceBedrockReindex:
             "app.api.knowledge._get_valid_google_token",
             return_value="token",
         ), patch(
-            "app.api.knowledge.download_drive_file",
+            "app.services.drive_file_sources.download_drive_file",
             return_value=b"new",
         ), patch(
-            "app.api.knowledge.get_file_metadata",
+            "app.services.drive_file_sources.get_file_metadata",
             return_value={},
         ), patch(
-            "app.api.knowledge.upload_knowledge_file",
+            "app.services.drive_file_sources.upload_knowledge_file",
             return_value={"bucket": "bucket", "key": "new-key"},
         ), patch(
             "app.services.knowledge_sources.delete_knowledge_file"
         ), patch(
-            "app.api.knowledge.start_ingestion_job"
+            "app.services.knowledge_sources.start_ingestion_job"
         ) as start_job:
             response = client.post(
                 f"/api/knowledge-bases/{kb.id}/sources/"
@@ -1979,16 +1979,16 @@ class TestDeleteSourceBedrockReindex:
         with patch(
             "app.api.knowledge._get_valid_google_token", return_value="token"
         ), patch(
-            "app.api.knowledge.download_drive_file", return_value=b"new"
+            "app.services.drive_file_sources.download_drive_file", return_value=b"new"
         ), patch(
-            "app.api.knowledge.get_file_metadata", return_value={}
+            "app.services.drive_file_sources.get_file_metadata", return_value={}
         ), patch(
-            "app.api.knowledge.upload_knowledge_file",
+            "app.services.drive_file_sources.upload_knowledge_file",
             return_value={"bucket": "bucket", "key": "new-key"},
         ), patch(
             "app.services.knowledge_sources.delete_knowledge_file"
         ), patch(
-            "app.api.knowledge.start_ingestion_job"
+            "app.services.knowledge_sources.start_ingestion_job"
         ) as start_job:
             if start_error is None:
                 start_job.return_value = None
@@ -2052,7 +2052,7 @@ class TestDeleteSourceBedrockReindex:
             "app.services.knowledge_sources.list_folder_children",
             return_value={"files": files},
         ), patch(
-            "app.api.knowledge.start_ingestion_job"
+            "app.services.knowledge_sources.start_ingestion_job"
         ) as start_job, patch(
             "app.services.knowledge_sources._download_drive_child"
         ) as download:
@@ -2193,9 +2193,9 @@ class TestDeleteSourceBedrockReindex:
         client = client_factory(org)
 
         with patch(
-            "app.api.knowledge.download_drive_file"
+            "app.services.drive_file_sources.download_drive_file"
         ) as download, patch(
-            "app.api.knowledge.upload_knowledge_file"
+            "app.services.drive_file_sources.upload_knowledge_file"
         ) as upload:
             standalone = client.post(
                 f"/api/knowledge-bases/{kb.id}/sources/"
@@ -2222,9 +2222,9 @@ class TestDeleteSourceBedrockReindex:
         ), patch(
             "app.services.knowledge_sources._download_drive_child"
         ) as download, patch(
-            "app.api.knowledge.upload_knowledge_file"
+            "app.services.knowledge_sources.upload_knowledge_file"
         ) as upload, patch(
-            "app.api.knowledge.start_ingestion_job"
+            "app.services.knowledge_sources.start_ingestion_job"
         ) as start_job:
             folder_response = client.post(
                 f"/api/knowledge-bases/{kb.id}/sources/"
@@ -2283,7 +2283,7 @@ class TestDeleteSourceBedrockReindex:
         ), patch(
             "app.services.knowledge_sources.delete_knowledge_file"
         ) as delete_file, patch(
-            "app.api.knowledge.start_ingestion_job"
+            "app.services.knowledge_sources.start_ingestion_job"
         ) as start_job:
             response = client.post(
                 f"/api/knowledge-bases/{kb.id}/sources/"
@@ -2432,11 +2432,11 @@ class TestDeleteSourceBedrockReindex:
         with patch(
             "app.services.knowledge_sources.list_folder_children"
         ) as list_children, patch(
-            "app.api.knowledge.download_drive_file"
+            "app.services.drive_file_sources.download_drive_file"
         ) as download, patch(
-            "app.api.knowledge.upload_knowledge_file"
+            "app.services.drive_file_sources.upload_knowledge_file"
         ) as upload, patch(
-            "app.api.knowledge.start_ingestion_job"
+            "app.services.knowledge_sources.start_ingestion_job"
         ) as start_job:
             folder_response = client.post(
                 f"/api/knowledge-bases/{kb_b.id}/sources/"
