@@ -2004,6 +2004,9 @@ const resources = {
       // Support
       supportLabel: "Soporte",
       supportHelp: "¿Necesitas ayuda? Contacta a nuestro equipo.",
+
+      // Unified inbox
+      allStores: "Todas las tiendas",
     },
   },
 
@@ -3964,6 +3967,9 @@ const resources = {
       // Support
       supportLabel: "Support",
       supportHelp: "Need help? Contact our team.",
+
+      // Unified inbox
+      allStores: "All stores",
     },
   },
 };

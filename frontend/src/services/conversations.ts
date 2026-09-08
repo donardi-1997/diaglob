@@ -5,9 +5,19 @@ import type {
   ConversationMode,
 } from "../types/conversation";
 
-export async function getConversations() {
+export async function getConversations(storeId?: number) {
+  const headers: Record<string, string> = {};
+
+  if (storeId) {
+    headers["X-Store-Id"] = String(storeId);
+  } else {
+    // Use global scope to get conversations from all stores
+    headers["X-Diaglob-Global-Scope"] = "1";
+  }
+
   const response = await api.get<ConversationListResponse>(
     "/api/conversations",
+    { headers },
   );
 
   return response.data;

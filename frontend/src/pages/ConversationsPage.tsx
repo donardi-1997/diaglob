@@ -19,6 +19,8 @@ import {
   setConversationMode,
 } from "../services/conversations";
 
+import { getStores, type Store } from "../services/stores";
+
 import type {
   ConversationDetail,
   ConversationMode,
@@ -52,6 +54,10 @@ export default function ConversationsPage({
   const [whatsappConnected, setWhatsAppConnected] = useState(false);
   const [sendChannel, setSendChannel] = useState<"auto" | "whatsapp">("auto");
 
+  // Unified inbox state
+  const [stores, setStores] = useState<Store[]>([]);
+  const [inboxStoreFilter, setInboxStoreFilter] = useState<string>("all");
+
   const chatBodyRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -60,9 +66,16 @@ export default function ConversationsPage({
     el.scrollTop = el.scrollHeight;
   }, [conversation?.messages]);
 
+  // Load stores for filter
+  useEffect(() => {
+    getStores()
+      .then((res) => setStores(res.items))
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     loadConversations();
-  }, []);
+  }, [inboxStoreFilter]);
 
   useEffect(() => {
     if (selectedId === null) {
@@ -77,7 +90,9 @@ export default function ConversationsPage({
       setLoadingList(true);
       setError("");
 
-      const data = await getConversations();
+      // Use global scope header to get conversations from all stores
+      // when filter is "all", otherwise use specific store
+      const data = await getConversations(inboxStoreFilter === "all" ? undefined : Number(inboxStoreFilter));
 
       setConversations(data.items);
 
@@ -262,9 +277,9 @@ export default function ConversationsPage({
     <div className="content conversations-content">
       <section className="page-heading conversations-heading">
         <div>
-          <span className="eyebrow">DIAGLOB INBOX</span>
-          <h1>{t("conversationsTitle")}</h1>
-          <p>{t("conversationsSubtitle")}</p>
+              <span className="eyebrow">DIAGLOB INBOX</span>
+              <h1>{t("conversationsTitle") || "Conversaciones"}</h1>
+              <p>{t("conversationsSubtitle") || "Gestiona mensajes de todas tus tiendas"}</p>
         </div>
       </section>
 
@@ -276,6 +291,24 @@ export default function ConversationsPage({
 
       <div className="inbox-layout">
         <section className="conversation-list-panel">
+          {/* Store filter for unified inbox */}
+          {stores.length > 1 && (
+            <div className="inbox-store-filter">
+              <select
+                value={inboxStoreFilter}
+                onChange={(e) => setInboxStoreFilter(e.target.value)}
+                className="inbox-store-select"
+              >
+                <option value="all">{t("allStores") || "Todas las tiendas"}</option>
+                {stores.filter((s) => s.active).map((store) => (
+                  <option key={store.id} value={String(store.id)}>
+                    {store.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <div className="conversation-search">
             <Search size={16} />
 
@@ -349,6 +382,11 @@ export default function ConversationsPage({
                   <div className="conversation-row-copy">
                     <div className="conversation-row-top">
                       <strong>{item.name}</strong>
+                      {inboxStoreFilter === "all" && item.store && (
+                        <span className="conversation-store-badge">
+                          {item.store.name}
+                        </span>
+                      )}
                       <span>{item.time}</span>
                     </div>
 
@@ -386,6 +424,12 @@ export default function ConversationsPage({
                     <strong>
                       {conversation.name}
                     </strong>
+
+                    {conversation.store && (
+                      <span className="chat-store-badge">
+                        {conversation.store.name}
+                      </span>
+                    )}
 
                     <span>
                       {conversation.channel} ·{" "}

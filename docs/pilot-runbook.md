@@ -253,7 +253,33 @@ Pilot must answer:
 - Support workload manageable
 - AI unit economics validated
 - Billing conversion works
-- Top onboarding friction identified and addressed
+- Top onboarding friction identified
+
+## Unified Multi-Store Inbox
+
+Merchants with multiple stores can now manage all conversations from one inbox.
+
+### Features
+
+- **All Stores view**: See conversations from all authorized stores in one list
+- **Store filter**: Filter by specific store or view all
+- **Store identity**: Every conversation shows its store name
+- **Store context in chat**: Chat header shows conversation's store
+- **Safe AI isolation**: AI uses only the conversation's store context
+
+### How It Works
+
+1. Open Conversations
+2. If you have multiple stores, a store filter appears at the top
+3. Select "All stores" to see all conversations
+4. Each conversation shows its store name
+5. When you open a conversation, the store context is preserved for AI
+
+### Important
+
+- AI context is ALWAYS store-specific, even in unified view
+- Products, Knowledge, and configuration are never mixed across stores
+- WhatsApp credentials are resolved per conversation store and addressed
 
 ## Pilot Decision Framework
 
