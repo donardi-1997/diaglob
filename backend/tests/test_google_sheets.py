@@ -1717,7 +1717,7 @@ class TestDeleteSourceBedrockReindex:
             "app.api.knowledge.upload_knowledge_file",
             side_effect=RuntimeError("upload unavailable"),
         ), patch(
-            "app.api.knowledge.delete_knowledge_file"
+            "app.services.knowledge_sources.delete_knowledge_file"
         ) as delete_file:
             response = client.post(
                 f"/api/knowledge-bases/{kb.id}/sources/"
@@ -1795,16 +1795,16 @@ class TestDeleteSourceBedrockReindex:
             "app.api.knowledge._get_valid_google_token",
             return_value="token",
         ), patch(
-            "app.api.knowledge.list_folder_children",
+            "app.services.knowledge_sources.list_folder_children",
             return_value={"files": files},
         ), patch(
-            "app.api.knowledge._download_drive_child",
+            "app.services.knowledge_sources._download_drive_child",
             side_effect=[
                 (b"one", "application/pdf", "google_drive_file"),
                 RuntimeError("download failed"),
             ],
         ), patch(
-            "app.api.knowledge.upload_knowledge_file",
+            "app.services.knowledge_sources.upload_knowledge_file",
             return_value={"bucket": "bucket", "key": "new-1"},
         ), patch(
             "app.services.knowledge_sources.start_ingestion_job",
@@ -1861,10 +1861,10 @@ class TestDeleteSourceBedrockReindex:
             "app.api.knowledge._get_valid_google_token",
             return_value="token",
         ), patch(
-            "app.api.knowledge.list_folder_children",
+            "app.services.knowledge_sources.list_folder_children",
             return_value={"files": []},
         ), patch(
-            "app.api.knowledge.delete_knowledge_file",
+            "app.services.knowledge_sources.delete_knowledge_file",
             side_effect=RuntimeError("delete denied"),
         ), patch(
             "app.api.knowledge.start_ingestion_job"
@@ -1930,7 +1930,7 @@ class TestDeleteSourceBedrockReindex:
             "app.api.knowledge.upload_knowledge_file",
             return_value={"bucket": "bucket", "key": "new-key"},
         ), patch(
-            "app.api.knowledge.delete_knowledge_file"
+            "app.services.knowledge_sources.delete_knowledge_file"
         ), patch(
             "app.api.knowledge.start_ingestion_job"
         ) as start_job:
@@ -1986,7 +1986,7 @@ class TestDeleteSourceBedrockReindex:
             "app.api.knowledge.upload_knowledge_file",
             return_value={"bucket": "bucket", "key": "new-key"},
         ), patch(
-            "app.api.knowledge.delete_knowledge_file"
+            "app.services.knowledge_sources.delete_knowledge_file"
         ), patch(
             "app.api.knowledge.start_ingestion_job"
         ) as start_job:
@@ -2049,12 +2049,12 @@ class TestDeleteSourceBedrockReindex:
         with patch(
             "app.api.knowledge._get_valid_google_token", return_value="token"
         ), patch(
-            "app.api.knowledge.list_folder_children",
+            "app.services.knowledge_sources.list_folder_children",
             return_value={"files": files},
         ), patch(
             "app.api.knowledge.start_ingestion_job"
         ) as start_job, patch(
-            "app.api.knowledge._download_drive_child"
+            "app.services.knowledge_sources._download_drive_child"
         ) as download:
             response = client.post(
                 f"/api/knowledge-bases/{kb.id}/sources/"
@@ -2125,22 +2125,22 @@ class TestDeleteSourceBedrockReindex:
         with patch(
             "app.api.knowledge._get_valid_google_token", return_value="token"
         ), patch(
-            "app.api.knowledge.list_folder_children",
+            "app.services.knowledge_sources.list_folder_children",
             return_value={"files": files},
         ), patch(
-            "app.api.knowledge._download_drive_child",
+            "app.services.knowledge_sources._download_drive_child",
             side_effect=[
                 (b"new", "application/pdf", "google_drive_file"),
                 (b"changed", "application/pdf", "google_drive_file"),
             ],
         ), patch(
-            "app.api.knowledge.upload_knowledge_file",
+            "app.services.knowledge_sources.upload_knowledge_file",
             side_effect=[
                 {"bucket": "bucket", "key": "new-key"},
                 {"bucket": "bucket", "key": "modified-new"},
             ],
         ), patch(
-            "app.api.knowledge.delete_knowledge_file"
+            "app.services.knowledge_sources.delete_knowledge_file"
         ), patch(
             "app.services.knowledge_sources.start_ingestion_job",
             return_value="job-mixed",
@@ -2217,10 +2217,10 @@ class TestDeleteSourceBedrockReindex:
         with patch(
             "app.api.knowledge._get_valid_google_token", return_value="token"
         ), patch(
-            "app.api.knowledge.list_folder_children",
+            "app.services.knowledge_sources.list_folder_children",
             return_value={"files": files},
         ), patch(
-            "app.api.knowledge._download_drive_child"
+            "app.services.knowledge_sources._download_drive_child"
         ) as download, patch(
             "app.api.knowledge.upload_knowledge_file"
         ) as upload, patch(
@@ -2278,10 +2278,10 @@ class TestDeleteSourceBedrockReindex:
         with patch(
             "app.api.knowledge._get_valid_google_token", return_value="token"
         ), patch(
-            "app.api.knowledge.list_folder_children",
+            "app.services.knowledge_sources.list_folder_children",
             side_effect=RuntimeError("repeated page token"),
         ), patch(
-            "app.api.knowledge.delete_knowledge_file"
+            "app.services.knowledge_sources.delete_knowledge_file"
         ) as delete_file, patch(
             "app.api.knowledge.start_ingestion_job"
         ) as start_job:
@@ -2322,18 +2322,18 @@ class TestDeleteSourceBedrockReindex:
         ]
 
         with patch(
-            "app.api.knowledge.MAX_TOTAL_SYNC_BYTES", 5
+            "app.services.knowledge_sources.MAX_TOTAL_SYNC_BYTES", 5
         ), patch(
             "app.api.knowledge._get_valid_google_token", return_value="token"
         ), patch(
-            "app.api.knowledge.list_folder_children",
+            "app.services.knowledge_sources.list_folder_children",
             return_value={"files": files},
         ), patch(
             "app.services.knowledge_sources.export_google_doc", return_value=b"1234"
         ) as export_doc, patch(
             "app.services.knowledge_sources.download_drive_file", return_value=b"5678"
         ), patch(
-            "app.api.knowledge.upload_knowledge_file",
+            "app.services.knowledge_sources.upload_knowledge_file",
             return_value={"bucket": "bucket", "key": "doc-key"},
         ) as upload, patch(
             "app.services.knowledge_sources.start_ingestion_job", return_value="job-1"
@@ -2385,7 +2385,7 @@ class TestDeleteSourceBedrockReindex:
         client = client_factory(org)
 
         with patch(
-            "app.api.knowledge.delete_knowledge_file",
+            "app.services.knowledge_sources.delete_knowledge_file",
             side_effect=[None, RuntimeError("delete failed")],
         ), patch(
             "app.api.knowledge.start_ingestion_job"
@@ -2430,7 +2430,7 @@ class TestDeleteSourceBedrockReindex:
         client = client_factory(org_a)
 
         with patch(
-            "app.api.knowledge.list_folder_children"
+            "app.services.knowledge_sources.list_folder_children"
         ) as list_children, patch(
             "app.api.knowledge.download_drive_file"
         ) as download, patch(
@@ -2807,7 +2807,7 @@ class TestGoogleDrivePhase2:
         client = client_factory(org)
 
         with patch(
-            "app.api.knowledge.delete_knowledge_file"
+            "app.services.knowledge_sources.delete_knowledge_file"
         ) as mock_delete, patch(
             "app.api.knowledge.start_ingestion_job"
         ) as mock_ingest:
@@ -2897,7 +2897,7 @@ class TestGoogleDrivePhase2:
         client_a = client_factory(org_a)
 
         with patch(
-            "app.api.knowledge.delete_knowledge_file"
+            "app.services.knowledge_sources.delete_knowledge_file"
         ) as mock_delete, patch(
             "app.api.knowledge.start_ingestion_job"
         ) as mock_ingest:
