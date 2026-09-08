@@ -30,7 +30,7 @@ from app.automation_execution_engine import (
 )
 from app.whatsapp_client import WhatsAppDeliveryError, send_whatsapp_template_message
 from app.whatsapp_compliance import evaluate_whatsapp_delivery_eligibility, get_whatsapp_service_window_status
-from app.api.automations import _replace_campaign_members
+from app.services.automation_campaigns_service import _replace_campaign_members
 
 
 @pytest.fixture()
