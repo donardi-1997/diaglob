@@ -120,7 +120,7 @@ def create_message_with_ai(
             limit=5,
         )
 
-        answer = generate_grounded_answer(
+        ai_result = generate_grounded_answer(
             question=text,
             evidence=evidence,
             agent_name=agent.name,
@@ -153,8 +153,35 @@ def create_message_with_ai(
             commerce_results=commerce_results,
         )
 
+        # Handle both dict and string returns (backward compatibility)
+        if isinstance(ai_result, dict):
+            answer = ai_result.get("answer", "")
+            input_tokens = ai_result.get("input_tokens", 0)
+            output_tokens = ai_result.get("output_tokens", 0)
+        else:
+            answer = ai_result
+            input_tokens = 0
+            output_tokens = 0
+
         if not answer:
             return serialized_message
+
+        # Analytics: AI usage metering
+        from .product_analytics import capture
+        if input_tokens > 0 or output_tokens > 0:
+            capture(
+                "ai_interaction_completed",
+                distinct_id=f"org:{conversation.organization_id}",
+                properties={
+                    "organization_id": conversation.organization_id,
+                    "store_id": conversation.store_id,
+                    "feature": "conversation_reply",
+                    "model": "amazon.nova-2-lite-v1",
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "total_tokens": input_tokens + output_tokens,
+                },
+            )
 
         ai_message = Message(
             conversation_id=conversation.id,
@@ -172,13 +199,27 @@ def create_message_with_ai(
         db.commit()
         db.refresh(ai_message)
 
-        # Analytics: first WhatsApp AI reply
+        # Analytics: first WhatsApp AI reply per store (not per conversation)
         from .product_analytics import track_first_whatsapp_ai_reply
-        track_first_whatsapp_ai_reply(
-            organization_id=conversation.organization_id,
-            store_id=conversation.store_id,
-            conversation_id=conversation.id,
+        from ..models import Conversation as ConversationModel, Message as MessageModel
+        prior_ai_message = (
+            db.query(MessageModel)
+            .join(ConversationModel, MessageModel.conversation_id == ConversationModel.id)
+            .filter(
+                ConversationModel.organization_id == conversation.organization_id,
+                ConversationModel.store_id == conversation.store_id,
+                ConversationModel.channel == "WhatsApp",
+                MessageModel.sender == "ai",
+                MessageModel.id != ai_message.id,
+            )
+            .first()
         )
+        if prior_ai_message is None:
+            track_first_whatsapp_ai_reply(
+                organization_id=conversation.organization_id,
+                store_id=conversation.store_id,
+                conversation_id=conversation.id,
+            )
 
     except Exception:
         db.rollback()

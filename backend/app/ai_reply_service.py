@@ -254,7 +254,7 @@ def generate_auto_reply(
             limit=5,
         )
 
-        answer = generate_grounded_answer(
+        ai_result = generate_grounded_answer(
             question=last_message.text,
             evidence=evidence,
             agent_name=agent.name,
@@ -289,6 +289,16 @@ def generate_auto_reply(
             conversation_history=
                 history_text,
         )
+
+        # Handle both dict and string returns (backward compatibility)
+        if isinstance(ai_result, dict):
+            answer = ai_result.get("answer", "")
+            input_tokens = ai_result.get("input_tokens", 0)
+            output_tokens = ai_result.get("output_tokens", 0)
+        else:
+            answer = ai_result
+            input_tokens = 0
+            output_tokens = 0
 
         if not answer:
             print(

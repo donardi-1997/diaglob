@@ -251,6 +251,12 @@ Responde únicamente con base en la evidencia y respetando el mercado actual.
         )
     )
 
+    # Extract usage metadata for metering
+    usage = response.get("usage") or {}
+    input_tokens = usage.get("inputTokens", 0)
+    output_tokens = usage.get("outputTokens", 0)
+    total_tokens = usage.get("totalTokens", 0)
+
     output = (
         response
         .get("output", {})
@@ -267,6 +273,14 @@ Responde únicamente con base en la evidencia y respetando el mercado actual.
         if block.get("text")
     ]
 
-    return "\n".join(
+    answer = "\n".join(
         text_parts
     ).strip()
+
+    return {
+        "answer": answer,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": total_tokens,
+        "model": CHAT_MODEL_ID,
+    }

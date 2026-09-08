@@ -235,12 +235,25 @@ def emit_webhook_events(db: Session, new_conversations: list, new_messages: list
             event_id=f"conversation:{conversation.id}:created",
         )
 
-        # Analytics: first WhatsApp inbound (new conversation = first contact)
-        track_first_whatsapp_inbound(
-            organization_id=conversation.organization_id,
-            store_id=conversation.store_id,
-            conversation_id=conversation.id,
+        # Analytics: first WhatsApp inbound per store (not per conversation)
+        # Check if this is the first WhatsApp conversation for this store
+        from ..models import Conversation as ConversationModel
+        prior_conversation = (
+            db.query(ConversationModel)
+            .filter(
+                ConversationModel.organization_id == conversation.organization_id,
+                ConversationModel.store_id == conversation.store_id,
+                ConversationModel.channel == "WhatsApp",
+                ConversationModel.id != conversation.id,
+            )
+            .first()
         )
+        if prior_conversation is None:
+            track_first_whatsapp_inbound(
+                organization_id=conversation.organization_id,
+                store_id=conversation.store_id,
+                conversation_id=conversation.id,
+            )
 
     for message, conversation, connection in new_messages:
         safe_emit_event(
