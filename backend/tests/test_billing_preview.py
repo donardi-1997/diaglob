@@ -319,7 +319,7 @@ class TestPreviewFallbackBehavior:
             clear=False,
         ):
             with patch(
-                "app.api.billing.httpx"
+                "app.paddle_client.httpx"
             ) as mock_httpx:
                 mock_httpx.RequestError = (
                     ConnectionError
