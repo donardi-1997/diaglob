@@ -1493,6 +1493,124 @@ class DropiConnection(Base):
 
 
 # ============================================================
+# META ADS CONNECTION
+# ============================================================
+
+class MetaAdsConnection(Base):
+    __tablename__ = "meta_ads_connections"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "store_id",
+            name="uq_meta_ads_connection_store",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+    )
+
+    organization_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "organizations.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+        index=True,
+    )
+
+    store_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "stores.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+
+    provider: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        default="meta_ads",
+    )
+
+    external_account_id: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+    )
+
+    external_account_name: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+    )
+
+    account_currency: Mapped[str | None] = mapped_column(
+        String(10),
+        nullable=True,
+    )
+
+    account_timezone: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+
+    access_token_encrypted: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        default="connected",
+        index=True,
+    )
+
+    last_sync_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+    )
+
+    last_sync_status: Mapped[str | None] = mapped_column(
+        String(30),
+        nullable=True,
+    )
+
+    last_error_category: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+    )
+
+    connected_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False,
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+    store = relationship(
+        "Store",
+    )
+
+    organization = relationship(
+        "Organization",
+    )
+
+
+# ============================================================
 # WHATSAPP CONNECTION
 # ============================================================
 

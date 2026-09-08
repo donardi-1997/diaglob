@@ -7,6 +7,7 @@ class OrganizationPlanLimits:
     active_stores: int
     monthly_customers: int
     members: int
+    included_ai_responses: int
 
 
 PLAN_LIMITS: dict[str, OrganizationPlanLimits] = {
@@ -14,21 +15,25 @@ PLAN_LIMITS: dict[str, OrganizationPlanLimits] = {
         active_stores=1,
         monthly_customers=1_000,
         members=2,
+        included_ai_responses=1_000,
     ),
     "growth": OrganizationPlanLimits(
         active_stores=2,
         monthly_customers=5_000,
         members=5,
+        included_ai_responses=5_000,
     ),
     "pro": OrganizationPlanLimits(
-        active_stores=3,
-        monthly_customers=10_000,
+        active_stores=5,
+        monthly_customers=20_000,
         members=10,
+        included_ai_responses=20_000,
     ),
     "scale": OrganizationPlanLimits(
-        active_stores=5,
-        monthly_customers=25_000,
+        active_stores=10,
+        monthly_customers=50_000,
         members=15,
+        included_ai_responses=50_000,
     ),
 }
 
@@ -37,6 +42,7 @@ NO_PLAN_LIMITS = OrganizationPlanLimits(
     active_stores=0,
     monthly_customers=0,
     members=0,
+    included_ai_responses=0,
 )
 
 
