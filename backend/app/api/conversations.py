@@ -1,24 +1,21 @@
 """Conversations HTTP router."""
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from ..ai_generation import generate_grounded_answer
-from ..commerce import search_products
 from ..db import get_db
 from ..models import (
-    Agent,
     Conversation,
     Message,
     OrganizationMembership,
     Store,
 )
-from ..rag import retrieve_agent_knowledge
 from .deps import get_allowed_store_ids, get_current_membership, get_store_scope, require_permission
+from ..services.conversation_service import create_message_with_ai
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -431,227 +428,9 @@ def create_message(
             detail="Invalid sender",
         )
 
-    # ========================================================
-    # 1. GUARDAR EL MENSAJE ORIGINAL
-    # ========================================================
-
-    message = Message(
-        conversation_id=conversation.id,
+    return create_message_with_ai(
+        db=db,
+        conversation=conversation,
         sender=payload.sender,
         text=text,
-        agent_id=(
-            conversation.agent_id
-            if payload.sender == "ai"
-            else None
-        ),
     )
-
-    db.add(message)
-
-    conversation.preview = text
-    conversation.updated_at = datetime.utcnow()
-
-    if payload.sender == "customer":
-        conversation.unread = (
-            conversation.unread or 0
-        ) + 1
-    else:
-        conversation.unread = 0
-
-    # Confirmamos el mensaje antes de llamar a Bedrock.
-    # Así nunca se pierde aunque falle la IA.
-    db.commit()
-    db.refresh(message)
-
-    serialized_message = serialize_message(
-        message
-    )
-
-    # ========================================================
-    # 2. DECIDIR SI DEBE RESPONDER LA IA
-    # ========================================================
-
-    should_generate_ai = (
-        payload.sender == "customer"
-        and conversation.mode == "ai"
-        and conversation.agent_id is not None
-    )
-
-    print(
-        "[DIAGLOB AI]",
-        "conversation=",
-        conversation.id,
-        "sender=",
-        payload.sender,
-        "mode=",
-        conversation.mode,
-        "agent_id=",
-        conversation.agent_id,
-        "should_generate=",
-        should_generate_ai,
-    )
-
-    if not should_generate_ai:
-        return serialized_message
-
-    # ========================================================
-    # 3. VALIDAR AGENTE
-    # ========================================================
-
-    agent = conversation.assigned_agent
-
-    if (
-        not agent
-        or not agent.active
-        or agent.organization_id
-        != conversation.organization_id
-    ):
-        print(
-            "[DIAGLOB AI SKIP]",
-            "invalid_agent",
-        )
-
-        return serialized_message
-
-    # El agente debe atender esta tienda.
-    agent_store_ids = {
-        agent_store.id
-        for agent_store in agent.stores
-        if agent_store.active
-    }
-
-    if conversation.store_id not in agent_store_ids:
-        print(
-            "[DIAGLOB AI SKIP]",
-            "agent_not_available_for_store",
-            conversation.store_id,
-        )
-
-        return serialized_message
-
-    # ========================================================
-    # 4. RAG + NOVA
-    # ========================================================
-
-    try:
-        evidence = retrieve_agent_knowledge(
-            agent=agent,
-            query=text,
-            store_id=conversation.store_id,
-            number_of_results=5,
-        )
-
-        print(
-            "[DIAGLOB AI]",
-            "retrieval_results=",
-            len(evidence),
-        )
-
-        conversation_store = conversation.store
-
-        commerce_results = search_products(
-            db=db,
-            organization_id=
-                conversation.organization_id,
-            store_id=
-                conversation.store_id,
-            query=text,
-            limit=5,
-        )
-
-        print(
-            "[DIAGLOB COMMERCE]",
-            "conversation=",
-            conversation.id,
-            "results=",
-            len(commerce_results),
-        )
-
-        answer = generate_grounded_answer(
-            question=text,
-            evidence=evidence,
-            agent_name=agent.name,
-            agent_role=agent.role,
-            store_name=(
-                conversation_store.name
-                if conversation_store
-                else None
-            ),
-            country_code=(
-                conversation_store.country_code
-                if conversation_store
-                else None
-            ),
-            currency=(
-                conversation_store.currency
-                if conversation_store
-                else None
-            ),
-            timezone=(
-                conversation_store.timezone
-                if conversation_store
-                else None
-            ),
-            language=(
-                conversation_store.default_language
-                if conversation_store
-                else None
-            ),
-            commerce_results=
-                commerce_results,
-        )
-
-        if not answer:
-            print(
-                "[DIAGLOB AI SKIP]",
-                "empty_answer",
-            )
-
-            return serialized_message
-
-        # ====================================================
-        # 5. GUARDAR RESPUESTA IA
-        # ====================================================
-
-        ai_message = Message(
-            conversation_id=conversation.id,
-            agent_id=agent.id,
-            sender="ai",
-            text=answer,
-        )
-
-        db.add(ai_message)
-
-        conversation.preview = answer
-        conversation.unread = 0
-        conversation.updated_at = datetime.utcnow()
-
-        db.commit()
-        db.refresh(ai_message)
-
-        print(
-            "[DIAGLOB AI SUCCESS]",
-            "conversation=",
-            conversation.id,
-            "message_id=",
-            ai_message.id,
-            "agent=",
-            agent.name,
-        )
-
-    except Exception as exc:
-        db.rollback()
-
-        print(
-            "[DIAGLOB AI ERROR]",
-            "conversation=",
-            conversation.id,
-            "agent=",
-            conversation.agent_id,
-            "error=",
-            repr(exc),
-        )
-
-    # Mantenemos el contrato original:
-    # POST /messages devuelve el mensaje enviado.
-    return serialized_message
