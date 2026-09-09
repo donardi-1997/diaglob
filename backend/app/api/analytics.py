@@ -12,6 +12,7 @@ from ..analytics import (
 )
 from ..db import get_db
 from ..models import OrganizationMembership, Store
+from ..services.operations_integrations import get_dynamic_operations_summary
 from .deps import require_permission
 
 router = APIRouter()
@@ -209,8 +210,6 @@ def get_operations_center_summary(
     ),
     db: Session = Depends(get_db),
 ):
-    from ..operations import get_operations_summary
-
     store = (
         db.query(Store)
         .filter(
@@ -228,7 +227,7 @@ def get_operations_center_summary(
             detail="Store not found",
         )
 
-    return get_operations_summary(
+    return get_dynamic_operations_summary(
         db=db,
         organization_id=membership.organization_id,
         store_id=store_id,

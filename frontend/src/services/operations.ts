@@ -38,9 +38,16 @@ export interface OperationsAgents {
 }
 
 
-export interface OperationsIntegrations {
-  whatsapp_connected: boolean;
-  shopify_connected: boolean;
+export interface OperationsIntegration {
+  key: string;
+  provider: string;
+  name: string;
+  category: string;
+  connected: boolean;
+  status: string;
+  available: boolean;
+  scope: string;
+  payment_methods?: string[];
 }
 
 
@@ -66,7 +73,7 @@ export interface OperationsSummary {
   automations: OperationsAutomations;
   products: OperationsProducts;
   agents: OperationsAgents;
-  integrations: OperationsIntegrations;
+  integrations: OperationsIntegration[];
   alerts: OperationsAlert[];
   activity: OperationsActivity[];
 }
