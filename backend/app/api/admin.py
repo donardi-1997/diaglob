@@ -42,6 +42,17 @@ def _require_platform_admin(
     return user
 
 
+@router.get("/status")
+def admin_status(
+    user: User = Depends(_require_platform_admin),
+):
+    """Confirm that the current authenticated user is a platform admin."""
+    return {
+        "platform_admin": True,
+        "email": user.email,
+    }
+
+
 @router.get("/overview")
 def admin_overview(
     user: User = Depends(_require_platform_admin),
