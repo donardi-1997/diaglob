@@ -1,4 +1,5 @@
 from app import models
+from app.model_domains.google import GoogleConnection, GoogleOAuthState
 from app.model_domains.knowledge import KnowledgeBase, KnowledgeSource
 from app.model_domains.messaging import (
     Conversation,
@@ -48,6 +49,16 @@ def test_oauth_models_are_physically_defined_in_domain_module():
     assert NuvemshopOAuthState.__module__ == "app.model_domains.oauth"
 
 
+def test_google_domain_exports_legacy_model_classes():
+    assert GoogleOAuthState is models.GoogleOAuthState
+    assert GoogleConnection is models.GoogleConnection
+
+
+def test_google_models_are_physically_defined_in_domain_module():
+    assert GoogleOAuthState.__module__ == "app.model_domains.google"
+    assert GoogleConnection.__module__ == "app.model_domains.google"
+
+
 def test_domain_imports_do_not_duplicate_sqlalchemy_tables():
     exported_models = [
         Organization,
@@ -64,6 +75,8 @@ def test_domain_imports_do_not_duplicate_sqlalchemy_tables():
         WhatsAppMessageTemplate,
         ShopifyOAuthState,
         NuvemshopOAuthState,
+        GoogleOAuthState,
+        GoogleConnection,
     ]
 
     for model in exported_models:
@@ -96,4 +109,37 @@ def test_oauth_table_contracts_are_preserved():
         "expires_at",
         "used",
         "created_at",
+    }
+
+
+def test_google_table_contracts_are_preserved():
+    oauth = GoogleOAuthState.__table__
+    connection = GoogleConnection.__table__
+
+    assert oauth.name == "google_oauth_states"
+    assert connection.name == "google_connections"
+    assert set(oauth.columns.keys()) == {
+        "id",
+        "state_token",
+        "organization_id",
+        "user_id",
+        "scopes",
+        "expires_at",
+        "used",
+        "created_at",
+    }
+    assert set(connection.columns.keys()) == {
+        "id",
+        "organization_id",
+        "user_id",
+        "email",
+        "access_token_encrypted",
+        "refresh_token_encrypted",
+        "token_expiry",
+        "scopes",
+        "status",
+        "connected_at",
+        "revoked_at",
+        "created_at",
+        "updated_at",
     }
