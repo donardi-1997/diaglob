@@ -60,11 +60,18 @@ Under pt-BR locale:
 - BRL revenue + USD spend → Blended ROAS N/A (no FX)
 - Meta account timezone respected
 
+## Payments
+
+- Local-payment market policy reserves **PIX exclusively for BR/BRL**.
+- Nequi is not eligible for Brazilian stores; Nequi remains **CO/COP only**.
+- PIX market eligibility does **not** mean PIX processing is live yet.
+- A concrete Brazilian PSP/bank adapter must be selected and implemented before PIX can be connected or charged.
+- Do not expose PIX as connected/usable unless a supporting provider adapter and connection exist.
+
 ## Billing
 
 - Current subscription prices are USD
 - No BRL billing yet
-- No PIX support
 - Plans displayed as: US$ 19/mês (under pt-BR)
 
 ## Current Limitations
@@ -72,7 +79,8 @@ Under pt-BR locale:
 | Feature | Status |
 |---------|--------|
 | BRL billing | NOT SUPPORTED |
-| PIX | NOT SUPPORTED |
+| PIX market eligibility | BR/BRL ONLY |
+| PIX processing provider | NOT IMPLEMENTED |
 | NF-e/NFS-e | NOT SUPPORTED |
 | LGPD certification | NOT CERTIFIED |
 | Brazilian tax compliance | NOT SUPPORTED |
@@ -83,4 +91,4 @@ Under pt-BR locale:
 
 - 3-5 Brazilian Shopify merchants
 - Track: onboarding, WhatsApp, AI quality, Meta Ads BRL, support friction
-- Do not promise BRL billing or PIX until implemented
+- Do not promise live PIX collection until a concrete PSP adapter is implemented and validated
