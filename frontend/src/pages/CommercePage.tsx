@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   CreditCard,
   LayoutDashboard,
@@ -10,6 +10,7 @@ import CommerceSummary from "../components/CommerceSummary";
 import CommerceProducts from "../components/CommerceProducts";
 import CommerceOrders from "../components/CommerceOrders";
 import PixPaymentsPanel from "../components/PixPaymentsPanel";
+import { getPaymentProviders } from "../services/payments";
 
 
 interface CommercePageProps {
@@ -25,7 +26,7 @@ type CommerceTab =
   | "payments";
 
 
-const TABS: {
+const BASE_TABS: {
   key: CommerceTab;
   labelKey: string;
   fallbackLabel?: string;
@@ -46,13 +47,15 @@ const TABS: {
     labelKey: "commerceTabOrders",
     icon: ShoppingBag,
   },
-  {
-    key: "payments",
-    labelKey: "commerceTabPayments",
-    fallbackLabel: "Pagos",
-    icon: CreditCard,
-  },
 ];
+
+
+const PIX_TAB = {
+  key: "payments" as const,
+  labelKey: "commerceTabPayments",
+  fallbackLabel: "Pagos",
+  icon: CreditCard,
+};
 
 
 export default function CommercePage({
@@ -63,6 +66,53 @@ export default function CommercePage({
 
   const [activeTab, setActiveTab] =
     useState<CommerceTab>("summary");
+
+  const [pixAvailable, setPixAvailable] =
+    useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadPaymentAvailability() {
+      try {
+        const result = await getPaymentProviders(storeId);
+        const available = result.providers.some(
+          (provider) =>
+            provider.code === "mercado_pago"
+            && provider.payment_methods.includes("pix"),
+        );
+
+        if (!cancelled) {
+          setPixAvailable(available);
+          if (!available) {
+            setActiveTab((current) =>
+              current === "payments" ? "summary" : current
+            );
+          }
+        }
+      } catch {
+        if (!cancelled) {
+          setPixAvailable(false);
+          setActiveTab((current) =>
+            current === "payments" ? "summary" : current
+          );
+        }
+      }
+    }
+
+    void loadPaymentAvailability();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [storeId]);
+
+  const tabs = useMemo(
+    () => pixAvailable
+      ? [...BASE_TABS, PIX_TAB]
+      : BASE_TABS,
+    [pixAvailable],
+  );
 
   return (
     <div className="content">
@@ -76,7 +126,7 @@ export default function CommercePage({
       </section>
 
       <div className="commerce-tabs">
-        {TABS.map((tab) => {
+        {tabs.map((tab) => {
           const Icon = tab.icon;
           const translated = t(tab.labelKey);
           const label = translated === tab.labelKey
@@ -125,7 +175,7 @@ export default function CommercePage({
           />
         )}
 
-        {activeTab === "payments" && (
+        {activeTab === "payments" && pixAvailable && (
           <PixPaymentsPanel
             storeId={storeId}
             canWrite={canWrite}
