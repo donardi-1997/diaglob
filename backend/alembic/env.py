@@ -14,6 +14,7 @@ from app.db_config import DATABASE_URL
 
 # Import all models so metadata is complete
 from app import models  # noqa: F401
+from app import telegram_models  # noqa: F401
 
 config = context.config
 
