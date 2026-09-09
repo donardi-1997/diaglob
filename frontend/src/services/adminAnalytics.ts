@@ -1,5 +1,49 @@
 import { api } from "./api";
 
+export interface AdminGrowthPoint {
+  date: string;
+  organizations: number;
+  users: number;
+  ai_responses: number;
+  orders: number;
+}
+
+export interface AdminRankingItem {
+  organization_id: number;
+  organization_name: string;
+  plan: string;
+  ai_responses?: number;
+  orders?: number;
+  conversations?: number;
+}
+
+export interface AdminGrowth {
+  window_days: number;
+  period: {
+    from: string;
+    to: string;
+  };
+  totals: {
+    new_organizations: number;
+    new_users: number;
+    ai_responses: number;
+    orders: number;
+  };
+  daily: AdminGrowthPoint[];
+  billing_health: {
+    subscription_statuses: Record<string, number>;
+    pending_plan_changes: number;
+    auto_renew_disabled: number;
+    historical_billing_available: boolean;
+    historical_billing_reason: string;
+  };
+  rankings: {
+    top_ai_usage: AdminRankingItem[];
+    top_orders: AdminRankingItem[];
+    top_conversations: AdminRankingItem[];
+  };
+}
+
 export interface AdminOverview {
   organizations: {
     total: number;
@@ -28,6 +72,7 @@ export interface AdminOverview {
     knowledge_bases: number;
   };
   automations: { total: number };
+  growth: AdminGrowth;
 }
 
 export interface AdminAttentionItem {
