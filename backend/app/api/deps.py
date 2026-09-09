@@ -74,9 +74,21 @@ def get_current_membership(
     user: User = Depends(
         get_current_user
     ),
+    x_organization_id: int | None = Header(
+        None,
+        alias="X-Organization-Id",
+    ),
     db: Session = Depends(get_db),
 ):
-    memberships = (
+    """Resolve the active organization membership for this request.
+
+    Backward compatibility is preserved for users with exactly one active
+    organization: the header is optional in that case. Users with multiple
+    memberships must select an organization explicitly with
+    ``X-Organization-Id``. The selected organization must be both active and
+    accessible by the authenticated user.
+    """
+    memberships_query = (
         db.query(OrganizationMembership)
         .join(Organization)
         .filter(
@@ -85,8 +97,26 @@ def get_current_membership(
             OrganizationMembership.active.is_(True),
             Organization.active.is_(True),
         )
-        .all()
     )
+
+    if x_organization_id is not None:
+        membership = memberships_query.filter(
+            OrganizationMembership.organization_id
+            == x_organization_id,
+        ).first()
+
+        if not membership:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": "ORGANIZATION_ACCESS_DENIED",
+                    "message": "Organization access denied",
+                },
+            )
+
+        return membership
+
+    memberships = memberships_query.all()
 
     if not memberships:
         raise HTTPException(
@@ -97,10 +127,13 @@ def get_current_membership(
     if len(memberships) > 1:
         raise HTTPException(
             status_code=409,
-            detail=(
-                "User has more than one active "
-                "organization membership"
-            ),
+            detail={
+                "code": "ORGANIZATION_CONTEXT_REQUIRED",
+                "message": (
+                    "Select an organization using the "
+                    "X-Organization-Id header"
+                ),
+            },
         )
 
     return memberships[0]
