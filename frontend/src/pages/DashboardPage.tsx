@@ -7,9 +7,15 @@ import {
   BarChart3,
   AlertTriangle,
   Settings,
+  BrainCircuit,
+  CreditCard,
+  Megaphone,
+  Package,
+  Plug,
 } from "lucide-react";
 import {
   getOperationsSummary,
+  type OperationsIntegration,
   type OperationsSummary,
 } from "../services/operations";
 import { type Store } from "../services/stores";
@@ -23,6 +29,20 @@ interface DashboardPageProps {
   onNavigateToWhatsApp?: () => void;
   onNavigateToKnowledge?: () => void;
   onNavigateToAutomations?: () => void;
+}
+
+function IntegrationIcon({
+  category,
+}: {
+  category: OperationsIntegration["category"];
+}) {
+  if (category === "messaging") return <MessageSquareText size={18} />;
+  if (category === "commerce") return <ShoppingBag size={18} />;
+  if (category === "supplier") return <Package size={18} />;
+  if (category === "knowledge") return <BrainCircuit size={18} />;
+  if (category === "ads") return <Megaphone size={18} />;
+  if (category === "payments") return <CreditCard size={18} />;
+  return <Plug size={18} />;
 }
 
 export default function DashboardPage({
@@ -136,7 +156,7 @@ export default function DashboardPage({
   const conv = data?.conversations;
   const orders = data?.orders;
   const autos = data?.automations;
-  const integrations = data?.integrations;
+  const integrations = data?.integrations || [];
   const products = data?.products;
   const alerts = data?.alerts || [];
   const activity = data?.activity || [];
@@ -209,7 +229,7 @@ export default function DashboardPage({
         </div>
       </section>
 
-      {(alerts.length > 0) && (
+      {alerts.length > 0 && (
         <section className="dashboard-alerts">
           {alerts.map((alert, i) => (
             <div key={i} className="dashboard-alert-item">
@@ -256,43 +276,39 @@ export default function DashboardPage({
             </div>
 
             <div className="agent-list">
-              <div className="agent-item">
-                <div className="agent-icon">
-                  <MessageSquareText size={18} />
+              {integrations.length === 0 && (
+                <div className="empty-activity">
+                  {t("notConnected") || "No conectado"}
                 </div>
-                <div className="agent-copy">
-                  <strong>WhatsApp</strong>
-                  <span>
-                    <span
-                      className={`mini-status ${
-                        integrations?.whatsapp_connected ? "connected" : ""
-                      }`}
-                    />
-                    {integrations?.whatsapp_connected
-                      ? t("connected") || "Conectado"
-                      : t("notConnected") || "No conectado"}
-                  </span>
-                </div>
-              </div>
+              )}
 
-              <div className="agent-item">
-                <div className="agent-icon">
-                  <ShoppingBag size={18} />
+              {integrations.map((integration) => (
+                <div className="agent-item" key={integration.key}>
+                  <div className="agent-icon">
+                    <IntegrationIcon category={integration.category} />
+                  </div>
+                  <div className="agent-copy">
+                    <strong>{integration.name}</strong>
+                    <span>
+                      <span
+                        className={`mini-status ${
+                          integration.connected ? "connected" : ""
+                        }`}
+                      />
+                      {integration.connected
+                        ? t("connected") || "Conectado"
+                        : integration.status === "disconnected"
+                          ? t("notConnected") || "No conectado"
+                          : integration.status}
+                      {integration.payment_methods?.length
+                        ? ` · ${integration.payment_methods
+                            .map((method) => method.toUpperCase())
+                            .join(", ")}`
+                        : ""}
+                    </span>
+                  </div>
                 </div>
-                <div className="agent-copy">
-                  <strong>Shopify</strong>
-                  <span>
-                    <span
-                      className={`mini-status ${
-                        integrations?.shopify_connected ? "connected" : ""
-                      }`}
-                    />
-                    {integrations?.shopify_connected
-                      ? t("connected") || "Conectado"
-                      : t("notConnected") || "No conectado"}
-                  </span>
-                </div>
-              </div>
+              ))}
             </div>
           </div>
         </div>
