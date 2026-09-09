@@ -6,7 +6,6 @@ import {
   DollarSign,
   MessageSquareText,
   ShoppingBag,
-  Store,
   Users,
   Workflow,
   LoaderCircle,
