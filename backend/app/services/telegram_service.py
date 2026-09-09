@@ -247,4 +247,12 @@ def send_message(
     conversation.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(message)
-    return {"ok": True, "message_id": message.id, "external_message_id": external_id}
+    return {
+        "ok": True,
+        "message_id": message.id,
+        "external_message_id": external_id,
+        "id": message.id,
+        "sender": message.sender,
+        "text": message.text,
+        "time": message.created_at.strftime("%H:%M"),
+    }
