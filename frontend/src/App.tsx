@@ -31,17 +31,17 @@ import {
   Workflow,
   X,
 } from "lucide-react";
-import ConversationsPage from "./pages/ConversationsPage";
-import AgentsPage from "./pages/AgentsPage";
-import TeamPage from "./pages/TeamPage";
-import KnowledgeBasesPage from "./pages/KnowledgeBasesPage";
-import StoresPage from "./pages/StoresPage";
-import PlansPage from "./pages/PlansPage";
 import LoginPage from "./pages/LoginPage";
-import PublicLandingPage from "./pages/PublicLandingPage";
-import LegalPage from "./pages/LegalPage";
-import DashboardPage from "./pages/DashboardPage";
 
+const DashboardPage = lazy(() => import("./pages/DashboardPage"));
+const ConversationsPage = lazy(() => import("./pages/ConversationsPage"));
+const AgentsPage = lazy(() => import("./pages/AgentsPage"));
+const TeamPage = lazy(() => import("./pages/TeamPage"));
+const KnowledgeBasesPage = lazy(() => import("./pages/KnowledgeBasesPage"));
+const StoresPage = lazy(() => import("./pages/StoresPage"));
+const PlansPage = lazy(() => import("./pages/PlansPage"));
+const PublicLandingPage = lazy(() => import("./pages/PublicLandingPage"));
+const LegalPage = lazy(() => import("./pages/LegalPage"));
 const CommercePage = lazy(() => import("./pages/CommercePage"));
 const AutomationsPage = lazy(() => import("./pages/AutomationsPage"));
 const AnalyticsPage = lazy(() => import("./pages/AnalyticsPage"));
@@ -439,14 +439,16 @@ function App() {
           authenticated ? (
             <Navigate to="/app" replace />
           ) : (
-            <PublicLandingPage
-              onNavigateToLogin={() => {
-                navigate("/login");
-              }}
-              onNavigateToRegister={() => {
-                navigate("/register");
-              }}
-            />
+            <Suspense fallback={<div className="page-loading">Cargando...</div>}>
+              <PublicLandingPage
+                onNavigateToLogin={() => {
+                  navigate("/login");
+                }}
+                onNavigateToRegister={() => {
+                  navigate("/register");
+                }}
+              />
+            </Suspense>
           )
         }
       />
@@ -470,8 +472,8 @@ function App() {
           )
         }
       />
-      <Route path="/privacy" element={<LegalPage kind="privacy" />} />
-      <Route path="/terms" element={<LegalPage kind="terms" />} />
+      <Route path="/privacy" element={<Suspense fallback={<div className="page-loading">Cargando...</div>}><LegalPage kind="privacy" /></Suspense>} />
+      <Route path="/terms" element={<Suspense fallback={<div className="page-loading">Cargando...</div>}><LegalPage kind="terms" /></Suspense>} />
       <Route
         path="/app/*"
         element={
@@ -693,42 +695,36 @@ function App() {
                   </div>
                 </div>
                 <div className="content">
-                  {activePage === "overview" && (
-                    <DashboardPage
-                      storeId={selectedStoreId ? Number(selectedStoreId) : null}
-                      onNavigateToStores={() => setActivePage("settings")}
-                      onNavigateToCommerce={() => setActivePage("commerce")}
-                      onNavigateToWhatsApp={() => setActivePage("settings")}
-                      onNavigateToKnowledge={() => setActivePage("knowledge")}
-                      onNavigateToAutomations={() => setActivePage("automations")}
-                    />
-                  )}
-                  {activePage === "plans" && <PlansPage />}
-                  {activePage === "conversations" && <ConversationsPage canWrite={can("conversations.write")} />}
-                  {activePage === "customers" && (
-                    <Suspense fallback={<div className="page-loading">Cargando...</div>}>
+                  <Suspense fallback={<div className="page-loading">Cargando...</div>}>
+                    {activePage === "overview" && (
+                      <DashboardPage
+                        storeId={selectedStoreId ? Number(selectedStoreId) : null}
+                        onNavigateToStores={() => setActivePage("settings")}
+                        onNavigateToCommerce={() => setActivePage("commerce")}
+                        onNavigateToWhatsApp={() => setActivePage("settings")}
+                        onNavigateToKnowledge={() => setActivePage("knowledge")}
+                        onNavigateToAutomations={() => setActivePage("automations")}
+                      />
+                    )}
+                    {activePage === "plans" && <PlansPage />}
+                    {activePage === "conversations" && <ConversationsPage canWrite={can("conversations.write")} />}
+                    {activePage === "customers" && (
                       <CustomersPage canWrite={can("customers.write")} storeId={Number(selectedStoreId) || 0} />
-                    </Suspense>
-                  )}
-                  {activePage === "team" && <TeamPage canWrite={can("users.write")} />}
-                  {activePage === "agents" && <AgentsPage canWrite={can("agents.write")} />}
-                  {activePage === "knowledge" && <KnowledgeBasesPage canWrite={can("knowledge.write")} />}
-                  {activePage === "settings" && <StoresPage canWrite={can("stores.write")} />}
-                  {activePage === "commerce" && (
-                    <Suspense fallback={<div className="page-loading">Cargando...</div>}>
+                    )}
+                    {activePage === "team" && <TeamPage canWrite={can("users.write")} />}
+                    {activePage === "agents" && <AgentsPage canWrite={can("agents.write")} />}
+                    {activePage === "knowledge" && <KnowledgeBasesPage canWrite={can("knowledge.write")} />}
+                    {activePage === "settings" && <StoresPage canWrite={can("stores.write")} />}
+                    {activePage === "commerce" && (
                       <CommercePage canWrite={can("commerce.write")} storeId={Number(selectedStoreId) || 0} />
-                    </Suspense>
-                  )}
-                  {activePage === "automations" && (
-                    <Suspense fallback={<div className="page-loading">Cargando...</div>}>
-                       <AutomationsPage canWrite={can("automations.write")} storeId={Number(selectedStoreId) || 0} />
-                    </Suspense>
-                  )}
-                  {activePage === "analytics" && (
-                    <Suspense fallback={<div className="page-loading">Cargando...</div>}>
+                    )}
+                    {activePage === "automations" && (
+                      <AutomationsPage canWrite={can("automations.write")} storeId={Number(selectedStoreId) || 0} />
+                    )}
+                    {activePage === "analytics" && (
                       <AnalyticsPage canWrite={can("analytics.write")} storeId={Number(selectedStoreId) || 0} />
-                    </Suspense>
-                  )}
+                    )}
+                  </Suspense>
                 </div>
               </main>
             </div>
