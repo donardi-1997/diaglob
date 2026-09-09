@@ -1,6 +1,5 @@
 import { api } from "./api";
 
-
 export interface AnalyticsSummary {
   total_conversations: number;
   total_messages: number;
@@ -16,7 +15,6 @@ export interface AnalyticsSummary {
   avg_messages_per_conversation: number;
 }
 
-
 export interface TimeseriesPoint {
   date: string;
   conversations: number;
@@ -26,7 +24,6 @@ export interface TimeseriesPoint {
   executions: number;
 }
 
-
 export interface ConversationsAnalytics {
   total_conversations: number;
   total_messages: number;
@@ -34,12 +31,8 @@ export interface ConversationsAnalytics {
   by_channel: Record<string, number>;
   by_mode: Record<string, number>;
   sender_distribution: Record<string, number>;
-  top_conversations: {
-    conversation_id: number;
-    message_count: number;
-  }[];
+  top_conversations: { conversation_id: number; message_count: number }[];
 }
-
 
 export interface CommerceAnalytics {
   total_orders: number;
@@ -55,7 +48,6 @@ export interface CommerceAnalytics {
   }[];
 }
 
-
 export interface AutomationsAnalytics {
   total_automations: number;
   active_automations: number;
@@ -65,121 +57,65 @@ export interface AutomationsAnalytics {
   success_rate: number;
   avg_duration_seconds: number | null;
   by_trigger: Record<string, number>;
-  top_by_executions: {
-    name: string;
-    execution_count: number;
-  }[];
-  top_by_failures: {
-    name: string;
-    failure_count: number;
-  }[];
+  top_by_executions: { name: string; execution_count: number }[];
+  top_by_failures: { name: string; failure_count: number }[];
 }
 
-
-function buildParams(
-  dateFrom?: string,
-  dateTo?: string,
-) {
+function buildParams(dateFrom?: string, dateTo?: string) {
   const params = new URLSearchParams();
-
-  if (dateFrom) {
-    params.set("date_from", dateFrom);
-  }
-
-  if (dateTo) {
-    params.set("date_to", dateTo);
-  }
-
+  if (dateFrom) params.set("date_from", dateFrom);
+  if (dateTo) params.set("date_to", dateTo);
   const qs = params.toString();
-
   return qs ? `?${qs}` : "";
 }
 
-
-export async function getAnalyticsSummary(
-  storeId: number,
-  dateFrom?: string,
-  dateTo?: string,
-) {
-  const qs = buildParams(dateFrom, dateTo);
-
-  const response =
-    await api.get<AnalyticsSummary>(
-      `/api/stores/${storeId}/analytics/summary${qs}`,
-    );
-
+export async function getAnalyticsSummary(storeId: number, dateFrom?: string, dateTo?: string) {
+  const response = await api.get<AnalyticsSummary>(
+    `/api/stores/${storeId}/analytics/summary${buildParams(dateFrom, dateTo)}`,
+  );
   return response.data;
 }
 
-
-export async function getAnalyticsTimeseries(
-  storeId: number,
-  dateFrom?: string,
-  dateTo?: string,
-) {
-  const qs = buildParams(dateFrom, dateTo);
-
-  const response =
-    await api.get<TimeseriesPoint[]>(
-      `/api/stores/${storeId}/analytics/timeseries${qs}`,
-    );
-
+export async function getAnalyticsTimeseries(storeId: number, dateFrom?: string, dateTo?: string) {
+  const response = await api.get<TimeseriesPoint[]>(
+    `/api/stores/${storeId}/analytics/timeseries${buildParams(dateFrom, dateTo)}`,
+  );
   return response.data;
 }
 
-
-export async function getAnalyticsConversations(
-  storeId: number,
-  dateFrom?: string,
-  dateTo?: string,
-) {
-  const qs = buildParams(dateFrom, dateTo);
-
-  const response =
-    await api.get<ConversationsAnalytics>(
-      `/api/stores/${storeId}/analytics/conversations${qs}`,
-    );
-
+export async function getAnalyticsConversations(storeId: number, dateFrom?: string, dateTo?: string) {
+  const response = await api.get<ConversationsAnalytics>(
+    `/api/stores/${storeId}/analytics/conversations${buildParams(dateFrom, dateTo)}`,
+  );
   return response.data;
 }
 
-
-export async function getAnalyticsCommerce(
-  storeId: number,
-  dateFrom?: string,
-  dateTo?: string,
-) {
-  const qs = buildParams(dateFrom, dateTo);
-
-  const response =
-    await api.get<CommerceAnalytics>(
-      `/api/stores/${storeId}/analytics/commerce${qs}`,
-    );
-
+export async function getAnalyticsCommerce(storeId: number, dateFrom?: string, dateTo?: string) {
+  const response = await api.get<CommerceAnalytics>(
+    `/api/stores/${storeId}/analytics/commerce${buildParams(dateFrom, dateTo)}`,
+  );
   return response.data;
 }
 
-
-export async function getAnalyticsAutomations(
-  storeId: number,
-  dateFrom?: string,
-  dateTo?: string,
-) {
-  const qs = buildParams(dateFrom, dateTo);
-
-  const response =
-    await api.get<AutomationsAnalytics>(
-      `/api/stores/${storeId}/analytics/automations${qs}`,
-    );
-
+export async function getAnalyticsAutomations(storeId: number, dateFrom?: string, dateTo?: string) {
+  const response = await api.get<AutomationsAnalytics>(
+    `/api/stores/${storeId}/analytics/automations${buildParams(dateFrom, dateTo)}`,
+  );
   return response.data;
 }
 
-
-// ============================================================
-// DROPSHIPPING ANALYTICS
-// ============================================================
-
+export interface DropshippingComparison {
+  previous_date_from: string;
+  previous_date_to: string;
+  total_orders_pct: number | null;
+  delivered_orders_pct: number | null;
+  delivered_revenue_pct: number | null;
+  delivered_aov_pct: number | null;
+  delivery_rate_pp: number | null;
+  cancellation_rate_pp: number | null;
+  gross_profit_pct: number | null;
+  gross_margin_pp: number | null;
+}
 
 export interface DropshippingOverview {
   currency: string;
@@ -197,24 +133,15 @@ export interface DropshippingOverview {
   gross_order_value: number;
   delivered_revenue: number;
   delivered_aov: number | null;
+  comparison: DropshippingComparison | null;
 }
 
-
-export async function getDropshippingOverview(
-  storeId: number,
-  dateFrom?: string,
-  dateTo?: string,
-) {
-  const qs = buildParams(dateFrom, dateTo);
-
-  const response =
-    await api.get<DropshippingOverview>(
-      `/api/stores/${storeId}/analytics/dropshipping/overview${qs}`,
-    );
-
+export async function getDropshippingOverview(storeId: number, dateFrom?: string, dateTo?: string) {
+  const response = await api.get<DropshippingOverview>(
+    `/api/stores/${storeId}/analytics/dropshipping/overview${buildParams(dateFrom, dateTo)}`,
+  );
   return response.data;
 }
-
 
 export interface DropshippingProfitability {
   delivered_revenue: number;
@@ -223,25 +150,16 @@ export interface DropshippingProfitability {
   gross_margin: number | null;
   profit_per_delivered_order: number | null;
   delivered_orders_count: number;
-  cost_completeness_pct: number | null;
+  cost_completeness_pct: number;
+  profitability_complete: boolean;
 }
 
-
-export async function getDropshippingProfitability(
-  storeId: number,
-  dateFrom?: string,
-  dateTo?: string,
-) {
-  const qs = buildParams(dateFrom, dateTo);
-
-  const response =
-    await api.get<DropshippingProfitability>(
-      `/api/stores/${storeId}/analytics/dropshipping/profitability${qs}`,
-    );
-
+export async function getDropshippingProfitability(storeId: number, dateFrom?: string, dateTo?: string) {
+  const response = await api.get<DropshippingProfitability>(
+    `/api/stores/${storeId}/analytics/dropshipping/profitability${buildParams(dateFrom, dateTo)}`,
+  );
   return response.data;
 }
-
 
 export interface DropshippingProduct {
   product_id: number;
@@ -253,24 +171,16 @@ export interface DropshippingProduct {
   total_cogs: number;
   gross_profit: number;
   gross_margin: number | null;
+  cost_completeness_pct: number;
+  profitability_complete: boolean;
 }
 
-
-export async function getDropshippingProducts(
-  storeId: number,
-  dateFrom?: string,
-  dateTo?: string,
-) {
-  const qs = buildParams(dateFrom, dateTo);
-
-  const response =
-    await api.get<DropshippingProduct[]>(
-      `/api/stores/${storeId}/analytics/dropshipping/products${qs}`,
-    );
-
+export async function getDropshippingProducts(storeId: number, dateFrom?: string, dateTo?: string) {
+  const response = await api.get<DropshippingProduct[]>(
+    `/api/stores/${storeId}/analytics/dropshipping/products${buildParams(dateFrom, dateTo)}`,
+  );
   return response.data;
 }
-
 
 export interface DropshippingOrders {
   total: number;
@@ -279,20 +189,12 @@ export interface DropshippingOrders {
   delivered: number;
   cancelled: number;
   returned: number;
+  unknown: number;
 }
 
-
-export async function getDropshippingOrders(
-  storeId: number,
-  dateFrom?: string,
-  dateTo?: string,
-) {
-  const qs = buildParams(dateFrom, dateTo);
-
-  const response =
-    await api.get<DropshippingOrders>(
-      `/api/stores/${storeId}/analytics/dropshipping/orders${qs}`,
-    );
-
+export async function getDropshippingOrders(storeId: number, dateFrom?: string, dateTo?: string) {
+  const response = await api.get<DropshippingOrders>(
+    `/api/stores/${storeId}/analytics/dropshipping/orders${buildParams(dateFrom, dateTo)}`,
+  );
   return response.data;
 }
