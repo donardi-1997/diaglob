@@ -31,12 +31,12 @@ import {
 } from "../services/team";
 
 import {
-  getStores,
   type Store,
 } from "../services/stores";
 
 
 interface TeamPageProps {
+  stores: Store[];
   canWrite: boolean;
 }
 
@@ -111,6 +111,7 @@ function extractError(
 
 
 export default function TeamPage({
+  stores,
   canWrite,
 }: TeamPageProps) {
   const { t } = useTranslation();
@@ -120,9 +121,6 @@ export default function TeamPage({
 
   const [invitations, setInvitations] =
     useState<TeamInvitation[]>([]);
-
-  const [stores, setStores] =
-    useState<Store[]>([]);
 
   const [usage, setUsage] =
     useState<TeamUsage>({
@@ -160,11 +158,9 @@ export default function TeamPage({
       const [
         teamResponse,
         invitationResponse,
-        storeResponse,
       ] = await Promise.all([
         getTeam(),
         getTeamInvitations(),
-        getStores(),
       ]);
 
       setMembers(
@@ -177,10 +173,6 @@ export default function TeamPage({
 
       setInvitations(
         invitationResponse.items,
-      );
-
-      setStores(
-        storeResponse.items,
       );
     } catch (err) {
       setError(

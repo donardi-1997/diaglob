@@ -19,7 +19,7 @@ import {
   setConversationMode,
 } from "../services/conversations";
 
-import { getStores, type Store } from "../services/stores";
+import { type Store } from "../services/stores";
 
 import type {
   ConversationDetail,
@@ -28,8 +28,10 @@ import type {
 } from "../types/conversation";
 
 export default function ConversationsPage({
+  stores,
   canWrite,
 }: {
+  stores: Store[];
   canWrite: boolean;
 }) {
   const { t } = useTranslation();
@@ -55,7 +57,6 @@ export default function ConversationsPage({
   const [sendChannel, setSendChannel] = useState<"auto" | "whatsapp">("auto");
 
   // Unified inbox state
-  const [stores, setStores] = useState<Store[]>([]);
   const [inboxStoreFilter, setInboxStoreFilter] = useState<string>("all");
 
   const chatBodyRef = useRef<HTMLDivElement>(null);
@@ -65,13 +66,6 @@ export default function ConversationsPage({
     if (!el) return;
     el.scrollTop = el.scrollHeight;
   }, [conversation?.messages]);
-
-  // Load stores for filter
-  useEffect(() => {
-    getStores()
-      .then((res) => setStores(res.items))
-      .catch(() => {});
-  }, []);
 
   useEffect(() => {
     loadConversations();

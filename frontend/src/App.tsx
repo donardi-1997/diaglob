@@ -1,6 +1,7 @@
 import {
   Suspense,
   lazy,
+  useCallback,
   useEffect,
   useState,
 } from "react";
@@ -246,37 +247,37 @@ function App() {
   }, []);
 
 
-  useEffect(() => {
-    async function loadStores() {
-      if (!sessionReady || !organizationId) {
-        return;
-      }
-
-      try {
-        const response = await getStores();
-
-        setStores(response.items);
-
-        const savedStoreId = localStorage.getItem("diaglob-store-id");
-
-        if (
-          savedStoreId &&
-          !response.items.some((store) => String(store.id) === savedStoreId)
-        ) {
-          localStorage.removeItem("diaglob-store-id");
-
-          setSelectedStoreId("");
-        }
-      } catch (error) {
-        console.error("Unable to load stores", error);
-
-        setStores([]);
-        setSelectedStoreId("");
-      }
+  const loadStores = useCallback(async () => {
+    if (!sessionReady || !organizationId) {
+      return;
     }
 
-    loadStores();
+    try {
+      const response = await getStores();
+
+      setStores(response.items);
+
+      const savedStoreId = localStorage.getItem("diaglob-store-id");
+
+      if (
+        savedStoreId &&
+        !response.items.some((store) => String(store.id) === savedStoreId)
+      ) {
+        localStorage.removeItem("diaglob-store-id");
+
+        setSelectedStoreId("");
+      }
+    } catch (error) {
+      console.error("Unable to load stores", error);
+
+      setStores([]);
+      setSelectedStoreId("");
+    }
   }, [organizationId, sessionReady]);
+
+  useEffect(() => {
+    void loadStores();
+  }, [loadStores]);
 
   const changeStore = (storeId: string) => {
     if (storeId) {
@@ -698,6 +699,7 @@ function App() {
                   <Suspense fallback={<div className="page-loading">Cargando...</div>}>
                     {activePage === "overview" && (
                       <DashboardPage
+                        stores={stores}
                         storeId={selectedStoreId ? Number(selectedStoreId) : null}
                         onNavigateToStores={() => setActivePage("settings")}
                         onNavigateToCommerce={() => setActivePage("commerce")}
@@ -707,14 +709,14 @@ function App() {
                       />
                     )}
                     {activePage === "plans" && <PlansPage />}
-                    {activePage === "conversations" && <ConversationsPage canWrite={can("conversations.write")} />}
+                    {activePage === "conversations" && <ConversationsPage stores={stores} canWrite={can("conversations.write")} />}
                     {activePage === "customers" && (
                       <CustomersPage canWrite={can("customers.write")} storeId={Number(selectedStoreId) || 0} />
                     )}
-                    {activePage === "team" && <TeamPage canWrite={can("users.write")} />}
-                    {activePage === "agents" && <AgentsPage canWrite={can("agents.write")} />}
-                    {activePage === "knowledge" && <KnowledgeBasesPage canWrite={can("knowledge.write")} />}
-                    {activePage === "settings" && <StoresPage canWrite={can("stores.write")} />}
+                    {activePage === "team" && <TeamPage stores={stores} canWrite={can("users.write")} />}
+                    {activePage === "agents" && <AgentsPage stores={stores} canWrite={can("agents.write")} />}
+                    {activePage === "knowledge" && <KnowledgeBasesPage stores={stores} canWrite={can("knowledge.write")} />}
+                    {activePage === "settings" && <StoresPage canWrite={can("stores.write")} onStoresChanged={loadStores} />}
                     {activePage === "commerce" && (
                       <CommercePage canWrite={can("commerce.write")} storeId={Number(selectedStoreId) || 0} />
                     )}

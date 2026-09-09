@@ -23,12 +23,12 @@ import {
 } from "../services/knowledgeBases";
 
 import {
-  getStores,
   type Store,
 } from "../services/stores";
 
 
 interface AgentsPageProps {
+  stores: Store[];
   canWrite: boolean;
 }
 
@@ -52,14 +52,12 @@ const EMPTY_FORM: AgentFormState = {
 
 
 export default function AgentsPage({
+  stores,
   canWrite,
 }: AgentsPageProps) {
   const { t } = useTranslation();
   const [agents, setAgents] =
     useState<Agent[]>([]);
-
-  const [stores, setStores] =
-    useState<Store[]>([]);
 
   const [knowledgeBases, setKnowledgeBases] =
     useState<KnowledgeBase[]>([]);
@@ -97,20 +95,14 @@ export default function AgentsPage({
 
       const [
         agentsResponse,
-        storesResponse,
         knowledgeResponse,
       ] = await Promise.all([
         getAgents(),
-        getStores(),
         getKnowledgeBases(),
       ]);
 
       setAgents(
         agentsResponse.items,
-      );
-
-      setStores(
-        storesResponse.items,
       );
 
       setKnowledgeBases(

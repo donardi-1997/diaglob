@@ -12,10 +12,11 @@ import {
   getOperationsSummary,
   type OperationsSummary,
 } from "../services/operations";
-import { getStores, type Store } from "../services/stores";
+import { type Store } from "../services/stores";
 import GettingStarted from "../components/GettingStarted";
 
 interface DashboardPageProps {
+  stores: Store[];
   storeId: number | null;
   onNavigateToStores?: () => void;
   onNavigateToCommerce?: () => void;
@@ -25,6 +26,7 @@ interface DashboardPageProps {
 }
 
 export default function DashboardPage({
+  stores,
   storeId,
   onNavigateToStores,
   onNavigateToCommerce,
@@ -36,7 +38,6 @@ export default function DashboardPage({
   const [data, setData] = useState<OperationsSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [stores, setStores] = useState<Store[]>([]);
 
   useEffect(() => {
     if (!storeId) {
@@ -74,19 +75,6 @@ export default function DashboardPage({
       mounted = false;
     };
   }, [storeId]);
-
-  // Load stores for onboarding
-  useEffect(() => {
-    let mounted = true;
-    getStores()
-      .then((res) => {
-        if (mounted) setStores(res.items);
-      })
-      .catch(() => {});
-    return () => {
-      mounted = false;
-    };
-  }, []);
 
   if (!storeId) {
     return (

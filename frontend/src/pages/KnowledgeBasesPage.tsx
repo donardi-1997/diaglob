@@ -76,12 +76,12 @@ import {
 } from "../services/knowledgeGoogle";
 
 import {
-  getStores,
   type Store,
 } from "../services/stores";
 
 
 interface KnowledgeBasesPageProps {
+  stores: Store[];
   canWrite: boolean;
 }
 
@@ -212,14 +212,12 @@ function isSlowProvisioning(knowledgeBase: KnowledgeBase) {
 
 
 export default function KnowledgeBasesPage({
+  stores,
   canWrite,
 }: KnowledgeBasesPageProps) {
   const { t } = useTranslation();
   const [items, setItems] =
     useState<KnowledgeBase[]>([]);
-
-  const [stores, setStores] =
-    useState<Store[]>([]);
 
   const [loading, setLoading] =
     useState(true);
@@ -702,20 +700,10 @@ export default function KnowledgeBasesPage({
       setLoading(true);
       setError("");
 
-      const [
-        knowledgeResponse,
-        storesResponse,
-      ] = await Promise.all([
-        getKnowledgeBases(),
-        getStores(),
-      ]);
+      const knowledgeResponse = await getKnowledgeBases();
 
       setItems(
         knowledgeResponse.items,
-      );
-
-      setStores(
-        storesResponse.items,
       );
     } catch (err) {
       console.error(err);
