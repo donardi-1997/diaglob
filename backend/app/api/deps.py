@@ -18,6 +18,7 @@ from ..models import (
     Store,
     User,
 )
+from ..organization_entitlements import memberships_allow_multi_org_access
 from ..permissions import has_permission
 
 
@@ -80,15 +81,13 @@ def get_current_membership(
     ),
     db: Session = Depends(get_db),
 ):
-    """Resolve the active organization membership for this request.
+    """Resolve the organization tenant context for this request.
 
-    Backward compatibility is preserved for users with exactly one active
-    organization: the header is optional in that case. Users with multiple
-    memberships must select an organization explicitly with
-    ``X-Organization-Id``. The selected organization must be both active and
-    accessible by the authenticated user.
+    Single-organization accounts keep the zero-friction behavior: no header is
+    required. Multi-organization selection is only available to accounts whose
+    active memberships include a premium Agency/Enterprise entitlement.
     """
-    memberships_query = (
+    memberships = (
         db.query(OrganizationMembership)
         .join(Organization)
         .filter(
@@ -97,26 +96,8 @@ def get_current_membership(
             OrganizationMembership.active.is_(True),
             Organization.active.is_(True),
         )
+        .all()
     )
-
-    if x_organization_id is not None:
-        membership = memberships_query.filter(
-            OrganizationMembership.organization_id
-            == x_organization_id,
-        ).first()
-
-        if not membership:
-            raise HTTPException(
-                status_code=403,
-                detail={
-                    "code": "ORGANIZATION_ACCESS_DENIED",
-                    "message": "Organization access denied",
-                },
-            )
-
-        return membership
-
-    memberships = memberships_query.all()
 
     if not memberships:
         raise HTTPException(
@@ -124,7 +105,34 @@ def get_current_membership(
             detail="Organization access denied",
         )
 
-    if len(memberships) > 1:
+    if len(memberships) == 1:
+        membership = memberships[0]
+        if (
+            x_organization_id is not None
+            and membership.organization_id != x_organization_id
+        ):
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": "ORGANIZATION_ACCESS_DENIED",
+                    "message": "Organization access denied",
+                },
+            )
+        return membership
+
+    if not memberships_allow_multi_org_access(memberships):
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "MULTI_ORG_PLAN_REQUIRED",
+                "message": (
+                    "Multiple organizations require an Agency or "
+                    "Enterprise entitlement"
+                ),
+            },
+        )
+
+    if x_organization_id is None:
         raise HTTPException(
             status_code=409,
             detail={
@@ -136,7 +144,17 @@ def get_current_membership(
             },
         )
 
-    return memberships[0]
+    for membership in memberships:
+        if membership.organization_id == x_organization_id:
+            return membership
+
+    raise HTTPException(
+        status_code=403,
+        detail={
+            "code": "ORGANIZATION_ACCESS_DENIED",
+            "message": "Organization access denied",
+        },
+    )
 
 
 def require_permission(
@@ -193,6 +211,8 @@ def require_permission(
                     "growth",
                     "pro",
                     "scale",
+                    "agency",
+                    "enterprise",
                 }
                 and subscription_status in {
                     "active",
