@@ -17,6 +17,7 @@ from ..models import (
 )
 from ..operations import get_operations_summary
 from ..payments.registry import get_providers_for_market
+from ..telegram_models import TelegramConnection
 
 
 def _display_provider(provider: str) -> str:
@@ -26,6 +27,7 @@ def _display_provider(provider: str) -> str:
         "dropi": "Dropi",
         "meta_ads": "Meta Ads",
         "whatsapp": "WhatsApp",
+        "telegram": "Telegram",
         "google": "Google",
     }
     return labels.get(
@@ -66,13 +68,6 @@ def get_operations_integrations(
     organization_id: int,
     store_id: int,
 ) -> list[dict[str, Any]]:
-    """Return real integration state for one store.
-
-    Store-scoped integrations are tenant-filtered. Google is intentionally
-    organization-scoped because the existing OAuth connection is shared by
-    the organization's knowledge sources. Payment availability comes from
-    the payment-provider registry for the store market.
-    """
     store = (
         db.query(Store)
         .filter(
@@ -104,6 +99,26 @@ def get_operations_integrations(
             category="messaging",
             connected=whatsapp_status == "connected",
             status=whatsapp_status,
+        )
+    )
+
+    telegram = (
+        db.query(TelegramConnection)
+        .filter(
+            TelegramConnection.organization_id == organization_id,
+            TelegramConnection.store_id == store_id,
+        )
+        .first()
+    )
+    telegram_status = telegram.status if telegram else "disconnected"
+    integrations.append(
+        _item(
+            key="telegram",
+            provider="telegram",
+            name="Telegram",
+            category="messaging",
+            connected=telegram_status == "connected",
+            status=telegram_status,
         )
     )
 
@@ -234,7 +249,6 @@ def get_dynamic_operations_summary(
     organization_id: int,
     store_id: int,
 ) -> dict[str, Any]:
-    """Return the existing operations summary with dynamic integrations."""
     summary = get_operations_summary(
         db=db,
         organization_id=organization_id,

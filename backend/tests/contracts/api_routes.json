@@ -49,6 +49,10 @@
   ],
   [
     "DELETE",
+    "/api/stores/{store_id}/telegram/disconnect"
+  ],
+  [
+    "DELETE",
     "/api/stores/{store_id}/whatsapp/disconnect"
   ],
   [
@@ -357,6 +361,10 @@
   ],
   [
     "GET",
+    "/api/stores/{store_id}/telegram"
+  ],
+  [
+    "GET",
     "/api/stores/{store_id}/whatsapp"
   ],
   [
@@ -462,6 +470,10 @@
   [
     "POST",
     "/api/conversations/{conversation_id}/messages"
+  ],
+  [
+    "POST",
+    "/api/conversations/{conversation_id}/telegram/send"
   ],
   [
     "POST",
@@ -645,6 +657,10 @@
   ],
   [
     "POST",
+    "/api/stores/{store_id}/telegram/connect"
+  ],
+  [
+    "POST",
     "/api/stores/{store_id}/whatsapp/connect"
   ],
   [
@@ -674,6 +690,10 @@
   [
     "POST",
     "/api/webhooks/payments/{provider}"
+  ],
+  [
+    "POST",
+    "/api/webhooks/telegram/{webhook_path_token}"
   ],
   [
     "POST",
