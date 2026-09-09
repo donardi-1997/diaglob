@@ -10211,6 +10211,205 @@ button:disabled {
   color: var(--text-secondary);
 }
 
+.knowledge-card-provisioning-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.knowledge-card-provisioning-spinner {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.status-pill.danger {
+  background: color-mix(in srgb, var(--danger, #ef4444) 12%, transparent);
+  color: var(--danger, #ef4444);
+}
+
+/* Knowledge Base Provisioning Animation */
+.knowledge-provisioning-animation {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(8px);
+  animation: fadeIn 0.2s ease;
+}
+
+.knowledge-provisioning-animation-content {
+  width: 90%;
+  max-width: 420px;
+  padding: 32px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  animation: slideUp 0.3s ease;
+}
+
+.knowledge-provisioning-animation-icon {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 80px;
+  height: 80px;
+  margin: 0 auto 24px;
+  color: var(--accent);
+}
+
+.knowledge-provisioning-animation-icon-ring {
+  position: absolute;
+  inset: 0;
+  border: 2px solid color-mix(in srgb, var(--accent) 20%, transparent);
+  border-radius: 50%;
+  animation: knowledgeProvisioningPulse 2s ease-in-out infinite;
+}
+
+.knowledge-provisioning-animation-icon-ring-delay {
+  animation-delay: 1s;
+}
+
+.knowledge-provisioning-animation h2 {
+  margin: 0 0 8px;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.knowledge-provisioning-animation-name {
+  margin: 0 0 24px;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.knowledge-provisioning-animation-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0 0 24px;
+  text-align: left;
+}
+
+.knowledge-provisioning-animation-step {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  transition: all 0.3s ease;
+}
+
+.knowledge-provisioning-animation-step.completed {
+  color: #22c55e;
+}
+
+.knowledge-provisioning-animation-step.current {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  font-weight: 500;
+}
+
+.knowledge-provisioning-animation-step.pending {
+  color: var(--text-secondary);
+  opacity: 0.6;
+}
+
+.knowledge-provisioning-animation-step-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+}
+
+.knowledge-provisioning-animation-success-message {
+  margin: 0 0 16px;
+  font-size: 0.875rem;
+  color: #22c55e;
+  animation: fadeIn 0.3s ease;
+}
+
+.knowledge-provisioning-animation-failure {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 16px;
+  color: var(--danger, #ef4444);
+}
+
+.knowledge-provisioning-animation-failure p {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.knowledge-provisioning-animation-subtitle {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+.knowledge-provisioning-animation-close {
+  margin-top: 8px;
+}
+
+@keyframes knowledgeProvisioningPulse {
+  0% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 0;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .knowledge-provisioning-animation-icon-ring {
+    animation: none;
+  }
+
+  .knowledge-provisioning-animation,
+  .knowledge-provisioning-animation-content,
+  .knowledge-provisioning-animation-success-message {
+    animation: none;
+  }
+}
+
 .knowledge-google-workspace {
   padding: 16px;
   border: 1px solid var(--border);

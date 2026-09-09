@@ -390,6 +390,20 @@ const resources = {
         "Detectamos un problema interno durante la preparación. No necesitas cambiar tus integraciones ni volver a conectar Google.",
       knowledgeI18nFailedSupport:
         "Nuestro equipo puede revisar este problema. Puedes intentar nuevamente más tarde.",
+      knowledgeI18nProvisioningAnimationTitle: "Preparando tu Knowledge Base",
+      knowledgeI18nProvisioningAnimationSubtitle: "Esto puede tardar unos momentos.",
+      knowledgeI18nProvisioningAnimationSuccess: "¡Knowledge Base lista!",
+      knowledgeI18nProvisioningAnimationSuccessBody: "{{name}} está preparada para recibir documentos.",
+      knowledgeI18nProvisioningAnimationFailed: "Hubo un problema al preparar tu Knowledge Base.",
+      knowledgeI18nProvisioningAnimationFailedBody: "Puedes intentar nuevamente o revisar la configuración.",
+      knowledgeI18nProvisioningAnimationStepPreparing: "Preparando recursos",
+      knowledgeI18nProvisioningAnimationStepStorage: "Configurando almacenamiento",
+      knowledgeI18nProvisioningAnimationStepKnowledge: "Creando base de conocimiento",
+      knowledgeI18nProvisioningAnimationStepSources: "Conectando la fuente de conocimiento",
+      knowledgeI18nProvisioningAnimationStepFinalizing: "Finalizando configuración",
+      knowledgeI18nProvisioningAnimationStepReady: "Knowledge Base lista",
+      knowledgeI18nProvisioningAnimationStepFailed: "No pudimos completar la configuración",
+      knowledgeI18nProvisioningAnimationStepRetrying: "Reintentando configuración",
       knowledgeI18nDeactivate:
         "Desactivar",
       knowledgeI18nActivate:
@@ -2421,6 +2435,20 @@ const resources = {
         "We detected an internal issue during setup. You don't need to change your integrations or reconnect Google.",
       knowledgeI18nFailedSupport:
         "Our team can review this issue. You can try again later.",
+      knowledgeI18nProvisioningAnimationTitle: "Preparing your Knowledge Base",
+      knowledgeI18nProvisioningAnimationSubtitle: "This may take a few moments.",
+      knowledgeI18nProvisioningAnimationSuccess: "Knowledge Base ready!",
+      knowledgeI18nProvisioningAnimationSuccessBody: "{{name}} is ready to receive documents.",
+      knowledgeI18nProvisioningAnimationFailed: "There was a problem preparing your Knowledge Base.",
+      knowledgeI18nProvisioningAnimationFailedBody: "You can try again or review the configuration.",
+      knowledgeI18nProvisioningAnimationStepPreparing: "Preparing resources",
+      knowledgeI18nProvisioningAnimationStepStorage: "Configuring storage",
+      knowledgeI18nProvisioningAnimationStepKnowledge: "Creating knowledge base",
+      knowledgeI18nProvisioningAnimationStepSources: "Connecting knowledge source",
+      knowledgeI18nProvisioningAnimationStepFinalizing: "Finalizing setup",
+      knowledgeI18nProvisioningAnimationStepReady: "Knowledge Base ready",
+      knowledgeI18nProvisioningAnimationStepFailed: "We couldn't complete the setup",
+      knowledgeI18nProvisioningAnimationStepRetrying: "Retrying setup",
       knowledgeI18nDeactivate:
         "Deactivate",
       knowledgeI18nActivate:

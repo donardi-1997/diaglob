@@ -47,6 +47,8 @@ import {
   type KnowledgeSource,
 } from "../services/knowledgeSources";
 
+import KnowledgeProvisioningAnimation from "../components/KnowledgeProvisioningAnimation";
+
 import {
   addGoogleDocSource,
   addGoogleDriveFileSource,
@@ -248,6 +250,11 @@ export default function KnowledgeBasesPage({
     useState<KnowledgeFormState>({
       ...EMPTY_FORM,
     });
+
+  const [
+    provisioningKnowledgeBase,
+    setProvisioningKnowledgeBase,
+  ] = useState<KnowledgeBase | null>(null);
 
 
   // =========================================================
@@ -513,6 +520,14 @@ export default function KnowledgeBasesPage({
         return next && hasProvisioningChange(current, next)
           ? { ...current, ...next }
           : current;
+      });
+
+      setProvisioningKnowledgeBase((current) => {
+        if (!current) return current;
+        const next = nextItems.find((item) => item.id === current.id);
+        if (!next) return null;
+        if (!hasProvisioningChange(current, next)) return current;
+        return { ...current, ...next };
       });
     } catch (err) {
       console.error(err);
@@ -838,19 +853,33 @@ export default function KnowledgeBasesPage({
           editingKnowledgeBase.id,
           payload,
         );
+
+        setFormOpen(false);
+        setEditingKnowledgeBase(null);
+        await loadData();
       } else {
-        await createKnowledgeBase(
+        const created = await createKnowledgeBase(
           payload,
         );
+
+        setFormOpen(false);
+        setEditingKnowledgeBase(null);
+
+        setItems((current) => [
+          created,
+          ...current,
+        ]);
+
+        setProvisioningKnowledgeBase(created);
+
+        if (
+          created.external_status === "pending" ||
+          created.external_status === "provisioning" ||
+          created.external_status === "retrying"
+        ) {
+          startPolling();
+        }
       }
-
-      setFormOpen(false);
-
-      setEditingKnowledgeBase(
-        null,
-      );
-
-      await loadData();
     } catch (err) {
       console.error(err);
 
@@ -866,6 +895,36 @@ export default function KnowledgeBasesPage({
     } finally {
       setSaving(false);
     }
+  }
+
+
+  function handleProvisioningComplete() {
+    setProvisioningKnowledgeBase(null);
+    void loadData();
+  }
+
+
+  async function handleProvisioningRetry() {
+    if (!provisioningKnowledgeBase) return;
+    try {
+      setRetryingKnowledgeBaseId(provisioningKnowledgeBase.id);
+      setError("");
+      const retried = await retryKnowledgeBaseProvisioning(provisioningKnowledgeBase.id);
+      setProvisioningKnowledgeBase(retried);
+      setItems((current) =>
+        current.map((item) => item.id === retried.id ? retried : item),
+      );
+    } catch (err) {
+      console.error(err);
+      setError(t("knowledgeI18nProvisioningRetryError"));
+    } finally {
+      setRetryingKnowledgeBaseId(null);
+    }
+  }
+
+
+  function handleProvisioningClose() {
+    setProvisioningKnowledgeBase(null);
   }
 
 
@@ -2099,19 +2158,33 @@ export default function KnowledgeBasesPage({
                     {t("knowledgeI18nProvisioningLabel")}
                   </strong>
 
-                  <span
-                    className={
-                      knowledgeBase.external_status === "ready"
-                        ? "status-pill active"
-                        : "status-pill"
-                    }
-                  >
-                    {t(
-                      PROVISIONING_STATUS_KEYS[
-                        knowledgeBase.external_status
-                      ],
+                  <div className="knowledge-card-provisioning-status">
+                    {(knowledgeBase.external_status === "pending" ||
+                      knowledgeBase.external_status === "provisioning" ||
+                      knowledgeBase.external_status === "retrying") && (
+                      <LoaderCircle
+                        className="spin knowledge-card-provisioning-spinner"
+                        size={14}
+                      />
                     )}
-                  </span>
+
+                    <span
+                      className={
+                        knowledgeBase.external_status === "ready"
+                          ? "status-pill active"
+                          : knowledgeBase.external_status === "failed"
+                            ? "status-pill danger"
+                            : "status-pill"
+                      }
+                    >
+                      {t(
+                        PROVISIONING_STATUS_KEYS[
+                          knowledgeBase.external_status
+                        ],
+                      )}
+                    </span>
+                  </div>
+
                   {knowledgeBase.external_status !== "ready" &&
                     knowledgeBase.provisioning_stage && (
                       <small className="knowledge-card-provisioning-stage">
@@ -3666,6 +3739,20 @@ export default function KnowledgeBasesPage({
             </div>
           </div>
         </div>
+      )}
+
+
+      {/* ===================================================
+          PROVISIONING ANIMATION
+          =================================================== */}
+
+      {provisioningKnowledgeBase && (
+        <KnowledgeProvisioningAnimation
+          knowledgeBase={provisioningKnowledgeBase}
+          onComplete={handleProvisioningComplete}
+          onRetry={() => void handleProvisioningRetry()}
+          onClose={handleProvisioningClose}
+        />
       )}
     </div>
   );
