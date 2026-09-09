@@ -5,7 +5,7 @@ on:
     branches: [main]
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: validate-pr-${{ github.event.pull_request.number }}
@@ -17,10 +17,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout PR head
+      - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.ref }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -38,30 +36,6 @@ jobs:
       - name: Ruff
         working-directory: backend
         run: ruff check app/ tests/
-
-      - name: Generate runtime route snapshot
-        working-directory: backend
-        run: |
-          python - <<'PY'
-          import json
-          from pathlib import Path
-          from tests.test_route_contract import _get_runtime_routes
-
-          Path('tests/contracts/api_routes.json').write_text(
-              json.dumps(_get_runtime_routes(), indent=2) + '\n',
-              encoding='utf-8',
-          )
-          PY
-
-      - name: Commit generated route snapshot if changed
-        run: |
-          if ! git diff --quiet -- backend/tests/contracts/api_routes.json; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add backend/tests/contracts/api_routes.json
-            git commit -m "test: sync API route contract"
-            git push origin HEAD:${{ github.event.pull_request.head.ref }}
-          fi
 
       - name: Backend tests
         working-directory: backend
