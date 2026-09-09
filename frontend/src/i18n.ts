@@ -814,6 +814,42 @@ const resources = {
         "No se pudo conectar Dropi.",
       integrationsDropiTokenPlaceholder:
         "Token de Dropi",
+
+      integrationsNequiDescription:
+        "Acepta pagos con Nequi Push en Colombia.",
+      integrationsNequiConnected:
+        "Nequi conectado.",
+      integrationsNequiDisconnected:
+        "Nequi se desconectó.",
+      integrationsNequiConnectError:
+        "No se pudo conectar Nequi.",
+      integrationsNequiFieldsRequired:
+        "Client ID y Client Secret son obligatorios.",
+      integrationsNequiEnvironment:
+        "Entorno",
+      integrationsNequiSandbox:
+        "Sandbox",
+      integrationsNequiProduction:
+        "Producción",
+      integrationsNequiClientId:
+        "Client ID",
+      integrationsNequiClientIdPlaceholder:
+        "Tu Nequi Client ID",
+      integrationsNequiClientSecret:
+        "Client Secret",
+      integrationsNequiClientSecretPlaceholder:
+        "Tu Nequi Client Secret",
+      integrationsNequiWebhookSecret:
+        "Webhook Secret (opcional)",
+      integrationsNequiWebhookSecretPlaceholder:
+        "Secret para verificar webhooks",
+      integrationsNequiSave:
+        "Guardar",
+      integrationsNequiConfigure:
+        "Configurar",
+      integrationsCancel:
+        "Cancelar",
+
       integrationsCopyError:
         "No se pudo copiar el webhook.",
 
@@ -2860,6 +2896,42 @@ const resources = {
         "Could not connect Dropi.",
       integrationsDropiTokenPlaceholder:
         "Dropi token",
+
+      integrationsNequiDescription:
+        "Accept Nequi Push payments in Colombia.",
+      integrationsNequiConnected:
+        "Nequi connected.",
+      integrationsNequiDisconnected:
+        "Nequi disconnected.",
+      integrationsNequiConnectError:
+        "Could not connect Nequi.",
+      integrationsNequiFieldsRequired:
+        "Client ID and Client Secret are required.",
+      integrationsNequiEnvironment:
+        "Environment",
+      integrationsNequiSandbox:
+        "Sandbox",
+      integrationsNequiProduction:
+        "Production",
+      integrationsNequiClientId:
+        "Client ID",
+      integrationsNequiClientIdPlaceholder:
+        "Your Nequi Client ID",
+      integrationsNequiClientSecret:
+        "Client Secret",
+      integrationsNequiClientSecretPlaceholder:
+        "Your Nequi Client Secret",
+      integrationsNequiWebhookSecret:
+        "Webhook Secret (optional)",
+      integrationsNequiWebhookSecretPlaceholder:
+        "Secret for webhook verification",
+      integrationsNequiSave:
+        "Save",
+      integrationsNequiConfigure:
+        "Configure",
+      integrationsCancel:
+        "Cancel",
+
       integrationsCopyError:
         "Could not copy the webhook.",
 
@@ -4318,6 +4390,41 @@ const resources = {
       integrationsNuvemshopSyncOk: "Produtos Nuvemshop sincronizados com sucesso.",
       integrationsNuvemshopSyncOrdersOk: "Pedidos Nuvemshop sincronizados com sucesso.",
       integrationsNuvemshopSyncError: "Não foi possível sincronizar dados do Nuvemshop.",
+
+      integrationsNequiDescription:
+        "Aceite pagamentos com Nequi Push na Colômbia.",
+      integrationsNequiConnected:
+        "Nequi conectado.",
+      integrationsNequiDisconnected:
+        "Nequi desconectado.",
+      integrationsNequiConnectError:
+        "Não foi possível conectar Nequi.",
+      integrationsNequiFieldsRequired:
+        "Client ID e Client Secret são obrigatórios.",
+      integrationsNequiEnvironment:
+        "Ambiente",
+      integrationsNequiSandbox:
+        "Sandbox",
+      integrationsNequiProduction:
+        "Produção",
+      integrationsNequiClientId:
+        "Client ID",
+      integrationsNequiClientIdPlaceholder:
+        "Seu Nequi Client ID",
+      integrationsNequiClientSecret:
+        "Client Secret",
+      integrationsNequiClientSecretPlaceholder:
+        "Seu Nequi Client Secret",
+      integrationsNequiWebhookSecret:
+        "Webhook Secret (opcional)",
+      integrationsNequiWebhookSecretPlaceholder:
+        "Secret para verificação de webhooks",
+      integrationsNequiSave:
+        "Salvar",
+      integrationsNequiConfigure:
+        "Configurar",
+      integrationsCancel:
+        "Cancelar",
 
       // Automation templates
       autoTabTemplates: "Modelos",

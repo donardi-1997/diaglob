@@ -7,6 +7,7 @@ import {
 import {
   Check,
   Copy,
+  CreditCard,
   Loader2,
   MessageCircle,
   Phone,
@@ -19,13 +20,17 @@ import {
 
 import {
   connectNuvemshop,
+  connectPayment,
   connectShopify,
   connectWhatsApp,
   disconnectNuvemshop,
+  disconnectPayment,
   disconnectShopify,
   disconnectWhatsApp,
   getCommerceStatus,
   getNuvemshopStatus,
+  getPaymentProviders,
+  getPaymentStatus,
   getWhatsAppStatus,
   syncNuvemshopOrders,
   syncNuvemshopProducts,
@@ -33,6 +38,8 @@ import {
   syncShopifyProducts,
   type CommerceConnectionStatus,
   type NuvemshopConnectionStatus,
+  type PaymentConnectionStatus,
+  type PaymentProviderInfo,
   type WhatsAppConnectionStatus,
   type ShopifyTestResult,
   type ShopifySyncResult,
@@ -63,6 +70,33 @@ export default function StoreIntegrations({
 
   const [whatsapp, setWhatsApp] =
     useState<WhatsAppConnectionStatus | null>(null);
+
+  const [nequiProviders, setNequiProviders] =
+    useState<PaymentProviderInfo[]>([]);
+
+  const [nequi, setNequi] =
+    useState<PaymentConnectionStatus | null>(null);
+
+  const [nequiClientId, setNequiClientId] =
+    useState("");
+
+  const [nequiClientSecret, setNequiClientSecret] =
+    useState("");
+
+  const [nequiWebhookSecret, setNequiWebhookSecret] =
+    useState("");
+
+  const [nequiEnvironment, setNequiEnvironment] =
+    useState<"sandbox" | "production">("sandbox");
+
+  const [connectingNequi, setConnectingNequi] =
+    useState(false);
+
+  const [disconnectingNequi, setDisconnectingNequi] =
+    useState(false);
+
+  const [showNequiForm, setShowNequiForm] =
+    useState(false);
 
   const [loading, setLoading] =
     useState(true);
@@ -143,6 +177,22 @@ export default function StoreIntegrations({
       setCommerce(commerceData);
       setNuvemshop(nuvemshopData);
       setWhatsApp(whatsappData);
+
+      // Load payment providers and Nequi status
+      try {
+        const providersData = await getPaymentProviders(storeId);
+        const nequiProvider = providersData.providers.find(p => p.code === "nequi");
+        setNequiProviders(nequiProvider ? [nequiProvider] : []);
+
+        if (nequiProvider) {
+          const nequiData = await getPaymentStatus(storeId, "nequi");
+          setNequi(nequiData);
+        }
+      } catch {
+        // Payment providers not available for this store
+        setNequiProviders([]);
+        setNequi(null);
+      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -412,6 +462,71 @@ export default function StoreIntegrations({
       );
     } finally {
       setSyncingNuvemshopOrders(false);
+    }
+  }
+
+
+  async function handleConnectNequi(event: React.FormEvent) {
+    event.preventDefault();
+    clearMessages();
+
+    const clientId = nequiClientId.trim();
+    const clientSecret = nequiClientSecret.trim();
+
+    if (!clientId || !clientSecret) {
+      setError(t("integrationsNequiFieldsRequired"));
+      return;
+    }
+
+    try {
+      setConnectingNequi(true);
+
+      await connectPayment(storeId, "nequi", {
+        environment: nequiEnvironment,
+        client_id: clientId,
+        client_secret: clientSecret,
+        webhook_secret: nequiWebhookSecret.trim() || undefined,
+      });
+
+      setNequiClientId("");
+      setNequiClientSecret("");
+      setNequiWebhookSecret("");
+      setShowNequiForm(false);
+      setSuccess(t("integrationsNequiConnected"));
+
+      await load();
+    } catch (err: any) {
+      console.error(err);
+      setError(
+        formatError(err)
+        || t("integrationsNequiConnectError"),
+      );
+    } finally {
+      setConnectingNequi(false);
+    }
+  }
+
+
+  async function handleDisconnectNequi() {
+    clearMessages();
+
+    try {
+      setDisconnectingNequi(true);
+
+      await disconnectPayment(storeId, "nequi");
+
+      setNequi(null);
+      setSuccess(t("integrationsNequiDisconnected"));
+
+      await load();
+    } catch (err: any) {
+      console.error(err);
+      setError(
+        formatError(err)
+        || t("integrationsDisconnectError"),
+      );
+    } finally {
+      setDisconnectingNequi(false);
     }
   }
 
@@ -898,6 +1013,173 @@ export default function StoreIntegrations({
           </div>
         )}
       </div>
+
+
+      {/* ============================================================
+          NEQUI PAYMENT PROVIDER
+          ============================================================ */}
+
+      {nequiProviders.length > 0 && (
+        <div className="store-integration-block nequi">
+          <div className="store-integration-header">
+            <div className="store-integration-title">
+              <CreditCard size={17} />
+
+              <strong>
+                Nequi
+              </strong>
+
+              <span
+                className={
+                  nequi?.connected
+                    ? "integration-status connected"
+                    : "integration-status disconnected"
+                }
+              >
+                {nequi?.connected
+                  ? t("integrationsConnected")
+                  : t("integrationsDisconnected")}
+              </span>
+            </div>
+          </div>
+
+          <div className="store-integration-detail">
+            {nequi?.connected ? (
+              <span>
+                {t("integrationsNequiDescription")}
+                {nequi.environment === "sandbox"
+                  ? ` (${t("integrationsNequiSandbox")})`
+                  : ` (${t("integrationsNequiProduction")})`}
+              </span>
+            ) : (
+              <span>{t("integrationsNequiDescription")}</span>
+            )}
+          </div>
+
+          {canWrite && (
+            <div className="store-integration-actions">
+              {nequi?.connected ? (
+                <>
+                  <button
+                    type="button"
+                    className="store-integration-button secondary"
+                    onClick={() => setShowNequiForm(!showNequiForm)}
+                  >
+                    {t("integrationsNequiConfigure")}
+                  </button>
+
+                  <button
+                    type="button"
+                    className="store-integration-button danger"
+                    onClick={handleDisconnectNequi}
+                    disabled={disconnectingNequi}
+                  >
+                    {disconnectingNequi
+                      ? <Loader2 className="spin" size={15} />
+                      : <Trash2 size={15} />}
+
+                    {t("integrationsDisconnect")}
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="store-integration-button primary"
+                  onClick={() => setShowNequiForm(!showNequiForm)}
+                >
+                  <Plug size={15} />
+                  {t("integrationsConnect")}
+                </button>
+              )}
+            </div>
+          )}
+
+          {showNequiForm && (
+            <form
+              className="store-integration-whatsapp-form"
+              onSubmit={(e) => void handleConnectNequi(e)}
+            >
+              <label>
+                <span>{t("integrationsNequiEnvironment")}</span>
+                <select
+                  value={nequiEnvironment}
+                  onChange={(e) =>
+                    setNequiEnvironment(
+                      e.target.value as "sandbox" | "production"
+                    )
+                  }
+                >
+                  <option value="sandbox">
+                    {t("integrationsNequiSandbox")}
+                  </option>
+                  <option value="production">
+                    {t("integrationsNequiProduction")}
+                  </option>
+                </select>
+              </label>
+
+              <label>
+                <span>{t("integrationsNequiClientId")}</span>
+                <input
+                  type="text"
+                  value={nequiClientId}
+                  onChange={(e) => setNequiClientId(e.target.value)}
+                  placeholder={t("integrationsNequiClientIdPlaceholder")}
+                  autoComplete="off"
+                />
+              </label>
+
+              <label>
+                <span>{t("integrationsNequiClientSecret")}</span>
+                <input
+                  type="password"
+                  value={nequiClientSecret}
+                  onChange={(e) => setNequiClientSecret(e.target.value)}
+                  placeholder={t("integrationsNequiClientSecretPlaceholder")}
+                  autoComplete="off"
+                />
+              </label>
+
+              <label>
+                <span>{t("integrationsNequiWebhookSecret")}</span>
+                <input
+                  type="password"
+                  value={nequiWebhookSecret}
+                  onChange={(e) => setNequiWebhookSecret(e.target.value)}
+                  placeholder={t("integrationsNequiWebhookSecretPlaceholder")}
+                  autoComplete="off"
+                />
+              </label>
+
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  type="submit"
+                  className="store-integration-button primary"
+                  disabled={connectingNequi}
+                >
+                  {connectingNequi
+                    ? <Loader2 className="spin" size={15} />
+                    : <Check size={15} />}
+                  {t("integrationsNequiSave")}
+                </button>
+
+                <button
+                  type="button"
+                  className="store-integration-button secondary"
+                  onClick={() => {
+                    setShowNequiForm(false);
+                    setNequiClientId("");
+                    setNequiClientSecret("");
+                    setNequiWebhookSecret("");
+                  }}
+                >
+                  {t("integrationsCancel")}
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+      )}
 
 
       <div className="store-integration-block whatsapp">

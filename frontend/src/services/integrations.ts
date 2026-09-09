@@ -577,3 +577,193 @@ export async function syncNuvemshopOrders(
 
   return response.data;
 }
+
+
+// ============================================================
+// PAYMENT PROVIDERS
+// ============================================================
+
+
+export interface PaymentProviderInfo {
+  code: string;
+  name: string;
+  payment_methods: string[];
+  supports_webhooks: boolean;
+  supports_reversals: boolean;
+}
+
+
+export interface PaymentConnectionStatus {
+  connected: boolean;
+  provider: string;
+  status: string;
+  environment: string | null;
+  merchant_reference: string | null;
+  connected_at: string | null;
+  last_error: string | null;
+}
+
+
+export interface PaymentTransaction {
+  id: number;
+  provider: string;
+  status: string;
+  amount: string;
+  currency: string;
+  payment_method: string;
+  provider_transaction_id: string | null;
+  order_id: number | null;
+  customer_phone: string | null;
+  provider_status: string | null;
+  expires_at: string | null;
+  paid_at: string | null;
+  created_at: string | null;
+}
+
+
+export async function getPaymentProviders(
+  storeId: number,
+) {
+  const response =
+    await api.get<{
+      store_id: number;
+      providers: PaymentProviderInfo[];
+    }>(
+      `/api/stores/${storeId}/payments/providers`,
+    );
+
+  return response.data;
+}
+
+
+export async function getPaymentStatus(
+  storeId: number,
+  provider: string,
+) {
+  const response =
+    await api.get<PaymentConnectionStatus>(
+      `/api/stores/${storeId}/payments/${provider}/status`,
+    );
+
+  return response.data;
+}
+
+
+export async function connectPayment(
+  storeId: number,
+  provider: string,
+  data: {
+    environment: string;
+    client_id: string;
+    client_secret: string;
+    webhook_secret?: string;
+    merchant_reference?: string;
+  },
+) {
+  const response =
+    await api.post<{
+      ok: boolean;
+      connected: boolean;
+      provider: string;
+      status: string;
+      environment: string;
+    }>(
+      `/api/stores/${storeId}/payments/${provider}/connect`,
+      data,
+    );
+
+  return response.data;
+}
+
+
+export async function disconnectPayment(
+  storeId: number,
+  provider: string,
+) {
+  const response =
+    await api.delete<{
+      ok: boolean;
+      connected: boolean;
+      provider: string;
+    }>(
+      `/api/stores/${storeId}/payments/${provider}/disconnect`,
+    );
+
+  return response.data;
+}
+
+
+export async function createPayment(
+  storeId: number,
+  data: {
+    provider: string;
+    amount?: number;
+    currency?: string;
+    customer_phone: string;
+    idempotency_key?: string;
+    order_id?: number;
+    payment_method?: string;
+  },
+) {
+  const response =
+    await api.post<PaymentTransaction>(
+      `/api/stores/${storeId}/payments`,
+      data,
+    );
+
+  return response.data;
+}
+
+
+export async function getPayment(
+  storeId: number,
+  paymentId: number,
+) {
+  const response =
+    await api.get<PaymentTransaction>(
+      `/api/stores/${storeId}/payments/${paymentId}`,
+    );
+
+  return response.data;
+}
+
+
+export async function reconcilePayment(
+  storeId: number,
+  paymentId: number,
+) {
+  const response =
+    await api.post<PaymentTransaction>(
+      `/api/stores/${storeId}/payments/${paymentId}/reconcile`,
+    );
+
+  return response.data;
+}
+
+
+export async function cancelPayment(
+  storeId: number,
+  paymentId: number,
+) {
+  const response =
+    await api.post<PaymentTransaction>(
+      `/api/stores/${storeId}/payments/${paymentId}/cancel`,
+    );
+
+  return response.data;
+}
+
+
+export async function reversePayment(
+  storeId: number,
+  paymentId: number,
+  reason?: string,
+) {
+  const response =
+    await api.post<PaymentTransaction>(
+      `/api/stores/${storeId}/payments/${paymentId}/reverse`,
+      { reason: reason || "Merchant requested reversal" },
+    );
+
+  return response.data;
+}
