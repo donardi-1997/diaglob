@@ -103,6 +103,33 @@ export function getBillingUpgradePayableAmount(
 }
 
 
+function normalizeBillingUpgradePreview(
+  preview: BillingUpgradePreview,
+): BillingUpgradePreview {
+  const payable = getBillingUpgradePayableAmount(preview);
+
+  if (!payable) {
+    return preview;
+  }
+
+  return {
+    ...preview,
+    currency_code:
+      preview.currency_code || payable.currencyCode,
+    amount_due:
+      preview.amount_due || payable.amount,
+    update_summary: {
+      ...preview.update_summary,
+      result: {
+        action: "charge",
+        amount: payable.amount,
+        currency_code: payable.currencyCode,
+      },
+    },
+  };
+}
+
+
 export interface BillingUpgradeResponse {
   ok: boolean;
   current_plan: string;
@@ -143,7 +170,9 @@ export async function previewBillingUpgrade(
       },
     );
 
-  return response.data;
+  return normalizeBillingUpgradePreview(
+    response.data,
+  );
 }
 
 
