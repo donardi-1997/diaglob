@@ -358,8 +358,12 @@ def generate_auto_reply(
 
         if isinstance(ai_result, dict):
             answer = ai_result.get("answer", "")
+            input_tokens = ai_result.get("input_tokens", 0)
+            output_tokens = ai_result.get("output_tokens", 0)
         else:
             answer = ai_result
+            input_tokens = 0
+            output_tokens = 0
 
         if not answer:
             print(
@@ -368,6 +372,24 @@ def generate_auto_reply(
                 conversation_id,
             )
             return
+
+        if input_tokens > 0 or output_tokens > 0:
+            from .services.product_analytics import capture
+
+            capture(
+                "ai_interaction_completed",
+                distinct_id=f"org:{conversation.organization_id}",
+                properties={
+                    "organization_id": conversation.organization_id,
+                    "store_id": conversation.store_id,
+                    "feature": "conversation_auto_reply",
+                    "channel": (conversation.channel or "internal").lower(),
+                    "model": "amazon.nova-2-lite-v1",
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "total_tokens": input_tokens + output_tokens,
+                },
+            )
 
         ai_message = Message(
             conversation_id=conversation.id,
