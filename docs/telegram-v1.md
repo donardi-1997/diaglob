@@ -104,7 +104,7 @@ Outbound human replies from `/api/conversations/{conversation_id}/messages` are 
 
 ## Validation
 
-The Telegram V1 pull-request validation covers Ruff, the complete backend test suite, dependency installation, and the production TypeScript/Vite build. The final V1 head passed all of these checks, including the Telegram-specific connection, webhook, inbox delivery, AI delivery, idempotency, and route-contract regressions.
+The final Telegram V1 implementation passed the pull-request validation pipeline: Ruff, 858 backend tests, dependency installation, and the production TypeScript/Vite build. The Telegram-specific coverage includes connection, authenticated webhook processing, idempotency, group rejection, unified-inbox delivery, AI channel delivery, and the API route contract.
 
 ## Smoke test
 
