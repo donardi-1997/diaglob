@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { useState } from "react";
 import {
+  CreditCard,
   LayoutDashboard,
   Package,
   ShoppingBag,
@@ -8,6 +9,7 @@ import {
 import CommerceSummary from "../components/CommerceSummary";
 import CommerceProducts from "../components/CommerceProducts";
 import CommerceOrders from "../components/CommerceOrders";
+import PixPaymentsPanel from "../components/PixPaymentsPanel";
 
 
 interface CommercePageProps {
@@ -19,12 +21,14 @@ interface CommercePageProps {
 type CommerceTab =
   | "summary"
   | "products"
-  | "orders";
+  | "orders"
+  | "payments";
 
 
 const TABS: {
   key: CommerceTab;
   labelKey: string;
+  fallbackLabel?: string;
   icon: typeof LayoutDashboard;
 }[] = [
   {
@@ -41,6 +45,12 @@ const TABS: {
     key: "orders",
     labelKey: "commerceTabOrders",
     icon: ShoppingBag,
+  },
+  {
+    key: "payments",
+    labelKey: "commerceTabPayments",
+    fallbackLabel: "Pagos",
+    icon: CreditCard,
   },
 ];
 
@@ -68,6 +78,10 @@ export default function CommercePage({
       <div className="commerce-tabs">
         {TABS.map((tab) => {
           const Icon = tab.icon;
+          const translated = t(tab.labelKey);
+          const label = translated === tab.labelKey
+            ? (tab.fallbackLabel || translated)
+            : translated;
 
           return (
             <button
@@ -83,7 +97,7 @@ export default function CommercePage({
               }
             >
               <Icon size={16} />
-              {t(tab.labelKey)}
+              {label}
             </button>
           );
         })}
@@ -106,6 +120,13 @@ export default function CommercePage({
 
         {activeTab === "orders" && (
           <CommerceOrders
+            storeId={storeId}
+            canWrite={canWrite}
+          />
+        )}
+
+        {activeTab === "payments" && (
+          <PixPaymentsPanel
             storeId={storeId}
             canWrite={canWrite}
           />
