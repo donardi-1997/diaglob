@@ -46,6 +46,7 @@ import {
 } from "../services/integrations";
 
 import ShopifyOrders from "./ShopifyOrders";
+import TelegramIntegrationCard from "./TelegramIntegrationCard";
 
 
 interface StoreIntegrationsProps {
@@ -178,7 +179,6 @@ export default function StoreIntegrations({
       setNuvemshop(nuvemshopData);
       setWhatsApp(whatsappData);
 
-      // Load payment providers and Nequi status
       try {
         const providersData = await getPaymentProviders(storeId);
         const nequiProvider = providersData.providers.find(p => p.code === "nequi");
@@ -189,7 +189,6 @@ export default function StoreIntegrations({
           setNequi(nequiData);
         }
       } catch {
-        // Payment providers not available for this store
         setNequiProviders([]);
         setNequi(null);
       }
@@ -224,8 +223,6 @@ export default function StoreIntegrations({
           shopDomain || "",
         );
 
-      // Abre la pantalla de autorización de
-      // Shopify en una pestaña nueva.
       window.open(
         result.authorization_url,
         "_blank",
@@ -616,7 +613,6 @@ export default function StoreIntegrations({
           token,
         );
 
-      // Limpia el token inmediatamente.
       setWhatsAppToken("");
       setWhatsAppPhoneId("");
       setWhatsAppBizId("");
@@ -1015,10 +1011,6 @@ export default function StoreIntegrations({
       </div>
 
 
-      {/* ============================================================
-          NEQUI PAYMENT PROVIDER
-          ============================================================ */}
-
       {nequiProviders.length > 0 && (
         <div className="store-integration-block nequi">
           <div className="store-integration-header">
@@ -1180,6 +1172,12 @@ export default function StoreIntegrations({
           )}
         </div>
       )}
+
+
+      <TelegramIntegrationCard
+        storeId={storeId}
+        canWrite={canWrite}
+      />
 
 
       <div className="store-integration-block whatsapp">
