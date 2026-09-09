@@ -15,6 +15,7 @@ from ..models import (
     Store,
     WhatsAppConnection,
 )
+from ..operations import get_operations_summary
 from ..payments.registry import get_providers_for_market
 
 
@@ -126,8 +127,6 @@ def get_operations_integrations(
             )
         )
     elif store.shopify_domain:
-        # Backward-compatible visibility for stores created before
-        # CommerceConnection became the canonical integration record.
         integrations.append(
             _item(
                 key="commerce:shopify",
@@ -228,3 +227,22 @@ def get_operations_integrations(
         )
 
     return integrations
+
+
+def get_dynamic_operations_summary(
+    db: Session,
+    organization_id: int,
+    store_id: int,
+) -> dict[str, Any]:
+    """Return the existing operations summary with dynamic integrations."""
+    summary = get_operations_summary(
+        db=db,
+        organization_id=organization_id,
+        store_id=store_id,
+    )
+    summary["integrations"] = get_operations_integrations(
+        db=db,
+        organization_id=organization_id,
+        store_id=store_id,
+    )
+    return summary
