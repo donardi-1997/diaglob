@@ -240,9 +240,30 @@ def get_dynamic_operations_summary(
         organization_id=organization_id,
         store_id=store_id,
     )
-    summary["integrations"] = get_operations_integrations(
+    integrations = get_operations_integrations(
         db=db,
         organization_id=organization_id,
         store_id=store_id,
     )
+    summary["integrations"] = integrations
+
+    alerts = [
+        alert
+        for alert in summary.get("alerts", [])
+        if alert.get("type") != "no_shopify"
+    ]
+    has_commerce = any(
+        item["category"] == "commerce" and item["connected"]
+        for item in integrations
+    )
+    if not has_commerce:
+        alerts.append(
+            {
+                "type": "no_commerce",
+                "severity": "info",
+                "message": "No commerce platform connected for this store",
+            }
+        )
+    summary["alerts"] = alerts
+
     return summary
