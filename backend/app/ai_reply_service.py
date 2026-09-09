@@ -132,13 +132,22 @@ def _deliver_answer(
             .first()
         )
         ai_message.provider = "telegram"
-        if not connection or not conversation.customer.phone.startswith("telegram:"):
+        customer_phone = (
+            conversation.customer.phone
+            if conversation.customer
+            else None
+        )
+        if (
+            not connection
+            or not customer_phone
+            or not customer_phone.startswith("telegram:")
+        ):
             ai_message.delivery_status = "failed"
             db.commit()
             return
 
         token = decrypt_telegram_secret(connection.bot_token_encrypted)
-        chat_id = int(conversation.customer.phone.split(":", 1)[1])
+        chat_id = int(customer_phone.split(":", 1)[1])
         result = send_telegram_text_message(token, chat_id=chat_id, text=answer)
         ai_message.external_message_id = (
             str(result.get("message_id"))
