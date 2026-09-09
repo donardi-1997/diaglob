@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from .ai_generation import generate_grounded_answer
 from .commerce import search_products
 from .db import SessionLocal
+from .integrations.telegram.client import send_message as send_telegram_text_message
 from .models import (
     Agent,
     Conversation,
@@ -13,6 +14,8 @@ from .models import (
     WhatsAppConnection,
 )
 from .rag import retrieve_agent_knowledge
+from .telegram_models import TelegramConnection
+from .telegram_security import decrypt_telegram_secret
 from .whatsapp_client import (
     send_whatsapp_text_message,
 )
@@ -108,6 +111,69 @@ def _build_history_text(
         )
 
     return "\n".join(lines)
+
+
+def _deliver_answer(
+    db: Session,
+    conversation: Conversation,
+    ai_message: Message,
+    answer: str,
+) -> None:
+    channel = (conversation.channel or "").lower()
+
+    if channel == "telegram":
+        connection = (
+            db.query(TelegramConnection)
+            .filter(
+                TelegramConnection.store_id == conversation.store_id,
+                TelegramConnection.organization_id == conversation.organization_id,
+                TelegramConnection.status == "connected",
+            )
+            .first()
+        )
+        ai_message.provider = "telegram"
+        if not connection or not conversation.customer.phone.startswith("telegram:"):
+            ai_message.delivery_status = "failed"
+            db.commit()
+            return
+
+        token = decrypt_telegram_secret(connection.bot_token_encrypted)
+        chat_id = int(conversation.customer.phone.split(":", 1)[1])
+        result = send_telegram_text_message(token, chat_id=chat_id, text=answer)
+        ai_message.external_message_id = (
+            str(result.get("message_id"))
+            if result.get("message_id") is not None
+            else None
+        )
+        ai_message.delivery_status = "sent"
+        db.commit()
+        return
+
+    connection = (
+        db.query(WhatsAppConnection)
+        .filter(
+            WhatsAppConnection.store_id == conversation.store_id,
+            WhatsAppConnection.organization_id == conversation.organization_id,
+            WhatsAppConnection.status == "connected",
+        )
+        .first()
+    )
+    ai_message.provider = "whatsapp"
+    if not connection:
+        ai_message.delivery_status = "failed"
+        db.commit()
+        return
+
+    token = decrypt_whatsapp_secret(connection.access_token_encrypted)
+    result = send_whatsapp_text_message(
+        phone_number_id=connection.phone_number_id,
+        access_token=token,
+        to=conversation.customer.phone,
+        text=answer,
+    )
+    ai_message.external_message_id = result.get("message_id")
+    ai_message.delivery_status = "sent"
+    db.commit()
 
 
 def generate_auto_reply(
@@ -290,15 +356,10 @@ def generate_auto_reply(
                 history_text,
         )
 
-        # Handle both dict and string returns (backward compatibility)
         if isinstance(ai_result, dict):
             answer = ai_result.get("answer", "")
-            input_tokens = ai_result.get("input_tokens", 0)
-            output_tokens = ai_result.get("output_tokens", 0)
         else:
             answer = ai_result
-            input_tokens = 0
-            output_tokens = 0
 
         if not answer:
             print(
@@ -318,60 +379,14 @@ def generate_auto_reply(
         )
 
         db.add(ai_message)
-
         conversation.preview = answer
         conversation.unread = 0
-        conversation.updated_at = (
-            datetime.utcnow()
-        )
-
+        conversation.updated_at = datetime.utcnow()
         db.commit()
         db.refresh(ai_message)
 
-        connection = (
-            db.query(WhatsAppConnection)
-            .filter(
-                WhatsAppConnection.store_id
-                == conversation.store_id,
-                WhatsAppConnection.organization_id
-                == conversation.organization_id,
-                WhatsAppConnection.status
-                == "connected",
-            )
-            .first()
-        )
-
-        if not connection:
-            ai_message.provider = "whatsapp"
-            ai_message.delivery_status = "failed"
-            db.commit()
-            print(
-                "[DIAGLOB AUTO-REPLY]",
-                "no_connection, conversation=",
-                conversation_id,
-            )
-            return
-
         try:
-            token = decrypt_whatsapp_secret(
-                connection.access_token_encrypted
-            )
-
-            result = send_whatsapp_text_message(
-                phone_number_id=
-                    connection.phone_number_id,
-                access_token=token,
-                to=conversation.customer.phone,
-                text=answer,
-            )
-
-            ai_message.provider = "whatsapp"
-            ai_message.external_message_id = (
-                result.get("message_id")
-            )
-            ai_message.delivery_status = "sent"
-            db.commit()
-
+            _deliver_answer(db, conversation, ai_message, answer)
             print(
                 "[DIAGLOB AUTO-REPLY]",
                 "sent, conversation=",
@@ -381,12 +396,10 @@ def generate_auto_reply(
                 "ext_id=",
                 ai_message.external_message_id,
             )
-
         except Exception as exc:
-            ai_message.provider = "whatsapp"
+            ai_message.provider = (conversation.channel or "internal").lower()
             ai_message.delivery_status = "failed"
             db.commit()
-
             print(
                 "[DIAGLOB AUTO-REPLY]",
                 "send_failed, conversation=",
