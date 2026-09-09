@@ -5,11 +5,13 @@ import {
   MessageSquareText,
   ShoppingBag,
   Workflow,
+  TrendingUp,
 } from "lucide-react";
 import AnalyticsOverview from "../components/AnalyticsOverview";
 import AnalyticsConversations from "../components/AnalyticsConversations";
 import AnalyticsCommerce from "../components/AnalyticsCommerce";
 import AnalyticsAutomations from "../components/AnalyticsAutomations";
+import DropshippingOverview from "../components/DropshippingOverview";
 
 
 interface AnalyticsPageProps {
@@ -20,6 +22,7 @@ interface AnalyticsPageProps {
 
 type AnalyticsTab =
   | "overview"
+  | "dropshipping"
   | "conversations"
   | "commerce"
   | "automations";
@@ -34,6 +37,11 @@ const TABS: {
     key: "overview",
     labelKey: "analyticsTabOverview",
     icon: BarChart3,
+  },
+  {
+    key: "dropshipping",
+    labelKey: "analyticsTabDropshipping",
+    icon: TrendingUp,
   },
   {
     key: "conversations",
@@ -281,6 +289,14 @@ export default function AnalyticsPage({
       <div className="commerce-content">
         {activeTab === "overview" && (
           <AnalyticsOverview
+            storeId={storeId}
+            dateFrom={effectiveFrom}
+            dateTo={effectiveTo}
+          />
+        )}
+
+        {activeTab === "dropshipping" && (
+          <DropshippingOverview
             storeId={storeId}
             dateFrom={effectiveFrom}
             dateTo={effectiveTo}

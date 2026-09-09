@@ -1948,6 +1948,11 @@ class Product(Base):
         nullable=False,
     )
 
+    cost: Mapped[float | None] = mapped_column(
+        Numeric(18, 4),
+        nullable=True,
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=datetime.utcnow,
@@ -2171,6 +2176,17 @@ class Order(Base):
         nullable=True,
     )
 
+    lifecycle_status: Mapped[str | None] = mapped_column(
+        String(30),
+        nullable=True,
+        index=True,
+    )
+
+    lifecycle_synced_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+    )
+
     note: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
@@ -2303,6 +2319,11 @@ class OrderItem(Base):
     unit_price: Mapped[float] = mapped_column(
         Numeric(18, 4),
         nullable=False,
+    )
+
+    unit_cost: Mapped[float | None] = mapped_column(
+        Numeric(18, 4),
+        nullable=True,
     )
 
     currency: Mapped[str] = mapped_column(

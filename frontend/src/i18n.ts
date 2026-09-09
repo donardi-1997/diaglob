@@ -1429,6 +1429,7 @@ const resources = {
        autoTabRuns: "Ejecuciones", autoRunExplorer: "Explorador de ejecuciones", autoSelectCampaign: "Selecciona una campaña para ver sus ejecuciones.", autoNoActiveCampaigns: "No hay campañas activas.", autoRunLabel: "Ejecución", autoRuns: "Ejecuciones", autoRunStatus: "Estado", autoRunScheduled: "Programada", autoRunStarted: "Iniciada", autoRunFinished: "Finalizada", autoRunMatched: "Coinciden", autoRunSent: "Enviados", autoRunFailed: "Fallidos", autoRunSkipped: "Omitidos", autoRunPending: "Pendientes", autoRunTotal: "Total", autoRunProgress: "Progreso", autoRunLive: "Actualización en vivo cada 7 segundos.", autoBackToRuns: "Volver a ejecuciones", autoBackToCampaigns: "Volver a campañas", autoRunStatus_simulated: "Simulada", autoRunStatus_pending: "Pendiente", autoRunStatus_running: "En progreso", autoRunStatus_completed: "Completada", autoRunStatus_partial: "Parcial", autoRunStatus_failed: "Fallida", autoRunLoadError: "No se pudo cargar la ejecución.", autoRecipientLoadError: "No se pudo cargar el destinatario.", autoRecipientDetail: "Detalle del destinatario", autoRecipientCustomer: "Cliente", autoRecipientStatus: "Estado", autoRecipientAttempts: "Intentos", autoRecipientSentAt: "Enviado", autoRecipientReason: "Razón", autoRecipientProviderId: "ID proveedor", autoRecipientError: "Error", autoRecipientMessage: "Mensaje", autoNoRecipients: "No hay destinatarios para esta ejecución.", autoRecipientStatus_queued: "En cola", autoRecipientStatus_processing: "Procesando", autoRecipientStatus_sending: "Enviando", autoRecipientStatus_retry_wait: "Esperando reintento", autoRecipientStatus_sent: "Aceptado por WhatsApp", autoRecipientStatus_failed: "Fallido", autoRecipientStatus_skipped: "Omitido", autoRecipientStatus_ambiguous: "Ambiguo", autoAttemptTimeline: "Historial de intentos", autoNoAttempts: "No hay intentos registrados.", autoAttemptNumber: "Intento {{n}}", autoAttemptStarted: "Iniciado", autoAttemptFinished: "Finalizado", autoReason_outside_service_window: "Fuera de la ventana de servicio de WhatsApp", autoReason_template_required: "Se requiere template aprobado", autoReason_template_not_approved: "Template no aprobado", autoReason_invalid_template_data: "Variables de template inválidas", autoReason_connection_inactive: "Conexión WhatsApp inactiva", autoReason_cooldown: "Dentro del período de espera", autoReason_no_phone: "Sin número de teléfono", autoReason_rate_limited: "Límite de envío alcanzado", autoReason_send_window: "Fuera de la ventana de envío", autoReason_provider_error: "Error del proveedor", autoReason_invalid_phone: "Teléfono inválido", autoAllStatuses: "Todos los estados", autoAllReasons: "Todas las razones", autoRetryRecipient: "Reintentar", autoRetryConfirm: "¿Reintentar envío a este destinatario? Se creará un nuevo intento.", autoRetryFailed: "No se pudo reintentar.", autoAmbiguousNoRetry: "Los destinatarios ambiguos no se reintentan automáticamente para evitar duplicados.", autoLoading: "Cargando…", autoNoRuns: "No hay ejecuciones aún.",
 
       analyticsTabOverview: "General",
+      analyticsTabDropshipping: "Dropshipping",
       analyticsTabConversations: "Conversaciones",
       analyticsTabCommerce: "Comercio",
       analyticsTabAutomations: "Automatizaciones",
@@ -1494,6 +1495,21 @@ const resources = {
         "Más fallos",
       analyticsNoOrders:
         "No hay órdenes en este periodo.",
+
+      dsDeliveredOrders: "Órdenes entregadas",
+      dsDeliveredRevenue: "Ingresos entregados",
+      dsDeliveryRate: "Tasa de entrega",
+      dsOrdersCreated: "Órdenes creadas",
+      dsFunnel: "Embudo de órdenes",
+      dsCreated: "Creadas",
+      dsConfirmed: "Confirmadas",
+      dsShipped: "Despachadas",
+      dsDelivered: "Entregadas",
+      dsRates: "Tasas",
+      dsConfirmationRate: "Tasa de confirmación",
+      dsCancellationRate: "Tasa de cancelación",
+      dsReturnRate: "Tasa de devolución",
+      dsLoading: "Cargando analíticas de dropshipping...",
 
       landingNavProduct: "Producto",
       landingNavHow: "Cómo funciona",
@@ -3488,6 +3504,7 @@ const resources = {
        autoTabRuns: "Runs", autoRunExplorer: "Run Explorer", autoSelectCampaign: "Select a campaign to view its runs.", autoNoActiveCampaigns: "No active campaigns.", autoRunLabel: "Run", autoRuns: "Runs", autoRunStatus: "Status", autoRunScheduled: "Scheduled", autoRunStarted: "Started", autoRunFinished: "Finished", autoRunMatched: "Matched", autoRunSent: "Sent", autoRunFailed: "Failed", autoRunSkipped: "Skipped", autoRunPending: "Pending", autoRunTotal: "Total", autoRunProgress: "Progress", autoRunLive: "Live refresh every 7 seconds.", autoBackToRuns: "Back to runs", autoBackToCampaigns: "Back to campaigns", autoRunStatus_simulated: "Simulated", autoRunStatus_pending: "Pending", autoRunStatus_running: "Running", autoRunStatus_completed: "Completed", autoRunStatus_partial: "Partial", autoRunStatus_failed: "Failed", autoRunLoadError: "Could not load run.", autoRecipientLoadError: "Could not load recipient.", autoRecipientDetail: "Recipient detail", autoRecipientCustomer: "Customer", autoRecipientStatus: "Status", autoRecipientAttempts: "Attempts", autoRecipientSentAt: "Sent at", autoRecipientReason: "Reason", autoRecipientProviderId: "Provider ID", autoRecipientError: "Error", autoRecipientMessage: "Message", autoNoRecipients: "No recipients match these filters.", autoRecipientStatus_queued: "Queued", autoRecipientStatus_processing: "Processing", autoRecipientStatus_sending: "Sending", autoRecipientStatus_retry_wait: "Retrying", autoRecipientStatus_sent: "Accepted by WhatsApp", autoRecipientStatus_failed: "Failed", autoRecipientStatus_skipped: "Skipped", autoRecipientStatus_ambiguous: "Ambiguous", autoAttemptTimeline: "Attempt history", autoNoAttempts: "No provider attempts recorded.", autoAttemptNumber: "Attempt {{n}}", autoAttemptStarted: "Started", autoAttemptFinished: "Finished", autoReason_outside_service_window: "Outside WhatsApp service window", autoReason_template_required: "Approved template required", autoReason_template_not_approved: "Template not approved", autoReason_invalid_template_data: "Invalid template variables", autoReason_connection_inactive: "WhatsApp connection inactive", autoReason_cooldown: "Within campaign cooldown", autoReason_no_phone: "No phone number", autoReason_rate_limited: "Rate limit reached", autoReason_send_window: "Outside send window", autoReason_provider_error: "Provider error", autoReason_invalid_phone: "Invalid phone", autoAllStatuses: "All statuses", autoAllReasons: "All reasons", autoRetryRecipient: "Retry", autoRetryConfirm: "Retry send to this recipient? A new attempt will be created.", autoRetryFailed: "Could not retry.", autoAmbiguousNoRetry: "Ambiguous recipients are not retried automatically to prevent duplicates.", autoLoading: "Loading…", autoNoRuns: "No runs yet.",
 
       analyticsTabOverview: "Overview",
+      analyticsTabDropshipping: "Dropshipping",
       analyticsTabConversations: "Conversations",
       analyticsTabCommerce: "Commerce",
       analyticsTabAutomations: "Automations",
@@ -3551,6 +3568,21 @@ const resources = {
         "Most failures",
       analyticsNoOrders:
         "No orders in this period.",
+
+      dsDeliveredOrders: "Delivered orders",
+      dsDeliveredRevenue: "Delivered revenue",
+      dsDeliveryRate: "Delivery rate",
+      dsOrdersCreated: "Orders created",
+      dsFunnel: "Order funnel",
+      dsCreated: "Created",
+      dsConfirmed: "Confirmed",
+      dsShipped: "Shipped",
+      dsDelivered: "Delivered",
+      dsRates: "Rates",
+      dsConfirmationRate: "Confirmation rate",
+      dsCancellationRate: "Cancellation rate",
+      dsReturnRate: "Return rate",
+      dsLoading: "Loading dropshipping analytics...",
 
       landingNavProduct: "Product",
       landingNavHow: "How it works",

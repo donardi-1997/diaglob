@@ -174,3 +174,121 @@ export async function getAnalyticsAutomations(
 
   return response.data;
 }
+
+
+// ============================================================
+// DROPSHIPPING ANALYTICS
+// ============================================================
+
+
+export interface DropshippingOverview {
+  total_orders: number;
+  confirmed_orders: number;
+  shipped_orders: number;
+  delivered_orders: number;
+  cancelled_orders: number;
+  returned_orders: number;
+  unknown_orders: number;
+  confirmation_rate: number | null;
+  delivery_rate: number | null;
+  cancellation_rate: number | null;
+  return_rate: number | null;
+  gross_order_value: number;
+  delivered_revenue: number;
+  delivered_aov: number | null;
+}
+
+
+export async function getDropshippingOverview(
+  storeId: number,
+  dateFrom?: string,
+  dateTo?: string,
+) {
+  const qs = buildParams(dateFrom, dateTo);
+
+  const response =
+    await api.get<DropshippingOverview>(
+      `/api/stores/${storeId}/analytics/dropshipping/overview${qs}`,
+    );
+
+  return response.data;
+}
+
+
+export interface DropshippingProfitability {
+  delivered_revenue: number;
+  total_cogs: number;
+  gross_profit: number;
+  gross_margin: number | null;
+  profit_per_delivered_order: number | null;
+  delivered_orders_count: number;
+  cost_completeness_pct: number | null;
+}
+
+
+export async function getDropshippingProfitability(
+  storeId: number,
+  dateFrom?: string,
+  dateTo?: string,
+) {
+  const qs = buildParams(dateFrom, dateTo);
+
+  const response =
+    await api.get<DropshippingProfitability>(
+      `/api/stores/${storeId}/analytics/dropshipping/profitability${qs}`,
+    );
+
+  return response.data;
+}
+
+
+export interface DropshippingProduct {
+  product_id: number;
+  title: string;
+  sku: string | null;
+  cost: number | null;
+  units_ordered: number;
+  total_cogs: number;
+}
+
+
+export async function getDropshippingProducts(
+  storeId: number,
+  dateFrom?: string,
+  dateTo?: string,
+) {
+  const qs = buildParams(dateFrom, dateTo);
+
+  const response =
+    await api.get<DropshippingProduct[]>(
+      `/api/stores/${storeId}/analytics/dropshipping/products${qs}`,
+    );
+
+  return response.data;
+}
+
+
+export interface DropshippingOrders {
+  total: number;
+  confirmed: number;
+  shipped: number;
+  delivered: number;
+  cancelled: number;
+  returned: number;
+}
+
+
+export async function getDropshippingOrders(
+  storeId: number,
+  dateFrom?: string,
+  dateTo?: string,
+) {
+  const qs = buildParams(dateFrom, dateTo);
+
+  const response =
+    await api.get<DropshippingOrders>(
+      `/api/stores/${storeId}/analytics/dropshipping/orders${qs}`,
+    );
+
+  return response.data;
+}
