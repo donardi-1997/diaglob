@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from decimal import Decimal
 from unittest.mock import AsyncMock, patch
 
@@ -41,8 +42,7 @@ class TestMercadoPagoPixRegistry:
 
 
 class TestMercadoPagoPixProvider:
-    @pytest.mark.asyncio
-    async def test_create_pix_sends_idempotency_and_returns_qr(self):
+    def test_create_pix_sends_idempotency_and_returns_qr(self):
         provider = MercadoPagoPixProvider()
         response = _Response(
             201,
@@ -67,19 +67,21 @@ class TestMercadoPagoPixProvider:
         cm.__aexit__.return_value = False
 
         with patch("app.payments.mercado_pago.httpx.AsyncClient", return_value=cm):
-            result = await provider.create_payment(
-                credentials={"client_secret": "APP_USR-test-token"},
-                environment="sandbox",
-                amount=Decimal("49.90"),
-                currency="BRL",
-                customer_phone="+5511999999999",
-                description="Order #10",
-                idempotency_key="idem-pix-1",
-                metadata={
-                    "customer_email": "buyer@example.com",
-                    "customer_document": "191.191.191-00",
-                    "customer_document_type": "CPF",
-                },
+            result = asyncio.run(
+                provider.create_payment(
+                    credentials={"client_secret": "APP_USR-test-token"},
+                    environment="sandbox",
+                    amount=Decimal("49.90"),
+                    currency="BRL",
+                    customer_phone="+5511999999999",
+                    description="Order #10",
+                    idempotency_key="idem-pix-1",
+                    metadata={
+                        "customer_email": "buyer@example.com",
+                        "customer_document": "191.191.191-00",
+                        "customer_document_type": "CPF",
+                    },
+                )
             )
 
         assert result.provider_transaction_id == "123456"
@@ -96,41 +98,42 @@ class TestMercadoPagoPixProvider:
             "number": "19119119100",
         }
 
-    @pytest.mark.asyncio
-    async def test_create_pix_requires_email(self):
+    def test_create_pix_requires_email(self):
         provider = MercadoPagoPixProvider()
         with pytest.raises(ValueError, match="customer_email"):
-            await provider.create_payment(
-                credentials={"client_secret": "APP_USR-test-token"},
-                environment="sandbox",
-                amount=Decimal("10"),
-                currency="BRL",
-                customer_phone="+5511999999999",
-                description="Payment",
-                idempotency_key="idem-pix-2",
-                metadata={"customer_document": "19119119100"},
+            asyncio.run(
+                provider.create_payment(
+                    credentials={"client_secret": "APP_USR-test-token"},
+                    environment="sandbox",
+                    amount=Decimal("10"),
+                    currency="BRL",
+                    customer_phone="+5511999999999",
+                    description="Payment",
+                    idempotency_key="idem-pix-2",
+                    metadata={"customer_document": "19119119100"},
+                )
             )
 
-    @pytest.mark.asyncio
-    async def test_create_pix_requires_valid_cpf_shape(self):
+    def test_create_pix_requires_valid_cpf_shape(self):
         provider = MercadoPagoPixProvider()
         with pytest.raises(ValueError, match="CPF"):
-            await provider.create_payment(
-                credentials={"client_secret": "APP_USR-test-token"},
-                environment="sandbox",
-                amount=Decimal("10"),
-                currency="BRL",
-                customer_phone="+5511999999999",
-                description="Payment",
-                idempotency_key="idem-pix-3",
-                metadata={
-                    "customer_email": "buyer@example.com",
-                    "customer_document": "123",
-                },
+            asyncio.run(
+                provider.create_payment(
+                    credentials={"client_secret": "APP_USR-test-token"},
+                    environment="sandbox",
+                    amount=Decimal("10"),
+                    currency="BRL",
+                    customer_phone="+5511999999999",
+                    description="Payment",
+                    idempotency_key="idem-pix-3",
+                    metadata={
+                        "customer_email": "buyer@example.com",
+                        "customer_document": "123",
+                    },
+                )
             )
 
-    @pytest.mark.asyncio
-    async def test_status_mapping_approved_is_paid(self):
+    def test_status_mapping_approved_is_paid(self):
         provider = MercadoPagoPixProvider()
         response = _Response(
             200,
@@ -146,9 +149,11 @@ class TestMercadoPagoPixProvider:
         cm.__aenter__.return_value = client
         cm.__aexit__.return_value = False
         with patch("app.payments.mercado_pago.httpx.AsyncClient", return_value=cm):
-            result = await provider.get_payment_status(
-                {"client_secret": "APP_USR-test-token"},
-                "sandbox",
-                "123456",
+            result = asyncio.run(
+                provider.get_payment_status(
+                    {"client_secret": "APP_USR-test-token"},
+                    "sandbox",
+                    "123456",
+                )
             )
         assert result.status == PaymentStatus.PAID
