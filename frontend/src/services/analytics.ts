@@ -182,6 +182,7 @@ export async function getAnalyticsAutomations(
 
 
 export interface DropshippingOverview {
+  currency: string;
   total_orders: number;
   confirmed_orders: number;
   shipped_orders: number;
@@ -247,8 +248,11 @@ export interface DropshippingProduct {
   title: string;
   sku: string | null;
   cost: number | null;
-  units_ordered: number;
+  units_delivered: number;
+  delivered_revenue: number;
   total_cogs: number;
+  gross_profit: number;
+  gross_margin: number | null;
 }
 
 

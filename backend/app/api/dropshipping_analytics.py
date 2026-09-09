@@ -1,20 +1,16 @@
 """Dropshipping analytics API endpoints."""
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from ..api.deps import (
-    get_current_membership,
-    get_db,
-    require_permission,
-)
+from ..api.deps import get_db, require_permission
 from ..models import Store
 from ..services.dropshipping_analytics import (
     get_dropshipping_overview,
-    get_profitability,
-    get_product_profitability,
     get_order_funnel,
+    get_product_profitability,
+    get_profitability,
 )
 
 router = APIRouter()
@@ -25,11 +21,15 @@ def _validate_store(
     membership,
     db: Session,
 ) -> Store:
-    store = db.query(Store).filter(
-        Store.id == store_id,
-        Store.organization_id == membership.organization_id,
-        Store.active == True,
-    ).first()
+    store = (
+        db.query(Store)
+        .filter(
+            Store.id == store_id,
+            Store.organization_id == membership.organization_id,
+            Store.active.is_(True),
+        )
+        .first()
+    )
     if not store:
         raise HTTPException(status_code=404, detail="Store not found")
     return store
@@ -37,17 +37,41 @@ def _validate_store(
 
 def _parse_date(
     date_str: str | None,
-) -> str | None:
+    *,
+    inclusive_end: bool = False,
+) -> datetime | None:
+    """Parse ISO dates and make date-only end bounds inclusive by day."""
     if not date_str:
         return None
+
     try:
-        datetime.fromisoformat(date_str)
-        return date_str
-    except ValueError:
+        parsed = datetime.fromisoformat(date_str)
+    except ValueError as exc:
         raise HTTPException(
             status_code=400,
             detail=f"Invalid date format: {date_str}",
+        ) from exc
+
+    if inclusive_end and len(date_str) == 10:
+        parsed += timedelta(days=1)
+
+    return parsed
+
+
+def _parse_range(
+    date_from: str | None,
+    date_to: str | None,
+) -> tuple[datetime | None, datetime | None]:
+    parsed_from = _parse_date(date_from)
+    parsed_to = _parse_date(date_to, inclusive_end=True)
+
+    if parsed_from and parsed_to and parsed_from >= parsed_to:
+        raise HTTPException(
+            status_code=400,
+            detail="date_from must be before or equal to date_to",
         )
+
+    return parsed_from, parsed_to
 
 
 @router.get(
@@ -61,17 +85,18 @@ def dropshipping_overview(
     date_to: str | None = Query(None),
 ):
     """Dropshipping overview metrics."""
-    _validate_store(store_id, membership, db)
-    date_from = _parse_date(date_from)
-    date_to = _parse_date(date_to)
+    store = _validate_store(store_id, membership, db)
+    parsed_from, parsed_to = _parse_range(date_from, date_to)
 
-    return get_dropshipping_overview(
+    result = get_dropshipping_overview(
         db,
         membership.organization_id,
         store_id,
-        date_from,
-        date_to,
+        parsed_from,
+        parsed_to,
     )
+    result["currency"] = store.currency
+    return result
 
 
 @router.get(
@@ -86,15 +111,14 @@ def dropshipping_profitability(
 ):
     """Dropshipping profitability metrics."""
     _validate_store(store_id, membership, db)
-    date_from = _parse_date(date_from)
-    date_to = _parse_date(date_to)
+    parsed_from, parsed_to = _parse_range(date_from, date_to)
 
     return get_profitability(
         db,
         membership.organization_id,
         store_id,
-        date_from,
-        date_to,
+        parsed_from,
+        parsed_to,
     )
 
 
@@ -111,15 +135,14 @@ def dropshipping_products(
 ):
     """Product profitability breakdown."""
     _validate_store(store_id, membership, db)
-    date_from = _parse_date(date_from)
-    date_to = _parse_date(date_to)
+    parsed_from, parsed_to = _parse_range(date_from, date_to)
 
     return get_product_profitability(
         db,
         membership.organization_id,
         store_id,
-        date_from,
-        date_to,
+        parsed_from,
+        parsed_to,
         limit,
     )
 
@@ -136,13 +159,12 @@ def dropshipping_orders(
 ):
     """Order funnel metrics."""
     _validate_store(store_id, membership, db)
-    date_from = _parse_date(date_from)
-    date_to = _parse_date(date_to)
+    parsed_from, parsed_to = _parse_range(date_from, date_to)
 
     return get_order_funnel(
         db,
         membership.organization_id,
         store_id,
-        date_from,
-        date_to,
+        parsed_from,
+        parsed_to,
     )
