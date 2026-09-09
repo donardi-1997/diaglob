@@ -23,6 +23,7 @@ export interface BillingUpgradePreview {
   amount_due: string | null;
   subtotal: string | null;
   tax: string | null;
+  _source?: "paddle" | "local";
 
   update_summary?: {
     credit?: BillingUpgradeSummaryAmount;
@@ -36,6 +37,69 @@ export interface BillingUpgradePreview {
 
   immediate_transaction?: unknown;
   next_transaction?: unknown;
+}
+
+
+export interface BillingUpgradePayableAmount {
+  amount: string;
+  currencyCode: string;
+}
+
+
+export function getBillingUpgradePayableAmount(
+  preview: BillingUpgradePreview,
+): BillingUpgradePayableAmount | null {
+  const result = preview.update_summary?.result;
+  const resultAmount = Number(result?.amount ?? "");
+
+  if (
+    result &&
+    result.action === "charge" &&
+    Number.isFinite(resultAmount) &&
+    resultAmount > 0
+  ) {
+    return {
+      amount: String(Math.trunc(resultAmount)),
+      currencyCode:
+        result.currency_code ||
+        preview.currency_code ||
+        "USD",
+    };
+  }
+
+  const amountDue = Number(preview.amount_due ?? "");
+
+  if (
+    Number.isFinite(amountDue) &&
+    amountDue > 0
+  ) {
+    return {
+      amount: String(Math.trunc(amountDue)),
+      currencyCode:
+        preview.currency_code ||
+        result?.currency_code ||
+        "USD",
+    };
+  }
+
+  const charge = preview.update_summary?.charge;
+  const chargeAmount = Number(charge?.amount ?? "");
+
+  if (
+    charge &&
+    Number.isFinite(chargeAmount) &&
+    chargeAmount > 0
+  ) {
+    return {
+      amount: String(Math.trunc(chargeAmount)),
+      currencyCode:
+        charge.currency_code ||
+        preview.currency_code ||
+        "USD",
+    };
+  }
+
+  return null;
 }
 
 
@@ -189,4 +253,3 @@ export async function cancelBillingDowngrade(): Promise<{
 
   return response.data;
 }
-
