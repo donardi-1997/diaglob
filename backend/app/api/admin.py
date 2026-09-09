@@ -19,6 +19,7 @@ from ..services.admin_dashboard_service import (
     get_organization_detail,
     get_organization_list,
 )
+from ..services.admin_growth_service import get_admin_growth_metrics
 
 router = APIRouter(prefix="/api/admin")
 
@@ -47,8 +48,10 @@ def admin_overview(
     user: User = Depends(_require_platform_admin),
     db: Session = Depends(get_db),
 ):
-    """Platform-wide overview metrics."""
-    return get_admin_overview(db)
+    """Platform-wide overview metrics with recent growth analytics."""
+    overview = get_admin_overview(db)
+    overview["growth"] = get_admin_growth_metrics(db)
+    return overview
 
 
 @router.get("/organizations")
