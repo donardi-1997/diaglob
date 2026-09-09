@@ -102,6 +102,10 @@ Outbound human replies from `/api/conversations/{conversation_id}/messages` are 
 - A Telegram bot cannot be attached to more than one store.
 - Duplicate inbound Telegram messages are ignored using the provider message ID.
 
+## Validation
+
+The Telegram V1 pull-request validation covers Ruff, the complete backend test suite, dependency installation, and the production TypeScript/Vite build. The final V1 head passed all of these checks, including the Telegram-specific connection, webhook, inbox delivery, AI delivery, idempotency, and route-contract regressions.
+
 ## Smoke test
 
 After deployment:
