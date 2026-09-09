@@ -30,6 +30,11 @@ api.interceptors.request.use(
     const accessToken =
       getAccessToken();
 
+    const organizationId =
+      localStorage.getItem(
+        "diaglob-organization-id",
+      );
+
     const storeId =
       localStorage.getItem(
         "diaglob-store-id",
@@ -49,6 +54,16 @@ api.interceptors.request.use(
         `Bearer ${accessToken}`;
     } else {
       delete config.headers.Authorization;
+    }
+
+    if (organizationId) {
+      config.headers[
+        "X-Organization-Id"
+      ] = organizationId;
+    } else {
+      delete config.headers[
+        "X-Organization-Id"
+      ];
     }
 
     if (
