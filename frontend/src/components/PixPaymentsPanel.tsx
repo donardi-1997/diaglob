@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Check, Copy, CreditCard, ExternalLink, Loader2, Plug, RefreshCw, Trash2 } from "lucide-react";
 
 import {
