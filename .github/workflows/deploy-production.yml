@@ -42,10 +42,11 @@ jobs:
           cd backend
           python -m pytest -q --tb=short
 
-      - name: Frontend build
+      - name: Frontend validation
         run: |
           cd frontend
           npm ci
+          npm run lint
           npm run build
 
   deploy:
