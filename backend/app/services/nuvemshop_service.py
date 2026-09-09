@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 import os
 import secrets
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from urllib.parse import urlencode
 
@@ -18,15 +18,15 @@ from sqlalchemy.orm import Session
 from ..integrations.nuvemshop.client import (
     NuvemshopError,
     get_store_info,
+    get_order,
     list_products,
     list_customers,
     list_orders,
-    get_order,
     parse_product,
     parse_customer,
     parse_order,
 )
-from ..models import CommerceConnection, Customer, Order, OrderItem, Product, ProductVariant, Store
+from ..models import CommerceConnection, Customer, NuvemshopOAuthState, Order, OrderItem, Product, ProductVariant, Store
 from ..nuvemshop_security import encrypt_secret, decrypt_secret
 
 logger = logging.getLogger(__name__)
@@ -44,13 +44,24 @@ class NuvemshopConnectionError(Exception):
     pass
 
 
+class NuvemshopOAuthError(Exception):
+    pass
+
+
+class NuvemshopProviderError(Exception):
+    pass
+
+
 def get_oauth_url(
+    db: Session,
     organization_id: int,
     store_id: int,
     user_id: int,
 ) -> dict:
-    """Generate Nuvemshop OAuth URL with state."""
+    """Generate Nuvemshop OAuth URL with persisted state."""
     state = secrets.token_urlsafe(32)
+    now = datetime.utcnow()
+    expires_at = now + timedelta(minutes=10)
 
     auth_url = (
         "https://www.tiendanube.com/apps/authorize?"
@@ -62,6 +73,18 @@ def get_oauth_url(
         })
     )
 
+    oauth_state = NuvemshopOAuthState(
+        state=state,
+        organization_id=organization_id,
+        store_id=store_id,
+        user_id=user_id,
+        expires_at=expires_at,
+        used=False,
+        created_at=now,
+    )
+    db.add(oauth_state)
+    db.commit()
+
     return {
         "authorization_url": auth_url,
         "state": state,
@@ -71,11 +94,31 @@ def get_oauth_url(
 def process_oauth_callback(
     db: Session,
     code: str,
+    state: str,
     organization_id: int,
     store_id: int,
 ) -> dict:
     """Exchange OAuth code for access token and discover store."""
     import httpx
+
+    # Validate and consume persisted state
+    oauth_state = (
+        db.query(NuvemshopOAuthState)
+        .filter(
+            NuvemshopOAuthState.state == state,
+            NuvemshopOAuthState.used.is_(False),
+        )
+        .first()
+    )
+    if not oauth_state:
+        raise NuvemshopOAuthError("Invalid or already used OAuth state")
+    if oauth_state.expires_at < datetime.utcnow():
+        raise NuvemshopOAuthError("OAuth state expired")
+    if oauth_state.organization_id != organization_id or oauth_state.store_id != store_id:
+        raise NuvemshopOAuthError("OAuth state does not match the target store")
+
+    oauth_state.used = True
+    db.flush()
 
     token_url = "https://www.tiendanube.com/oauth/token"
     payload = {
@@ -511,3 +554,152 @@ def sync_orders(
         "updated": updated,
         "failed": failed,
     }
+
+
+# ============================================================
+# WEBHOOK EVENT PROCESSING
+# ============================================================
+
+# Events that require fetching the full resource from the API
+_RESOURCE_FETCH_EVENTS = frozenset({
+    "order/created",
+    "order/paid",
+    "order/cancelled",
+    "order/updated",
+    "order/fulfilled",
+})
+
+
+def process_webhook_event(
+    db: Session,
+    connection: CommerceConnection,
+    event: str,
+    resource_id: int | str | None,
+) -> dict:
+    """Process a Nuvemshop webhook event.
+
+    Thin payloads only carry event type and resource ID.
+    For order events, we fetch the full resource from the API.
+    """
+    store_id = connection.store_id
+    organization_id = connection.organization_id
+    token = decrypt_secret(connection.access_token_encrypted)
+    nuvemshop_store_id = connection.external_store_url
+
+    if event in _RESOURCE_FETCH_EVENTS and resource_id:
+        return _process_order_event(
+            db, token, nuvemshop_store_id,
+            store_id, organization_id, event, str(resource_id),
+        )
+
+    if event == "app/uninstalled":
+        connection.status = "disconnected"
+        connection.last_error = "App uninstalled from Nuvemshop store"
+        db.commit()
+        return {"ok": True, "action": "disconnected"}
+
+    # Unknown or unhandled event — acknowledge
+    return {"ok": True, "action": "ignored", "event": event}
+
+
+def _process_order_event(
+    db: Session,
+    token: str,
+    nuvemshop_store_id: str,
+    store_id: int,
+    organization_id: int,
+    event: str,
+    order_id: str,
+) -> dict:
+    """Fetch full order from Nuvemshop API and upsert locally."""
+    try:
+        order_data = get_order(token, nuvemshop_store_id, order_id)
+    except NuvemshopError as exc:
+        logger.warning("Failed to fetch order %s: %s", order_id, exc)
+        return {"ok": False, "error": str(exc)}
+
+    parsed = parse_order(order_data)
+
+    existing = (
+        db.query(Order)
+        .filter(
+            Order.store_id == store_id,
+            Order.organization_id == organization_id,
+            Order.external_order_id == parsed["external_order_id"],
+        )
+        .first()
+    )
+
+    if existing:
+        existing.financial_status = parsed["financial_status"]
+        existing.payment_method = parsed["payment_method"]
+        existing.payment_status = parsed["payment_status"]
+        existing.fulfillment_status = parsed.get("fulfillment_status")
+        existing.note = parsed.get("note")
+        existing.updated_at = datetime.utcnow()
+        action = "updated"
+    else:
+        order = Order(
+            organization_id=organization_id,
+            store_id=store_id,
+            external_order_id=parsed["external_order_id"],
+            order_number=parsed["order_number"],
+            total_amount=parsed["total_amount"],
+            currency=parsed["currency"],
+            financial_status=parsed["financial_status"],
+            payment_method=parsed["payment_method"],
+            payment_status=parsed["payment_status"],
+            fulfillment_status=parsed.get("fulfillment_status"),
+            note=parsed.get("note"),
+            source="nuvemshop",
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
+        )
+        db.add(order)
+        action = "created"
+
+    db.commit()
+
+    # Emit automation event for order.created (for PIX reminders, etc.)
+    if event == "order/created":
+        _emit_order_created_event(
+            db, organization_id, store_id, parsed,
+        )
+
+    return {"ok": True, "action": action, "order_id": parsed["external_order_id"]}
+
+
+def _emit_order_created_event(
+    db: Session,
+    organization_id: int,
+    store_id: int,
+    parsed_order: dict,
+):
+    """Emit order.created automation event for Nuvemshop orders.
+
+    This triggers PIX pending reminders and other automations.
+    """
+    try:
+        from ..automations import run_automations_for_event
+
+        run_automations_for_event(
+            db=db,
+            organization_id=organization_id,
+            store_id=store_id,
+            event_type="order.created",
+            payload={
+                "order_id": parsed_order["external_order_id"],
+                "order_number": parsed_order["order_number"],
+                "total_amount": float(parsed_order["total_amount"]),
+                "currency": parsed_order["currency"],
+                "payment_method": parsed_order.get("payment_method", ""),
+                "payment_status": parsed_order.get("payment_status", ""),
+                "financial_status": parsed_order.get("financial_status", ""),
+                "source": "nuvemshop",
+            },
+        )
+    except Exception as exc:
+        logger.warning(
+            "Failed to emit order.created event for Nuvemshop order: %s",
+            exc,
+        )

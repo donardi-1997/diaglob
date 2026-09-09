@@ -746,6 +746,22 @@ const resources = {
         "No hay órdenes aún.",
       integrationsDisconnectError:
         "No se pudo desconectar.",
+      integrationsNuvemshopConnectError:
+        "No se pudo iniciar la conexión con Nuvemshop.",
+      integrationsNuvemshopDisconnected:
+        "Nuvemshop se desconectó.",
+      integrationsNuvemshopStoreId:
+        "ID de tienda Nuvemshop",
+      integrationsNuvemshopSyncProducts:
+        "Sincronizar productos",
+      integrationsNuvemshopSyncOrders:
+        "Sincronizar órdenes",
+      integrationsNuvemshopSyncOk:
+        "Productos de Nuvemshop sincronizados correctamente.",
+      integrationsNuvemshopSyncOrdersOk:
+        "Órdenes de Nuvemshop sincronizadas correctamente.",
+      integrationsNuvemshopSyncError:
+        "No se pudieron sincronizar los datos de Nuvemshop.",
       integrationsDropiTokenRequired:
         "Ingresa el token de Dropi para conectar.",
       integrationsDropiConnected:
@@ -2734,6 +2750,22 @@ const resources = {
         "No orders yet.",
       integrationsDisconnectError:
         "Could not disconnect.",
+      integrationsNuvemshopConnectError:
+        "Could not start Nuvemshop connection.",
+      integrationsNuvemshopDisconnected:
+        "Nuvemshop disconnected.",
+      integrationsNuvemshopStoreId:
+        "Nuvemshop Store ID",
+      integrationsNuvemshopSyncProducts:
+        "Sync products",
+      integrationsNuvemshopSyncOrders:
+        "Sync orders",
+      integrationsNuvemshopSyncOk:
+        "Nuvemshop products synced successfully.",
+      integrationsNuvemshopSyncOrdersOk:
+        "Nuvemshop orders synced successfully.",
+      integrationsNuvemshopSyncError:
+        "Could not sync Nuvemshop data.",
       integrationsDropiTokenRequired:
         "Enter the Dropi token to connect.",
       integrationsDropiConnected:
@@ -4194,6 +4226,14 @@ const resources = {
       integrationsShopifyConnectError: "Erro ao conectar Shopify",
       integrationsWhatsAppConnectError: "Erro ao conectar WhatsApp",
       integrationsDisconnectError: "Erro ao desconectar",
+      integrationsNuvemshopConnectError: "Erro ao conectar Nuvemshop",
+      integrationsNuvemshopDisconnected: "Nuvemshop desconectado",
+      integrationsNuvemshopStoreId: "ID da loja Nuvemshop",
+      integrationsNuvemshopSyncProducts: "Sincronizar produtos",
+      integrationsNuvemshopSyncOrders: "Sincronizar pedidos",
+      integrationsNuvemshopSyncOk: "Produtos Nuvemshop sincronizados com sucesso.",
+      integrationsNuvemshopSyncOrdersOk: "Pedidos Nuvemshop sincronizados com sucesso.",
+      integrationsNuvemshopSyncError: "Não foi possível sincronizar dados do Nuvemshop.",
 
       // Automation templates
       autoTabTemplates: "Modelos",

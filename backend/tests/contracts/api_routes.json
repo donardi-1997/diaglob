@@ -37,6 +37,10 @@
   ],
   [
     "DELETE",
+    "/api/stores/{store_id}/nuvemshop/disconnect"
+  ],
+  [
+    "DELETE",
     "/api/stores/{store_id}/shopify/disconnect"
   ],
   [
@@ -173,6 +177,10 @@
   ],
   [
     "GET",
+    "/api/nuvemshop/callback"
+  ],
+  [
+    "GET",
     "/api/organization"
   ],
   [
@@ -298,6 +306,10 @@
   [
     "GET",
     "/api/stores/{store_id}/dropi"
+  ],
+  [
+    "GET",
+    "/api/stores/{store_id}/nuvemshop/status"
   ],
   [
     "GET",
@@ -549,6 +561,18 @@
   ],
   [
     "POST",
+    "/api/stores/{store_id}/nuvemshop/connect"
+  ],
+  [
+    "POST",
+    "/api/stores/{store_id}/nuvemshop/sync/orders"
+  ],
+  [
+    "POST",
+    "/api/stores/{store_id}/nuvemshop/sync/products"
+  ],
+  [
+    "POST",
     "/api/stores/{store_id}/shopify/connect"
   ],
   [
@@ -586,6 +610,14 @@
   [
     "POST",
     "/api/webhooks/dropi/{webhook_token}"
+  ],
+  [
+    "POST",
+    "/api/webhooks/nuvemshop"
+  ],
+  [
+    "POST",
+    "/api/webhooks/nuvemshop/uninstall"
   ],
   [
     "POST",

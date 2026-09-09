@@ -82,23 +82,57 @@ PIX is recognized as a payment method when Nuvemshop exposes it in order data.
 
 ## Unsupported Resources
 
-- Webhooks (not yet implemented)
 - Fulfillment management
 - Inventory updates
 - Product creation
 - Order management
 
+## Webhooks
+
+Nuvemshop webhooks are verified using HMAC-SHA256:
+- **Header:** `x-linkedstore-hmac-sha256`
+- **Key:** `NUVEMSHOP_CLIENT_SECRET`
+- **Payload:** Thin — `{ "store_id": 123, "event": "order/created", "id": 456 }`
+
+### Supported Events
+
+| Event | Action |
+|-------|--------|
+| `order/created` | Fetch full order, upsert locally, emit `order.created` automation event |
+| `order/paid` | Update payment status |
+| `order/cancelled` | Update order status |
+| `order/updated` | Update order details |
+| `order/fulfilled` | Update fulfillment status |
+| `app/uninstalled` | Mark connection as disconnected |
+
+### Endpoints
+
+| Endpoint | Method | Auth | Purpose |
+|----------|--------|------|---------|
+| `/api/webhooks/nuvemshop` | POST | HMAC verify | Webhook receiver |
+| `/api/webhooks/nuvemshop/uninstall` | POST | HMAC verify | Uninstall callback |
+| `/api/nuvemshop/callback` | GET | State token | OAuth callback |
+| `/api/stores/{id}/nuvemshop/connect` | POST | Bearer | Start OAuth |
+| `/api/stores/{id}/nuvemshop/status` | GET | Bearer | Connection status |
+| `/api/stores/{id}/nuvemshop/disconnect` | DELETE | Bearer | Remove connection |
+| `/api/stores/{id}/nuvemshop/sync/products` | POST | Bearer | Sync products |
+| `/api/stores/{id}/nuvemshop/sync/orders` | POST | Bearer | Sync orders |
+
 ## Migration
 
-**Current Alembic revision:** `f6f002b05545`
-**Parent revision:** `e63418b90903` (canonical initial schema)
+**Current Alembic revision:** `b3c2d9e0f112`
+**Parent revision:** `f6f002b05545`
 
-### What This Migration Adds
+### What These Migrations Add
 
-Three columns to the `orders` table:
-- `external_order_id` (String(255), nullable, indexed)
-- `payment_method` (String(50), nullable, indexed)
-- `payment_status` (String(50), nullable, indexed)
+1. `f6f002b05545` — Three columns to `orders` table:
+   - `external_order_id` (String(255), nullable, indexed)
+   - `payment_method` (String(50), nullable, indexed)
+   - `payment_status` (String(50), nullable, indexed)
+
+2. `b3c2d9e0f112` — `nuvemshop_oauth_states` table:
+   - Persists OAuth state tokens during authorization flow
+   - Prevents replay attacks and state expiry
 
 ### Upgrade Path
 

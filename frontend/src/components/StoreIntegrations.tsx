@@ -14,18 +14,25 @@ import {
   ShoppingBag,
   Trash2,
   Truck,
+  Store,
 } from "lucide-react";
 
 import {
+  connectNuvemshop,
   connectShopify,
   connectWhatsApp,
+  disconnectNuvemshop,
   disconnectShopify,
   disconnectWhatsApp,
   getCommerceStatus,
+  getNuvemshopStatus,
   getWhatsAppStatus,
+  syncNuvemshopOrders,
+  syncNuvemshopProducts,
   testShopifyConnection,
   syncShopifyProducts,
   type CommerceConnectionStatus,
+  type NuvemshopConnectionStatus,
   type WhatsAppConnectionStatus,
   type ShopifyTestResult,
   type ShopifySyncResult,
@@ -50,6 +57,9 @@ export default function StoreIntegrations({
 
   const [commerce, setCommerce] =
     useState<CommerceConnectionStatus | null>(null);
+
+  const [nuvemshop, setNuvemshop] =
+    useState<NuvemshopConnectionStatus | null>(null);
 
   const [whatsapp, setWhatsApp] =
     useState<WhatsAppConnectionStatus | null>(null);
@@ -84,6 +94,21 @@ export default function StoreIntegrations({
   const [syncingShopify, setSyncingShopify] =
     useState(false);
 
+  const [connectingNuvemshop, setConnectingNuvemshop] =
+    useState(false);
+
+  const [disconnectingNuvemshop, setDisconnectingNuvemshop] =
+    useState(false);
+
+  const [syncingNuvemshopProducts, setSyncingNuvemshopProducts] =
+    useState(false);
+
+  const [syncingNuvemshopOrders, setSyncingNuvemshopOrders] =
+    useState(false);
+
+  const [nuvemshopSyncResult, setNuvemshopSyncResult] =
+    useState<{ ok: boolean; fetched: number; created: number; updated: number; failed: number } | null>(null);
+
   const [shopifyTestResult, setShopifyTestResult] =
     useState<ShopifyTestResult | null>(null);
 
@@ -107,13 +132,16 @@ export default function StoreIntegrations({
 
       const [
         commerceData,
+        nuvemshopData,
         whatsappData,
       ] = await Promise.all([
         getCommerceStatus(storeId),
+        getNuvemshopStatus(storeId),
         getWhatsAppStatus(storeId),
       ]);
 
       setCommerce(commerceData);
+      setNuvemshop(nuvemshopData);
       setWhatsApp(whatsappData);
     } catch (err) {
       console.error(err);
@@ -270,6 +298,120 @@ export default function StoreIntegrations({
       );
     } finally {
       setSyncingShopify(false);
+    }
+  }
+
+
+  async function handleConnectNuvemshop() {
+    clearMessages();
+
+    try {
+      setConnectingNuvemshop(true);
+
+      const result =
+        await connectNuvemshop(storeId);
+
+      window.open(
+        result.authorization_url,
+        "_blank",
+        "noopener,noreferrer",
+      );
+    } catch (err: any) {
+      console.error(err);
+
+      setError(
+        formatError(err)
+        || t("integrationsNuvemshopConnectError"),
+      );
+    } finally {
+      setConnectingNuvemshop(false);
+    }
+  }
+
+
+  async function handleDisconnectNuvemshop() {
+    clearMessages();
+
+    try {
+      setDisconnectingNuvemshop(true);
+
+      await disconnectNuvemshop(storeId);
+
+      setNuvemshop(null);
+      setSuccess(
+        t("integrationsNuvemshopDisconnected"),
+      );
+
+      await load();
+    } catch (err: any) {
+      console.error(err);
+
+      setError(
+        formatError(err)
+        || t("integrationsDisconnectError"),
+      );
+    } finally {
+      setDisconnectingNuvemshop(false);
+    }
+  }
+
+
+  async function handleSyncNuvemshopProducts() {
+    clearMessages();
+    setNuvemshopSyncResult(null);
+
+    try {
+      setSyncingNuvemshopProducts(true);
+
+      const result =
+        await syncNuvemshopProducts(storeId);
+
+      setNuvemshopSyncResult(result);
+
+      setSuccess(
+        t("integrationsNuvemshopSyncOk"),
+      );
+
+      await load();
+    } catch (err: any) {
+      console.error(err);
+
+      setError(
+        formatError(err)
+        || t("integrationsNuvemshopSyncError"),
+      );
+    } finally {
+      setSyncingNuvemshopProducts(false);
+    }
+  }
+
+
+  async function handleSyncNuvemshopOrders() {
+    clearMessages();
+    setNuvemshopSyncResult(null);
+
+    try {
+      setSyncingNuvemshopOrders(true);
+
+      const result =
+        await syncNuvemshopOrders(storeId);
+
+      setNuvemshopSyncResult(result);
+
+      setSuccess(
+        t("integrationsNuvemshopSyncOrdersOk"),
+      );
+
+      await load();
+    } catch (err: any) {
+      console.error(err);
+
+      setError(
+        formatError(err)
+        || t("integrationsNuvemshopSyncError"),
+      );
+    } finally {
+      setSyncingNuvemshopOrders(false);
     }
   }
 
@@ -589,6 +731,113 @@ export default function StoreIntegrations({
         shopConnected={!!commerce?.connected}
         syncedProducts={[]}
       />
+
+
+      <div className="store-integration-block nuvemshop">
+        <div className="store-integration-header">
+          <div className="store-integration-title">
+            <Store size={17} />
+
+            <strong>
+              Nuvemshop
+            </strong>
+
+            <span
+              className={
+                nuvemshop?.connected
+                  ? "integration-status connected"
+                  : "integration-status disconnected"
+              }
+            >
+              {nuvemshop?.connected
+                ? t("integrationsConnected")
+                : t("integrationsDisconnected")}
+            </span>
+          </div>
+        </div>
+
+        {nuvemshop?.connected && nuvemshop.nuvemshop_store_id && (
+          <div className="store-integration-domain">
+            {t("integrationsNuvemshopStoreId")}: {nuvemshop.nuvemshop_store_id}
+          </div>
+        )}
+
+        {nuvemshop?.connected && (
+          <div className="store-integration-shopify-actions">
+            <button
+              type="button"
+              className="store-integration-button secondary"
+              onClick={handleSyncNuvemshopProducts}
+              disabled={syncingNuvemshopProducts}
+            >
+              {syncingNuvemshopProducts
+                ? <Loader2 className="spin" size={14} />
+                : <ShoppingBag size={14} />}
+
+              {t("integrationsNuvemshopSyncProducts")}
+            </button>
+
+            <button
+              type="button"
+              className="store-integration-button secondary"
+              onClick={handleSyncNuvemshopOrders}
+              disabled={syncingNuvemshopOrders}
+            >
+              {syncingNuvemshopOrders
+                ? <Loader2 className="spin" size={14} />
+                : <ShoppingBag size={14} />}
+
+              {t("integrationsNuvemshopSyncOrders")}
+            </button>
+          </div>
+        )}
+
+        {nuvemshopSyncResult && (
+          <div
+            className={
+              nuvemshopSyncResult.ok
+                ? "store-integration-sync-result ok"
+                : "store-integration-sync-result error"
+            }
+          >
+            {nuvemshopSyncResult.ok
+              ? `Fetched: ${nuvemshopSyncResult.fetched} | Created: ${nuvemshopSyncResult.created} | Updated: ${nuvemshopSyncResult.updated} | Failed: ${nuvemshopSyncResult.failed}`
+              : t("integrationsNuvemshopSyncError")}
+          </div>
+        )}
+
+        {canWrite && (
+          <div className="store-integration-actions">
+            {nuvemshop?.connected ? (
+              <button
+                type="button"
+                className="store-integration-button danger"
+                onClick={handleDisconnectNuvemshop}
+                disabled={disconnectingNuvemshop}
+              >
+                {disconnectingNuvemshop
+                  ? <Loader2 className="spin" size={15} />
+                  : <Trash2 size={15} />}
+
+                {t("integrationsDisconnect")}
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="store-integration-button primary"
+                onClick={handleConnectNuvemshop}
+                disabled={connectingNuvemshop}
+              >
+                {connectingNuvemshop
+                  ? <Loader2 className="spin" size={15} />
+                  : <Plug size={15} />}
+
+                {t("integrationsConnect")}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
 
 
       <div className="store-integration-block dropi">

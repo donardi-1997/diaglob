@@ -57,7 +57,6 @@ def get_store_commerce_connection(
             == store.id,
             CommerceConnection.organization_id
             == membership.organization_id,
-            CommerceConnection.provider == "shopify",
         )
         .first()
     )
@@ -282,6 +281,8 @@ def get_commerce_summary(
                 "financial_status": (
                     o.financial_status
                 ),
+                "payment_method": o.payment_method,
+                "payment_status": o.payment_status,
                 "source": o.source,
                 "external_creation_status": (
                     o.external_creation_status

@@ -481,3 +481,99 @@ export async function listCommerceOrders(
 
   return response.data;
 }
+
+
+// ============================================================
+// NUVEMSHOP
+// ============================================================
+
+
+export interface NuvemshopConnectionStatus {
+  connected: boolean;
+  status: string;
+  nuvemshop_store_id: string | null;
+  store_name: string | null;
+  currency: string | null;
+  connected_at: string | null;
+  last_sync_at: string | null;
+  last_error: string | null;
+}
+
+
+export async function getNuvemshopStatus(
+  storeId: number,
+) {
+  const response =
+    await api.get<NuvemshopConnectionStatus>(
+      `/api/stores/${storeId}/nuvemshop/status`,
+    );
+
+  return response.data;
+}
+
+
+export async function connectNuvemshop(
+  storeId: number,
+) {
+  const response =
+    await api.post<{
+      authorization_url: string;
+      state: string;
+    }>(
+      `/api/stores/${storeId}/nuvemshop/connect`,
+    );
+
+  return response.data;
+}
+
+
+export async function disconnectNuvemshop(
+  storeId: number,
+) {
+  const response =
+    await api.delete<{
+      ok: boolean;
+      connected: boolean;
+      store_id: number;
+    }>(
+      `/api/stores/${storeId}/nuvemshop/disconnect`,
+    );
+
+  return response.data;
+}
+
+
+export async function syncNuvemshopProducts(
+  storeId: number,
+) {
+  const response =
+    await api.post<{
+      ok: boolean;
+      fetched: number;
+      created: number;
+      updated: number;
+      failed: number;
+    }>(
+      `/api/stores/${storeId}/nuvemshop/sync/products`,
+    );
+
+  return response.data;
+}
+
+
+export async function syncNuvemshopOrders(
+  storeId: number,
+) {
+  const response =
+    await api.post<{
+      ok: boolean;
+      fetched: number;
+      created: number;
+      updated: number;
+      failed: number;
+    }>(
+      `/api/stores/${storeId}/nuvemshop/sync/orders`,
+    );
+
+  return response.data;
+}
