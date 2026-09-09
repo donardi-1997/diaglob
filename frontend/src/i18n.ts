@@ -695,6 +695,33 @@ const resources = {
         "Tiendas",
       storesI18nCancel:
         "Cancelar",
+      storesI18nDangerZone:
+        "Zona de peligro",
+      storesI18nDeleteAccount:
+        "Cerrar cuenta",
+      storesI18nDeleteAccountDescription:
+        "Cerrar tu cuenta desactivará tu acceso a todas las organizaciones y tiendas. Esta acción es irreversible.",
+      storesI18nDeleteAccountWarning:
+        "Esta acción es permanente. Se eliminará tu cuenta de usuario y se desactivará tu acceso.",
+      storesI18nDeleteAccountLoss1:
+        "Perderás acceso a todas tus organizaciones",
+      storesI18nDeleteAccountLoss2:
+        "Se desactivará tu sesión actual",
+      storesI18nDeleteAccountLoss3:
+        "No podrás recuperar tu cuenta",
+      storesI18nDeleteAccountTypeConfirm:
+        "Escribe ELIMINAR para confirmar:",
+      storesI18nDeleteAccountConfirmError:
+        "Escribe \"ELIMINAR\" para confirmar.",
+      storesI18nDeleteAccountError:
+        "No pudimos cerrar tu cuenta. Intenta nuevamente.",
+
+      dashboardError:
+        "No pudimos cargar el resumen.",
+      dashboardLoading:
+        "Cargando resumen...",
+      dashboardNoActivity:
+        "Sin actividad reciente.",
 
       integrationsTitle:
         "Integraciones",
@@ -2699,6 +2726,33 @@ const resources = {
         "Stores",
       storesI18nCancel:
         "Cancel",
+      storesI18nDangerZone:
+        "Danger zone",
+      storesI18nDeleteAccount:
+        "Close account",
+      storesI18nDeleteAccountDescription:
+        "Closing your account will disable your access to all organizations and stores. This action is irreversible.",
+      storesI18nDeleteAccountWarning:
+        "This action is permanent. Your user account will be deleted and your access will be disabled.",
+      storesI18nDeleteAccountLoss1:
+        "You will lose access to all your organizations",
+      storesI18nDeleteAccountLoss2:
+        "Your current session will be disabled",
+      storesI18nDeleteAccountLoss3:
+        "You will not be able to recover your account",
+      storesI18nDeleteAccountTypeConfirm:
+        "Type DELETE to confirm:",
+      storesI18nDeleteAccountConfirmError:
+        "Type \"DELETE\" to confirm.",
+      storesI18nDeleteAccountError:
+        "We couldn't close your account. Please try again.",
+
+      dashboardError:
+        "We couldn't load the summary.",
+      dashboardLoading:
+        "Loading summary...",
+      dashboardNoActivity:
+        "No recent activity.",
 
       integrationsTitle:
         "Integrations",
@@ -4269,6 +4323,31 @@ const resources = {
       storesI18nActive: "Ativa",
       storesI18nSuspended: "Suspensa",
       storesI18nCreateStore: "Criar loja",
+      storesI18nDangerZone: "Zona de perigo",
+      storesI18nDeleteAccount: "Encerrar conta",
+      storesI18nDeleteAccountDescription:
+        "Encerrar sua conta desativará seu acesso a todas as organizações e lojas. Esta ação é irreversível.",
+      storesI18nDeleteAccountWarning:
+        "Esta ação é permanente. Sua conta de usuário será excluída e seu acesso será desativado.",
+      storesI18nDeleteAccountLoss1:
+        "Você perderá acesso a todas as suas organizações",
+      storesI18nDeleteAccountLoss2:
+        "Sua sessão atual será desativada",
+      storesI18nDeleteAccountLoss3:
+        "Você não poderá recuperar sua conta",
+      storesI18nDeleteAccountTypeConfirm:
+        "Digite EXCLUIR para confirmar:",
+      storesI18nDeleteAccountConfirmError:
+        "Digite \"EXCLUIR\" para confirmar.",
+      storesI18nDeleteAccountError:
+        "Não foi possível encerrar sua conta. Tente novamente.",
+
+      dashboardError:
+        "Não foi possível carregar o resumo.",
+      dashboardLoading:
+        "Carregando resumo...",
+      dashboardNoActivity:
+        "Sem atividade recente.",
 
       // Billing
       billingPeriod1Month: "Mensal",
