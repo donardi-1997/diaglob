@@ -1110,7 +1110,7 @@
 /* ── Integrations ──────────────────────────────────────────────── */
 .landing-integrations-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
 @media (max-width: 1024px) { .landing-integrations-grid { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 480px) { .landing-integrations-grid { grid-template-columns: 1fr; } }
+@media (max-width: 640px) { .landing-integrations-grid { grid-template-columns: 1fr; } }
 
 .landing-integration-card {
   display: flex;
@@ -1122,6 +1122,16 @@
   border: 1px solid var(--border);
   border-radius: 12px;
   transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
+  word-break: normal;
+  overflow-wrap: normal;
+  hyphens: none;
+  min-height: 0;
+}
+
+@media (max-width: 640px) {
+  .landing-integration-card {
+    padding: 28px 20px;
+  }
 }
 
 .landing-integration-card:hover { border-color: var(--accent); box-shadow: 0 4px 24px rgba(124, 108, 255, 0.08); transform: translateY(-2px); }
@@ -1129,6 +1139,9 @@
 .landing-integration-icon {
   width: 56px;
   height: 56px;
+  min-width: 56px;
+  min-height: 56px;
+  flex-shrink: 0;
   border-radius: 14px;
   display: grid;
   place-items: center;
@@ -1138,8 +1151,34 @@
   margin: 0 auto 16px;
 }
 
-.landing-integration-card h3 { font-size: 1.125rem; font-weight: 600; color: var(--text); margin: 0 0 6px; }
-.landing-integration-card p { font-size: 0.8125rem; color: var(--text-secondary); margin: 0 0 16px; line-height: 1.6; }
+@media (max-width: 640px) {
+  .landing-integration-icon {
+    width: 48px;
+    height: 48px;
+    min-width: 48px;
+    min-height: 48px;
+  }
+}
+
+.landing-integration-card h3 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0 0 6px;
+  word-break: normal;
+  overflow-wrap: normal;
+  white-space: normal;
+}
+
+.landing-integration-card p {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  margin: 0 0 16px;
+  line-height: 1.6;
+  word-break: normal;
+  overflow-wrap: normal;
+  hyphens: none;
+}
 
 .landing-integration-status {
   display: inline-block;
