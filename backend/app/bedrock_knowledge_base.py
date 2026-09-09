@@ -144,6 +144,13 @@ VECTOR_NON_FILTERABLE_METADATA_KEYS = (
     "AMAZON_BEDROCK_METADATA",
 )
 
+
+LEGACY_KNOWLEDGE_INFRASTRUCTURE = {
+    "bedrock_kb_id": "RDAQY1JNQ8",
+    "bedrock_kb_name": "diaglob-knowledge-main",
+    "vector_index_name": "diaglob-knowledge-v1",
+}
+
 PROVISIONING_STATES = ("pending", "provisioning", "retrying", "ready", "failed", "deleting")
 PROVISIONING_STAGES = (
     "queued", "creating_vector_index", "creating_knowledge_base",
@@ -355,6 +362,160 @@ def _sleep_between_attempts(attempt: int, attempts: int) -> None:
 
 def _tags_match(actual: dict[str, str], expected: dict[str, str]) -> bool:
     return all(actual.get(key) == value for key, value in expected.items())
+
+
+def is_verified_legacy_parent(bedrock_kb_id: str) -> bool:
+    """Check if a Bedrock KB ID belongs to the known legacy infrastructure."""
+    return bedrock_kb_id == LEGACY_KNOWLEDGE_INFRASTRUCTURE["bedrock_kb_id"]
+
+
+def _legacy_vector_index_arn() -> str:
+    """Build the ARN for the legacy shared vector index."""
+    if not VECTOR_BUCKET_ARN:
+        raise BedrockProvisioningError(
+            "vector_bucket_not_configured", resource="configuration"
+        )
+    return f"{VECTOR_BUCKET_ARN}/index/{LEGACY_KNOWLEDGE_INFRASTRUCTURE['vector_index_name']}"
+
+
+def validate_legacy_data_source_ownership(
+    remote_ds: dict[str, Any],
+    remote_kb: dict[str, Any],
+    org_id: int,
+    kb_id: int,
+) -> None:
+    """Verify a legacy Data Source is safe to delete.
+
+    Raises BedrockProvisioningError if any invariant fails.
+    """
+    if remote_kb.get("knowledgeBaseId") != LEGACY_KNOWLEDGE_INFRASTRUCTURE["bedrock_kb_id"]:
+        raise BedrockProvisioningError(
+            "resource_ownership_mismatch", resource="data_source"
+        )
+
+    if remote_ds.get("knowledgeBaseId") != LEGACY_KNOWLEDGE_INFRASTRUCTURE["bedrock_kb_id"]:
+        raise BedrockProvisioningError(
+            "resource_ownership_mismatch", resource="data_source"
+        )
+
+    ds_config = remote_ds.get("dataSourceConfiguration", {})
+    if ds_config.get("type") != "S3":
+        raise BedrockProvisioningError(
+            "resource_ownership_mismatch", resource="data_source"
+        )
+
+    s3_config = ds_config.get("s3Configuration", {})
+    expected_bucket_arn = f"arn:aws:s3:::{KNOWLEDGE_BUCKET}"
+    if s3_config.get("bucketArn") != expected_bucket_arn:
+        raise BedrockProvisioningError(
+            "resource_ownership_mismatch", resource="data_source"
+        )
+
+    expected_prefix = _get_s3_prefix(org_id, kb_id)
+    prefixes = s3_config.get("inclusionPrefixes", [])
+    if prefixes != [expected_prefix]:
+        raise BedrockProvisioningError(
+            "resource_ownership_mismatch", resource="data_source"
+        )
+
+
+def cleanup_verified_legacy_resources(
+    db: Session,
+    knowledge_base: KnowledgeBase,
+) -> None:
+    """Delete only the verified legacy Data Source and local resources.
+
+    Preserves the legacy parent Bedrock KB and shared vector index.
+    """
+    org_id = knowledge_base.organization_id
+    kb_id = knowledge_base.id
+    bedrock_kb_id = knowledge_base.external_id
+    bedrock_ds_id = knowledge_base.external_data_source_id
+
+    logger.info(
+        "knowledge_base_deletion_mode=legacy organization_id=%s knowledge_base_id=%s "
+        "bedrock_kb_id=%s bedrock_ds_id=%s legacy_parent_name=%s",
+        org_id, kb_id, bedrock_kb_id, bedrock_ds_id,
+        LEGACY_KNOWLEDGE_INFRASTRUCTURE["bedrock_kb_name"],
+    )
+
+    remote_kb = get_bedrock_knowledge_base(bedrock_kb_id)
+    if not remote_kb:
+        logger.warning(
+            "legacy_parent_absent organization_id=%s knowledge_base_id=%s bedrock_kb_id=%s",
+            org_id, kb_id, bedrock_kb_id,
+        )
+    else:
+        logger.info("legacy_parent_verified organization_id=%s knowledge_base_id=%s", org_id, kb_id)
+
+    if bedrock_ds_id and remote_kb:
+        remote_ds = get_bedrock_data_source(bedrock_kb_id, bedrock_ds_id)
+        if remote_ds:
+            validate_legacy_data_source_ownership(
+                remote_ds, remote_kb, org_id, kb_id
+            )
+            logger.info(
+                "legacy_data_source_verified organization_id=%s knowledge_base_id=%s bedrock_ds_id=%s",
+                org_id, kb_id, bedrock_ds_id,
+            )
+            try:
+                _get_bedrock_agent_client().delete_data_source(
+                    knowledgeBaseId=bedrock_kb_id,
+                    dataSourceId=bedrock_ds_id,
+                )
+            except (BotoCoreError, ClientError) as error:
+                if _client_error_code(error) != "ResourceNotFoundException":
+                    _log_provisioning_aws_error(
+                        operation="DeleteDataSource",
+                        aws_service="bedrock-agent",
+                        stage="legacy_deleting",
+                        org_id=org_id,
+                        kb_id=kb_id,
+                        error=error,
+                        bedrock_kb_id=bedrock_kb_id,
+                        bedrock_data_source_id=bedrock_ds_id,
+                    )
+                    raise _aws_provisioning_error(
+                        "bedrock_data_source_delete_failed",
+                        "data_source",
+                        error,
+                        aws_service="bedrock-agent",
+                        aws_operation="DeleteDataSource",
+                    ) from error
+
+            for attempt in range(WAIT_ATTEMPTS):
+                remote_ds = get_bedrock_data_source(bedrock_kb_id, bedrock_ds_id)
+                if remote_ds is None:
+                    break
+                if remote_ds.get("status") == "DELETE_UNSUCCESSFUL":
+                    raise BedrockProvisioningError(
+                        "bedrock_data_source_delete_unconfirmed", resource="data_source"
+                    )
+                _sleep_between_attempts(attempt, WAIT_ATTEMPTS)
+            else:
+                raise BedrockProvisioningError(
+                    "bedrock_data_source_delete_unconfirmed", resource="data_source"
+                )
+            logger.info("legacy_data_source_deleted organization_id=%s knowledge_base_id=%s", org_id, kb_id)
+        else:
+            logger.info(
+                "legacy_data_source_already_absent organization_id=%s knowledge_base_id=%s bedrock_ds_id=%s",
+                org_id, kb_id, bedrock_ds_id,
+            )
+
+    logger.info("legacy_parent_preserved organization_id=%s knowledge_base_id=%s", org_id, kb_id)
+    logger.info("legacy_vector_index_preserved organization_id=%s knowledge_base_id=%s", org_id, kb_id)
+
+    delete_knowledge_prefix(org_id, kb_id)
+    logger.info("s3_prefix_deleted organization_id=%s knowledge_base_id=%s", org_id, kb_id)
+
+    db.query(KnowledgeSource).filter(
+        KnowledgeSource.organization_id == org_id,
+        KnowledgeSource.knowledge_base_id == kb_id,
+    ).delete(synchronize_session=False)
+    db.delete(knowledge_base)
+    _commit_state(db, "deletion_state_persist_failed")
+    logger.info("database_deleted organization_id=%s knowledge_base_id=%s", org_id, kb_id)
 
 
 def get_s3_vectors_index(index_arn: str) -> dict[str, Any] | None:
@@ -1392,7 +1553,6 @@ def cleanup_bedrock_resources(db: Session, knowledge_base: KnowledgeBase) -> Non
     )
     _commit_state(db, "failure_state_persist_failed")
 
-
 def delete_diaglob_knowledge_base(db: Session, knowledge_base: KnowledgeBase) -> None:
     """Delete one KB and only its verified remote resources and S3 prefix."""
     claimed = (
@@ -1414,11 +1574,48 @@ def delete_diaglob_knowledge_base(db: Session, knowledge_base: KnowledgeBase) ->
     )
     _commit_state(db)
     db.refresh(knowledge_base)
+
     if not claimed and knowledge_base.external_status != "deleting":
         raise BedrockProvisioningError("invalid_deletion_state", resource="knowledge_base")
 
     org_id = knowledge_base.organization_id
     kb_id = knowledge_base.id
+
+    if is_verified_legacy_parent(knowledge_base.external_id or ""):
+        logger.info(
+            "knowledge_base_deletion_routing organization_id=%s knowledge_base_id=%s deletion_mode=legacy",
+            org_id, kb_id,
+        )
+        try:
+            cleanup_verified_legacy_resources(db, knowledge_base)
+            return
+        except Exception as error:
+            db.rollback()
+            current = db.get(KnowledgeBase, kb_id)
+            original_error_code = (
+                error.code
+                if isinstance(error, BedrockProvisioningError)
+                else type(error).__name__
+            )
+            if current:
+                current.external_status = "deleting"
+                current.external_last_error = f"deletion_failed:{original_error_code}"
+                current.provisioning_stage = "deleting"
+                current.provisioning_stage_started_at = datetime.now(timezone.utc)
+                _commit_state(db, "deletion_state_persist_failed")
+            logger.exception(
+                "knowledge_base_deletion_failed deletion_mode=legacy "
+                "organization_id=%s knowledge_base_id=%s error_code=%s",
+                org_id, kb_id, original_error_code,
+            )
+            if isinstance(error, BedrockProvisioningError):
+                raise
+            raise BedrockProvisioningError("deletion_failed", resource="knowledge_base") from error
+
+    logger.info(
+        "knowledge_base_deletion_routing organization_id=%s knowledge_base_id=%s deletion_mode=modern",
+        org_id, kb_id,
+    )
     index_arn: str | None = None
     try:
         index_arn = _vector_index_arn(kb_id)
@@ -1457,13 +1654,11 @@ def delete_diaglob_knowledge_base(db: Session, knowledge_base: KnowledgeBase) ->
             current.provisioning_stage_started_at = datetime.now(timezone.utc)
             _commit_state(db, "deletion_state_persist_failed")
         logger.exception(
-            "knowledge_base_deletion_failed operation=%s aws_service=%s "
+            "knowledge_base_deletion_failed deletion_mode=modern "
             "organization_id=%s knowledge_base_id=%s provisioning_stage=deleting "
             "error_code=%s aws_error_code=%s aws_error_message=%s "
             "aws_request_id=%s vector_index_arn=%s bedrock_kb_id=%s "
             "bedrock_data_source_id=%s",
-            error.aws_operation if isinstance(error, BedrockProvisioningError) else None,
-            error.aws_service if isinstance(error, BedrockProvisioningError) else None,
             org_id,
             kb_id,
             original_error_code,

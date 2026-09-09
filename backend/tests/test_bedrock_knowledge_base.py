@@ -1755,3 +1755,588 @@ def test_ingestion_status_ready_kb_with_ids_calls_bedrock(api_client, db):
     mock_status.assert_called_once_with(
         BEDROCK_KB_ID, BEDROCK_DS_ID, "job-123"
     )
+
+
+# ============================================================
+# Legacy Knowledge Base Deletion Tests
+# ============================================================
+
+LEGACY_KB_ID = "RDAQY1JNQ8"
+LEGACY_DS_ID = "RCH1VO2AFZ"
+LEGACY_KB_NAME = "diaglob-knowledge-main"
+LEGACY_INDEX_NAME = "diaglob-knowledge-v1"
+
+
+def _legacy_kb_arn() -> str:
+    return f"arn:aws:bedrock:us-east-2:123456789012:knowledge-base/{LEGACY_KB_ID}"
+
+
+def _legacy_index_arn() -> str:
+    return f"{VECTOR_BUCKET_ARN}/index/{LEGACY_INDEX_NAME}"
+
+
+def _legacy_bedrock_kb(status: str = "ACTIVE"):
+    return {
+        "knowledgeBaseId": LEGACY_KB_ID,
+        "name": LEGACY_KB_NAME,
+        "knowledgeBaseArn": _legacy_kb_arn(),
+        "description": "Legacy shared Knowledge Base",
+        "roleArn": ROLE_ARN,
+        "knowledgeBaseConfiguration": _kb_configuration(),
+        "storageConfiguration": {
+            "type": "S3_VECTORS",
+            "s3VectorsConfiguration": {
+                "vectorBucketArn": VECTOR_BUCKET_ARN,
+                "indexArn": _legacy_index_arn(),
+            },
+        },
+        "status": status,
+        "createdAt": NOW,
+        "updatedAt": NOW,
+    }
+
+
+def _legacy_data_source(
+    org_id: int = 1,
+    kb_id: int = 1,
+    status: str = "AVAILABLE",
+    bucket: str | None = None,
+    prefix: str | None = None,
+):
+    if bucket is None:
+        bucket = f"arn:aws:s3:::{KNOWLEDGE_BUCKET}"
+    if prefix is None:
+        prefix = f"organizations/{org_id}/knowledge-bases/{kb_id}/documents/"
+    return {
+        "knowledgeBaseId": LEGACY_KB_ID,
+        "dataSourceId": LEGACY_DS_ID,
+        "name": f"diaglob-org{org_id}-kb{kb_id}",
+        "status": status,
+        "description": f"Legacy Data Source for org {org_id}, KB {kb_id}",
+        "dataSourceConfiguration": {
+            "type": "S3",
+            "s3Configuration": {
+                "bucketArn": bucket,
+                "inclusionPrefixes": [prefix],
+            },
+        },
+        "vectorIngestionConfiguration": _ingestion_configuration(),
+        "dataDeletionPolicy": "DELETE",
+        "createdAt": NOW,
+        "updatedAt": NOW,
+    }
+
+
+def _make_legacy_local_kb(
+    db,
+    org,
+    status="ready",
+    external_id=LEGACY_KB_ID,
+    data_source_id=LEGACY_DS_ID,
+    name="Políticas corporativas",
+):
+    kb = KnowledgeBase(
+        organization_id=org.id,
+        name=name,
+        scope="organization",
+        external_status=status,
+        external_id=external_id,
+        external_data_source_id=data_source_id,
+        active=True,
+    )
+    db.add(kb)
+    db.commit()
+    db.refresh(kb)
+    return kb
+
+
+def test_is_verified_legacy_parent():
+    assert provisioning.is_verified_legacy_parent(LEGACY_KB_ID) is True
+    assert provisioning.is_verified_legacy_parent(BEDROCK_KB_ID) is False
+    assert provisioning.is_verified_legacy_parent("") is False
+    assert provisioning.is_verified_legacy_parent("OTHER123") is False
+
+
+def test_modern_managed_kb_deletion_still_works(db):
+    org = _make_org(db)
+    kb = _make_local_kb(
+        db, org, status="ready",
+        external_id=BEDROCK_KB_ID, data_source_id=BEDROCK_DS_ID,
+    )
+    source = KnowledgeSource(
+        organization_id=org.id,
+        knowledge_base_id=kb.id,
+        name="Uploaded file",
+        source_type="file",
+        s3_bucket=KNOWLEDGE_BUCKET,
+        s3_key=f"organizations/{org.id}/knowledge-bases/{kb.id}/documents/file.txt",
+    )
+    db.add(source)
+    db.commit()
+
+    with patch.object(
+        provisioning, "_cleanup_remote_resources",
+        return_value=provisioning.CleanupResult(True, None, None),
+    ) as cleanup, patch.object(
+        provisioning, "delete_knowledge_prefix"
+    ) as delete_prefix:
+        provisioning.delete_diaglob_knowledge_base(db, kb)
+
+    cleanup.assert_called_once()
+    delete_prefix.assert_called_once_with(org.id, kb.id)
+    assert db.get(KnowledgeBase, kb.id) is None
+
+
+def test_modern_ownership_mismatch_is_still_rejected(db, caplog):
+    org = _make_org(db)
+    kb = _make_local_kb(
+        db, org, status="ready",
+        external_id=BEDROCK_KB_ID, data_source_id=BEDROCK_DS_ID,
+    )
+    ownership_error = provisioning.BedrockProvisioningError(
+        "resource_ownership_mismatch", resource="knowledge_base",
+    )
+    cleanup = provisioning.CleanupResult(
+        False, BEDROCK_KB_ID, BEDROCK_DS_ID, ownership_error,
+    )
+    with patch.object(provisioning, "_cleanup_remote_resources", return_value=cleanup):
+        with pytest.raises(provisioning.BedrockProvisioningError) as exc:
+            provisioning.delete_diaglob_knowledge_base(db, kb)
+
+    assert exc.value.code == "resource_ownership_mismatch"
+    assert kb.external_status == "deleting"
+    assert kb.external_last_error == "deletion_failed:resource_ownership_mismatch"
+    assert "deletion_mode=modern" in caplog.text
+
+
+def test_legacy_parent_correctly_scoped_ds_deleted_parent_preserved(db):
+    org = _make_org(db)
+    kb = _make_legacy_local_kb(db, org)
+    source = KnowledgeSource(
+        organization_id=org.id,
+        knowledge_base_id=kb.id,
+        name="Legacy file",
+        source_type="file",
+        s3_bucket=KNOWLEDGE_BUCKET,
+        s3_key=f"organizations/{org.id}/knowledge-bases/{kb.id}/documents/doc.pdf",
+    )
+    db.add(source)
+    db.commit()
+    source_id = source.id
+
+    client = _bedrock_client()
+    with Stubber(client) as stubber:
+        stubber.add_response(
+            "get_knowledge_base",
+            {"knowledgeBase": _legacy_bedrock_kb()},
+            {"knowledgeBaseId": LEGACY_KB_ID},
+        )
+        stubber.add_response(
+            "get_data_source",
+            {"dataSource": _legacy_data_source(org.id, kb.id)},
+            {"knowledgeBaseId": LEGACY_KB_ID, "dataSourceId": LEGACY_DS_ID},
+        )
+        stubber.add_response(
+            "delete_data_source",
+            {"knowledgeBaseId": LEGACY_KB_ID, "dataSourceId": LEGACY_DS_ID, "status": "DELETING"},
+            {"knowledgeBaseId": LEGACY_KB_ID, "dataSourceId": LEGACY_DS_ID},
+        )
+        stubber.add_client_error(
+            "get_data_source",
+            service_error_code="ResourceNotFoundException",
+            http_status_code=404,
+            expected_params={"knowledgeBaseId": LEGACY_KB_ID, "dataSourceId": LEGACY_DS_ID},
+        )
+        with patch.object(
+            provisioning, "_get_bedrock_agent_client", return_value=client
+        ), patch.object(
+            provisioning, "delete_knowledge_prefix"
+        ) as delete_prefix, patch.object(
+            provisioning, "delete_bedrock_knowledge_base"
+        ) as delete_kb, patch.object(
+            provisioning, "delete_s3_vectors_index"
+        ) as delete_index:
+            provisioning.delete_diaglob_knowledge_base(db, kb)
+
+    delete_kb.assert_not_called()
+    delete_index.assert_not_called()
+    delete_prefix.assert_called_once_with(org.id, kb.id)
+    assert db.get(KnowledgeBase, kb.id) is None
+    assert db.query(KnowledgeSource).filter_by(id=source_id).first() is None
+
+
+def test_legacy_ds_wrong_org_prefix_rejected(db):
+    org = _make_org(db)
+    kb = _make_legacy_local_kb(db, org)
+    client = _bedrock_client()
+    with Stubber(client) as stubber:
+        stubber.add_response(
+            "get_knowledge_base",
+            {"knowledgeBase": _legacy_bedrock_kb()},
+            {"knowledgeBaseId": LEGACY_KB_ID},
+        )
+        stubber.add_response(
+            "get_data_source",
+            {"dataSource": _legacy_data_source(org_id=999, kb_id=kb.id)},
+            {"knowledgeBaseId": LEGACY_KB_ID, "dataSourceId": LEGACY_DS_ID},
+        )
+        with patch.object(
+            provisioning, "_get_bedrock_agent_client", return_value=client
+        ):
+            with pytest.raises(provisioning.BedrockProvisioningError) as exc:
+                provisioning.delete_diaglob_knowledge_base(db, kb)
+    assert exc.value.code == "resource_ownership_mismatch"
+    assert kb.external_status == "deleting"
+    assert "deletion_failed:resource_ownership_mismatch" in kb.external_last_error
+
+
+def test_legacy_ds_wrong_kb_prefix_rejected(db):
+    org = _make_org(db)
+    kb = _make_legacy_local_kb(db, org)
+    client = _bedrock_client()
+    with Stubber(client) as stubber:
+        stubber.add_response(
+            "get_knowledge_base",
+            {"knowledgeBase": _legacy_bedrock_kb()},
+            {"knowledgeBaseId": LEGACY_KB_ID},
+        )
+        stubber.add_response(
+            "get_data_source",
+            {"dataSource": _legacy_data_source(org_id=org.id, kb_id=999)},
+            {"knowledgeBaseId": LEGACY_KB_ID, "dataSourceId": LEGACY_DS_ID},
+        )
+        with patch.object(
+            provisioning, "_get_bedrock_agent_client", return_value=client
+        ):
+            with pytest.raises(provisioning.BedrockProvisioningError) as exc:
+                provisioning.delete_diaglob_knowledge_base(db, kb)
+    assert exc.value.code == "resource_ownership_mismatch"
+
+
+def test_legacy_ds_broader_prefix_rejected(db):
+    org = _make_org(db)
+    kb = _make_legacy_local_kb(db, org)
+    client = _bedrock_client()
+    with Stubber(client) as stubber:
+        stubber.add_response(
+            "get_knowledge_base",
+            {"knowledgeBase": _legacy_bedrock_kb()},
+            {"knowledgeBaseId": LEGACY_KB_ID},
+        )
+        stubber.add_response(
+            "get_data_source",
+            {"dataSource": _legacy_data_source(prefix=f"organizations/{org.id}/")},
+            {"knowledgeBaseId": LEGACY_KB_ID, "dataSourceId": LEGACY_DS_ID},
+        )
+        with patch.object(
+            provisioning, "_get_bedrock_agent_client", return_value=client
+        ):
+            with pytest.raises(provisioning.BedrockProvisioningError) as exc:
+                provisioning.delete_diaglob_knowledge_base(db, kb)
+    assert exc.value.code == "resource_ownership_mismatch"
+
+
+def test_legacy_ds_wrong_bucket_rejected(db):
+    org = _make_org(db)
+    kb = _make_legacy_local_kb(db, org)
+    client = _bedrock_client()
+    with Stubber(client) as stubber:
+        stubber.add_response(
+            "get_knowledge_base",
+            {"knowledgeBase": _legacy_bedrock_kb()},
+            {"knowledgeBaseId": LEGACY_KB_ID},
+        )
+        stubber.add_response(
+            "get_data_source",
+            {"dataSource": _legacy_data_source(bucket="arn:aws:s3:::wrong-bucket")},
+            {"knowledgeBaseId": LEGACY_KB_ID, "dataSourceId": LEGACY_DS_ID},
+        )
+        with patch.object(
+            provisioning, "_get_bedrock_agent_client", return_value=client
+        ):
+            with pytest.raises(provisioning.BedrockProvisioningError) as exc:
+                provisioning.delete_diaglob_knowledge_base(db, kb)
+    assert exc.value.code == "resource_ownership_mismatch"
+
+
+def test_unknown_legacy_like_parent_rejected(db):
+    org = _make_org(db)
+    kb = _make_local_kb(
+        db, org, status="ready",
+        external_id="UNKNOWN_KB_ID", data_source_id="UNKNOWN_DS_ID",
+    )
+    with patch.object(
+        provisioning, "_cleanup_remote_resources",
+        return_value=provisioning.CleanupResult(
+            False, "UNKNOWN_KB_ID", "UNKNOWN_DS_ID",
+            provisioning.BedrockProvisioningError(
+                "resource_ownership_mismatch", resource="knowledge_base",
+            ),
+        ),
+    ):
+        with pytest.raises(provisioning.BedrockProvisioningError) as exc:
+            provisioning.delete_diaglob_knowledge_base(db, kb)
+    assert exc.value.code == "resource_ownership_mismatch"
+
+
+def test_legacy_ds_already_absent_local_cleanup_continues(db):
+    org = _make_org(db)
+    kb = _make_legacy_local_kb(db, org)
+    client = _bedrock_client()
+    with Stubber(client) as stubber:
+        stubber.add_response(
+            "get_knowledge_base",
+            {"knowledgeBase": _legacy_bedrock_kb()},
+            {"knowledgeBaseId": LEGACY_KB_ID},
+        )
+        stubber.add_client_error(
+            "get_data_source",
+            service_error_code="ResourceNotFoundException",
+            http_status_code=404,
+            expected_params={"knowledgeBaseId": LEGACY_KB_ID, "dataSourceId": LEGACY_DS_ID},
+        )
+        with patch.object(
+            provisioning, "_get_bedrock_agent_client", return_value=client
+        ), patch.object(
+            provisioning, "delete_knowledge_prefix"
+        ) as delete_prefix, patch.object(
+            provisioning, "delete_bedrock_knowledge_base"
+        ) as delete_kb, patch.object(
+            provisioning, "delete_s3_vectors_index"
+        ) as delete_index:
+            provisioning.delete_diaglob_knowledge_base(db, kb)
+
+    delete_kb.assert_not_called()
+    delete_index.assert_not_called()
+    delete_prefix.assert_called_once_with(org.id, kb.id)
+    assert db.get(KnowledgeBase, kb.id) is None
+
+
+def test_retry_from_deleting_status_works_for_legacy(db):
+    org = _make_org(db)
+    kb = _make_legacy_local_kb(db, org, status="deleting")
+    kb.external_last_error = "deletion_failed:resource_ownership_mismatch"
+    db.commit()
+    client = _bedrock_client()
+    with Stubber(client) as stubber:
+        stubber.add_response(
+            "get_knowledge_base",
+            {"knowledgeBase": _legacy_bedrock_kb()},
+            {"knowledgeBaseId": LEGACY_KB_ID},
+        )
+        stubber.add_response(
+            "get_data_source",
+            {"dataSource": _legacy_data_source(org.id, kb.id)},
+            {"knowledgeBaseId": LEGACY_KB_ID, "dataSourceId": LEGACY_DS_ID},
+        )
+        stubber.add_response(
+            "delete_data_source",
+            {"knowledgeBaseId": LEGACY_KB_ID, "dataSourceId": LEGACY_DS_ID, "status": "DELETING"},
+            {"knowledgeBaseId": LEGACY_KB_ID, "dataSourceId": LEGACY_DS_ID},
+        )
+        stubber.add_client_error(
+            "get_data_source",
+            service_error_code="ResourceNotFoundException",
+            http_status_code=404,
+            expected_params={"knowledgeBaseId": LEGACY_KB_ID, "dataSourceId": LEGACY_DS_ID},
+        )
+        with patch.object(
+            provisioning, "_get_bedrock_agent_client", return_value=client
+        ), patch.object(provisioning, "delete_knowledge_prefix"):
+            provisioning.delete_diaglob_knowledge_base(db, kb)
+
+    assert db.get(KnowledgeBase, kb.id) is None
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "Políticas corporativas",
+        "Información de envío",
+        "Catálogo Bogotá",
+        "Atenção ao cliente",
+        "Política de devolução",
+    ],
+)
+def test_unicode_accented_kb_name_does_not_affect_deletion(db, name):
+    org = _make_org(db)
+    kb = _make_legacy_local_kb(db, org, name=name)
+    assert kb.name == name
+    client = _bedrock_client()
+    with Stubber(client) as stubber:
+        stubber.add_response(
+            "get_knowledge_base",
+            {"knowledgeBase": _legacy_bedrock_kb()},
+            {"knowledgeBaseId": LEGACY_KB_ID},
+        )
+        stubber.add_response(
+            "get_data_source",
+            {"dataSource": _legacy_data_source(org.id, kb.id)},
+            {"knowledgeBaseId": LEGACY_KB_ID, "dataSourceId": LEGACY_DS_ID},
+        )
+        stubber.add_response(
+            "delete_data_source",
+            {"knowledgeBaseId": LEGACY_KB_ID, "dataSourceId": LEGACY_DS_ID, "status": "DELETING"},
+            {"knowledgeBaseId": LEGACY_KB_ID, "dataSourceId": LEGACY_DS_ID},
+        )
+        stubber.add_client_error(
+            "get_data_source",
+            service_error_code="ResourceNotFoundException",
+            http_status_code=404,
+            expected_params={"knowledgeBaseId": LEGACY_KB_ID, "dataSourceId": LEGACY_DS_ID},
+        )
+        with patch.object(
+            provisioning, "_get_bedrock_agent_client", return_value=client
+        ), patch.object(provisioning, "delete_knowledge_prefix"):
+            provisioning.delete_diaglob_knowledge_base(db, kb)
+
+    assert db.get(KnowledgeBase, kb.id) is None
+
+
+def test_legacy_flow_does_not_call_delete_bedrock_knowledge_base(db):
+    org = _make_org(db)
+    kb = _make_legacy_local_kb(db, org)
+    client = _bedrock_client()
+    with Stubber(client) as stubber:
+        stubber.add_response(
+            "get_knowledge_base",
+            {"knowledgeBase": _legacy_bedrock_kb()},
+            {"knowledgeBaseId": LEGACY_KB_ID},
+        )
+        stubber.add_response(
+            "get_data_source",
+            {"dataSource": _legacy_data_source(org.id, kb.id)},
+            {"knowledgeBaseId": LEGACY_KB_ID, "dataSourceId": LEGACY_DS_ID},
+        )
+        stubber.add_response(
+            "delete_data_source",
+            {"knowledgeBaseId": LEGACY_KB_ID, "dataSourceId": LEGACY_DS_ID, "status": "DELETING"},
+            {"knowledgeBaseId": LEGACY_KB_ID, "dataSourceId": LEGACY_DS_ID},
+        )
+        stubber.add_client_error(
+            "get_data_source",
+            service_error_code="ResourceNotFoundException",
+            http_status_code=404,
+            expected_params={"knowledgeBaseId": LEGACY_KB_ID, "dataSourceId": LEGACY_DS_ID},
+        )
+        with patch.object(
+            provisioning, "_get_bedrock_agent_client", return_value=client
+        ), patch.object(
+            provisioning, "delete_knowledge_prefix"
+        ), patch.object(
+            provisioning, "delete_bedrock_knowledge_base"
+        ) as delete_kb, patch.object(
+            provisioning, "delete_s3_vectors_index"
+        ) as delete_index:
+            provisioning.delete_diaglob_knowledge_base(db, kb)
+
+    delete_kb.assert_not_called()
+    delete_index.assert_not_called()
+
+
+def test_legacy_flow_does_not_call_delete_s3_vectors_index(db):
+    org = _make_org(db)
+    kb = _make_legacy_local_kb(db, org)
+    client = _bedrock_client()
+    with Stubber(client) as stubber:
+        stubber.add_response(
+            "get_knowledge_base",
+            {"knowledgeBase": _legacy_bedrock_kb()},
+            {"knowledgeBaseId": LEGACY_KB_ID},
+        )
+        stubber.add_response(
+            "get_data_source",
+            {"dataSource": _legacy_data_source(org.id, kb.id)},
+            {"knowledgeBaseId": LEGACY_KB_ID, "dataSourceId": LEGACY_DS_ID},
+        )
+        stubber.add_response(
+            "delete_data_source",
+            {"knowledgeBaseId": LEGACY_KB_ID, "dataSourceId": LEGACY_DS_ID, "status": "DELETING"},
+            {"knowledgeBaseId": LEGACY_KB_ID, "dataSourceId": LEGACY_DS_ID},
+        )
+        stubber.add_client_error(
+            "get_data_source",
+            service_error_code="ResourceNotFoundException",
+            http_status_code=404,
+            expected_params={"knowledgeBaseId": LEGACY_KB_ID, "dataSourceId": LEGACY_DS_ID},
+        )
+        with patch.object(
+            provisioning, "_get_bedrock_agent_client", return_value=client
+        ), patch.object(
+            provisioning, "delete_knowledge_prefix"
+        ), patch.object(
+            provisioning, "delete_bedrock_knowledge_base"
+        ) as delete_kb, patch.object(
+            provisioning, "delete_s3_vectors_index"
+        ) as delete_index:
+            provisioning.delete_diaglob_knowledge_base(db, kb)
+
+    delete_kb.assert_not_called()
+    delete_index.assert_not_called()
+
+
+def test_tenant_isolation_legacy_kb_org_a_cannot_cleanup_org_b(db):
+    org_a = _make_org(db, "org-a")
+    org_b = _make_org(db, "org-b")
+    kb_a = _make_legacy_local_kb(db, org_a)
+    client = _bedrock_client()
+    with Stubber(client) as stubber:
+        stubber.add_response(
+            "get_knowledge_base",
+            {"knowledgeBase": _legacy_bedrock_kb()},
+            {"knowledgeBaseId": LEGACY_KB_ID},
+        )
+        stubber.add_response(
+            "get_data_source",
+            {"dataSource": _legacy_data_source(org_id=org_b.id, kb_id=kb_a.id)},
+            {"knowledgeBaseId": LEGACY_KB_ID, "dataSourceId": LEGACY_DS_ID},
+        )
+        with patch.object(
+            provisioning, "_get_bedrock_agent_client", return_value=client
+        ):
+            with pytest.raises(provisioning.BedrockProvisioningError) as exc:
+                provisioning.delete_diaglob_knowledge_base(db, kb_a)
+    assert exc.value.code == "resource_ownership_mismatch"
+
+
+def test_legacy_deletion_logging_shows_deletion_mode(db, caplog):
+    import logging
+    caplog.set_level(logging.INFO)
+    org = _make_org(db)
+    kb = _make_legacy_local_kb(db, org)
+    client = _bedrock_client()
+    with Stubber(client) as stubber:
+        stubber.add_response(
+            "get_knowledge_base",
+            {"knowledgeBase": _legacy_bedrock_kb()},
+            {"knowledgeBaseId": LEGACY_KB_ID},
+        )
+        stubber.add_response(
+            "get_data_source",
+            {"dataSource": _legacy_data_source(org.id, kb.id)},
+            {"knowledgeBaseId": LEGACY_KB_ID, "dataSourceId": LEGACY_DS_ID},
+        )
+        stubber.add_response(
+            "delete_data_source",
+            {"knowledgeBaseId": LEGACY_KB_ID, "dataSourceId": LEGACY_DS_ID, "status": "DELETING"},
+            {"knowledgeBaseId": LEGACY_KB_ID, "dataSourceId": LEGACY_DS_ID},
+        )
+        stubber.add_client_error(
+            "get_data_source",
+            service_error_code="ResourceNotFoundException",
+            http_status_code=404,
+            expected_params={"knowledgeBaseId": LEGACY_KB_ID, "dataSourceId": LEGACY_DS_ID},
+        )
+        with patch.object(
+            provisioning, "_get_bedrock_agent_client", return_value=client
+        ), patch.object(provisioning, "delete_knowledge_prefix"):
+            provisioning.delete_diaglob_knowledge_base(db, kb)
+
+    assert "deletion_mode=legacy" in caplog.text
+    assert "legacy_parent_verified" in caplog.text
+    assert "legacy_data_source_verified" in caplog.text
+    assert "legacy_data_source_deleted" in caplog.text
+    assert "legacy_parent_preserved" in caplog.text
+    assert "legacy_vector_index_preserved" in caplog.text
+    assert "s3_prefix_deleted" in caplog.text
+    assert "database_deleted" in caplog.text
