@@ -226,10 +226,11 @@ def configure_connection(
     store_id: int,
     provider_code: str,
     environment: str,
-    client_id: str,
-    client_secret: str,
+    client_id: str | None,
+    client_secret: str | None,
     webhook_secret: str | None = None,
     merchant_reference: str | None = None,
+    access_token: str | None = None,
 ) -> PaymentConnection:
     """Configure or update a payment connection."""
     store = db.get(Store, store_id)
@@ -258,6 +259,20 @@ def configure_connection(
             ),
         )
 
+    secret = access_token or client_secret
+    if provider_code == "mercado_pago":
+        if not secret:
+            raise PaymentError(
+                "PAYMENT_CREDENTIALS_REQUIRED",
+                "Mercado Pago access token is required",
+            )
+        client_id = client_id or "mercado_pago"
+    elif not client_id or not client_secret:
+        raise PaymentError(
+            "PAYMENT_CREDENTIALS_REQUIRED",
+            "client_id and client_secret are required",
+        )
+
     conn = get_connection(
         db, organization_id, store_id, provider_code
     )
@@ -272,10 +287,10 @@ def configure_connection(
 
     conn.environment = environment
     conn.client_id_encrypted = (
-        encrypt_payment_secret(client_id)
+        encrypt_payment_secret(client_id or provider_code)
     )
     conn.client_secret_encrypted = (
-        encrypt_payment_secret(client_secret)
+        encrypt_payment_secret(secret or "")
     )
     if webhook_secret:
         conn.webhook_secret_encrypted = (
@@ -422,6 +437,15 @@ def create_payment(
             ),
         )
 
+    if payment_method not in provider.supported_payment_methods:
+        raise PaymentError(
+            "PAYMENT_METHOD_UNAVAILABLE",
+            (
+                f"{payment_method} is not supported by "
+                f"{provider.display_name}"
+            ),
+        )
+
     # Validate connection
     conn = get_connection(
         db, organization_id, store_id, provider_code
@@ -517,6 +541,7 @@ async def execute_payment(
     organization_id: int,
     store_id: int,
     payment_id: int,
+    metadata: dict[str, Any] | None = None,
 ) -> PaymentTransaction:
     """Execute a pending payment by calling the provider.
 
@@ -561,6 +586,7 @@ async def execute_payment(
                 else "Payment"
             ),
             idempotency_key=txn.idempotency_key,
+            metadata=metadata,
         )
     except Exception as exc:
         logger.exception(
@@ -586,6 +612,9 @@ async def execute_payment(
         result.status.value,
         provider_status=result.provider_status,
     )
+
+    if result.action_data:
+        setattr(txn, "_action_data", result.action_data)
 
     if result.expires_at:
         from datetime import datetime as dt

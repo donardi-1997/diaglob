@@ -38,8 +38,9 @@ router = APIRouter()
 class ConfigureConnectionRequest(BaseModel):
     provider: str
     environment: str = "sandbox"
-    client_id: str
-    client_secret: str
+    client_id: str | None = None
+    client_secret: str | None = None
+    access_token: str | None = None
     webhook_secret: str | None = None
     merchant_reference: str | None = None
 
@@ -49,6 +50,9 @@ class CreatePaymentRequest(BaseModel):
     amount: Decimal | None = None
     currency: str | None = None
     customer_phone: str
+    customer_email: str | None = None
+    customer_document: str | None = None
+    customer_document_type: str | None = None
     idempotency_key: str | None = None
     order_id: int | None = None
     payment_method: str = "nequi_push"
@@ -158,6 +162,7 @@ def configure_payment_connection(
             body.client_secret,
             body.webhook_secret,
             body.merchant_reference,
+            body.access_token,
         )
         db.commit()
     except payment_service.PaymentError as exc:
@@ -259,6 +264,13 @@ async def create_payment(
             membership.organization_id,
             store_id,
             txn.id,
+            metadata={
+                "customer_email": body.customer_email,
+                "customer_document": body.customer_document,
+                "customer_document_type": (
+                    body.customer_document_type
+                ),
+            },
         )
 
         db.commit()
@@ -519,6 +531,9 @@ def _serialize_transaction(txn) -> dict[str, Any]:
             txn.created_at.isoformat()
             if txn.created_at
             else None
+        ),
+        "action_data": getattr(
+            txn, "_action_data", None
         ),
     }
 

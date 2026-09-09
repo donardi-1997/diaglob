@@ -1,11 +1,12 @@
 """Payment provider registry.
 
 Central registry for all payment providers. Avoids scattered
-'if provider == "nequi"' checks throughout the codebase.
+provider-specific checks throughout the codebase.
 """
 from __future__ import annotations
 
 from .base import PaymentProvider
+from .mercado_pago import MercadoPagoPixProvider
 from .nequi import NequiPaymentProvider
 
 _providers: dict[str, PaymentProvider] = {}
@@ -36,3 +37,4 @@ def get_providers_for_market(
 
 # Register all providers
 _register(NequiPaymentProvider())
+_register(MercadoPagoPixProvider())
