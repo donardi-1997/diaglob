@@ -1,10 +1,5 @@
 import { api } from "./api";
 
-export interface AdminStatus {
-  platform_admin: boolean;
-  email: string;
-}
-
 export interface AdminOverview {
   organizations: {
     total: number;
@@ -46,8 +41,8 @@ export interface AdminAttentionItem {
 }
 
 export async function getAdminStatus() {
-  const response = await api.get<AdminStatus>("/api/admin/status");
-  return response.data;
+  await api.get<AdminOverview>("/api/admin/overview");
+  return { platform_admin: true as const };
 }
 
 export async function getAdminOverview() {
