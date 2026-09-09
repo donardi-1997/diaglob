@@ -88,3 +88,61 @@ jobs:
             -i ~/.ssh/diaglob_actions_prod \
             "$PROD_USER@$PROD_HOST" \
             "/opt/diaglob/scripts/deploy.sh"
+
+  notify:
+    name: Telegram Notification
+    needs:
+      - validate
+      - deploy
+    if: always()
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Determine deployment status
+        id: status
+        shell: bash
+        run: |
+          if [ "${{ needs.validate.result }}" != "success" ]; then
+            echo "emoji=❌" >> "$GITHUB_OUTPUT"
+            echo "status=VALIDATION FAILED" >> "$GITHUB_OUTPUT"
+          elif [ "${{ needs.deploy.result }}" != "success" ]; then
+            echo "emoji=❌" >> "$GITHUB_OUTPUT"
+            echo "status=DEPLOY FAILED" >> "$GITHUB_OUTPUT"
+          else
+            echo "emoji=✅" >> "$GITHUB_OUTPUT"
+            echo "status=DEPLOY SUCCESSFUL" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Send Telegram notification
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          STATUS_EMOJI: ${{ steps.status.outputs.emoji }}
+          STATUS_TEXT: ${{ steps.status.outputs.status }}
+          COMMIT_SHA: ${{ github.sha }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+          COMMIT_AUTHOR: ${{ github.event.head_commit.author.name }}
+          REPOSITORY: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
+          RUN_ID: ${{ github.run_id }}
+          SERVER_URL: ${{ github.server_url }}
+        shell: bash
+        run: |
+          SHORT_SHA="${COMMIT_SHA:0:7}"
+
+          MESSAGE="${STATUS_EMOJI} DIAGLOB — ${STATUS_TEXT}
+
+          Repository: ${REPOSITORY}
+          Branch: ${BRANCH}
+          Commit: ${SHORT_SHA}
+          Author: ${COMMIT_AUTHOR}
+
+          ${COMMIT_MESSAGE}
+
+          ${SERVER_URL}/${REPOSITORY}/actions/runs/${RUN_ID}"
+
+          curl --fail --silent --show-error \
+            -X POST \
+            "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=${MESSAGE}"

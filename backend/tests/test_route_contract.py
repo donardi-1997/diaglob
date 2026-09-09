@@ -19,19 +19,31 @@ CONTRACT_PATH = (
 )
 
 
+def _collect_routes_from_container(container) -> list[tuple[str, str]]:
+    """Recursively collect (method, path) from a route container.
+
+    Handles both classic Route objects and FastAPI's _IncludedRouter
+    wrappers that nest an APIRouter under ``original_router``.
+    """
+    routes: list[tuple[str, str]] = []
+    for route in container.routes:
+        if hasattr(route, "original_router"):
+            routes.extend(
+                _collect_routes_from_container(route.original_router)
+            )
+        elif hasattr(route, "path") and hasattr(route, "methods"):
+            for method in sorted(route.methods or {"GET"}):
+                routes.append((method, route.path))
+        elif hasattr(route, "routes"):
+            routes.extend(_collect_routes_from_container(route))
+    return routes
+
+
 def _get_runtime_routes() -> list[tuple[str, str]]:
     """Extract sorted unique (method, path) from the running app."""
     from app.main import app
 
-    routes = []
-    for route in app.routes:
-        if not hasattr(route, "path") or not hasattr(route, "methods"):
-            continue
-        methods = route.methods or {"GET"}
-        for method in sorted(methods):
-            routes.append((method, route.path))
-
-    return sorted(set(routes))
+    return sorted(set(_collect_routes_from_container(app)))
 
 
 def _load_snapshot() -> list[tuple[str, str]]:

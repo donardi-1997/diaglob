@@ -9,7 +9,7 @@ import threading
 import time
 from datetime import datetime, timezone
 
-from sqlalchemy.exc import OperationalError
+from sqlalchemy import inspect
 
 from ..bedrock_knowledge_base import (
     BedrockProvisioningError,
@@ -78,20 +78,27 @@ def schedule_knowledge_base_provisioning(knowledge_base_id: int) -> None:
 
 
 def reconcile_knowledge_base_provisioning() -> None:
-    """Resume stranded non-terminal provisioning after a process restart."""
+    """Resume stranded non-terminal provisioning after a process restart.
+
+    Safe for databases where the knowledge_bases table does not yet exist
+    (e.g. test environments using their own SQLite DB, or partially migrated
+    databases).  Uses SQLAlchemy schema inspection rather than string-matching
+    on error messages.
+    """
     db = SessionLocal()
     try:
-        try:
-            knowledge_bases = db.query(KnowledgeBase).filter(
-                KnowledgeBase.active.is_(True),
-                KnowledgeBase.external_status.in_(("pending", "provisioning", "retrying")),
-            ).all()
-        except OperationalError as error:
-            db.rollback()
-            if "no such column" in str(error).lower() and "knowledge_bases.external_status" in str(error):
-                logger.warning("Skipping Knowledge Base provisioning reconciliation until migration 007 is applied")
-                return
-            raise
+        inspector = inspect(db.get_bind())
+        if "knowledge_bases" not in inspector.get_table_names():
+            logger.info(
+                "Skipping Knowledge Base provisioning reconciliation: "
+                "knowledge_bases table does not exist"
+            )
+            return
+
+        knowledge_bases = db.query(KnowledgeBase).filter(
+            KnowledgeBase.active.is_(True),
+            KnowledgeBase.external_status.in_(("pending", "provisioning", "retrying")),
+        ).all()
         now = datetime.now(timezone.utc)
         for knowledge_base in knowledge_bases:
             if knowledge_base.external_status == "provisioning":
