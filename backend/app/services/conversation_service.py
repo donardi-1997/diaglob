@@ -26,13 +26,26 @@ def create_message_with_ai(
     sender: str,
     text: str,
 ) -> dict:
-    """Persist user message, optionally generate AI response.
+    """Persist a message and optionally generate an AI response.
 
-    CRITICAL: User message is committed BEFORE AI generation runs.
-    This ensures the message is never lost even if AI fails.
-
-    Returns serialized message dict.
+    Human messages for Telegram conversations are delivered through the
+    Telegram adapter so the unified inbox sends externally instead of only
+    writing an internal message.
     """
+    if (
+        sender == "human"
+        and (conversation.channel or "").lower() == "telegram"
+    ):
+        from .telegram_service import send_message as send_telegram_message
+
+        return send_telegram_message(
+            db=db,
+            organization_id=conversation.organization_id,
+            conversation_id=conversation.id,
+            text=text,
+            sender="human",
+        )
+
     message = Message(
         conversation_id=conversation.id,
         sender=sender,
@@ -54,7 +67,6 @@ def create_message_with_ai(
     else:
         conversation.unread = 0
 
-    # CRITICAL: commit user message before AI generation
     db.commit()
     db.refresh(message)
 
@@ -72,7 +84,6 @@ def create_message_with_ai(
             "role": message.agent.role,
         }
 
-    # Decide if AI should respond
     should_generate_ai = (
         sender == "customer"
         and conversation.mode == "ai"
@@ -91,7 +102,6 @@ def create_message_with_ai(
     ):
         return serialized_message
 
-    # Agent must serve this store
     agent_store_ids = {
         agent_store.id
         for agent_store in agent.stores
@@ -101,7 +111,6 @@ def create_message_with_ai(
     if conversation.store_id not in agent_store_ids:
         return serialized_message
 
-    # RAG + AI generation
     try:
         evidence = retrieve_agent_knowledge(
             agent=agent,
@@ -153,7 +162,6 @@ def create_message_with_ai(
             commerce_results=commerce_results,
         )
 
-        # Handle both dict and string returns (backward compatibility)
         if isinstance(ai_result, dict):
             answer = ai_result.get("answer", "")
             input_tokens = ai_result.get("input_tokens", 0)
@@ -166,7 +174,6 @@ def create_message_with_ai(
         if not answer:
             return serialized_message
 
-        # Analytics: AI usage metering
         from .product_analytics import capture
         if input_tokens > 0 or output_tokens > 0:
             capture(
@@ -199,7 +206,6 @@ def create_message_with_ai(
         db.commit()
         db.refresh(ai_message)
 
-        # Analytics: first WhatsApp AI reply per store (not per conversation)
         from .product_analytics import track_first_whatsapp_ai_reply
         from ..models import Conversation as ConversationModel, Message as MessageModel
         prior_ai_message = (
