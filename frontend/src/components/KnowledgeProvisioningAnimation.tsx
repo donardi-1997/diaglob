@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import {
   BrainCircuit,
   Check,
@@ -18,7 +18,8 @@ import type {
 } from "../services/knowledgeBases";
 
 interface KnowledgeProvisioningAnimationProps {
-  knowledgeBase: KnowledgeBase;
+  knowledgeBase: KnowledgeBase | null;
+  creatingName: string | null;
   onComplete: () => void;
   onRetry: () => void;
   onClose: () => void;
@@ -56,6 +57,8 @@ const PROVISIONING_STEPS: {
   },
 ];
 
+const LOCAL_STAGE_TIMINGS = [0, 1200, 2500, 3800, 5100];
+
 function getStepIndex(
   stage: KnowledgeBaseProvisioningStage | null,
 ): number {
@@ -68,6 +71,7 @@ function getStepIndex(
 
 export default function KnowledgeProvisioningAnimation({
   knowledgeBase,
+  creatingName,
   onComplete,
   onRetry,
   onClose,
@@ -75,32 +79,121 @@ export default function KnowledgeProvisioningAnimation({
   const { t } = useTranslation();
   const [showSuccess, setShowSuccess] = useState(false);
   const hasCalledComplete = useRef(false);
+  const [localStepIndex, setLocalStepIndex] = useState(0);
+  const timerRefs = useRef<number[]>([]);
+  const creationStartTime = useRef(Date.now());
+  const hasReconciled = useRef(false);
 
-  const currentStepIndex = getStepIndex(
-    knowledgeBase.provisioning_stage,
-  );
+  const isCreating = creatingName !== null && knowledgeBase === null;
+  const displayName = knowledgeBase?.name ?? creatingName ?? "";
+
+  const currentStepIndex = isCreating
+    ? localStepIndex
+    : getStepIndex(knowledgeBase?.provisioning_stage ?? null);
 
   const isReady =
-    knowledgeBase.external_status === "ready";
+    knowledgeBase?.external_status === "ready" || showSuccess;
   const isFailed =
-    knowledgeBase.external_status === "failed";
+    knowledgeBase?.external_status === "failed";
   const isRetrying =
-    knowledgeBase.external_status === "retrying";
+    knowledgeBase?.external_status === "retrying";
   const isProvisioning =
-    knowledgeBase.external_status === "pending" ||
-    knowledgeBase.external_status === "provisioning" ||
+    isCreating ||
+    knowledgeBase?.external_status === "pending" ||
+    knowledgeBase?.external_status === "provisioning" ||
     isRetrying;
+
+  const clearAllTimers = useCallback(() => {
+    timerRefs.current.forEach((id) => clearTimeout(id));
+    timerRefs.current = [];
+  }, []);
+
+  useEffect(() => {
+    if (!isCreating) {
+      clearAllTimers();
+      return;
+    }
+
+    creationStartTime.current = Date.now();
+    setLocalStepIndex(0);
+
+    const timers: number[] = [];
+
+    for (let i = 1; i < LOCAL_STAGE_TIMINGS.length; i++) {
+      const timer = window.setTimeout(() => {
+        setLocalStepIndex(i);
+      }, LOCAL_STAGE_TIMINGS[i]);
+      timers.push(timer);
+    }
+
+    timerRefs.current = timers;
+
+    return () => {
+      timers.forEach((id) => clearTimeout(id));
+    };
+  }, [isCreating, clearAllTimers]);
+
+  useEffect(() => {
+    if (!knowledgeBase || hasReconciled.current) return;
+
+    hasReconciled.current = true;
+    clearAllTimers();
+
+    const backendIndex = getStepIndex(
+      knowledgeBase.provisioning_stage,
+    );
+
+    const elapsed = Date.now() - creationStartTime.current;
+    const fastResponse = elapsed < 3000;
+
+    if (
+      knowledgeBase.external_status === "ready" ||
+      knowledgeBase.external_status === "failed"
+    ) {
+      setLocalStepIndex(PROVISIONING_STEPS.length - 1);
+      return;
+    }
+
+    if (fastResponse) {
+      let step = localStepIndex;
+      const advanceStep = () => {
+        step++;
+        if (step <= backendIndex) {
+          setLocalStepIndex(step);
+          const timer = window.setTimeout(advanceStep, 150);
+          timerRefs.current.push(timer);
+        }
+      };
+      if (step < backendIndex) {
+        const timer = window.setTimeout(advanceStep, 150);
+        timerRefs.current.push(timer);
+      }
+    } else {
+      setLocalStepIndex((prev) => Math.max(prev, backendIndex));
+    }
+  }, [knowledgeBase, clearAllTimers, localStepIndex]);
 
   useEffect(() => {
     if (isReady && !hasCalledComplete.current) {
       hasCalledComplete.current = true;
+      setLocalStepIndex(PROVISIONING_STEPS.length - 1);
       setShowSuccess(true);
       const timer = setTimeout(() => {
         onComplete();
-      }, 1500);
+      }, 1200);
       return () => clearTimeout(timer);
     }
   }, [isReady, onComplete]);
+
+  useEffect(() => {
+    return () => {
+      clearAllTimers();
+    };
+  }, [clearAllTimers]);
+
+  const displayStepIndex = isReady
+    ? PROVISIONING_STEPS.length
+    : currentStepIndex;
 
   return (
     <div
@@ -128,7 +221,7 @@ export default function KnowledgeProvisioningAnimation({
 
         {/* Knowledge Base Name */}
         <p className="knowledge-provisioning-animation-name">
-          "{knowledgeBase.name}"
+          &ldquo;{displayName}&rdquo;
         </p>
 
         {/* Steps */}
@@ -141,10 +234,11 @@ export default function KnowledgeProvisioningAnimation({
         >
           {PROVISIONING_STEPS.map((step, index) => {
             const StepIcon = step.icon;
-            const isCompleted = index < currentStepIndex;
+            const isCompleted = index < displayStepIndex;
             const isCurrent =
-              index === currentStepIndex &&
-              isProvisioning;
+              index === displayStepIndex &&
+              isProvisioning &&
+              !isReady;
 
             return (
               <div
@@ -174,7 +268,7 @@ export default function KnowledgeProvisioningAnimation({
                   )}
                 </div>
 
-                <span>
+                <span aria-live={isCurrent ? "polite" : undefined}>
                   {t(step.i18nKey)}
                 </span>
               </div>
@@ -187,7 +281,7 @@ export default function KnowledgeProvisioningAnimation({
           <p className="knowledge-provisioning-animation-success-message">
             {t(
               "knowledgeI18nProvisioningAnimationSuccessBody",
-              { name: knowledgeBase.name },
+              { name: displayName },
             )}
           </p>
         )}
@@ -209,15 +303,17 @@ export default function KnowledgeProvisioningAnimation({
           </div>
         )}
 
-        {isProvisioning && !showSuccess && (
+        {isProvisioning && !showSuccess && !isFailed && (
           <p className="knowledge-provisioning-animation-subtitle">
             {isRetrying
               ? t(
                   "knowledgeI18nProvisioningAnimationStepRetrying",
                 )
-              : t(
-                  "knowledgeI18nProvisioningAnimationSubtitle",
-                )}
+              : displayStepIndex >= PROVISIONING_STEPS.length - 1
+                ? t("knowledgeI18nProvisioningAnimationSlowMessage")
+                : t(
+                    "knowledgeI18nProvisioningAnimationSubtitle",
+                  )}
           </p>
         )}
 

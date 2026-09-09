@@ -256,6 +256,11 @@ export default function KnowledgeBasesPage({
     setProvisioningKnowledgeBase,
   ] = useState<KnowledgeBase | null>(null);
 
+  const [
+    creatingKnowledgeBaseName,
+    setCreatingKnowledgeBaseName,
+  ] = useState<string | null>(null);
+
 
   // =========================================================
   // SOURCES
@@ -858,11 +863,14 @@ export default function KnowledgeBasesPage({
         setEditingKnowledgeBase(null);
         await loadData();
       } else {
+        setFormOpen(false);
+        setCreatingKnowledgeBaseName(name);
+
         const created = await createKnowledgeBase(
           payload,
         );
 
-        setFormOpen(false);
+        setCreatingKnowledgeBaseName(null);
         setEditingKnowledgeBase(null);
 
         setItems((current) => [
@@ -883,6 +891,7 @@ export default function KnowledgeBasesPage({
     } catch (err) {
       console.error(err);
 
+      setCreatingKnowledgeBaseName(null);
       await loadData();
 
       setError(
@@ -900,6 +909,7 @@ export default function KnowledgeBasesPage({
 
   function handleProvisioningComplete() {
     setProvisioningKnowledgeBase(null);
+    setCreatingKnowledgeBaseName(null);
     void loadData();
   }
 
@@ -925,6 +935,7 @@ export default function KnowledgeBasesPage({
 
   function handleProvisioningClose() {
     setProvisioningKnowledgeBase(null);
+    setCreatingKnowledgeBaseName(null);
   }
 
 
@@ -3746,9 +3757,10 @@ export default function KnowledgeBasesPage({
           PROVISIONING ANIMATION
           =================================================== */}
 
-      {provisioningKnowledgeBase && (
+      {(provisioningKnowledgeBase || creatingKnowledgeBaseName) && (
         <KnowledgeProvisioningAnimation
           knowledgeBase={provisioningKnowledgeBase}
+          creatingName={creatingKnowledgeBaseName}
           onComplete={handleProvisioningComplete}
           onRetry={() => void handleProvisioningRetry()}
           onClose={handleProvisioningClose}
