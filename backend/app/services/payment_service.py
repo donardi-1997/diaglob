@@ -382,6 +382,9 @@ def create_payment(
                 "PAYMENT_ORDER_NOT_FOUND",
                 "Order not found or access denied",
             )
+        # Use order's authoritative amount and currency
+        amount_decimal = Decimal(str(order.total_amount))
+        currency = order.currency
 
     # Validate currency
     if currency != store.currency:
@@ -565,6 +568,7 @@ async def execute_payment(
             txn.id,
         )
         _update_transaction_status(
+            db,
             txn,
             PaymentStatus.FAILED.value,
             provider_status="PROVIDER_ERROR",
@@ -677,7 +681,7 @@ async def reconcile_payment_status(
 # ============================================================
 
 
-def process_webhook(
+async def process_webhook(
     db: Session,
     provider_code: str,
     headers: dict[str, str],
@@ -783,12 +787,48 @@ def process_webhook(
         nequi_status, PaymentStatus.PENDING
     )
 
+    # CRITICAL SAFETY: For Nequi webhooks, do NOT mark paid based on
+    # webhook payload alone. Always reconcile with server-to-server
+    # status query to prevent malicious webhook attacks.
+    if normalized == PaymentStatus.PAID:
+        provider = get_provider(txn.provider)
+        if provider:
+            try:
+                conn = get_connection(
+                    db, txn.organization_id, txn.store_id, txn.provider
+                )
+                environment = conn.environment if conn else "sandbox"
+                creds = get_connection_credentials(
+                    db, txn.organization_id, txn.store_id, txn.provider
+                )
+                status_result = await provider.get_payment_status(
+                    creds, environment, txn.provider_transaction_id
+                )
+                if status_result.status != PaymentStatus.PAID:
+                    logger.warning(
+                        "webhook_paid_but_server_confirms_not_paid "
+                        "payment_id=%s server_status=%s",
+                        txn.id,
+                        status_result.status.value,
+                    )
+                    normalized = status_result.status
+                    nequi_status = status_result.provider_status
+            except Exception as exc:
+                logger.error(
+                    "webhook_reconciliation_failed payment_id=%s error=%s",
+                    txn.id,
+                    str(exc),
+                )
+                # If reconciliation fails, do not mark as paid
+                normalized = PaymentStatus.PENDING
+
     # Update transaction
     _update_transaction_status(
+        db,
         txn,
         normalized.value,
         provider_status=nequi_status,
-        paid_at=parsed.get("timestamp"),
+        paid_at=parsed.get("timestamp") if normalized == PaymentStatus.PAID else None,
     )
 
     # Update connection event tracking
@@ -840,6 +880,7 @@ async def cancel_payment(
 
     if not txn.provider_transaction_id:
         _update_transaction_status(
+            db,
             txn, PaymentStatus.CANCELLED.value
         )
         db.flush()
@@ -1000,6 +1041,7 @@ def _get_owned_transaction(
 
 
 def _update_transaction_status(
+    db: Session,
     txn: PaymentTransaction,
     new_status: str,
     provider_status: str | None = None,
@@ -1060,6 +1102,24 @@ def _update_transaction_status(
                 txn.paid_at = datetime.now(timezone.utc)
         else:
             txn.paid_at = datetime.now(timezone.utc)
+
+        # Update related Order payment status
+        if txn.order_id:
+            try:
+                order = db.query(Order).filter(
+                    Order.id == txn.order_id,
+                    Order.organization_id == txn.organization_id,
+                ).first()
+                if order:
+                    order.payment_status = "paid"
+                    order.updated_at = datetime.now(timezone.utc)
+            except Exception as exc:
+                logger.error(
+                    "order_payment_update_failed "
+                    "order_id=%s error=%s",
+                    txn.order_id,
+                    str(exc),
+                )
 
     txn.updated_at = datetime.now(timezone.utc)
 

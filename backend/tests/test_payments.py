@@ -710,7 +710,8 @@ class TestWebhookIdempotency:
         db.commit()
 
         # First webhook
-        result1 = payment_service.process_webhook(
+        import asyncio
+        result1 = asyncio.run(payment_service.process_webhook(
             db,
             "nequi",
             {},
@@ -720,10 +721,10 @@ class TestWebhookIdempotency:
                 "eventType": "payment",
                 "eventId": "event-002",
             }).encode(),
-        )
+        ))
 
         # Second webhook with same event
-        result2 = payment_service.process_webhook(
+        result2 = asyncio.run(payment_service.process_webhook(
             db,
             "nequi",
             {},
@@ -733,7 +734,7 @@ class TestWebhookIdempotency:
                 "eventType": "payment",
                 "eventId": "event-002",
             }).encode(),
-        )
+        ))
 
         assert result1["status"] == "processed"
         assert result2["status"] == "duplicate"

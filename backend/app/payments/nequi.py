@@ -192,7 +192,11 @@ class NequiPaymentProvider(PaymentProvider):
         idempotency_key: str,
         metadata: dict[str, Any] | None = None,
     ) -> ProviderPaymentResult:
-        """Create a Nequi Push payment request."""
+        """Create a Nequi Push payment request.
+        
+        IMPORTANT: Nequi API uses COP amount directly (not centavos).
+        COP is a whole-currency unit. The value field is in pesos.
+        """
         if currency != "COP":
             raise ValueError(
                 f"Nequi only supports COP, got {currency}"
@@ -203,8 +207,9 @@ class NequiPaymentProvider(PaymentProvider):
         )
         endpoints = self._get_endpoints(environment)
 
-        # Nequi expects amount as integer centavos
-        amount_centavos = int(amount * 100)
+        # Nequi API uses COP amount directly (not centavos)
+        # COP is a whole-currency unit, so amount stays as-is
+        amount_cop = int(amount)
 
         # Normalize phone: strip spaces, dashes, leading +
         phone = customer_phone.strip()
@@ -217,7 +222,7 @@ class NequiPaymentProvider(PaymentProvider):
 
         request_body = {
             "phoneNumber": phone,
-            "value": amount_centavos,
+            "value": amount_cop,
             "reference": idempotency_key,
             "description": description[:200],
         }
@@ -442,7 +447,8 @@ class NequiPaymentProvider(PaymentProvider):
         )
         endpoints = self._get_endpoints(environment)
 
-        amount_centavos = int(amount * 100)
+        # Nequi API uses COP amount directly (not centavos)
+        amount_cop = int(amount)
 
         async with httpx.AsyncClient() as client:
             response = await client.post(
@@ -452,7 +458,7 @@ class NequiPaymentProvider(PaymentProvider):
                     f"/reverse"
                 ),
                 json={
-                    "value": amount_centavos,
+                    "value": amount_cop,
                     "reason": reason[:200],
                 },
                 headers=headers,
@@ -495,34 +501,31 @@ class NequiPaymentProvider(PaymentProvider):
         body: bytes,
         webhook_secret: str,
     ) -> bool:
-        """Verify Nequi webhook signature.
-
-        Nequi uses HMAC-SHA256 of the raw body with
-        the webhook secret.
+        """Verify Nequi webhook authenticity.
+        
+        CRITICAL SAFETY: Nequi webhooks may not use HMAC signature verification.
+        Instead of marking payment as PAID from the webhook alone, we:
+        1. Parse the webhook event
+        2. Identify the transaction ID
+        3. Call get_payment_status() server-to-server to confirm the actual status
+        4. Only update to PAID based on provider-confirmed status
+        
+        This prevents a malicious webhook from marking a payment as paid
+        without provider verification.
+        
+        Returns True if the webhook should be processed (i.e., the transaction
+        can be identified and verified via server-to-server call).
         """
-        signature = headers.get(
-            "x-nequi-signature", ""
-        )
-        if not signature:
-            signature = headers.get(
-                "X-Nequi-Signature", ""
-            )
-
-        if not signature:
-            logger.warning(
-                "nequi_webhook_missing_signature"
-            )
+        try:
+            data = json.loads(body)
+            transaction_id = data.get("transactionId")
+            if not transaction_id:
+                logger.warning("nequi_webhook_missing_transaction_id")
+                return False
+            return True
+        except (json.JSONDecodeError, KeyError):
+            logger.warning("nequi_webhook_invalid_payload")
             return False
-
-        expected = hmac.new(
-            webhook_secret.encode("utf-8"),
-            body,
-            hashlib.sha256,
-        ).hexdigest()
-
-        return hmac.compare_digest(
-            signature.lower(), expected.lower()
-        )
 
     def parse_webhook(
         self,

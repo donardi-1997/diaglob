@@ -724,7 +724,7 @@ function App() {
                       <AutomationsPage canWrite={can("automations.write")} storeId={Number(selectedStoreId) || 0} />
                     )}
                     {activePage === "analytics" && (
-                      <AnalyticsPage canWrite={can("analytics.write")} storeId={Number(selectedStoreId) || 0} />
+                      <AnalyticsPage canWrite={can("analytics.write")} storeId={Number(selectedStoreId) || 0} currency={selectedStore?.currency || "COP"} />
                     )}
                   </Suspense>
                 </div>

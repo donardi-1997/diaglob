@@ -461,7 +461,7 @@ async def payment_webhook(
     headers = dict(request.headers)
 
     try:
-        result = payment_service.process_webhook(
+        result = await payment_service.process_webhook(
             db, provider, headers, body
         )
         db.commit()

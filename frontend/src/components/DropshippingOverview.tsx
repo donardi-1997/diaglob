@@ -11,11 +11,12 @@ import { getDropshippingOverview, type DropshippingOverview } from "../services/
 
 interface Props {
   storeId: number;
+  currency: string;
   dateFrom?: string;
   dateTo?: string;
 }
 
-export default function DropshippingOverview({ storeId, dateFrom, dateTo }: Props) {
+export default function DropshippingOverview({ storeId, currency, dateFrom, dateTo }: Props) {
   const { t } = useTranslation();
   const [data, setData] = useState<DropshippingOverview | null>(null);
   const [loading, setLoading] = useState(true);
@@ -57,7 +58,16 @@ export default function DropshippingOverview({ storeId, dateFrom, dateTo }: Prop
 
   const formatCurrency = (value: number | null) => {
     if (value === null || value === undefined) return "—";
-    return value.toLocaleString("es-CO", { style: "currency", currency: "COP" });
+    try {
+      return new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency: currency,
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+      }).format(value);
+    } catch {
+      return `${value} ${currency}`;
+    }
   };
 
   const formatRate = (value: number | null) => {

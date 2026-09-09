@@ -17,6 +17,7 @@ import DropshippingOverview from "../components/DropshippingOverview";
 interface AnalyticsPageProps {
   canWrite: boolean;
   storeId: number;
+  currency: string;
 }
 
 
@@ -122,6 +123,7 @@ function getRangeDates(
 export default function AnalyticsPage({
   canWrite: _canWrite,
   storeId,
+  currency,
 }: AnalyticsPageProps) {
   const { t } = useTranslation();
 
@@ -298,6 +300,7 @@ export default function AnalyticsPage({
         {activeTab === "dropshipping" && (
           <DropshippingOverview
             storeId={storeId}
+            currency={currency}
             dateFrom={effectiveFrom}
             dateTo={effectiveTo}
           />

@@ -41,6 +41,10 @@
   ],
   [
     "DELETE",
+    "/api/stores/{store_id}/payments/{provider}/disconnect"
+  ],
+  [
+    "DELETE",
     "/api/stores/{store_id}/shopify/disconnect"
   ],
   [
@@ -205,6 +209,22 @@
   ],
   [
     "GET",
+    "/api/stores/{store_id}/analytics/dropshipping/orders"
+  ],
+  [
+    "GET",
+    "/api/stores/{store_id}/analytics/dropshipping/overview"
+  ],
+  [
+    "GET",
+    "/api/stores/{store_id}/analytics/dropshipping/products"
+  ],
+  [
+    "GET",
+    "/api/stores/{store_id}/analytics/dropshipping/profitability"
+  ],
+  [
+    "GET",
     "/api/stores/{store_id}/analytics/summary"
   ],
   [
@@ -314,6 +334,18 @@
   [
     "GET",
     "/api/stores/{store_id}/operations/summary"
+  ],
+  [
+    "GET",
+    "/api/stores/{store_id}/payments/providers"
+  ],
+  [
+    "GET",
+    "/api/stores/{store_id}/payments/{payment_id}"
+  ],
+  [
+    "GET",
+    "/api/stores/{store_id}/payments/{provider}/status"
   ],
   [
     "GET",
@@ -573,6 +605,26 @@
   ],
   [
     "POST",
+    "/api/stores/{store_id}/payments"
+  ],
+  [
+    "POST",
+    "/api/stores/{store_id}/payments/{payment_id}/cancel"
+  ],
+  [
+    "POST",
+    "/api/stores/{store_id}/payments/{payment_id}/reconcile"
+  ],
+  [
+    "POST",
+    "/api/stores/{store_id}/payments/{payment_id}/reverse"
+  ],
+  [
+    "POST",
+    "/api/stores/{store_id}/payments/{provider}/connect"
+  ],
+  [
+    "POST",
     "/api/stores/{store_id}/shopify/connect"
   ],
   [
@@ -618,6 +670,10 @@
   [
     "POST",
     "/api/webhooks/nuvemshop/uninstall"
+  ],
+  [
+    "POST",
+    "/api/webhooks/payments/{provider}"
   ],
   [
     "POST",
