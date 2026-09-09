@@ -20,6 +20,10 @@ class ConversationNotFoundError(Exception):
     pass
 
 
+class ConversationDeliveryError(Exception):
+    pass
+
+
 def create_message_with_ai(
     db: Session,
     conversation: Conversation,
@@ -36,15 +40,24 @@ def create_message_with_ai(
         sender == "human"
         and (conversation.channel or "").lower() == "telegram"
     ):
-        from .telegram_service import send_message as send_telegram_message
-
-        return send_telegram_message(
-            db=db,
-            organization_id=conversation.organization_id,
-            conversation_id=conversation.id,
-            text=text,
-            sender="human",
+        from .telegram_service import (
+            TelegramNotConnectedError,
+            TelegramSendError,
+            send_message as send_telegram_message,
         )
+
+        try:
+            return send_telegram_message(
+                db=db,
+                organization_id=conversation.organization_id,
+                conversation_id=conversation.id,
+                text=text,
+                sender="human",
+            )
+        except TelegramNotConnectedError as exc:
+            raise ConversationDeliveryError("TELEGRAM_NOT_CONNECTED") from exc
+        except TelegramSendError as exc:
+            raise ConversationDeliveryError(str(exc)) from exc
 
     message = Message(
         conversation_id=conversation.id,
