@@ -5,7 +5,6 @@ exists where the current schema only stores subscription state snapshots.
 """
 from __future__ import annotations
 
-from collections import defaultdict
 from datetime import datetime, timedelta
 
 from sqlalchemy import func
