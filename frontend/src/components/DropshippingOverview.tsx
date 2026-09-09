@@ -1,13 +1,25 @@
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useState, useEffect } from "react";
 import {
+  AlertTriangle,
   DollarSign,
+  LoaderCircle,
+  PackageCheck,
+  Percent,
   ShoppingCart,
   Target,
   Truck,
-  LoaderCircle,
 } from "lucide-react";
-import { getDropshippingOverview, type DropshippingOverview } from "../services/analytics";
+import {
+  getDropshippingOrders,
+  getDropshippingOverview,
+  getDropshippingProducts,
+  getDropshippingProfitability,
+  type DropshippingOrders,
+  type DropshippingOverview,
+  type DropshippingProduct,
+  type DropshippingProfitability,
+} from "../services/analytics";
 
 interface Props {
   storeId: number;
@@ -16,9 +28,29 @@ interface Props {
   dateTo?: string;
 }
 
-export default function DropshippingOverview({ storeId, currency, dateFrom, dateTo }: Props) {
+interface DashboardData {
+  overview: DropshippingOverview;
+  profitability: DropshippingProfitability;
+  products: DropshippingProduct[];
+  orders: DropshippingOrders;
+}
+
+function formatError(err: unknown, fallback: string): string {
+  const value = err as {
+    response?: { data?: { detail?: string } };
+    message?: string;
+  };
+  return value.response?.data?.detail || value.message || fallback;
+}
+
+export default function DropshippingOverview({
+  storeId,
+  currency,
+  dateFrom,
+  dateTo,
+}: Props) {
   const { t } = useTranslation();
-  const [data, setData] = useState<DropshippingOverview | null>(null);
+  const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -27,25 +59,42 @@ export default function DropshippingOverview({ storeId, currency, dateFrom, date
     setLoading(true);
     setError("");
 
-    getDropshippingOverview(storeId, dateFrom, dateTo)
-      .then((res) => {
-        if (!cancelled) setData(res);
-      })
-      .catch((err: any) => {
+    Promise.all([
+      getDropshippingOverview(storeId, dateFrom, dateTo),
+      getDropshippingProfitability(storeId, dateFrom, dateTo),
+      getDropshippingProducts(storeId, dateFrom, dateTo),
+      getDropshippingOrders(storeId, dateFrom, dateTo),
+    ])
+      .then(([overview, profitability, products, orders]) => {
         if (!cancelled) {
-          console.error(err);
-          setError(err?.response?.data?.detail || t("analyticsLoadError"));
+          setData({ overview, profitability, products, orders });
+        }
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setError(formatError(err, t("analyticsLoadError")));
         }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
 
-    return () => { cancelled = true; };
-  }, [storeId, dateFrom, dateTo]);
+    return () => {
+      cancelled = true;
+    };
+  }, [storeId, dateFrom, dateTo, t]);
+
+  const topProducts = useMemo(
+    () => data?.products.slice(0, 10) ?? [],
+    [data],
+  );
 
   if (loading) {
-    return <div className="commerce-loading"><LoaderCircle className="spin" size={24} /> {t("analyticsLoading")}</div>;
+    return (
+      <div className="commerce-loading">
+        <LoaderCircle className="spin" size={24} /> {t("analyticsLoading")}
+      </div>
+    );
   }
 
   if (error) {
@@ -56,17 +105,20 @@ export default function DropshippingOverview({ storeId, currency, dateFrom, date
     return <div className="commerce-empty">{t("analyticsNoData")}</div>;
   }
 
+  const { overview, profitability, orders } = data;
+  const effectiveCurrency = overview.currency || currency;
+
   const formatCurrency = (value: number | null) => {
     if (value === null || value === undefined) return "—";
     try {
-      return new Intl.NumberFormat("en-US", {
+      return new Intl.NumberFormat("es-CO", {
         style: "currency",
-        currency,
+        currency: effectiveCurrency,
         minimumFractionDigits: 0,
         maximumFractionDigits: 0,
       }).format(value);
     } catch {
-      return `${value} ${currency}`;
+      return `${value} ${effectiveCurrency}`;
     }
   };
 
@@ -92,101 +144,190 @@ export default function DropshippingOverview({ storeId, currency, dateFrom, date
       <div className="analytics-stats-grid">
         <div className="analytics-stat-card">
           <div className="analytics-stat-icon"><Truck size={18} /></div>
-          <div className="analytics-stat-value">{data.delivered_orders}</div>
+          <div className="analytics-stat-value">{overview.delivered_orders}</div>
           <div className="analytics-stat-label">{t("dsDeliveredOrders")}</div>
-          <Delta value={data.comparison?.delivered_orders_pct ?? null} />
+          <Delta value={overview.comparison?.delivered_orders_pct ?? null} />
         </div>
+
         <div className="analytics-stat-card">
           <div className="analytics-stat-icon"><DollarSign size={18} /></div>
-          <div className="analytics-stat-value">{formatCurrency(data.delivered_revenue)}</div>
+          <div className="analytics-stat-value">{formatCurrency(overview.delivered_revenue)}</div>
           <div className="analytics-stat-label">{t("dsDeliveredRevenue")}</div>
-          <Delta value={data.comparison?.delivered_revenue_pct ?? null} />
+          <Delta value={overview.comparison?.delivered_revenue_pct ?? null} />
         </div>
+
         <div className="analytics-stat-card">
           <div className="analytics-stat-icon"><Target size={18} /></div>
-          <div className="analytics-stat-value">{formatRate(data.delivery_rate)}</div>
+          <div className="analytics-stat-value">{formatRate(overview.delivery_rate)}</div>
           <div className="analytics-stat-label">{t("dsDeliveryRate")}</div>
-          <Delta value={data.comparison?.delivery_rate_pp ?? null} suffix=" pp" />
+          <Delta value={overview.comparison?.delivery_rate_pp ?? null} suffix=" pp" />
         </div>
+
         <div className="analytics-stat-card">
-          <div className="analytics-stat-icon"><ShoppingCart size={18} /></div>
-          <div className="analytics-stat-value">{data.total_orders}</div>
-          <div className="analytics-stat-label">{t("dsOrdersCreated")}</div>
-          <Delta value={data.comparison?.total_orders_pct ?? null} />
+          <div className="analytics-stat-icon"><DollarSign size={18} /></div>
+          <div className="analytics-stat-value">{formatCurrency(profitability.gross_profit)}</div>
+          <div className="analytics-stat-label">Utilidad bruta</div>
+          <Delta value={overview.comparison?.gross_profit_pct ?? null} />
         </div>
       </div>
 
-      {data.comparison && (
-        <div className="analytics-card">
-          <h3>Comparación con período anterior</h3>
-          <div className="analytics-metrics-list">
-            <div className="analytics-metric-row">
-              <span>Ticket promedio entregado</span>
-              <span className="analytics-metric-value">{formatDelta(data.comparison.delivered_aov_pct) ?? "—"}</span>
-            </div>
-            <div className="analytics-metric-row">
-              <span>Utilidad bruta</span>
-              <span className="analytics-metric-value">{formatDelta(data.comparison.gross_profit_pct) ?? "—"}</span>
-            </div>
-            <div className="analytics-metric-row">
-              <span>Margen bruto</span>
-              <span className="analytics-metric-value">{formatDelta(data.comparison.gross_margin_pp, " pp") ?? "—"}</span>
-            </div>
-            <div className="analytics-metric-row">
-              <span>Tasa de cancelación</span>
-              <span className="analytics-metric-value">{formatDelta(data.comparison.cancellation_rate_pp, " pp") ?? "—"}</span>
-            </div>
-          </div>
+      {!profitability.profitability_complete && (
+        <div className="stores-alert" style={{ marginBottom: 16 }}>
+          <AlertTriangle size={16} />
+          <span>
+            Rentabilidad parcial: {formatRate(profitability.cost_completeness_pct)} de los ítems entregados tienen costo registrado.
+            Completa los costos para obtener utilidad y margen confiables.
+          </span>
         </div>
       )}
 
       <div className="analytics-row">
         <div className="analytics-card">
-          <h3>{t("dsFunnel")}</h3>
-          <div className="funnel">
-            <div className="funnel-step">
-              <span className="funnel-value">{data.total_orders}</span>
-              <span className="funnel-label">{t("dsCreated")}</span>
+          <h3><DollarSign size={17} /> Rentabilidad entregada</h3>
+          <div className="analytics-metrics-list">
+            <div className="analytics-metric-row">
+              <span>Ingresos entregados</span>
+              <span className="analytics-metric-value">{formatCurrency(profitability.delivered_revenue)}</span>
             </div>
-            <div className="funnel-arrow">→</div>
-            <div className="funnel-step">
-              <span className="funnel-value">{data.confirmed_orders}</span>
-              <span className="funnel-label">{t("dsConfirmed")}</span>
+            <div className="analytics-metric-row">
+              <span>COGS</span>
+              <span className="analytics-metric-value">{formatCurrency(profitability.total_cogs)}</span>
             </div>
-            <div className="funnel-arrow">→</div>
-            <div className="funnel-step">
-              <span className="funnel-value">{data.shipped_orders}</span>
-              <span className="funnel-label">{t("dsShipped")}</span>
+            <div className="analytics-metric-row">
+              <span>Utilidad bruta</span>
+              <span className="analytics-metric-value">{formatCurrency(profitability.gross_profit)}</span>
             </div>
-            <div className="funnel-arrow">→</div>
-            <div className="funnel-step">
-              <span className="funnel-value">{data.delivered_orders}</span>
-              <span className="funnel-label">{t("dsDelivered")}</span>
+            <div className="analytics-metric-row">
+              <span>Margen bruto</span>
+              <span className="analytics-metric-value">{formatRate(profitability.gross_margin)}</span>
+            </div>
+            <div className="analytics-metric-row">
+              <span>Utilidad por pedido entregado</span>
+              <span className="analytics-metric-value">{formatCurrency(profitability.profit_per_delivered_order)}</span>
             </div>
           </div>
         </div>
 
         <div className="analytics-card">
-          <h3>{t("dsRates")}</h3>
+          <h3><Percent size={17} /> Calidad operativa</h3>
           <div className="analytics-metrics-list">
             <div className="analytics-metric-row">
               <span>{t("dsConfirmationRate")}</span>
-              <span className="analytics-metric-value">{formatRate(data.confirmation_rate)}</span>
+              <span className="analytics-metric-value">{formatRate(overview.confirmation_rate)}</span>
             </div>
             <div className="analytics-metric-row">
               <span>{t("dsDeliveryRate")}</span>
-              <span className="analytics-metric-value">{formatRate(data.delivery_rate)}</span>
+              <span className="analytics-metric-value">{formatRate(overview.delivery_rate)}</span>
             </div>
             <div className="analytics-metric-row">
               <span>{t("dsCancellationRate")}</span>
-              <span className="analytics-metric-value">{formatRate(data.cancellation_rate)}</span>
+              <span className="analytics-metric-value">{formatRate(overview.cancellation_rate)}</span>
             </div>
             <div className="analytics-metric-row">
               <span>{t("dsReturnRate")}</span>
-              <span className="analytics-metric-value">{formatRate(data.return_rate)}</span>
+              <span className="analytics-metric-value">{formatRate(overview.return_rate)}</span>
+            </div>
+            <div className="analytics-metric-row">
+              <span>Completitud de costos</span>
+              <span className="analytics-metric-value">{formatRate(profitability.cost_completeness_pct)}</span>
             </div>
           </div>
         </div>
+      </div>
+
+      <div className="analytics-card">
+        <h3><ShoppingCart size={17} /> {t("dsFunnel")}</h3>
+        <div className="funnel">
+          <div className="funnel-step">
+            <span className="funnel-value">{orders.total}</span>
+            <span className="funnel-label">{t("dsCreated")}</span>
+          </div>
+          <div className="funnel-arrow">→</div>
+          <div className="funnel-step">
+            <span className="funnel-value">{orders.confirmed}</span>
+            <span className="funnel-label">{t("dsConfirmed")}</span>
+          </div>
+          <div className="funnel-arrow">→</div>
+          <div className="funnel-step">
+            <span className="funnel-value">{orders.shipped}</span>
+            <span className="funnel-label">{t("dsShipped")}</span>
+          </div>
+          <div className="funnel-arrow">→</div>
+          <div className="funnel-step">
+            <span className="funnel-value">{orders.delivered}</span>
+            <span className="funnel-label">{t("dsDelivered")}</span>
+          </div>
+        </div>
+        <div className="analytics-metrics-list" style={{ marginTop: 16 }}>
+          <div className="analytics-metric-row">
+            <span>Cancelados</span>
+            <span className="analytics-metric-value">{orders.cancelled}</span>
+          </div>
+          <div className="analytics-metric-row">
+            <span>Devueltos</span>
+            <span className="analytics-metric-value">{orders.returned}</span>
+          </div>
+          {orders.unknown > 0 && (
+            <div className="analytics-metric-row">
+              <span>Estado desconocido</span>
+              <span className="analytics-metric-value">{orders.unknown}</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {overview.comparison && (
+        <div className="analytics-card">
+          <h3>Comparación con período anterior</h3>
+          <div className="analytics-metrics-list">
+            <div className="analytics-metric-row">
+              <span>Pedidos creados</span>
+              <span className="analytics-metric-value">{formatDelta(overview.comparison.total_orders_pct) ?? "—"}</span>
+            </div>
+            <div className="analytics-metric-row">
+              <span>Ticket promedio entregado</span>
+              <span className="analytics-metric-value">{formatDelta(overview.comparison.delivered_aov_pct) ?? "—"}</span>
+            </div>
+            <div className="analytics-metric-row">
+              <span>Utilidad bruta</span>
+              <span className="analytics-metric-value">{formatDelta(overview.comparison.gross_profit_pct) ?? "—"}</span>
+            </div>
+            <div className="analytics-metric-row">
+              <span>Margen bruto</span>
+              <span className="analytics-metric-value">{formatDelta(overview.comparison.gross_margin_pp, " pp") ?? "—"}</span>
+            </div>
+            <div className="analytics-metric-row">
+              <span>Tasa de cancelación</span>
+              <span className="analytics-metric-value">{formatDelta(overview.comparison.cancellation_rate_pp, " pp") ?? "—"}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="analytics-card">
+        <h3><PackageCheck size={17} /> Productos más rentables · entregados</h3>
+        {topProducts.length === 0 ? (
+          <div className="commerce-empty">No hay productos entregados en el período seleccionado.</div>
+        ) : (
+          <div className="analytics-metrics-list">
+            {topProducts.map((product, index) => (
+              <div className="analytics-metric-row" key={product.product_id}>
+                <span>
+                  <strong>#{index + 1} {product.title}</strong>
+                  <small style={{ display: "block", opacity: 0.7 }}>
+                    {product.units_delivered} unidades · {product.sku || "Sin SKU"} · costo {formatRate(product.cost_completeness_pct)}
+                  </small>
+                </span>
+                <span style={{ textAlign: "right" }}>
+                  <strong className="analytics-metric-value">{formatCurrency(product.gross_profit)}</strong>
+                  <small style={{ display: "block", opacity: 0.7 }}>
+                    margen {formatRate(product.gross_margin)} · ingresos {formatCurrency(product.delivered_revenue)}
+                  </small>
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
