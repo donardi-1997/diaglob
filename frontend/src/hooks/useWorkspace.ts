@@ -8,6 +8,10 @@ import {
   type CurrentUser,
   type UserOrganization,
 } from "../services/session";
+import {
+  resolveOrganizationId,
+  resolveStoreId,
+} from "./workspaceSelection";
 
 export function useWorkspace() {
   const [authenticated, setAuthenticated] = useState(hasSession());
@@ -53,20 +57,10 @@ export function useWorkspace() {
         setCurrentUser(user);
         setOrganizations(organizationsResponse.items);
 
-        const savedOrganizationId = localStorage.getItem(
-          "diaglob-organization-id",
+        const nextOrganizationId = resolveOrganizationId(
+          organizationsResponse.items,
+          localStorage.getItem("diaglob-organization-id"),
         );
-        const savedIsAllowed = Boolean(
-          savedOrganizationId &&
-            organizationsResponse.items.some(
-              (organization) => String(organization.id) === savedOrganizationId,
-            ),
-        );
-        const nextOrganizationId = savedIsAllowed
-          ? savedOrganizationId!
-          : organizationsResponse.items[0]
-            ? String(organizationsResponse.items[0].id)
-            : "";
 
         if (nextOrganizationId) {
           localStorage.setItem("diaglob-organization-id", nextOrganizationId);
@@ -126,23 +120,19 @@ export function useWorkspace() {
   }, [loadStores]);
 
   useEffect(() => {
-    const activeStores = stores.filter((store) => store.active);
+    const nextStoreId = resolveStoreId(stores, selectedStoreId);
 
-    if (activeStores.length === 0) {
-      if (selectedStoreId) {
-        localStorage.removeItem("diaglob-store-id");
-        setSelectedStoreId("");
-      }
+    if (nextStoreId === selectedStoreId) {
       return;
     }
 
-    if (activeStores.some((store) => String(store.id) === selectedStoreId)) {
-      return;
+    if (nextStoreId) {
+      localStorage.setItem("diaglob-store-id", nextStoreId);
+    } else {
+      localStorage.removeItem("diaglob-store-id");
     }
 
-    const firstStoreId = String(activeStores[0].id);
-    localStorage.setItem("diaglob-store-id", firstStoreId);
-    setSelectedStoreId(firstStoreId);
+    setSelectedStoreId(nextStoreId);
   }, [stores, selectedStoreId]);
 
   const changeStore = useCallback((storeId: string) => {
@@ -178,7 +168,10 @@ export function useWorkspace() {
     [selectedStoreId, stores],
   );
 
-  const permissions = selectedOrganization?.permissions || [];
+  const permissions = useMemo(
+    () => selectedOrganization?.permissions || [],
+    [selectedOrganization],
+  );
   const can = useCallback(
     (permission: string) => permissions.includes(permission),
     [permissions],
