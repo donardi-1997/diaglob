@@ -7,11 +7,14 @@ Does NOT import FastAPI or httpx.
 import logging
 import os
 from datetime import datetime, timedelta
+from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
 from ..billing import (
+    add_billing_months,
     calculate_local_proration,
+    resolve_billing_period,
     get_paddle_price_id,
     get_plan_from_price_id,
     get_subscription_price_id,
@@ -31,6 +34,16 @@ from ..paddle_client import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _build_upgrade_next_billed_at(
+    billing_period_months: int,
+    now: datetime | None = None,
+) -> str:
+    current = now or datetime.utcnow()
+    cycle_end = add_billing_months(current, int(billing_period_months or 1))
+    return cycle_end.replace(microsecond=0).isoformat() + "Z"
+
 
 BILLING_PLAN_ORDER = {
     "starter": 1,
@@ -101,6 +114,17 @@ def validate_plan_upgrade(organization: Organization, target_plan: str):
         raise NoActiveSubscriptionError(
             "No tienes una suscripcion activa "
             "para actualizar. Usa el checkout normal."
+        )
+
+    subscription_status = (organization.subscription_status or "").strip().lower()
+    if subscription_status != "active":
+        logger.warning(
+            "billing.preview.rejected org=%s reason=subscription_not_active status=%s",
+            organization.id,
+            subscription_status or None,
+        )
+        raise UpgradeNotAllowedError(
+            "La suscripción debe estar activa para realizar un upgrade con crédito prorrateado."
         )
 
     if BILLING_PLAN_ORDER[target_plan] <= BILLING_PLAN_ORDER[current_plan]:
@@ -378,6 +402,10 @@ def execute_upgrade(
         target_plan, organization.billing_period_months
     )
 
+    next_billed_at = _build_upgrade_next_billed_at(
+        organization.billing_period_months
+    )
+
     paddle_data = update_subscription(
         subscription_id=organization.billing_subscription_id,
         items=[{"price_id": target_price_id, "quantity": 1}],
@@ -387,6 +415,7 @@ def execute_upgrade(
             "organization_id": str(organization.id),
             "plan": target_plan,
         },
+        next_billed_at=next_billed_at,
     )
 
     paddle_price_id = (
@@ -455,12 +484,16 @@ def preview_upgrade_paddle(
         return None
 
     items = [{"price_id": target_price_id, "quantity": 1}]
+    next_billed_at = _build_upgrade_next_billed_at(
+        organization.billing_period_months
+    )
 
     paddle_data = preview_subscription_update(
         subscription_id=organization.billing_subscription_id,
         items=items,
         proration_billing_mode="prorated_immediately",
         on_payment_failure="prevent_change",
+        next_billed_at=next_billed_at,
     )
 
     if not paddle_data:
@@ -471,40 +504,77 @@ def preview_upgrade_paddle(
     totals = details.get("totals") or {}
     line_items = details.get("line_items") or []
 
-    charge_amount = 0
-    credit_amount = 0
+    provider_summary = paddle_data.get("update_summary") or {}
+    provider_credit = provider_summary.get("credit") or {}
+    provider_charge = provider_summary.get("charge") or {}
+    provider_result = provider_summary.get("result") or {}
 
-    for line_item in line_items:
-        line_totals = line_item.get("totals") or {}
+    def minor_amount(value) -> int:
         try:
-            line_total = int(line_totals.get("total") or 0)
+            return abs(int(value or 0))
         except (TypeError, ValueError):
-            line_total = 0
+            return 0
 
-        if line_total > 0:
-            charge_amount += line_total
-        elif line_total < 0:
-            credit_amount += abs(line_total)
-
-    try:
-        result_amount = int(totals.get("total") or 0)
-    except (TypeError, ValueError):
-        result_amount = 0
-
-    currency_code = totals.get("currency_code") or "USD"
-
-    if result_amount > 0:
-        result_action = "charge"
-    elif result_amount < 0:
-        result_action = "credit"
+    if provider_result:
+        result_action = provider_result.get("action") or "none"
+        result_amount = minor_amount(provider_result.get("amount"))
+        credit_amount = minor_amount(provider_credit.get("amount"))
+        charge_amount = minor_amount(provider_charge.get("amount"))
+        currency_code = (
+            provider_result.get("currency_code")
+            or provider_charge.get("currency_code")
+            or provider_credit.get("currency_code")
+            or totals.get("currency_code")
+            or "USD"
+        )
     else:
-        result_action = "none"
+        charge_amount = 0
+        credit_amount = 0
+
+        for line_item in line_items:
+            line_totals = line_item.get("totals") or {}
+            try:
+                line_total = int(line_totals.get("total") or 0)
+            except (TypeError, ValueError):
+                line_total = 0
+
+            if line_total > 0:
+                charge_amount += line_total
+            elif line_total < 0:
+                credit_amount += abs(line_total)
+
+        try:
+            raw_result_amount = int(totals.get("total") or 0)
+        except (TypeError, ValueError):
+            raw_result_amount = 0
+
+        if raw_result_amount > 0:
+            result_action = "charge"
+        elif raw_result_amount < 0:
+            result_action = "credit"
+        else:
+            result_action = "none"
+
+        result_amount = abs(raw_result_amount)
+        currency_code = totals.get("currency_code") or "USD"
 
     normalized_update_summary = {
-        "charge": {"amount": str(charge_amount), "currency_code": currency_code},
-        "credit": {"amount": str(credit_amount), "currency_code": currency_code},
-        "result": {"action": result_action, "amount": str(abs(result_amount)), "currency_code": currency_code},
+        "charge": {
+            "amount": str(charge_amount),
+            "currency_code": currency_code,
+        },
+        "credit": {
+            "amount": str(credit_amount),
+            "currency_code": currency_code,
+        },
+        "result": {
+            "action": result_action,
+            "amount": str(result_amount),
+            "currency_code": currency_code,
+        },
     }
+
+    amount_due = result_amount if result_action == "charge" else 0
 
     next_transaction = paddle_data.get("next_transaction") or {}
     next_billing_period = next_transaction.get("billing_period") or {}
@@ -515,7 +585,7 @@ def preview_upgrade_paddle(
         "subscription_id": organization.billing_subscription_id,
         "next_billed_at": paddle_data.get("next_billed_at") or next_billing_period.get("starts_at"),
         "currency_code": currency_code,
-        "amount_due": str(result_amount),
+        "amount_due": str(amount_due),
         "subtotal": totals.get("subtotal"),
         "tax": totals.get("tax"),
         "update_summary": normalized_update_summary,
@@ -529,12 +599,13 @@ def preview_upgrade_local(
     current_plan: str,
     target_plan: str,
 ) -> dict:
-    from datetime import timedelta
-
     billing_period = organization.billing_period_months or 1
     now = datetime.utcnow()
-    period_end = now + timedelta(days=30 * billing_period)
-    period_start = now - timedelta(days=30 * billing_period)
+    period_start, period_end = resolve_billing_period(
+        organization.created_at or now,
+        billing_period,
+        now,
+    )
 
     local_preview = calculate_local_proration(
         current_plan=current_plan,
@@ -545,9 +616,9 @@ def preview_upgrade_local(
         now=now,
     )
 
-    amount_cents = int(float(local_preview["amount_due_now"]) * 100)
-    credit_cents = int(float(local_preview["credit"]) * 100)
-    charge_cents = int(float(local_preview["charge"]) * 100)
+    amount_cents = int(Decimal(local_preview["amount_due_now"]) * 100)
+    credit_cents = int(Decimal(local_preview["credit"]) * 100)
+    charge_cents = int(Decimal(local_preview["charge"]) * 100)
 
     return {
         "current_plan": current_plan,
