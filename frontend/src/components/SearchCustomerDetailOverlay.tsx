@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
+import CustomerRiskAlert from "./CustomerRiskAlert";
 import {
   getCustomerDetail,
   type CustomerDetail,
@@ -18,6 +19,7 @@ interface SearchCustomerDetailOverlayProps {
   customerId?: number;
   storeId: number;
   requestKey?: number;
+  canReport?: boolean;
 }
 
 
@@ -25,6 +27,7 @@ export default function SearchCustomerDetailOverlay({
   customerId,
   storeId,
   requestKey,
+  canReport = false,
 }: SearchCustomerDetailOverlayProps) {
   const { t } = useTranslation();
   const [detail, setDetail] = useState<CustomerDetail | null>(null);
@@ -117,6 +120,21 @@ export default function SearchCustomerDetailOverlay({
               </span>
               {detail.store_name && <span className="ci-flag">{detail.store_name}</span>}
             </div>
+
+            <CustomerRiskAlert
+              key={detail.id}
+              customerId={detail.id}
+              risk={detail.customer_risk}
+              storeId={storeId || undefined}
+              canReport={canReport}
+              onChanged={(customerRisk) => {
+                setDetail((current) =>
+                  current
+                    ? { ...current, customer_risk: customerRisk }
+                    : current,
+                );
+              }}
+            />
 
             <div className="ci-detail-stats">
               <div className="ci-detail-stat">
