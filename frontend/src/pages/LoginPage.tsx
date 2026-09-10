@@ -1,19 +1,20 @@
+import { useEffect, useMemo, useState } from "react";
+import type { FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  useState,
-} from "react";
-
-import type {
-  FormEvent,
-} from "react";
-
-import {
+  ArrowLeft,
+  BarChart3,
+  Bot,
   Building2,
+  Check,
   KeyRound,
   LockKeyhole,
   Mail,
+  Moon,
   Sparkles,
+  Sun,
   UserRound,
+  Workflow,
 } from "lucide-react";
 
 import {
@@ -23,653 +24,338 @@ import {
   resendConfirmationCode,
   signUp,
 } from "../services/auth";
-
-import {
-  saveSession,
-} from "../services/authStorage";
-
+import { saveSession } from "../services/authStorage";
+import { getMarketingCopy, resolveMarketingLocale } from "../marketingCopy";
 
 interface LoginPageProps {
   onAuthenticated: () => void;
   initialMode?: AuthMode;
+  onNavigateHome?: () => void;
 }
 
-
-type AuthMode =
-  | "login"
-  | "register"
-  | "confirm";
-
+type AuthMode = "login" | "register" | "confirm";
 
 export default function LoginPage({
   onAuthenticated,
   initialMode,
+  onNavigateHome = () => window.location.assign("/"),
 }: LoginPageProps) {
-  const { t } = useTranslation();
-  const [
-    mode,
-    setMode,
-  ] = useState<AuthMode>(
-    initialMode || "login"
-  );
+  const { t, i18n } = useTranslation();
+  const copy = useMemo(() => getMarketingCopy(i18n.language), [i18n.language]);
+  const locale = resolveMarketingLocale(i18n.language);
+  const [mode, setMode] = useState<AuthMode>(initialMode || "login");
+  const [name, setName] = useState("");
+  const [organizationName, setOrganizationName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmationCode, setConfirmationCode] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+  const [theme, setTheme] = useState(() => localStorage.getItem("diaglob-theme") || "dark");
 
-  const [name, setName] =
-    useState("");
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem("diaglob-theme", theme);
+  }, [theme]);
 
-  const [
-    organizationName,
-    setOrganizationName,
-  ] = useState("");
-
-  const [email, setEmail] =
-    useState("");
-
-  const [password, setPassword] =
-    useState("");
-
-  const [
-    confirmationCode,
-    setConfirmationCode,
-  ] = useState("");
-
-  const [loading, setLoading] =
-    useState(false);
-
-  const [error, setError] =
-    useState("");
-
-  const [message, setMessage] =
-    useState("");
-
+  useEffect(() => {
+    document.title =
+      mode === "register"
+        ? "Diaglob — Create your workspace"
+        : mode === "confirm"
+          ? "Diaglob — Confirm your account"
+          : "Diaglob — Sign in";
+  }, [mode]);
 
   function clearFeedback() {
     setError("");
     setMessage("");
   }
 
-
-  function changeMode(
-    nextMode: AuthMode,
-  ) {
+  function changeMode(nextMode: AuthMode) {
     clearFeedback();
     setMode(nextMode);
   }
 
+  function changeLanguage(language: string) {
+    void i18n.changeLanguage(language);
+    localStorage.setItem("diaglob-language", language);
+  }
 
-  async function handleLogin(
-    event: FormEvent,
-  ) {
+  async function handleLogin(event: FormEvent) {
     event.preventDefault();
-
     try {
       setLoading(true);
       clearFeedback();
-
-      const result =
-        await login(
-          email.trim().toLowerCase(),
-          password,
-        );
-
-      saveSession(
-        result.AccessToken,
-        result.IdToken,
-        result.RefreshToken,
-      );
-
+      const result = await login(email.trim().toLowerCase(), password);
+      saveSession(result.AccessToken, result.IdToken, result.RefreshToken);
       onAuthenticated();
-
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : t("loginI18nLoginError"),
-      );
-
+      setError(err instanceof Error ? err.message : t("loginI18nLoginError"));
     } finally {
       setLoading(false);
     }
   }
 
-
-  async function handleRegister(
-    event: FormEvent,
-  ) {
+  async function handleRegister(event: FormEvent) {
     event.preventDefault();
-
-    const cleanName =
-      name.trim();
-
-    const cleanOrganization =
-      organizationName.trim();
-
-    const cleanEmail =
-      email.trim().toLowerCase();
+    const cleanName = name.trim();
+    const cleanOrganization = organizationName.trim();
+    const cleanEmail = email.trim().toLowerCase();
 
     if (!cleanName) {
-      setError(
-        t("loginI18nNameRequired")
-      );
+      setError(t("loginI18nNameRequired"));
       return;
     }
-
     if (!cleanOrganization) {
-      setError(
-        t("loginI18nOrganizationRequired")
-      );
+      setError(t("loginI18nOrganizationRequired"));
       return;
     }
 
     try {
       setLoading(true);
       clearFeedback();
-
-      await signUp(
-        cleanName,
-        cleanEmail,
-        password,
-      );
-
+      await signUp(cleanName, cleanEmail, password);
       setMode("confirm");
-
-      setMessage(
-        t("loginI18nVerificationSent", {
-          email: cleanEmail,
-        }),
-      );
-
+      setMessage(t("loginI18nVerificationSent", { email: cleanEmail }));
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : t("loginI18nCreateError"),
-      );
-
+      setError(err instanceof Error ? err.message : t("loginI18nCreateError"));
     } finally {
       setLoading(false);
     }
   }
 
-
   async function finishRegistration() {
-    const cleanEmail =
-      email.trim().toLowerCase();
-
-    const cleanName =
-      name.trim();
-
-    const cleanOrganization =
-      organizationName.trim();
-
-    const result =
-      await login(
-        cleanEmail,
-        password,
-      );
-
-    await provisionAccount(
-      result.AccessToken,
-      cleanName,
-      cleanOrganization,
-    );
-
-    saveSession(
-      result.AccessToken,
-      result.IdToken,
-      result.RefreshToken,
-    );
-
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanName = name.trim();
+    const cleanOrganization = organizationName.trim();
+    const result = await login(cleanEmail, password);
+    await provisionAccount(result.AccessToken, cleanName, cleanOrganization);
+    saveSession(result.AccessToken, result.IdToken, result.RefreshToken);
     onAuthenticated();
   }
 
-
-  async function handleConfirm(
-    event: FormEvent,
-  ) {
+  async function handleConfirm(event: FormEvent) {
     event.preventDefault();
-
     try {
       setLoading(true);
       clearFeedback();
-
       try {
-        await confirmSignUp(
-          email.trim().toLowerCase(),
-          confirmationCode.trim(),
-        );
+        await confirmSignUp(email.trim().toLowerCase(), confirmationCode.trim());
       } catch (err) {
-        const text =
-          err instanceof Error
-            ? err.message
-            : "";
-
-        /*
-         * Permite reintentar el aprovisionamiento
-         * si Cognito ya confirmó la cuenta pero
-         * falló la llamada posterior al backend.
-         */
-        if (
-          !text
-            .toLowerCase()
-            .includes("confirmed")
-        ) {
-          throw err;
-        }
+        const text = err instanceof Error ? err.message : "";
+        if (!text.toLowerCase().includes("confirmed")) throw err;
       }
-
       await finishRegistration();
-
     } catch (err) {
       setError(
         err instanceof Error
-          ? (
-              err.message === "ACCOUNT_PROVISION_FAILED"
-                ? t("loginI18nProvisionError")
-                : err.message
-            )
+          ? err.message === "ACCOUNT_PROVISION_FAILED"
+            ? t("loginI18nProvisionError")
+            : err.message
           : t("loginI18nConfirmError"),
       );
-
     } finally {
       setLoading(false);
     }
   }
-
 
   async function handleResend() {
     try {
       setLoading(true);
       clearFeedback();
-
-      await resendConfirmationCode(
-        email.trim().toLowerCase(),
-      );
-
-      setMessage(
-        t("loginI18nCodeResent"),
-      );
-
+      await resendConfirmationCode(email.trim().toLowerCase());
+      setMessage(t("loginI18nCodeResent"));
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : t("loginI18nResendError"),
-      );
-
+      setError(err instanceof Error ? err.message : t("loginI18nResendError"));
     } finally {
       setLoading(false);
     }
   }
 
+  const isLogin = mode === "login";
+  const authHeadline = isLogin ? copy.auth.loginTitle : copy.auth.registerTitle;
+  const authSubtitle = isLogin ? copy.auth.loginSubtitle : copy.auth.registerSubtitle;
+  const authEyebrow = isLogin ? copy.auth.loginEyebrow : copy.auth.registerEyebrow;
+  const proofIcons = [Bot, Workflow, BarChart3, Building2];
+  const footerLabels =
+    locale === "en"
+      ? ["Secure workspace", "Multi-store", "AI + Analytics"]
+      : locale === "pt-BR"
+        ? ["Workspace seguro", "Multi-loja", "IA + Analytics"]
+        : ["Workspace seguro", "Multi-tienda", "IA + Analítica"];
 
   return (
-    <div className="login-page">
-      <div className="login-card">
-        <div className="login-brand">
-          <div className="brand-mark">
-            <Sparkles size={22} />
+    <div className="marketing-auth-page">
+      <section className="marketing-auth-story">
+        <div className="marketing-auth-orb auth-orb-one" />
+        <div className="marketing-auth-orb auth-orb-two" />
+        <div className="marketing-auth-story-inner">
+          <button className="marketing-brand auth-brand" onClick={onNavigateHome} type="button">
+            <span className="marketing-brand-mark"><Sparkles size={19} /></span>
+            <span className="marketing-brand-copy"><strong>DIAGLOB</strong><small>AI COMMERCE OS</small></span>
+          </button>
+
+          <div className="marketing-auth-story-copy">
+            <span className="marketing-kicker light">{authEyebrow}</span>
+            <h1>{authHeadline}</h1>
+            <p>{authSubtitle}</p>
           </div>
 
-          <div>
-            <div className="brand-name">
-              DIAGLOB
-            </div>
+          <div className="marketing-auth-proof">
+            <span className="marketing-auth-proof-title">{copy.auth.proofTitle}</span>
+            {copy.auth.proofItems.map((item, index) => {
+              const Icon = proofIcons[index];
+              return (
+                <div key={item} className="marketing-auth-proof-item">
+                  <span><Icon size={17} /></span>
+                  <p>{item}</p>
+                  <Check size={16} />
+                </div>
+              );
+            })}
+          </div>
 
-            <div className="brand-version">
-              AI COMMERCE
+          <div className="marketing-auth-story-footer">
+            <span><i />{footerLabels[0]}</span>
+            <span>{footerLabels[1]}</span>
+            <span>{footerLabels[2]}</span>
+          </div>
+        </div>
+      </section>
+
+      <section className="marketing-auth-form-side">
+        <div className="marketing-auth-topbar">
+          <button type="button" className="marketing-auth-back" onClick={onNavigateHome}>
+            <ArrowLeft size={16} />{copy.auth.backToProduct}
+          </button>
+          <div className="marketing-auth-controls">
+            <div className="marketing-language compact-language">
+              {(["es", "en", "pt-BR"] as const).map((language) => (
+                <button
+                  key={language}
+                  className={locale === language ? "active" : ""}
+                  onClick={() => changeLanguage(language)}
+                  type="button"
+                >
+                  {language === "pt-BR" ? "PT" : language.toUpperCase()}
+                </button>
+              ))}
             </div>
+            <button
+              type="button"
+              className="marketing-icon-button"
+              onClick={() => setTheme((current) => current === "dark" ? "light" : "dark")}
+              aria-label={theme === "dark" ? "Light mode" : "Dark mode"}
+            >
+              {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
+            </button>
           </div>
         </div>
 
+        <div className="marketing-auth-card">
+          <div className="marketing-auth-mobile-brand">
+            <span className="marketing-brand-mark"><Sparkles size={18} /></span>
+            <strong>DIAGLOB</strong>
+          </div>
 
-        {mode === "login" && (
-          <>
-            <div className="login-copy">
-              <h1>
-                Bienvenido
-              </h1>
-
-              <p>
-                {t("loginI18nSubtitle")}
-              </p>
-            </div>
-
-            <form
-              className="login-form"
-              onSubmit={handleLogin}
-            >
-              <label>
-                {t("loginI18nEmail")}
-
-                <div className="login-input">
-                  <Mail size={18} />
-
-                  <input
-                    type="email"
-                    autoComplete="email"
-                    value={email}
-                    onChange={(event) =>
-                      setEmail(
-                        event.target.value
-                      )
-                    }
-                    required
-                  />
-                </div>
-              </label>
-
-              <label>
-                {t("loginI18nPassword")}
-
-                <div className="login-input">
-                  <LockKeyhole
-                    size={18}
-                  />
-
-                  <input
-                    type="password"
-                    autoComplete=
-                      "current-password"
-                    value={password}
-                    onChange={(event) =>
-                      setPassword(
-                        event.target.value
-                      )
-                    }
-                    required
-                  />
-                </div>
-              </label>
-
-              {error && (
-                <div className="login-error">
-                  {error}
-                </div>
-              )}
-
-              <button
-                className="login-submit"
-                type="submit"
-                disabled={loading}
-              >
-                {loading
-                  ? t("loginI18nSigningIn")
-                  : t("loginI18nSignIn")}
-              </button>
-
-              <button
-                type="button"
-                className="auth-secondary-action"
-                onClick={() =>
-                  changeMode(
-                    "register"
-                  )
-                }
-              >
-                {t("loginI18nCreateNewAccount")}
-              </button>
-            </form>
-          </>
-        )}
-
-
-        {mode === "register" && (
-          <>
-            <div className="login-copy">
-              <h1>
-                {t("loginI18nCreateAccount")}
-              </h1>
-
-              <p>
-                Crea tu espacio de trabajo
-                en Diaglob.
-              </p>
-            </div>
-
-            <form
-              className="login-form"
-              onSubmit={
-                handleRegister
-              }
-            >
-              <label>
-                {t("loginI18nName")}
-
-                <div className="login-input">
-                  <UserRound
-                    size={18}
-                  />
-
-                  <input
-                    type="text"
-                    autoComplete="name"
-                    value={name}
-                    onChange={(event) =>
-                      setName(
-                        event.target.value
-                      )
-                    }
-                    required
-                  />
-                </div>
-              </label>
-
-
-              <label>
-                Empresa
-
-                <div className="login-input">
-                  <Building2
-                    size={18}
-                  />
-
-                  <input
-                    type="text"
-                    value={
-                      organizationName
-                    }
-                    onChange={(event) =>
-                      setOrganizationName(
-                        event.target.value
-                      )
-                    }
-                    placeholder={t("loginI18nOrganizationPlaceholder")}
-                    required
-                  />
-                </div>
-              </label>
-
-
-              <label>
-                {t("loginI18nEmail")}
-
-                <div className="login-input">
-                  <Mail size={18} />
-
-                  <input
-                    type="email"
-                    autoComplete="email"
-                    value={email}
-                    onChange={(event) =>
-                      setEmail(
-                        event.target.value
-                      )
-                    }
-                    required
-                  />
-                </div>
-              </label>
-
-
-              <label>
-                {t("loginI18nPassword")}
-
-                <div className="login-input">
-                  <LockKeyhole
-                    size={18}
-                  />
-
-                  <input
-                    type="password"
-                    autoComplete=
-                      "new-password"
-                    value={password}
-                    onChange={(event) =>
-                      setPassword(
-                        event.target.value
-                      )
-                    }
-                    minLength={8}
-                    required
-                  />
-                </div>
-
-                <small className="auth-hint">
-                  {t("loginI18nPasswordHint")}
-                </small>
-              </label>
-
-
-              {error && (
-                <div className="login-error">
-                  {error}
-                </div>
-              )}
-
-              <button
-                className="login-submit"
-                type="submit"
-                disabled={loading}
-              >
-                {loading
-                  ? t("loginI18nCreating")
-                  : t("loginI18nCreateAccount")}
-              </button>
-
-              <div className="auth-legal-links">
-                <a href="/privacy" target="_blank" rel="noopener noreferrer">
-                  {t("loginI18nPrivacy") || "Política de privacidad"}
-                </a>
-                <span>·</span>
-                <a href="/terms" target="_blank" rel="noopener noreferrer">
-                  {t("loginI18nTerms") || "Términos de servicio"}
-                </a>
+          {mode === "login" && (
+            <>
+              <div className="marketing-auth-heading">
+                <span>{copy.auth.loginEyebrow}</span>
+                <h2>{t("loginI18nSignIn")}</h2>
+                <p>{t("loginI18nSubtitle")}</p>
               </div>
-
-              <button
-                type="button"
-                className="auth-secondary-action"
-                onClick={() =>
-                  changeMode("login")
-                }
-              >
-                Ya tengo una cuenta
-              </button>
-            </form>
-          </>
-        )}
-
-
-        {mode === "confirm" && (
-          <>
-            <div className="login-copy">
-              <h1>
-                {t("loginI18nConfirmEmailTitle")}
-              </h1>
-
-              <p>
-                {t("loginI18nConfirmCodeHelp")}
-                <strong>
-                  {" "}
-                  {email}
-                </strong>.
-              </p>
-            </div>
-
-            <form
-              className="login-form"
-              onSubmit={
-                handleConfirm
-              }
-            >
-              <label>
-                Código de verificación
-
-                <div className="login-input">
-                  <KeyRound
-                    size={18}
-                  />
-
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    autoComplete=
-                      "one-time-code"
-                    value={
-                      confirmationCode
-                    }
-                    onChange={(event) =>
-                      setConfirmationCode(
-                        event.target.value
-                      )
-                    }
-                    placeholder="123456"
-                    required
-                  />
+              <form className="marketing-auth-form" onSubmit={handleLogin}>
+                <label>
+                  <span>{t("loginI18nEmail")}</span>
+                  <div className="marketing-auth-input"><Mail size={18} /><input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></div>
+                </label>
+                <label>
+                  <span>{t("loginI18nPassword")}</span>
+                  <div className="marketing-auth-input"><LockKeyhole size={18} /><input type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required /></div>
+                </label>
+                {error && <div className="marketing-auth-error">{error}</div>}
+                <button className="marketing-primary-button auth-submit" type="submit" disabled={loading}>
+                  {loading ? t("loginI18nSigningIn") : t("loginI18nSignIn")}
+                </button>
+                <div className="marketing-auth-switch">
+                  <span>{locale === "en" ? "New to Diaglob?" : locale === "pt-BR" ? "Novo no Diaglob?" : "¿Nuevo en Diaglob?"}</span>
+                  <button type="button" onClick={() => changeMode("register")}>{t("loginI18nCreateNewAccount")}</button>
                 </div>
-              </label>
+              </form>
+            </>
+          )}
 
-
-              {message && (
-                <div className="auth-message">
-                  {message}
+          {mode === "register" && (
+            <>
+              <div className="marketing-auth-heading">
+                <span>{copy.auth.registerEyebrow}</span>
+                <h2>{t("loginI18nCreateAccount")}</h2>
+                <p>{copy.auth.registerSubtitle}</p>
+              </div>
+              <form className="marketing-auth-form" onSubmit={handleRegister}>
+                <div className="marketing-auth-field-grid">
+                  <label>
+                    <span>{t("loginI18nName")}</span>
+                    <div className="marketing-auth-input"><UserRound size={18} /><input type="text" autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} required /></div>
+                  </label>
+                  <label>
+                    <span>{locale === "en" ? "Company" : "Empresa"}</span>
+                    <div className="marketing-auth-input"><Building2 size={18} /><input type="text" value={organizationName} onChange={(event) => setOrganizationName(event.target.value)} placeholder={t("loginI18nOrganizationPlaceholder")} required /></div>
+                  </label>
                 </div>
-              )}
-
-              {error && (
-                <div className="login-error">
-                  {error}
+                <label>
+                  <span>{t("loginI18nEmail")}</span>
+                  <div className="marketing-auth-input"><Mail size={18} /><input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></div>
+                </label>
+                <label>
+                  <span>{t("loginI18nPassword")}</span>
+                  <div className="marketing-auth-input"><LockKeyhole size={18} /><input type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} minLength={8} required /></div>
+                  <small>{t("loginI18nPasswordHint")}</small>
+                </label>
+                {error && <div className="marketing-auth-error">{error}</div>}
+                <button className="marketing-primary-button auth-submit" type="submit" disabled={loading}>
+                  {loading ? t("loginI18nCreating") : t("loginI18nCreateAccount")}
+                </button>
+                <div className="marketing-auth-legal">
+                  <a href="/privacy" target="_blank" rel="noopener noreferrer">{t("loginI18nPrivacy") || "Privacy"}</a><span>·</span><a href="/terms" target="_blank" rel="noopener noreferrer">{t("loginI18nTerms") || "Terms"}</a>
                 </div>
-              )}
+                <div className="marketing-auth-switch">
+                  <span>{locale === "en" ? "Already have an account?" : locale === "pt-BR" ? "Já tem uma conta?" : "¿Ya tienes una cuenta?"}</span>
+                  <button type="button" onClick={() => changeMode("login")}>{copy.nav.login}</button>
+                </div>
+              </form>
+            </>
+          )}
 
-
-              <button
-                className="login-submit"
-                type="submit"
-                disabled={loading}
-              >
-                {loading
-                  ? t("loginI18nConfirming")
-                  : t("loginI18nConfirmAndEnter")}
-              </button>
-
-
-              <button
-                type="button"
-                className="auth-secondary-action"
-                onClick={
-                  handleResend
-                }
-                disabled={loading}
-              >
-                Reenviar código
-              </button>
-
-
-              <button
-                type="button"
-                className="auth-secondary-action"
-                onClick={() =>
-                  changeMode("login")
-                }
-                disabled={loading}
-              >
-                Volver al inicio
-              </button>
-            </form>
-          </>
-        )}
-      </div>
+          {mode === "confirm" && (
+            <>
+              <div className="marketing-auth-heading">
+                <span>{copy.auth.registerEyebrow}</span>
+                <h2>{t("loginI18nConfirmEmailTitle")}</h2>
+                <p>{t("loginI18nConfirmCodeHelp")} <strong>{email}</strong>.</p>
+              </div>
+              <form className="marketing-auth-form" onSubmit={handleConfirm}>
+                <label>
+                  <span>{locale === "en" ? "Verification code" : locale === "pt-BR" ? "Código de verificação" : "Código de verificación"}</span>
+                  <div className="marketing-auth-input verification"><KeyRound size={18} /><input type="text" inputMode="numeric" autoComplete="one-time-code" value={confirmationCode} onChange={(event) => setConfirmationCode(event.target.value)} placeholder="123456" required /></div>
+                </label>
+                {message && <div className="marketing-auth-message">{message}</div>}
+                {error && <div className="marketing-auth-error">{error}</div>}
+                <button className="marketing-primary-button auth-submit" type="submit" disabled={loading}>
+                  {loading ? t("loginI18nConfirming") : t("loginI18nConfirmAndEnter")}
+                </button>
+                <div className="marketing-auth-secondary-actions">
+                  <button type="button" onClick={handleResend} disabled={loading}>{locale === "en" ? "Resend code" : locale === "pt-BR" ? "Reenviar código" : "Reenviar código"}</button>
+                  <button type="button" onClick={() => changeMode("login")} disabled={loading}>{locale === "en" ? "Back to login" : locale === "pt-BR" ? "Voltar ao login" : "Volver al inicio"}</button>
+                </div>
+              </form>
+            </>
+          )}
+        </div>
+      </section>
     </div>
   );
 }
