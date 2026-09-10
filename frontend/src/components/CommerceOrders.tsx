@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Bot,
@@ -28,6 +28,8 @@ type AttributionDraftType = "human" | "ai" | "unattributed";
 interface CommerceOrdersProps {
   storeId: number;
   canWrite: boolean;
+  initialOrderId?: number;
+  searchRequestKey?: number;
 }
 
 
@@ -136,6 +138,8 @@ function getStatusLabel(order: CommerceOrder, t: (key: string) => string): strin
 export default function CommerceOrders({
   storeId,
   canWrite,
+  initialOrderId,
+  searchRequestKey,
 }: CommerceOrdersProps) {
   const { t, i18n } = useTranslation();
   const copy = COPY[resolveLocale(i18n.language)];
@@ -152,6 +156,7 @@ export default function CommerceOrders({
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
   const [saveError, setSaveError] = useState("");
+  const focusedOrderRef = useRef<HTMLTableRowElement>(null);
 
   const employees = useMemo(
     () => team.filter(
@@ -237,6 +242,19 @@ export default function CommerceOrders({
       cancelled = true;
     };
   }, [storeId, canWrite, t, copy.optionsError]);
+
+  useEffect(() => {
+    if (loading || !initialOrderId) return;
+
+    const timer = window.setTimeout(() => {
+      focusedOrderRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }, 60);
+
+    return () => window.clearTimeout(timer);
+  }, [loading, initialOrderId, searchRequestKey]);
 
   function startEditing(order: AttributedCommerceOrder) {
     const attribution = order.sales_attribution;
@@ -386,7 +404,11 @@ export default function CommerceOrders({
           <tbody>
             {orders.map((order) => (
               <>
-                <tr key={order.id}>
+                <tr
+                  key={order.id}
+                  ref={order.id === initialOrderId ? focusedOrderRef : undefined}
+                  className={order.id === initialOrderId ? "commerce-order-search-hit" : undefined}
+                >
                   <td className="commerce-order-number">#{order.order_number}</td>
                   <td>{order.currency} {order.total_amount.toFixed(2)}</td>
                   <td>
