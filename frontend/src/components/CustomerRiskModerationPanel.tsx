@@ -29,7 +29,6 @@ import {
   type RiskDisputeStatus,
   type RiskReportStatus,
 } from "../services/adminRisk";
-import type { CustomerRiskReason } from "../services/customerRisk";
 import "../customer-risk-moderation.css";
 
 
