@@ -199,3 +199,31 @@ def test_completed_transaction_rejects_wrong_package_price(db, monkeypatch):
     assert result["ignored"] is True
     assert result["reason"] == "package_price_mismatch"
     assert db.query(AiUsageCreditGrant).count() == 0
+
+
+def test_completed_transaction_rejects_noncanonical_item_shape(db, monkeypatch):
+    organization = make_org(db)
+    monkeypatch.setenv("PADDLE_PRICE_AI_1000", "pri_ai_1000")
+
+    malformed_transactions = [
+        {
+            "id": "txn_ai_qty_two",
+            "custom_data": {"package_key": "ai_1000"},
+            "items": [{"price": {"id": "pri_ai_1000"}, "quantity": 2}],
+        },
+        {
+            "id": "txn_ai_extra_item",
+            "custom_data": {"package_key": "ai_1000"},
+            "items": [
+                {"price": {"id": "pri_ai_1000"}, "quantity": 1},
+                {"price": {"id": "pri_other"}, "quantity": 1},
+            ],
+        },
+    ]
+
+    for data in malformed_transactions:
+        result = fulfill_ai_usage_package_transaction(db, organization.id, data)
+        assert result["ignored"] is True
+        assert result["reason"] == "package_price_mismatch"
+
+    assert db.query(AiUsageCreditGrant).count() == 0
