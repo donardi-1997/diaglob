@@ -19,6 +19,7 @@ import {
   CreditCard,
   LayoutDashboard,
   MessageSquareText,
+  Plug,
   ShoppingBag,
   Sparkles,
   Store,
@@ -48,6 +49,7 @@ const CommercePage = lazy(() => import("./pages/CommercePage"));
 const AutomationsPage = lazy(() => import("./pages/AutomationsPage"));
 const AnalyticsPage = lazy(() => import("./pages/AnalyticsPage"));
 const CustomersPage = lazy(() => import("./pages/CustomersPage"));
+const IntegrationsHubPage = lazy(() => import("./pages/IntegrationsHubPage"));
 
 interface NavigationDefinition {
   key: string;
@@ -98,6 +100,14 @@ const navigation: NavigationDefinition[] = [
     group: "operations",
     icon: ShoppingBag,
     permission: "commerce.read",
+  },
+  {
+    key: "integrations",
+    labelKey: "integrations",
+    fallback: "Integraciones",
+    group: "operations",
+    icon: Plug,
+    permission: "stores.read",
   },
   {
     key: "automations",
@@ -234,7 +244,7 @@ function App() {
           storeId={selectedStoreId ? Number(selectedStoreId) : null}
           onNavigateToStores={() => setActivePage("settings")}
           onNavigateToCommerce={() => setActivePage("commerce")}
-          onNavigateToWhatsApp={() => setActivePage("settings")}
+          onNavigateToWhatsApp={() => setActivePage("integrations")}
           onNavigateToKnowledge={() => setActivePage("knowledge")}
           onNavigateToAutomations={() => setActivePage("automations")}
         />
@@ -274,6 +284,16 @@ function App() {
         <CommercePage
           canWrite={can("commerce.write")}
           storeId={Number(selectedStoreId) || 0}
+        />
+      )}
+      {activePage === "integrations" && (
+        <IntegrationsHubPage
+          storeId={Number(selectedStoreId) || 0}
+          storeName={selectedStore?.name}
+          shopDomain={selectedStore?.shopify_domain}
+          canWrite={can("stores.write")}
+          onNavigateToKnowledge={() => setActivePage("knowledge")}
+          onNavigateToStores={() => setActivePage("settings")}
         />
       )}
       {activePage === "automations" && (
