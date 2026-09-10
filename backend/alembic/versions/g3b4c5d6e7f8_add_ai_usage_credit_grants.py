@@ -32,6 +32,14 @@ def upgrade() -> None:
         sa.Column("purchased_at", sa.DateTime(), nullable=False),
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("updated_at", sa.DateTime(), nullable=False),
+        sa.CheckConstraint(
+            "responses_total > 0",
+            name="ck_ai_credit_grant_total_positive",
+        ),
+        sa.CheckConstraint(
+            "responses_remaining >= 0 AND responses_remaining <= responses_total",
+            name="ck_ai_credit_grant_remaining_bounds",
+        ),
         sa.ForeignKeyConstraint(
             ["organization_id"], ["organizations.id"], ondelete="CASCADE"
         ),
