@@ -21,12 +21,12 @@ import {
 } from "lucide-react";
 
 import {
-  normalizeGlobalSearchQuery,
   searchWorkspace,
   type GlobalSearchCategories,
   type GlobalSearchResult,
   type GlobalSearchResultKind,
 } from "../services/globalSearch";
+import { normalizeGlobalSearchQuery } from "../services/globalSearchHelpers";
 import type { Store } from "../services/stores";
 import "../global-search.css";
 
@@ -57,7 +57,7 @@ const COPY = {
     recent: "Accesos rápidos",
     empty: "No encontramos resultados para esta búsqueda.",
     loading: "Buscando...",
-    close: "Cerrar buscador",
+    clear: "Limpiar búsqueda",
     activeStore: "Tienda activa",
     switchStore: "Cambiar a esta tienda",
     keyboard: "↑↓ navegar · Enter abrir · Esc cerrar",
@@ -71,7 +71,7 @@ const COPY = {
     recent: "Quick access",
     empty: "No results found for this search.",
     loading: "Searching...",
-    close: "Close search",
+    clear: "Clear search",
     activeStore: "Active store",
     switchStore: "Switch to this store",
     keyboard: "↑↓ navigate · Enter open · Esc close",
@@ -85,7 +85,7 @@ const COPY = {
     recent: "Acessos rápidos",
     empty: "Nenhum resultado encontrado para esta busca.",
     loading: "Buscando...",
-    close: "Fechar busca",
+    clear: "Limpar busca",
     activeStore: "Loja ativa",
     switchStore: "Mudar para esta loja",
     keyboard: "↑↓ navegar · Enter abrir · Esc fechar",
@@ -394,7 +394,7 @@ export default function GlobalSearchPalette({
                   type="button"
                   className="dg-global-search-clear"
                   onClick={() => setQuery("")}
-                  aria-label={copy.close}
+                  aria-label={copy.clear}
                 >
                   <X size={17} />
                 </button>
