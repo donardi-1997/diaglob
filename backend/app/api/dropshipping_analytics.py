@@ -13,6 +13,7 @@ from ..services.dropshipping_analytics import (
     get_product_profitability,
     get_profitability,
 )
+from ..services.sales_attribution import get_sales_attribution_analytics
 
 router = APIRouter()
 
@@ -85,7 +86,7 @@ def dropshipping_overview(
     date_from: str | None = Query(None),
     date_to: str | None = Query(None),
 ):
-    """Dropshipping overview metrics."""
+    """Dropshipping overview metrics, including explicit closer attribution."""
     store = _validate_store(store_id, membership, db)
     parsed_from, parsed_to = _parse_range(date_from, date_to)
 
@@ -97,6 +98,13 @@ def dropshipping_overview(
         parsed_to,
     )
     result["currency"] = store.currency
+    result["sales_attribution"] = get_sales_attribution_analytics(
+        db,
+        membership.organization_id,
+        store_id,
+        parsed_from,
+        parsed_to,
+    )
     return result
 
 
