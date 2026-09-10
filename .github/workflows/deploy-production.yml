@@ -90,6 +90,41 @@ jobs:
             "$PROD_USER@$PROD_HOST" \
             "/opt/diaglob/scripts/deploy.sh"
 
+      - name: Migrate production database
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+        run: |
+          ssh \
+            -i ~/.ssh/diaglob_actions_prod \
+            "$PROD_USER@$PROD_HOST" \
+            'sudo bash -s' <<'REMOTE'
+          set -euo pipefail
+          set -a
+          . /etc/diaglob/diaglob.env
+          set +a
+
+          cd /opt/diaglob/app/backend
+          .venv/bin/alembic upgrade heads
+          .venv/bin/alembic current
+
+          systemctl restart diaglob-api
+          REMOTE
+
+      - name: Verify public API health
+        run: |
+          for attempt in {1..12}; do
+            if curl --fail --silent --show-error https://api.diaglob.tech/health; then
+              echo
+              exit 0
+            fi
+            echo "Health check attempt ${attempt}/12 failed; retrying in 5 seconds..."
+            sleep 5
+          done
+
+          echo "Production API health check failed after migrations and restart."
+          exit 1
+
   notify:
     name: Telegram Notification
     needs:
