@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   AlertTriangle,
   DollarSign,
   LoaderCircle,
-  PackageCheck,
   Percent,
   ShoppingCart,
   Target,
@@ -26,6 +25,7 @@ import {
   settledValue,
   type DropshippingAnalyticsSection,
 } from "../utils/dropshippingAnalyticsState";
+import ProductPerformanceAnalytics from "./ProductPerformanceAnalytics";
 
 interface Props {
   storeId: number;
@@ -109,11 +109,6 @@ export default function DropshippingOverview({
       cancelled = true;
     };
   }, [storeId, dateFrom, dateTo, t]);
-
-  const topProducts = useMemo(
-    () => data?.products?.slice(0, 10) ?? [],
-    [data],
-  );
 
   if (loading) {
     return (
@@ -378,33 +373,13 @@ export default function DropshippingOverview({
         </div>
       )}
 
-      <div className="analytics-card">
-        <h3><PackageCheck size={17} /> Productos más rentables · entregados</h3>
-        {products === null ? (
-          <SectionUnavailable />
-        ) : topProducts.length === 0 ? (
-          <div className="commerce-empty">No hay productos entregados en el período seleccionado.</div>
-        ) : (
-          <div className="analytics-metrics-list">
-            {topProducts.map((product, index) => (
-              <div className="analytics-metric-row" key={product.product_id}>
-                <span>
-                  <strong>#{index + 1} {product.title}</strong>
-                  <small style={{ display: "block", opacity: 0.7 }}>
-                    {product.units_delivered} unidades · {product.sku || "Sin SKU"} · costo {formatRate(product.cost_completeness_pct)}
-                  </small>
-                </span>
-                <span style={{ textAlign: "right" }}>
-                  <strong className="analytics-metric-value">{formatCurrency(product.gross_profit)}</strong>
-                  <small style={{ display: "block", opacity: 0.7 }}>
-                    margen {formatRate(product.gross_margin)} · ingresos {formatCurrency(product.delivered_revenue)}
-                  </small>
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      <ProductPerformanceAnalytics
+        storeId={storeId}
+        currency={effectiveCurrency}
+        products={products}
+        dateFrom={dateFrom}
+        dateTo={dateTo}
+      />
     </div>
   );
 }

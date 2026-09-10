@@ -166,18 +166,90 @@ export interface DropshippingProduct {
   title: string;
   sku: string | null;
   cost: number | null;
+  inventory_quantity: number;
+  total_orders: number;
+  confirmed_orders: number;
+  shipped_orders: number;
+  delivered_orders: number;
+  cancelled_orders: number;
+  returned_orders: number;
   units_delivered: number;
   delivered_revenue: number;
   total_cogs: number;
   gross_profit: number;
   gross_margin: number | null;
+  profit_per_unit: number | null;
+  delivery_rate: number | null;
+  cancellation_rate: number | null;
+  return_rate: number | null;
   cost_completeness_pct: number;
   profitability_complete: boolean;
+  revenue_share_pct: number;
+  profit_share_pct: number;
+}
+
+export interface DropshippingProductComparison {
+  previous_date_from: string;
+  previous_date_to: string;
+  total_orders_pct: number | null;
+  delivered_orders_pct: number | null;
+  units_delivered_pct: number | null;
+  delivered_revenue_pct: number | null;
+  gross_profit_pct: number | null;
+  delivery_rate_pp: number | null;
+  cancellation_rate_pp: number | null;
+  return_rate_pp: number | null;
+  gross_margin_pp: number | null;
+}
+
+export interface DropshippingProductTimeseriesPoint {
+  date: string;
+  total_orders: number;
+  delivered_orders: number;
+  units_delivered: number;
+  delivered_revenue: number;
+  gross_profit: number;
+}
+
+export interface DropshippingProductVariant {
+  variant_id: number | null;
+  title: string;
+  sku: string | null;
+  inventory_quantity: number;
+  total_orders: number;
+  delivered_orders: number;
+  units_delivered: number;
+  delivered_revenue: number;
+  gross_profit: number;
+}
+
+export interface DropshippingProductDetail {
+  product: {
+    id: number;
+    title: string;
+    description: string;
+  };
+  metrics: DropshippingProduct;
+  comparison: DropshippingProductComparison | null;
+  timeseries: DropshippingProductTimeseriesPoint[];
+  variants: DropshippingProductVariant[];
 }
 
 export async function getDropshippingProducts(storeId: number, dateFrom?: string, dateTo?: string) {
   const response = await api.get<DropshippingProduct[]>(
     `/api/stores/${storeId}/analytics/dropshipping/products${buildParams(dateFrom, dateTo)}`,
+  );
+  return response.data;
+}
+
+export async function getDropshippingProductDetail(
+  storeId: number,
+  productId: number,
+  dateFrom?: string,
+  dateTo?: string,
+) {
+  const response = await api.get<DropshippingProductDetail>(
+    `/api/stores/${storeId}/analytics/dropshipping/products/${productId}${buildParams(dateFrom, dateTo)}`,
   );
   return response.data;
 }

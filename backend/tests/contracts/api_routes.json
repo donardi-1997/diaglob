@@ -229,6 +229,10 @@
   ],
   [
     "GET",
+    "/api/stores/{store_id}/analytics/dropshipping/products/{product_id}"
+  ],
+  [
+    "GET",
     "/api/stores/{store_id}/analytics/dropshipping/profitability"
   ],
   [
