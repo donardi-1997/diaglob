@@ -32,8 +32,10 @@ REPORT_REASONS = {
 }
 ACTIVE_STATUSES = {"pending", "confirmed", "disputed"}
 
-# Covers Diaglob's primary Americas markets. Unknown countries still match
-# when the source already provides an international-format phone number.
+# Country calling codes and conservative national-number lengths. Global risk
+# matching favors false negatives over cross-person false positives: a local
+# number is fingerprinted only when its country is known and its length is
+# plausible for that market.
 COUNTRY_DIAL_CODES = {
     "AR": "54",
     "BO": "591",
@@ -56,6 +58,29 @@ COUNTRY_DIAL_CODES = {
     "US": "1",
     "UY": "598",
     "VE": "58",
+}
+NATIONAL_NUMBER_LENGTHS = {
+    "AR": {10, 11},
+    "BO": {8},
+    "BR": {10, 11},
+    "CA": {10},
+    "CL": {9},
+    "CO": {10},
+    "CR": {8},
+    "DO": {10},
+    "EC": {9},
+    "GT": {8},
+    "HN": {8},
+    "MX": {10},
+    "NI": {8},
+    "PA": {7, 8},
+    "PE": {9},
+    "PR": {10},
+    "PY": {9},
+    "SV": {8},
+    "US": {10},
+    "UY": {8},
+    "VE": {10},
 }
 
 
@@ -84,54 +109,64 @@ def normalize_email(value: str | None) -> str:
 
 
 def normalize_phone(value: str | None, country_code: str | None = None) -> str:
-    """Normalize a phone for deterministic matching without changing storage.
+    """Return a conservative E.164-like digit string for risk matching.
 
-    International numbers remain intact. For common Americas markets, local
-    7-11 digit numbers receive the known country calling code.
+    Explicit international numbers are accepted when they fit E.164 length
+    bounds. Local numbers require a known country and a plausible national
+    length. A single domestic trunk ``0`` is removed only when doing so yields
+    a valid national length (notably useful for Brazil).
     """
     raw = (value or "").strip()
     if not raw:
         return ""
 
     digits = re.sub(r"\D", "", raw)
+    explicit_international = raw.startswith("+") or digits.startswith("00")
     if digits.startswith("00"):
         digits = digits[2:]
-    if len(digits) < 7:
+
+    if explicit_international:
+        return digits if 8 <= len(digits) <= 15 else ""
+
+    country = (country_code or "").upper()
+    dial_code = COUNTRY_DIAL_CODES.get(country)
+    national_lengths = NATIONAL_NUMBER_LENGTHS.get(country)
+    if not dial_code or not national_lengths:
+        # A local number without a trustworthy country must never participate
+        # in a global cross-account match.
         return ""
 
-    explicit_international = raw.startswith("+") or raw.startswith("00")
-    dial_code = COUNTRY_DIAL_CODES.get((country_code or "").upper())
+    # Accept a country-prefixed number even if the user omitted '+'.
+    if digits.startswith(dial_code):
+        national = digits[len(dial_code):]
+        if len(national) in national_lengths:
+            return digits
 
-    if dial_code and not explicit_international:
-        local = digits.lstrip("0") or digits
-        if not (
-            local.startswith(dial_code)
-            and len(local) > len(dial_code) + 7
-        ):
-            digits = f"{dial_code}{local}"
-        else:
-            digits = local
+    national = digits
+    if national.startswith("0") and len(national[1:]) in national_lengths:
+        national = national[1:]
 
-    return digits
+    if len(national) not in national_lengths:
+        return ""
+    return f"{dial_code}{national}"
 
 
 def _fingerprint_key() -> bytes:
-    """Return a domain-separated key for global identifier matching.
+    """Return the dedicated, stable key for global identifier matching.
 
-    CUSTOMER_RISK_HMAC_SECRET is preferred. Existing token-encryption secrets
-    are accepted only as a deployment-compatibility fallback and are first
-    domain-separated through SHA-256, so the derived key is not the encryption
-    key itself.
+    This feature intentionally does not fall back to provider token-encryption
+    keys. Reusing or rotating an unrelated integration key would silently break
+    historical matching. Deployments must configure a dedicated secret once and
+    keep it stable for the lifetime of stored risk fingerprints.
     """
-    raw = (
-        os.getenv("CUSTOMER_RISK_HMAC_SECRET")
-        or os.getenv("SHOPIFY_TOKEN_ENCRYPTION_KEY")
-        or os.getenv("WHATSAPP_TOKEN_ENCRYPTION_KEY")
-        or os.getenv("GOOGLE_TOKEN_ENCRYPTION_KEY")
-    )
+    raw = (os.getenv("CUSTOMER_RISK_HMAC_SECRET") or "").strip()
     if not raw:
         raise CustomerRiskConfigurationError(
-            "Customer risk fingerprint secret is not configured"
+            "CUSTOMER_RISK_HMAC_SECRET is not configured"
+        )
+    if len(raw.encode("utf-8")) < 32:
+        raise CustomerRiskConfigurationError(
+            "CUSTOMER_RISK_HMAC_SECRET must contain at least 32 bytes"
         )
 
     return hashlib.sha256(
@@ -195,6 +230,17 @@ def _matching_clause(
     return or_(*clauses)
 
 
+def _dedupe_reports(
+    *groups: Iterable[CustomerRiskReport],
+) -> list[CustomerRiskReport]:
+    deduped: dict[int, CustomerRiskReport] = {}
+    for group in groups:
+        for report in group:
+            if report.id is not None:
+                deduped[report.id] = report
+    return list(deduped.values())
+
+
 def _latest_per_organization(
     reports: Iterable[CustomerRiskReport],
 ) -> list[CustomerRiskReport]:
@@ -209,6 +255,19 @@ def _latest_per_organization(
     ):
         latest.setdefault(report.reporter_organization_id, report)
     return list(latest.values())
+
+
+def _latest_report(
+    reports: Iterable[CustomerRiskReport],
+) -> CustomerRiskReport | None:
+    return max(
+        reports,
+        key=lambda item: (
+            item.updated_at or item.created_at or datetime.min,
+            item.id or 0,
+        ),
+        default=None,
+    )
 
 
 def _build_summary(
@@ -347,6 +406,46 @@ def _reports_for_fingerprints(
     return db.query(CustomerRiskReport).filter(clause).all()
 
 
+def _own_reports_for_customer(
+    *,
+    db: Session,
+    organization_id: int,
+    customer_id: int,
+) -> list[CustomerRiskReport]:
+    return (
+        db.query(CustomerRiskReport)
+        .filter(
+            CustomerRiskReport.reporter_organization_id == organization_id,
+            CustomerRiskReport.local_customer_id == customer_id,
+        )
+        .all()
+    )
+
+
+def _reports_for_subject(
+    *,
+    db: Session,
+    organization_id: int,
+    customer_id: int,
+    phone_fingerprint: str | None,
+    email_fingerprint: str | None,
+) -> list[CustomerRiskReport]:
+    """Match shared identity plus the viewer's durable local-customer link.
+
+    The local link ensures that editing phone/email cannot orphan the reporting
+    organization's own report. It does not make an old fingerprint follow a
+    newly entered identifier; only an explicit report update does that.
+    """
+    return _dedupe_reports(
+        _reports_for_fingerprints(db, phone_fingerprint, email_fingerprint),
+        _own_reports_for_customer(
+            db=db,
+            organization_id=organization_id,
+            customer_id=customer_id,
+        ),
+    )
+
+
 def get_customer_risk_summary(
     *,
     db: Session,
@@ -366,7 +465,13 @@ def get_customer_risk_summary(
         country_code=customer.country_code,
     )
     return _build_summary(
-        reports=_reports_for_fingerprints(db, phone_fp, email_fp),
+        reports=_reports_for_subject(
+            db=db,
+            organization_id=organization_id,
+            customer_id=customer.id,
+            phone_fingerprint=phone_fp,
+            email_fingerprint=email_fp,
+        ),
         viewer_organization_id=organization_id,
         phone_fingerprint=phone_fp,
         email_fingerprint=email_fp,
@@ -401,14 +506,27 @@ def _safe_subject_summaries(
     phone_values = {phone for phone, _ in fingerprints.values() if phone}
     email_values = {email for _, email in fingerprints.values() if email}
     clause = _matching_clause(phone_values, email_values)
-    reports = db.query(CustomerRiskReport).filter(clause).all() if clause is not None else []
+    shared_reports = (
+        db.query(CustomerRiskReport).filter(clause).all()
+        if clause is not None
+        else []
+    )
+    subject_ids = [subject_id for subject_id, *_ in subjects]
+    own_reports = (
+        db.query(CustomerRiskReport)
+        .filter(
+            CustomerRiskReport.reporter_organization_id == organization_id,
+            CustomerRiskReport.local_customer_id.in_(subject_ids),
+        )
+        .all()
+    )
 
     result: dict[int, dict[str, Any]] = {}
     for subject_id, _phone, _email, _country in subjects:
         phone_fp, email_fp = fingerprints[subject_id]
-        matched = [
+        identity_matches = [
             report
-            for report in reports
+            for report in shared_reports
             if (
                 phone_fp
                 and report.phone_fingerprint == phone_fp
@@ -418,8 +536,13 @@ def _safe_subject_summaries(
                 and report.email_fingerprint == email_fp
             )
         ]
+        durable_own = [
+            report
+            for report in own_reports
+            if report.local_customer_id == subject_id
+        ]
         result[subject_id] = _build_summary(
-            reports=matched,
+            reports=_dedupe_reports(identity_matches, durable_own),
             viewer_organization_id=organization_id,
             phone_fingerprint=phone_fp,
             email_fingerprint=email_fp,
@@ -451,7 +574,13 @@ def enrich_customer_list_response(
     return {
         **response,
         "items": [
-            {**item, "customer_risk": summaries.get(int(item["id"]), _empty_summary())}
+            {
+                **item,
+                "customer_risk": summaries.get(
+                    int(item["id"]),
+                    _empty_summary(),
+                ),
+            }
             for item in items
         ],
     }
@@ -539,7 +668,6 @@ def enrich_order_payloads(
         if customer_ids
         else []
     )
-    customer_map = {customer.id: customer for customer in customers}
     summaries = _safe_subject_summaries(
         db=db,
         organization_id=organization_id,
@@ -564,6 +692,36 @@ def enrich_order_payloads(
             ),
         })
     return result
+
+
+def _find_current_organization_report(
+    *,
+    db: Session,
+    organization_id: int,
+    customer_id: int,
+    phone_fingerprint: str | None,
+    email_fingerprint: str | None,
+) -> CustomerRiskReport | None:
+    """Prefer durable customer linkage, then fall back to identifier matching."""
+    linked = _own_reports_for_customer(
+        db=db,
+        organization_id=organization_id,
+        customer_id=customer_id,
+    )
+    current = _latest_report(linked)
+    if current is not None:
+        return current
+
+    identity_matches = [
+        report
+        for report in _reports_for_fingerprints(
+            db,
+            phone_fingerprint,
+            email_fingerprint,
+        )
+        if report.reporter_organization_id == organization_id
+    ]
+    return _latest_report(identity_matches)
 
 
 def report_customer(
@@ -616,16 +774,12 @@ def report_customer(
             "Customer needs a phone or email before a risk report can be shared"
         )
 
-    reports = _reports_for_fingerprints(db, phone_fp, email_fp)
-    own_reports = [
-        item
-        for item in reports
-        if item.reporter_organization_id == organization_id
-    ]
-    existing = (
-        _latest_per_organization(own_reports)[0]
-        if own_reports
-        else None
+    existing = _find_current_organization_report(
+        db=db,
+        organization_id=organization_id,
+        customer_id=customer.id,
+        phone_fingerprint=phone_fp,
+        email_fingerprint=email_fp,
     )
 
     if existing is None:
@@ -643,6 +797,8 @@ def report_customer(
         )
         db.add(existing)
     else:
+        # An explicit report update is the only operation allowed to move the
+        # shared fingerprints to newly edited customer identifiers.
         existing.reporter_store_id = reporter_store_id
         existing.reporter_user_id = reporter_user_id
         existing.local_customer_id = customer.id
@@ -686,15 +842,16 @@ def dismiss_current_organization_report(
         email=customer.email,
         country_code=customer.country_code,
     )
-    own_reports = [
-        report
-        for report in _reports_for_fingerprints(db, phone_fp, email_fp)
-        if report.reporter_organization_id == organization_id
-    ]
-    if not own_reports:
+    current = _find_current_organization_report(
+        db=db,
+        organization_id=organization_id,
+        customer_id=customer.id,
+        phone_fingerprint=phone_fp,
+        email_fingerprint=email_fp,
+    )
+    if current is None:
         raise CustomerRiskNotFoundError("Current organization report not found")
 
-    current = _latest_per_organization(own_reports)[0]
     current.status = "dismissed"
     current.reporter_user_id = reporter_user_id
     current.updated_at = datetime.utcnow()
