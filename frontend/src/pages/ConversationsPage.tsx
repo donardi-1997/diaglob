@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
+import CheckoutOperationalCard from "../components/CheckoutOperationalCard";
 import CustomerRiskAlert from "../components/CustomerRiskAlert";
 import {
   getConversation,
@@ -636,6 +637,29 @@ export default function ConversationsPage({
               key={conversation.customer_id}
               customerId={conversation.customer_id}
               risk={conversation.customer_risk}
+              onChanged={(risk) => {
+                setConversation((current) =>
+                  current
+                    ? { ...current, customer_risk: risk }
+                    : current,
+                );
+                setConversations((current) =>
+                  current.map((item) =>
+                    item.id === conversation.id
+                      ? { ...item, customer_risk: risk }
+                      : item,
+                  ),
+                );
+              }}
+            />
+
+            <CheckoutOperationalCard
+              checkout={conversation.checkout}
+              risk={conversation.customer_risk}
+              conversationMode={conversation.mode}
+              canTakeOver={canWrite}
+              takingOver={changingMode}
+              onTakeOver={toggleMode}
             />
 
             <InfoSection
