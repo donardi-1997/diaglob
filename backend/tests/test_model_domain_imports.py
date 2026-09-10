@@ -1,4 +1,5 @@
 from app import models
+from app.model_domains.commerce import CommerceConnection
 from app.model_domains.google import GoogleConnection, GoogleOAuthState
 from app.model_domains.knowledge import KnowledgeBase, KnowledgeSource
 from app.model_domains.messaging import (
@@ -70,6 +71,14 @@ def test_payment_models_are_physically_defined_in_domain_module():
     assert PaymentTransaction.__module__ == "app.model_domains.payments"
 
 
+def test_commerce_domain_exports_legacy_model_class():
+    assert CommerceConnection is models.CommerceConnection
+
+
+def test_commerce_model_is_physically_defined_in_domain_module():
+    assert CommerceConnection.__module__ == "app.model_domains.commerce"
+
+
 def test_domain_imports_do_not_duplicate_sqlalchemy_tables():
     exported_models = [
         Organization,
@@ -90,6 +99,7 @@ def test_domain_imports_do_not_duplicate_sqlalchemy_tables():
         GoogleConnection,
         PaymentConnection,
         PaymentTransaction,
+        CommerceConnection,
     ]
 
     for model in exported_models:
@@ -217,3 +227,32 @@ def test_payment_table_contracts_are_preserved():
         index.name == "ix_payment_txn_provider_txn_id"
         for index in transaction.indexes
     )
+
+
+def test_commerce_table_contract_is_preserved():
+    connection = CommerceConnection.__table__
+
+    assert connection.name == "commerce_connections"
+    assert set(connection.columns.keys()) == {
+        "id",
+        "organization_id",
+        "store_id",
+        "provider",
+        "external_store_url",
+        "access_token_encrypted",
+        "refresh_token_encrypted",
+        "api_key_encrypted",
+        "api_secret_encrypted",
+        "access_token_expires_at",
+        "refresh_token_expires_at",
+        "scopes",
+        "status",
+        "connected_at",
+        "last_sync_at",
+        "last_error",
+        "created_at",
+        "updated_at",
+    }
+    constraint_names = {constraint.name for constraint in connection.constraints}
+    assert "uq_commerce_connection_store" in constraint_names
+    assert "uq_commerce_provider_store_url" in constraint_names
