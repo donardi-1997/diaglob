@@ -19,7 +19,6 @@ import {
   CreditCard,
   LayoutDashboard,
   MessageSquareText,
-  Settings,
   ShoppingBag,
   Sparkles,
   Store,
