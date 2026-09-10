@@ -18,8 +18,14 @@ from typing import Any, Iterable
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from ..model_domains.customer_risk import CustomerRiskReport
+from ..model_domains.customer_risk import CustomerRiskDispute, CustomerRiskReport
 from ..models import Customer, Order
+from .customer_risk_governance_service import (
+    add_dispute_event,
+    add_report_event,
+    enforce_dispute_write_limit,
+    enforce_report_write_limit,
+)
 
 
 REPORT_REASONS = {
@@ -774,6 +780,7 @@ def report_customer(
             "Customer needs a phone or email before a risk report can be shared"
         )
 
+    enforce_report_write_limit(db, organization_id)
     existing = _find_current_organization_report(
         db=db,
         organization_id=organization_id,
@@ -781,6 +788,8 @@ def report_customer(
         phone_fingerprint=phone_fp,
         email_fingerprint=email_fp,
     )
+    previous_status = existing.status if existing is not None else None
+    is_new = existing is None
 
     if existing is None:
         existing = CustomerRiskReport(
@@ -796,6 +805,7 @@ def report_customer(
             evidence_reference=(evidence_reference or "").strip() or None,
         )
         db.add(existing)
+        db.flush()
     else:
         # An explicit report update is the only operation allowed to move the
         # shared fingerprints to newly edited customer identifiers.
@@ -812,6 +822,16 @@ def report_customer(
         )
         existing.updated_at = datetime.utcnow()
 
+    add_report_event(
+        db,
+        report_id=existing.id,
+        organization_id=organization_id,
+        actor_user_id=reporter_user_id,
+        actor_role="reporter",
+        action="report_submitted" if is_new else "report_updated",
+        from_status=previous_status,
+        to_status="pending",
+    )
     db.commit()
     db.refresh(existing)
 
@@ -852,10 +872,22 @@ def dismiss_current_organization_report(
     if current is None:
         raise CustomerRiskNotFoundError("Current organization report not found")
 
-    current.status = "dismissed"
-    current.reporter_user_id = reporter_user_id
-    current.updated_at = datetime.utcnow()
-    db.commit()
+    if current.status != "dismissed":
+        previous_status = current.status
+        current.status = "dismissed"
+        current.reporter_user_id = reporter_user_id
+        current.updated_at = datetime.utcnow()
+        add_report_event(
+            db,
+            report_id=current.id,
+            organization_id=organization_id,
+            actor_user_id=reporter_user_id,
+            actor_role="reporter",
+            action="report_withdrawn",
+            from_status=previous_status,
+            to_status="dismissed",
+        )
+        db.commit()
 
     return get_customer_risk_summary(
         db=db,
@@ -863,3 +895,211 @@ def dismiss_current_organization_report(
         customer_id=customer.id,
         allowed_store_ids=allowed_store_ids,
     )
+
+
+def _serialize_dispute(dispute: CustomerRiskDispute | None) -> dict[str, Any] | None:
+    if dispute is None:
+        return None
+    return {
+        "id": dispute.id,
+        "status": dispute.status,
+        "statement": dispute.statement,
+        "evidence_reference": dispute.evidence_reference,
+        "resolution_note": dispute.resolution_note,
+        "created_at": dispute.created_at.isoformat() if dispute.created_at else None,
+        "updated_at": dispute.updated_at.isoformat() if dispute.updated_at else None,
+        "resolved_at": dispute.resolved_at.isoformat() if dispute.resolved_at else None,
+    }
+
+
+def get_current_organization_dispute(
+    *,
+    db: Session,
+    organization_id: int,
+    customer_id: int,
+    allowed_store_ids: list[int] | None = None,
+) -> dict[str, Any] | None:
+    _load_customer(
+        db=db,
+        organization_id=organization_id,
+        customer_id=customer_id,
+        allowed_store_ids=allowed_store_ids,
+    )
+    dispute = (
+        db.query(CustomerRiskDispute)
+        .filter(
+            CustomerRiskDispute.requester_organization_id == organization_id,
+            CustomerRiskDispute.local_customer_id == customer_id,
+        )
+        .order_by(
+            CustomerRiskDispute.updated_at.desc(),
+            CustomerRiskDispute.id.desc(),
+        )
+        .first()
+    )
+    return _serialize_dispute(dispute)
+
+
+def submit_customer_risk_dispute(
+    *,
+    db: Session,
+    organization_id: int,
+    requester_user_id: int,
+    customer_id: int,
+    statement: str,
+    evidence_reference: str | None = None,
+    requester_store_id: int | None = None,
+    allowed_store_ids: list[int] | None = None,
+) -> dict[str, Any]:
+    statement = statement.strip()
+    if len(statement) < 20:
+        raise CustomerRiskValidationError(
+            "Dispute statement must contain at least 20 characters"
+        )
+    if len(statement) > 2000:
+        raise CustomerRiskValidationError(
+            "Dispute statement must be 2000 characters or fewer"
+        )
+    if evidence_reference and len(evidence_reference) > 1000:
+        raise CustomerRiskValidationError(
+            "Evidence reference must be 1000 characters or fewer"
+        )
+    if (
+        requester_store_id is not None
+        and allowed_store_ids is not None
+        and requester_store_id not in allowed_store_ids
+    ):
+        raise CustomerRiskAccessError("Store access denied")
+
+    customer = _load_customer(
+        db=db,
+        organization_id=organization_id,
+        customer_id=customer_id,
+        allowed_store_ids=allowed_store_ids,
+    )
+    if requester_store_id is not None:
+        valid_store_ids = {profile.store_id for profile in customer.store_profiles}
+        if requester_store_id not in valid_store_ids:
+            raise CustomerRiskValidationError(
+                "Customer does not belong to the selected store"
+            )
+
+    summary = get_customer_risk_summary(
+        db=db,
+        organization_id=organization_id,
+        customer_id=customer_id,
+        allowed_store_ids=allowed_store_ids,
+    )
+    if summary["external_reporting_organizations"] < 1:
+        raise CustomerRiskValidationError(
+            "There is no external shared risk signal to dispute"
+        )
+
+    phone_fp, email_fp = customer_fingerprints(
+        phone=customer.phone,
+        email=customer.email,
+        country_code=customer.country_code,
+    )
+    if not phone_fp and not email_fp:
+        raise CustomerRiskValidationError(
+            "Customer needs a phone or email before a dispute can be submitted"
+        )
+
+    enforce_dispute_write_limit(db, organization_id)
+    existing = (
+        db.query(CustomerRiskDispute)
+        .filter(
+            CustomerRiskDispute.requester_organization_id == organization_id,
+            CustomerRiskDispute.local_customer_id == customer_id,
+            CustomerRiskDispute.status == "open",
+        )
+        .order_by(CustomerRiskDispute.id.desc())
+        .first()
+    )
+
+    if existing is None:
+        dispute = CustomerRiskDispute(
+            requester_organization_id=organization_id,
+            requester_store_id=requester_store_id,
+            requester_user_id=requester_user_id,
+            local_customer_id=customer.id,
+            phone_fingerprint=phone_fp,
+            email_fingerprint=email_fp,
+            statement=statement,
+            evidence_reference=(evidence_reference or "").strip() or None,
+            status="open",
+        )
+        db.add(dispute)
+        db.flush()
+        action = "dispute_submitted"
+        from_status = None
+    else:
+        dispute = existing
+        dispute.requester_store_id = requester_store_id
+        dispute.requester_user_id = requester_user_id
+        dispute.phone_fingerprint = phone_fp
+        dispute.email_fingerprint = email_fp
+        dispute.statement = statement
+        dispute.evidence_reference = (evidence_reference or "").strip() or None
+        dispute.updated_at = datetime.utcnow()
+        action = "dispute_updated"
+        from_status = "open"
+
+    add_dispute_event(
+        db,
+        dispute_id=dispute.id,
+        organization_id=organization_id,
+        actor_user_id=requester_user_id,
+        actor_role="requester",
+        action=action,
+        from_status=from_status,
+        to_status="open",
+    )
+    db.commit()
+    db.refresh(dispute)
+    return _serialize_dispute(dispute) or {}
+
+
+def withdraw_current_organization_dispute(
+    *,
+    db: Session,
+    organization_id: int,
+    requester_user_id: int,
+    customer_id: int,
+    allowed_store_ids: list[int] | None = None,
+) -> dict[str, Any]:
+    _load_customer(
+        db=db,
+        organization_id=organization_id,
+        customer_id=customer_id,
+        allowed_store_ids=allowed_store_ids,
+    )
+    dispute = (
+        db.query(CustomerRiskDispute)
+        .filter(
+            CustomerRiskDispute.requester_organization_id == organization_id,
+            CustomerRiskDispute.local_customer_id == customer_id,
+            CustomerRiskDispute.status == "open",
+        )
+        .order_by(CustomerRiskDispute.id.desc())
+        .first()
+    )
+    if dispute is None:
+        raise CustomerRiskNotFoundError("Open dispute not found")
+
+    dispute.status = "withdrawn"
+    dispute.requester_user_id = requester_user_id
+    dispute.updated_at = datetime.utcnow()
+    add_dispute_event(
+        db,
+        dispute_id=dispute.id,
+        organization_id=organization_id,
+        actor_user_id=requester_user_id,
+        actor_role="requester",
+        action="dispute_withdrawn",
+        from_status="open",
+        to_status="withdrawn",
+    )
+    db.commit()
+    db.refresh(dispute)
+    return _serialize_dispute(dispute) or {}
