@@ -1,0 +1,77 @@
+/* Incremental UX polish for moderation V2. Kept separate from the base sheet so
+   the existing visual contract remains stable while pagination/filter controls evolve. */
+.risk-refresh:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.risk-queue-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 40px;
+  padding: 6px 8px 6px 10px;
+  border-bottom: 1px solid var(--dg-shell-border, rgba(15, 23, 42, 0.08));
+  background: var(--dg-shell-surface-strong, #fff);
+}
+
+.risk-queue-header .risk-queue-count {
+  position: static;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  white-space: nowrap;
+}
+
+.risk-pagination {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--dg-shell-muted, #6b7280);
+  font-size: 0.64rem;
+  font-weight: 700;
+}
+
+.risk-pagination button {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--dg-shell-border-strong, rgba(15, 23, 42, 0.13));
+  border-radius: 7px;
+  background: var(--dg-shell-surface, #fff);
+  color: var(--dg-shell-text, #111827);
+  cursor: pointer;
+}
+
+.risk-pagination button:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.risk-pagination span {
+  min-width: 82px;
+  text-align: center;
+}
+
+@media (max-width: 620px) {
+  .risk-queue-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .risk-pagination {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .risk-pagination span {
+    flex: 1;
+  }
+}
