@@ -28,6 +28,7 @@ import {
   degradedStatusLabel,
 } from "../utils/operationsStatus";
 import "../dashboard-v2.css";
+import "../onboarding-activation-polish.css";
 
 interface DashboardPageProps {
   stores: Store[];
@@ -199,14 +200,54 @@ export default function DashboardPage({
     };
   }, [locale]);
 
+  const firstStoreCopy = useMemo(() => {
+    if (locale === "en") {
+      return {
+        title: "Start with your operating base",
+        help: "Your first store defines the market, currency, and scope used by integrations and analytics.",
+        guideTitle: "What comes next",
+        guideHelp: "Diaglob will guide you through the rest of activation after the store exists.",
+        steps: [
+          ["Create the store", "Choose market, currency, language, and operating context."],
+          ["Connect your channels", "Connect commerce and messaging so products, orders, and conversations can flow in."],
+          ["Activate intelligence", "Add Knowledge and your first automation so AI and analytics can work with real context."],
+        ],
+      };
+    }
+    if (locale === "pt-BR") {
+      return {
+        title: "Comece pela base da sua operação",
+        help: "Sua primeira loja define mercado, moeda e escopo usados pelas integrações e pelo Analytics.",
+        guideTitle: "O que vem depois",
+        guideHelp: "A Diaglob vai orientar o restante da ativação assim que a loja existir.",
+        steps: [
+          ["Crie a loja", "Defina mercado, moeda, idioma e contexto operacional."],
+          ["Conecte seus canais", "Conecte comércio e mensagens para receber produtos, pedidos e conversas."],
+          ["Ative a inteligência", "Adicione Knowledge e sua primeira automação para usar IA e Analytics com contexto real."],
+        ],
+      };
+    }
+    return {
+      title: "Empieza por la base de tu operación",
+      help: "Tu primera tienda define mercado, moneda y alcance para integraciones y analítica.",
+      guideTitle: "Qué viene después",
+      guideHelp: "Diaglob te irá guiando por el resto de la activación apenas exista la tienda.",
+      steps: [
+        ["Crea la tienda", "Define mercado, moneda, idioma y contexto operativo."],
+        ["Conecta tus canales", "Conecta comercio y mensajería para recibir productos, pedidos y conversaciones."],
+        ["Activa la inteligencia", "Agrega Knowledge y tu primera automatización para usar IA y analítica con contexto real."],
+      ],
+    };
+  }, [locale]);
+
   if (!storeId) {
     return (
       <div className="dg-dashboard">
         <section className="dg-dashboard-hero">
           <div>
-            <span className="dg-dashboard-kicker">DIAGLOB</span>
-            <h1>{t("emptyNoStoreTitle") || "Crea tu primera tienda"}</h1>
-            <p>{t("emptyNoStoreHelp") || "Una tienda te permite gestionar productos, pedidos y conversaciones."}</p>
+            <span className="dg-dashboard-kicker">GETTING STARTED</span>
+            <h1>{t("emptyNoStoreTitle") || firstStoreCopy.title}</h1>
+            <p>{firstStoreCopy.help}</p>
           </div>
           <div className="dg-dashboard-hero-actions">
             {onNavigateToStores && (
@@ -215,6 +256,23 @@ export default function DashboardPage({
                 {t("emptyNoStoreAction") || "Crear tienda"}
               </button>
             )}
+          </div>
+        </section>
+
+        <section className="dg-dashboard-first-store">
+          <div className="dg-dashboard-first-store-header">
+            <span>ACTIVATION</span>
+            <h2>{firstStoreCopy.guideTitle}</h2>
+            <p>{firstStoreCopy.guideHelp}</p>
+          </div>
+          <div className="dg-dashboard-first-store-grid">
+            {firstStoreCopy.steps.map(([title, help], index) => (
+              <article className="dg-dashboard-first-store-step" key={title}>
+                <span className="dg-dashboard-first-store-step-number">{index + 1}</span>
+                <strong>{title}</strong>
+                <p>{help}</p>
+              </article>
+            ))}
           </div>
         </section>
       </div>
