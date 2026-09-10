@@ -19,6 +19,7 @@ from ..services.conversation_service import (
     ConversationDeliveryError,
     create_message_with_ai,
 )
+from ..services.conversational_checkout_service import get_current_checkout
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -252,6 +253,12 @@ def get_conversation(
             serialize_message(message)
             for message in conversation.messages
         ],
+        "checkout": get_current_checkout(
+            db,
+            membership.organization_id,
+            conversation.store_id,
+            conversation.id,
+        ),
     }
 
 
