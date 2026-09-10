@@ -1,0 +1,290 @@
+.dg-global-search-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 140;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: min(14vh, 120px) 20px 32px;
+  background: rgba(8, 12, 20, 0.48);
+  backdrop-filter: blur(7px);
+}
+
+.dg-global-search {
+  width: min(720px, 100%);
+  max-height: min(680px, 76vh);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  border: 1px solid var(--dg-shell-border-strong);
+  border-radius: 18px;
+  background: var(--dg-shell-surface-strong);
+  color: var(--dg-shell-text);
+  box-shadow: 0 30px 90px rgba(15, 23, 42, 0.24);
+}
+
+[data-theme="dark"] .dg-global-search {
+  box-shadow: 0 34px 100px rgba(0, 0, 0, 0.56);
+}
+
+.dg-global-search-input-row {
+  min-height: 66px;
+  padding: 0 16px 0 20px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--dg-shell-border);
+  color: var(--dg-shell-muted);
+}
+
+.dg-global-search-input-row input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--dg-shell-text);
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 560;
+}
+
+.dg-global-search-input-row input::placeholder {
+  color: var(--dg-shell-subtle);
+}
+
+.dg-global-search-input-row kbd,
+.dg-global-search-footer kbd {
+  border: 1px solid var(--dg-shell-border-strong);
+  border-radius: 7px;
+  background: rgba(148, 163, 184, 0.08);
+  color: var(--dg-shell-muted);
+  padding: 3px 6px;
+  font-family: inherit;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.dg-global-search-clear {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  color: var(--dg-shell-muted);
+  cursor: pointer;
+}
+
+.dg-global-search-clear:hover {
+  background: rgba(148, 163, 184, 0.1);
+  color: var(--dg-shell-text);
+}
+
+.dg-global-search-body {
+  min-height: 240px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 12px;
+}
+
+.dg-global-search-section-label {
+  display: block;
+  padding: 6px 9px 8px;
+  color: var(--dg-shell-subtle);
+  font-size: 0.68rem;
+  line-height: 1;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.dg-global-search-quick {
+  display: grid;
+  gap: 4px;
+}
+
+.dg-global-search-quick-item,
+.dg-global-search-result {
+  width: 100%;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--dg-shell-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.dg-global-search-quick-item {
+  min-height: 42px;
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--dg-shell-muted);
+  text-align: left;
+}
+
+.dg-global-search-quick-item:hover {
+  color: var(--dg-shell-text);
+  background: rgba(148, 163, 184, 0.08);
+}
+
+.dg-global-search-results {
+  display: grid;
+  gap: 3px;
+}
+
+.dg-global-search-result {
+  min-height: 58px;
+  padding: 8px 10px;
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  transition: background 130ms ease, transform 130ms ease;
+}
+
+.dg-global-search-result:hover,
+.dg-global-search-result.is-selected {
+  background: var(--dg-shell-accent-soft);
+}
+
+.dg-global-search-result.is-selected {
+  box-shadow: inset 0 0 0 1px rgba(109, 93, 252, 0.12);
+}
+
+.dg-global-search-result-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  color: var(--dg-shell-muted);
+  background: rgba(148, 163, 184, 0.08);
+}
+
+.dg-global-search-result-icon.kind-conversation,
+.dg-global-search-result-icon.kind-customer,
+.dg-global-search-result-icon.kind-product,
+.dg-global-search-result-icon.kind-order,
+.dg-global-search-result-icon.kind-automation,
+.dg-global-search-result-icon.kind-agent,
+.dg-global-search-result-icon.kind-knowledge {
+  color: var(--dg-shell-accent);
+  background: var(--dg-shell-accent-soft);
+}
+
+.dg-global-search-result-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.dg-global-search-result-copy strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.87rem;
+  font-weight: 700;
+}
+
+.dg-global-search-result-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dg-shell-muted);
+  font-size: 0.73rem;
+}
+
+.dg-global-search-open-hint {
+  max-width: 145px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  color: var(--dg-shell-subtle);
+  font-size: 0.68rem;
+  text-align: right;
+}
+
+.dg-global-search-hint,
+.dg-global-search-empty {
+  min-height: 190px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--dg-shell-muted);
+  text-align: center;
+}
+
+.dg-global-search-hint {
+  padding: 24px;
+  font-size: 0.84rem;
+}
+
+.dg-global-search-empty {
+  flex-direction: column;
+  gap: 9px;
+  padding: 30px;
+}
+
+.dg-global-search-empty p {
+  margin: 0;
+  max-width: 420px;
+  font-size: 0.84rem;
+}
+
+.dg-global-search-footer {
+  min-height: 42px;
+  padding: 8px 15px;
+  border-top: 1px solid var(--dg-shell-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--dg-shell-subtle);
+  font-size: 0.68rem;
+}
+
+.commerce-orders-table tr.commerce-order-search-hit > td {
+  background: var(--dg-shell-accent-soft);
+}
+
+@media (max-width: 720px) {
+  .dg-global-search-overlay {
+    padding: 12px;
+    align-items: stretch;
+  }
+
+  .dg-global-search {
+    width: 100%;
+    max-height: calc(100vh - 24px);
+    border-radius: 15px;
+  }
+
+  .dg-global-search-input-row {
+    min-height: 60px;
+    padding: 0 12px;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .dg-global-search-input-row > kbd {
+    display: none;
+  }
+
+  .dg-global-search-result {
+    grid-template-columns: 36px minmax(0, 1fr);
+  }
+
+  .dg-global-search-open-hint {
+    display: none;
+  }
+
+  .dg-global-search-footer {
+    display: none;
+  }
+}
