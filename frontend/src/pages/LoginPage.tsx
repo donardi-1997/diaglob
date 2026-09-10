@@ -320,7 +320,7 @@ export default function LoginPage({
                   {loading ? t("loginI18nCreating") : t("loginI18nCreateAccount")}
                 </button>
                 <div className="marketing-auth-legal">
-                  <a href="/privacy" target="_blank" rel="noopener noreferrer">{t("loginI18nPrivacy") || "Privacy"}</a><span>·</span><a href="/terms" target="_blank" rel="noopener noreferrer">{t("loginI18nTerms") || "Terms"}</a>
+                  <a href="/privacy" target="_blank" rel="noopener noreferrer">{t("loginI18nPrivacy") || "Privacy"}</a><span>·</span><a href="/terms" target="_blank" rel="noopener noreferrer">{t("loginI18nTerms") || "Terms"}</a><span>·</span><a href="/refund-policy" target="_blank" rel="noopener noreferrer">{locale === "en" ? "Refunds" : locale === "pt-BR" ? "Reembolsos" : "Reembolsos"}</a>
                 </div>
                 <div className="marketing-auth-switch">
                   <span>{locale === "en" ? "Already have an account?" : locale === "pt-BR" ? "Já tem uma conta?" : "¿Ya tienes una cuenta?"}</span>

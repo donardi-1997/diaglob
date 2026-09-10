@@ -48,7 +48,7 @@ const privacyEs: LegalDocument = {
     { title: "21. Procesamiento internacional", paragraphs: ["La información puede procesarse en países donde operen Diaglob o sus proveedores. Cuando aplica, buscamos usar salvaguardas razonables para ese procesamiento."] },
     { title: "22. Privacidad de menores", paragraphs: ["Diaglob está dirigido a usuarios empresariales y no está diseñado para menores. No buscamos recopilar deliberadamente información personal de menores."] },
     { title: "23. Cambios a esta política", paragraphs: ["Podemos actualizar esta política para reflejar cambios en el servicio, la ley o nuestras prácticas. Publicaremos la versión actualizada con una fecha de última actualización."] },
-    { title: "24. Contacto", paragraphs: ["Para preguntas sobre privacidad, solicitudes de datos o esta política, contáctanos a través de los canales de soporte disponibles en Diaglob.", "El uso de datos recibidos de las API de Google se ajusta a la Política de Datos de Usuario de los Servicios API de Google, incluidos los requisitos de Uso Limitado aplicables."] },
+    { title: "24. Contacto", paragraphs: ["Diaglob es operado por Adrian Felipe Restrepo Guerra desde Bogotá, Colombia. Para preguntas sobre privacidad, solicitudes de datos o esta política, escribe a adrianguerra9703@gmail.com.", "El uso de datos recibidos de las API de Google se ajusta a la Política de Datos de Usuario de los Servicios API de Google, incluidos los requisitos de Uso Limitado aplicables."] },
   ],
 };
 
@@ -81,15 +81,15 @@ const privacyEn: LegalDocument = {
     { title: "21. International processing", paragraphs: ["Information may be processed in countries where Diaglob or its providers operate. Where applicable, we seek to use reasonable safeguards for that processing."] },
     { title: "22. Children's privacy", paragraphs: ["Diaglob is intended for business users and is not designed for children. We do not knowingly seek to collect personal information from children."] },
     { title: "23. Changes to this policy", paragraphs: ["We may update this policy to reflect changes in the service, law, or our practices. We will publish the updated version with a last-updated date."] },
-    { title: "24. Contact", paragraphs: ["For privacy questions, data requests, or questions about this policy, contact us through the support channels available in Diaglob.", "Our use of information received from Google APIs adheres to the Google API Services User Data Policy, including applicable Limited Use requirements."] },
+    { title: "24. Contact", paragraphs: ["Diaglob is operated by Adrian Felipe Restrepo Guerra from Bogotá, Colombia. For privacy questions, data requests, or questions about this policy, contact adrianguerra9703@gmail.com.", "Our use of information received from Google APIs adheres to the Google API Services User Data Policy, including applicable Limited Use requirements."] },
   ],
 };
 
 const termsEs: LegalDocument = {
   eyebrow: "LEGAL",
   title: "Términos de servicio",
-  updated: "Última actualización: 1 de septiembre de 2026",
-  intro: "Estos términos regulan el uso de Diaglob. Al crear una cuenta, acceder o usar el servicio, aceptas estos términos en nombre propio o de la organización que representas.",
+  updated: "Última actualización: 10 de septiembre de 2026",
+  intro: "Estos términos regulan el uso de Diaglob, marca operada por Adrian Felipe Restrepo Guerra, persona natural con operación principal en Bogotá, Colombia. Al crear una cuenta, acceder o usar el servicio, aceptas estos términos en nombre propio o de la organización que representas.",
   sections: [
     { title: "1. Aceptación de los términos", paragraphs: ["Al usar Diaglob aceptas estos términos y las políticas incorporadas por referencia. Si no estás de acuerdo, no uses el servicio."] },
     { title: "2. Descripción de Diaglob", paragraphs: ["Diaglob ofrece herramientas para conversaciones, comercio, automatización, analítica, inteligencia de clientes, agentes y conocimiento para operaciones de ecommerce."] },
@@ -105,9 +105,9 @@ const termsEs: LegalDocument = {
     { title: "12. Propiedad intelectual", paragraphs: ["Diaglob y sus elementos protegidos pertenecen a sus respectivos titulares. Estos términos no otorgan derechos sobre marcas, software o contenido de Diaglob fuera del uso permitido del servicio."] },
     { title: "13. Servicios de terceros", paragraphs: ["Los servicios de terceros pueden cambiar, suspenderse o imponer condiciones propias. Diaglob no es responsable por decisiones, fallas o contenido de dichos servicios."] },
     { title: "14. Planes de suscripción", paragraphs: ["Las funciones, límites y precios dependen del plan seleccionado y de la información mostrada al contratar o administrar la suscripción."] },
-    { title: "15. Facturación", paragraphs: ["Aceptas pagar los cargos aplicables a tu plan mediante el proveedor de pagos disponible. Los impuestos, si aplican, pueden añadirse según la información de facturación y la normativa correspondiente."] },
+    { title: "15. Facturación", paragraphs: ["Aceptas pagar los cargos aplicables a tu plan mediante el proveedor de pagos disponible. Cuando Paddle procese el pago como Merchant of Record, el cobro, los impuestos, comprobantes y determinadas obligaciones de pago se gestionarán conforme a sus términos y a la normativa aplicable."] },
     { title: "16. Cambios de plan", paragraphs: ["Los cambios de plan, períodos y sus efectos de precio se rigen por las opciones mostradas en la aplicación y por las reglas del proveedor de pagos cuando corresponda."] },
-    { title: "17. Cancelación", paragraphs: ["Puedes cancelar conforme a las opciones disponibles en tu cuenta. La cancelación no elimina automáticamente obligaciones de pago acumuladas antes de su efecto."] },
+    { title: "17. Cancelación", paragraphs: ["Puedes cancelar conforme a las opciones disponibles en tu cuenta. Salvo que se indique lo contrario o la ley exija otra cosa, conservarás acceso hasta el final del período ya pagado y la suscripción no se renovará después de esa fecha. La cancelación no elimina obligaciones de pago acumuladas antes de su efecto. Consulta también nuestra Política de reembolsos."] },
     { title: "18. Disponibilidad del servicio", paragraphs: ["Buscamos mantener Diaglob disponible, pero el servicio puede verse afectado por mantenimiento, cambios, proveedores externos, internet o eventos fuera de nuestro control."] },
     { title: "19. Funciones beta o experimentales", paragraphs: ["Algunas funciones pueden identificarse como beta, preliminares o experimentales. Pueden cambiar, limitarse o retirarse y se proporcionan para evaluación sin garantías adicionales."] },
     { title: "20. Funcionalidad generada por IA", paragraphs: ["Las respuestas, recomendaciones o automatizaciones generadas por IA pueden ser incompletas o inexactas. Debes revisarlas antes de utilizarlas en decisiones comerciales, comunicaciones o acciones operativas."] },
@@ -116,16 +116,16 @@ const termsEs: LegalDocument = {
     { title: "23. Suspensión o terminación", paragraphs: ["Podemos suspender o terminar acceso cuando sea razonablemente necesario para proteger el servicio, cumplir la ley, responder a riesgos de seguridad, falta de pago o incumplimientos materiales."] },
     { title: "24. Datos después de la terminación", paragraphs: ["Tras la terminación, el acceso puede finalizar y los datos pueden eliminarse conforme a nuestros plazos de retención, respaldos y obligaciones legales. Recomendamos exportar lo que necesites antes de cancelar."] },
     { title: "25. Cambios a los términos", paragraphs: ["Podemos actualizar estos términos. La versión actualizada se publicará en esta página y el uso continuado después de su vigencia puede constituir aceptación cuando la ley lo permita."] },
-    { title: "26. Ley aplicable", paragraphs: ["La ley aplicable y jurisdicción se determinarán conforme a la información contractual o legal aplicable a la relación entre Diaglob y la organización usuaria."] },
-    { title: "27. Contacto", paragraphs: ["Para preguntas sobre estos términos, contáctanos a través de los canales de soporte disponibles en Diaglob."] },
+    { title: "26. Ley aplicable", paragraphs: ["Estos términos se rigen por las leyes de la República de Colombia, sin perjuicio de las normas imperativas y derechos de protección al consumidor que resulten aplicables en la jurisdicción del cliente."] },
+    { title: "27. Contacto", paragraphs: ["Diaglob es operado por Adrian Felipe Restrepo Guerra desde Bogotá, Colombia. Para preguntas sobre estos términos, facturación o asuntos legales, escribe a adrianguerra9703@gmail.com."] },
   ],
 };
 
 const termsEn: LegalDocument = {
   eyebrow: "LEGAL",
   title: "Terms of Service",
-  updated: "Last updated: September 1, 2026",
-  intro: "These terms govern use of Diaglob. By creating an account, accessing, or using the service, you accept them for yourself or the organization you represent.",
+  updated: "Last updated: September 10, 2026",
+  intro: "These terms govern the use of Diaglob, a brand operated by Adrian Felipe Restrepo Guerra, an individual based in Bogotá, Colombia. By creating an account, accessing, or using the service, you accept them for yourself or the organization you represent.",
   sections: [
     { title: "1. Acceptance of terms", paragraphs: ["By using Diaglob, you accept these terms and policies incorporated by reference. Do not use the service if you do not agree."] },
     { title: "2. Description of Diaglob", paragraphs: ["Diaglob provides tools for ecommerce conversations, commerce, automation, analytics, customer intelligence, agents, and knowledge operations."] },
@@ -141,9 +141,9 @@ const termsEn: LegalDocument = {
     { title: "12. Intellectual property", paragraphs: ["Diaglob and its protected elements belong to their respective owners. These terms do not grant rights in Diaglob trademarks, software, or content beyond permitted service use."] },
     { title: "13. Third-party services", paragraphs: ["Third-party services may change, be suspended, or impose their own terms. Diaglob is not responsible for their decisions, failures, or content."] },
     { title: "14. Subscription plans", paragraphs: ["Features, limits, and prices depend on the selected plan and information shown when subscribing or managing your subscription."] },
-    { title: "15. Billing", paragraphs: ["You agree to pay applicable plan charges through the available payment provider. Taxes may be added where applicable based on billing information and law."] },
+    { title: "15. Billing", paragraphs: ["You agree to pay applicable plan charges through the available payment provider. When Paddle processes a payment as Merchant of Record, payment collection, taxes, receipts, and certain payment obligations are handled under Paddle terms and applicable law."] },
     { title: "16. Plan changes", paragraphs: ["Plan and billing-period changes, including pricing effects, follow the options shown in the application and applicable payment-provider rules."] },
-    { title: "17. Cancellation", paragraphs: ["You may cancel through account options. Cancellation does not automatically remove payment obligations accrued before it takes effect."] },
+    { title: "17. Cancellation", paragraphs: ["You may cancel through account options. Unless otherwise stated or required by law, access continues until the end of the already-paid billing period and the subscription will not renew afterward. Cancellation does not remove payment obligations accrued before it takes effect. See our Refund Policy as well."] },
     { title: "18. Service availability", paragraphs: ["We seek to keep Diaglob available, but service may be affected by maintenance, changes, external providers, the internet, or events outside our control."] },
     { title: "19. Beta or experimental features", paragraphs: ["Some features may be identified as beta, preview, or experimental. They may change, be limited, or be withdrawn and are provided for evaluation without additional warranties."] },
     { title: "20. AI-generated functionality", paragraphs: ["AI-generated responses, recommendations, or automations may be incomplete or inaccurate. Review them before using them for commercial decisions, communications, or operational actions."] },
@@ -152,8 +152,8 @@ const termsEn: LegalDocument = {
     { title: "23. Suspension or termination", paragraphs: ["We may suspend or terminate access when reasonably necessary to protect the service, comply with law, respond to security risks, address non-payment, or address material breaches."] },
     { title: "24. Data after termination", paragraphs: ["After termination, access may end and data may be deleted under retention periods, backups, and legal obligations. Export information you need before cancellation."] },
     { title: "25. Changes to terms", paragraphs: ["We may update these terms. The updated version will be posted here, and continued use after its effective date may constitute acceptance where law permits."] },
-    { title: "26. Governing law", paragraphs: ["Applicable law and jurisdiction will be determined by contractual or legal information applicable to the relationship between Diaglob and the customer organization."] },
-    { title: "27. Contact", paragraphs: ["For questions about these terms, contact us through the support channels available in Diaglob."] },
+    { title: "26. Governing law", paragraphs: ["These terms are governed by the laws of the Republic of Colombia, without limiting any mandatory consumer-protection rights that may apply in the customer jurisdiction."] },
+    { title: "27. Contact", paragraphs: ["Diaglob is operated by Adrian Felipe Restrepo Guerra from Bogotá, Colombia. For questions about these terms, billing, or legal matters, contact adrianguerra9703@gmail.com."] },
   ],
 };
 
