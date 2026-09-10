@@ -1,0 +1,89 @@
+name: Diagnose Production Postgres Once
+
+on:
+  push:
+    branches:
+      - fix/dashboard-network-error
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure SSH
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_SSH_KEY_B64: ${{ secrets.PROD_SSH_KEY_B64 }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          echo "$PROD_SSH_KEY_B64" | base64 --decode > ~/.ssh/diaglob_actions_prod
+          chmod 600 ~/.ssh/diaglob_actions_prod
+          ssh-keyscan -H "$PROD_HOST" >> ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Inspect production PostgreSQL migration state
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+        run: |
+          ssh -i ~/.ssh/diaglob_actions_prod "$PROD_USER@$PROD_HOST" 'sudo bash -s' <<'REMOTE'
+          set -e
+          set -a
+          . /etc/diaglob/diaglob.env
+          set +a
+          cd /opt/diaglob/app/backend
+
+          echo '=== DB DIALECT ==='
+          .venv/bin/python -c 'from app.db_config import DATABASE_URL; print(DATABASE_URL.split(":",1)[0])'
+
+          echo '=== ALEMBIC CURRENT (PROD ENV) ==='
+          .venv/bin/alembic current -v
+          echo '=== ALEMBIC HEADS ==='
+          .venv/bin/alembic heads
+
+          echo '=== PRODUCTION SCHEMA STATE ==='
+          .venv/bin/python - <<'PY'
+          from sqlalchemy import create_engine, inspect, text
+          from app.db_config import DATABASE_URL
+
+          engine = create_engine(DATABASE_URL)
+          insp = inspect(engine)
+          checks = {
+              'products': ['cost'],
+              'order_items': ['unit_cost'],
+              'orders': ['lifecycle_status', 'lifecycle_synced_at'],
+              'payment_connections': [],
+              'payment_transactions': [],
+              'telegram_connections': [],
+          }
+          for table, expected in checks.items():
+              exists = insp.has_table(table)
+              print(f'{table}: exists={exists}')
+              if exists and expected:
+                  existing = {c['name'] for c in insp.get_columns(table)}
+                  for name in expected:
+                      print(f'  {name}={name in existing}')
+          with engine.connect() as conn:
+              if insp.has_table('alembic_version'):
+                  rows = conn.execute(text('select version_num from alembic_version order by version_num')).fetchall()
+                  print('alembic_version_rows=', [row[0] for row in rows])
+              else:
+                  print('alembic_version_rows=NO_TABLE')
+          PY
+
+          echo '=== OPERATIONS SUMMARY REQUESTS/ERRORS ==='
+          journalctl -u diaglob-api --since '45 minutes ago' --no-pager | grep -E 'operations/summary|UndefinedColumn|ProgrammingError' | tail -n 160 || true
+          REMOTE
+      - name: Remove one-time workflow
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/diagnose-prod-postgres-once.yml
+          git commit -m "chore: remove one-time production Postgres diagnostic workflow"
+          git pull --rebase origin fix/dashboard-network-error
+          git push origin HEAD:fix/dashboard-network-error
