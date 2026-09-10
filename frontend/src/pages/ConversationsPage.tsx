@@ -30,9 +30,15 @@ import type {
 export default function ConversationsPage({
   stores,
   canWrite,
+  initialConversationId,
+  initialStoreId,
+  searchRequestKey,
 }: {
   stores: Store[];
   canWrite: boolean;
+  initialConversationId?: number;
+  initialStoreId?: number;
+  searchRequestKey?: number;
 }) {
   const { t } = useTranslation();
 
@@ -78,6 +84,16 @@ export default function ConversationsPage({
 
     loadConversation(selectedId);
   }, [selectedId]);
+
+  useEffect(() => {
+    if (!initialConversationId) return;
+
+    if (initialStoreId) {
+      setInboxStoreFilter(String(initialStoreId));
+    }
+    setSearch("");
+    setSelectedId(initialConversationId);
+  }, [initialConversationId, initialStoreId, searchRequestKey]);
 
   async function loadConversations() {
     try {
