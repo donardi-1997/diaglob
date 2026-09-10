@@ -14,6 +14,21 @@ export interface OrderSalesAttribution {
 }
 
 
+export interface OrderSalesAttributionChange {
+  id: number;
+  action: "assign" | "reassign" | "clear";
+  changed_by_user_id: number | null;
+  changed_by_label: string;
+  previous_actor_type: "human" | "ai" | null;
+  previous_actor_id: number | null;
+  previous_actor_label: string | null;
+  new_actor_type: "human" | "ai" | null;
+  new_actor_id: number | null;
+  new_actor_label: string | null;
+  created_at: string;
+}
+
+
 export type AttributedCommerceOrder = CommerceOrder & {
   sales_attribution: OrderSalesAttribution | null;
   customer_id: number | null;
@@ -28,6 +43,22 @@ export async function listAttributedCommerceOrders(
     items: AttributedCommerceOrder[];
     total: number;
   }>(`/api/stores/${storeId}/commerce/orders`);
+
+  return response.data;
+}
+
+
+export async function getOrderSalesAttributionHistory(
+  storeId: number,
+  orderId: number,
+) {
+  const response = await api.get<{
+    order_id: number;
+    items: OrderSalesAttributionChange[];
+    total: number;
+  }>(
+    `/api/stores/${storeId}/commerce/orders/${orderId}/sales-attribution/history`,
+  );
 
   return response.data;
 }

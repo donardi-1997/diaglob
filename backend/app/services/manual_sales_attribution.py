@@ -270,7 +270,10 @@ def get_order_attribution_history(
             OrderSalesAttributionChange.store_id == store_id,
             OrderSalesAttributionChange.order_id == order_id,
         )
-        .order_by(OrderSalesAttributionChange.created_at.desc())
+        .order_by(
+            OrderSalesAttributionChange.created_at.desc(),
+            OrderSalesAttributionChange.id.desc(),
+        )
         .all()
     )
     return [

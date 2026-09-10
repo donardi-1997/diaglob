@@ -341,6 +341,10 @@
   ],
   [
     "GET",
+    "/api/stores/{store_id}/commerce/orders/{order_id}/sales-attribution/history"
+  ],
+  [
+    "GET",
     "/api/stores/{store_id}/commerce/products"
   ],
   [

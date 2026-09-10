@@ -1,5 +1,5 @@
 """Regression tests for manual sales-attribution corrections."""
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 from sqlalchemy import create_engine
@@ -12,7 +12,10 @@ from app.model_domains.sales_attribution import (
     OrderSalesAttributionChange,
 )
 from app.models import Agent, Order, Organization, OrganizationMembership, Store, User
-from app.services.manual_sales_attribution import set_manual_order_attribution
+from app.services.manual_sales_attribution import (
+    get_order_attribution_history,
+    set_manual_order_attribution,
+)
 from app.services.sales_attribution import SalesAttributionError
 
 
@@ -249,3 +252,50 @@ def test_clear_requires_null_actor_id(db):
             actor_type=None,
             actor_id=999,
         )
+
+
+def test_history_is_newest_first_and_preserves_actor_snapshots(db):
+    org, store, editor, seller, _, agent, order = _seed(db)
+
+    set_manual_order_attribution(
+        db,
+        org.id,
+        store.id,
+        order.id,
+        changed_by_user_id=editor.id,
+        actor_type="human",
+        actor_id=seller.id,
+    )
+    set_manual_order_attribution(
+        db,
+        org.id,
+        store.id,
+        order.id,
+        changed_by_user_id=editor.id,
+        actor_type="ai",
+        actor_id=agent.id,
+    )
+
+    changes = (
+        db.query(OrderSalesAttributionChange)
+        .filter_by(order_id=order.id)
+        .order_by(OrderSalesAttributionChange.id.asc())
+        .all()
+    )
+    changes[0].created_at = datetime(2026, 9, 10, 10, 0)
+    changes[1].created_at = datetime(2026, 9, 10, 10, 0) + timedelta(seconds=1)
+    db.commit()
+
+    history = get_order_attribution_history(db, org.id, store.id, order.id)
+
+    assert [item["action"] for item in history] == ["reassign", "assign"]
+    assert history[0]["previous_actor_label"] == "Laura"
+    assert history[0]["new_actor_label"] == "AI Sales"
+    assert history[0]["changed_by_label"] == "Editor"
+
+
+def test_history_rejects_cross_store_order_lookup(db):
+    org, store, _, _, _, _, order = _seed(db)
+
+    with pytest.raises(SalesAttributionError, match="Order not found"):
+        get_order_attribution_history(db, org.id, store.id + 1, order.id)
