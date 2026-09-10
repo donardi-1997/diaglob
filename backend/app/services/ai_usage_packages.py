@@ -117,24 +117,30 @@ def _transaction_total(data: dict) -> tuple[int | None, str | None]:
         except (TypeError, ValueError):
             amount_minor = None
 
-    currency = (
-        data.get("currency_code")
-        or totals.get("currency_code")
-        or None
-    )
+    currency = data.get("currency_code") or totals.get("currency_code") or None
     if currency:
         currency = str(currency).upper()[:3]
 
     return amount_minor, currency
 
 
-def _transaction_price_id(data: dict) -> str | None:
-    for item in data.get("items") or []:
-        price = item.get("price") or {}
-        price_id = price.get("id") or item.get("price_id")
-        if price_id:
-            return str(price_id)
-    return None
+def _transaction_matches_package_price(data: dict, expected_price_id: str) -> bool:
+    """Require the exact one-item transaction shape created by our checkout."""
+    items = data.get("items") or []
+    if len(items) != 1:
+        return False
+
+    item = items[0] or {}
+    try:
+        quantity = int(item.get("quantity", 0))
+    except (TypeError, ValueError):
+        return False
+    if quantity != 1:
+        return False
+
+    price = item.get("price") or {}
+    actual_price_id = price.get("id") or item.get("price_id")
+    return str(actual_price_id or "") == expected_price_id
 
 
 def fulfill_ai_usage_package_transaction(
@@ -162,8 +168,7 @@ def fulfill_ai_usage_package_transaction(
             "No se puede validar el paquete porque su precio Paddle no está configurado"
         )
 
-    actual_price_id = _transaction_price_id(data)
-    if actual_price_id != expected_price_id:
+    if not _transaction_matches_package_price(data, expected_price_id):
         return {
             "ok": True,
             "ignored": True,
