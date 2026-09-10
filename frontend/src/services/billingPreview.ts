@@ -84,12 +84,13 @@ export function normalizeBillingUpgradePreview<
     return preview;
   }
 
+  // PlansPage renders amount_due directly. Once the authoritative payable
+  // amount has been selected, keep every UI-facing field aligned with it.
+  // This prevents stale/zero amount_due values from hiding Paddle proration.
   return {
     ...preview,
-    currency_code:
-      preview.currency_code || payable.currencyCode,
-    amount_due:
-      preview.amount_due || payable.amount,
+    currency_code: payable.currencyCode,
+    amount_due: payable.amount,
     update_summary: {
       ...preview.update_summary,
       result: {
