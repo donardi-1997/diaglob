@@ -1,0 +1,151 @@
+"""Commerce and advertising integration persistence models.
+
+Physically extracted from the legacy ``app.models`` monolith while keeping
+all tables registered on the shared SQLAlchemy ``Base`` metadata.
+"""
+
+from datetime import datetime
+
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from ..db import Base
+
+
+class CommerceConnection(Base):
+    __tablename__ = "commerce_connections"
+
+    __table_args__ = (
+        UniqueConstraint("store_id", name="uq_commerce_connection_store"),
+        UniqueConstraint(
+            "provider",
+            "external_store_url",
+            name="uq_commerce_provider_store_url",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    organization_id: Mapped[int] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    store_id: Mapped[int] = mapped_column(
+        ForeignKey("stores.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    provider: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    external_store_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    access_token_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    refresh_token_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    api_key_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    api_secret_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    access_token_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    refresh_token_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    scopes: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(30), default="connected", nullable=False, index=True
+    )
+    connected_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+    last_sync_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+
+    store = relationship("Store")
+    organization = relationship("Organization")
+
+
+class DropiConnection(Base):
+    __tablename__ = "dropi_connections"
+
+    __table_args__ = (
+        UniqueConstraint("store_id", name="uq_dropi_connection_store"),
+        UniqueConstraint("webhook_token", name="uq_dropi_webhook_token"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    organization_id: Mapped[int] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    store_id: Mapped[int] = mapped_column(
+        ForeignKey("stores.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    external_store_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    api_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    api_token_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
+    webhook_token: Mapped[str] = mapped_column(
+        String(255), nullable=False, unique=True, index=True
+    )
+    status: Mapped[str] = mapped_column(
+        String(30), default="connected", nullable=False, index=True
+    )
+    connected_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+    last_sync_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+
+    store = relationship("Store")
+    organization = relationship("Organization")
+
+
+class MetaAdsConnection(Base):
+    __tablename__ = "meta_ads_connections"
+
+    __table_args__ = (
+        UniqueConstraint("store_id", name="uq_meta_ads_connection_store"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    organization_id: Mapped[int] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    store_id: Mapped[int] = mapped_column(
+        ForeignKey("stores.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    provider: Mapped[str] = mapped_column(
+        String(30), nullable=False, default="meta_ads"
+    )
+    external_account_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    external_account_name: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    account_currency: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    account_timezone: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    access_token_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(30), nullable=False, default="connected", index=True
+    )
+    last_sync_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_sync_status: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    last_error_category: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    connected_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+    store = relationship("Store")
+    organization = relationship("Organization")
+
+
+__all__ = ["CommerceConnection", "DropiConnection", "MetaAdsConnection"]
