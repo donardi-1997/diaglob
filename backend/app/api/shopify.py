@@ -20,12 +20,14 @@ from ..shopify_client import (
     ShopifyUserError,
 )
 from .deps import require_permission
+from ..services.attributed_order_service import (
+    create_attributed_shopify_order as svc_create_order,
+)
 from ..services.shopify_service import (
     ShopifyConnectionError,
     ShopifyNotFoundError,
     ShopifyOAuthError,
     ShopifyProviderError,
-    create_order as svc_create_order,
     create_poc as svc_create_poc,
     disconnect as svc_disconnect,
     get_order as svc_get_order,
@@ -273,6 +275,8 @@ def create_shopify_order(
             customer_name=payload.customer_name,
             note=payload.note,
             idempotency_key=payload.idempotency_key,
+            actor_type="human",
+            human_user_id=membership.user_id,
         )
     except ShopifyNotFoundError as exc:
         raise HTTPException(status_code=404, detail={"code": "SHOPIFY_NOT_CONNECTED", "message": "Shopify no está conectado."})
