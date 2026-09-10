@@ -10,7 +10,6 @@ import {
   Pencil,
   Plug,
   Plus,
-  ShoppingBag,
   Store as StoreIcon,
   Trash2,
   X,
