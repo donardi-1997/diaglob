@@ -19,6 +19,7 @@ import {
   Users,
   X,
 } from "lucide-react";
+import CustomerRiskAlert from "../components/CustomerRiskAlert";
 import {
   getCustomerSummary,
   getCustomerList,
@@ -313,7 +314,7 @@ function TimelineSection({
 
 
 export default function CustomersPage({
-  canWrite: _canWrite,
+  canWrite,
   storeId,
 }: CustomersPageProps) {
   const { t } = useTranslation();
@@ -698,6 +699,11 @@ export default function CustomersPage({
                             </span>
                           )}
                         </div>
+                        <CustomerRiskAlert
+                          customerId={customer.id}
+                          risk={customer.customer_risk}
+                          compact
+                        />
                       </div>
                     </div>
                   </td>
@@ -972,6 +978,33 @@ export default function CustomersPage({
               )}
             </div>
 
+            <CustomerRiskAlert
+              key={detail.id}
+              customerId={detail.id}
+              risk={detail.customer_risk}
+              storeId={storeId || undefined}
+              canReport={canWrite}
+              onChanged={(customerRisk) => {
+                setDetail((current) =>
+                  current && current.id === detail.id
+                    ? { ...current, customer_risk: customerRisk }
+                    : current,
+                );
+                setList((current) =>
+                  current
+                    ? {
+                        ...current,
+                        items: current.items.map((item) =>
+                          item.id === detail.id
+                            ? { ...item, customer_risk: customerRisk }
+                            : item,
+                        ),
+                      }
+                    : current,
+                );
+              }}
+            />
+
             {/* Customer Score */}
             <div className="ci-detail-section">
               <h3>{t("ciScore")}</h3>
@@ -1070,8 +1103,8 @@ export default function CustomersPage({
                       detail.next_best_action
                     ] ||
                       detail.next_best_action,
-                  )}
-                </span>
+                  )
+                }</span>
               </div>
               {detail.next_best_action_reasons
                 .length > 0 && (
