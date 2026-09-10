@@ -222,6 +222,7 @@ export default function IntegrationsHubPage({
       setSummary(result);
     } catch (error) {
       console.error("Unable to load integration health", error);
+      setSummary(null);
       setSummaryError(true);
     } finally {
       setLoading(false);
@@ -229,6 +230,7 @@ export default function IntegrationsHubPage({
   }, [storeId]);
 
   useEffect(() => {
+    setSummary(null);
     void loadSummary();
   }, [loadSummary]);
 
@@ -242,6 +244,7 @@ export default function IntegrationsHubPage({
     return () => window.removeEventListener("focus", handleFocus);
   }, [loadSummary]);
 
+  const hasSummary = summary !== null;
   const integrations = summary?.integrations || [];
   const connectedCount = integrations.filter((integration) => integration.connected).length;
   const attentionCount = integrations.filter(
@@ -302,16 +305,20 @@ export default function IntegrationsHubPage({
           </div>
           <div>
             <span>{copy.connected}</span>
-            <strong>{connectedCount}</strong>
+            <strong>{hasSummary ? connectedCount : "—"}</strong>
           </div>
         </article>
         <article>
-          <div className={`integrations-hub-summary-icon ${attentionCount > 0 ? "is-warning" : "is-neutral"}`}>
+          <div
+            className={`integrations-hub-summary-icon ${
+              hasSummary && attentionCount > 0 ? "is-warning" : "is-neutral"
+            }`}
+          >
             <AlertTriangle size={18} />
           </div>
           <div>
             <span>{copy.attention}</span>
-            <strong>{attentionCount}</strong>
+            <strong>{hasSummary ? attentionCount : "—"}</strong>
           </div>
         </article>
         <article>
@@ -320,7 +327,7 @@ export default function IntegrationsHubPage({
           </div>
           <div>
             <span>{copy.available}</span>
-            <strong>{integrations.length}</strong>
+            <strong>{hasSummary ? integrations.length : "—"}</strong>
           </div>
         </article>
         <article>
@@ -329,7 +336,7 @@ export default function IntegrationsHubPage({
           </div>
           <div>
             <span>Stack</span>
-            <strong>{categoryCount}</strong>
+            <strong>{hasSummary ? categoryCount : "—"}</strong>
           </div>
         </article>
       </section>
