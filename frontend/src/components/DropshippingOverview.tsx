@@ -26,6 +26,7 @@ import {
   type DropshippingAnalyticsSection,
 } from "../utils/dropshippingAnalyticsState";
 import ProductPerformanceAnalytics from "./ProductPerformanceAnalytics";
+import SalesAttributionAnalytics from "./SalesAttributionAnalytics";
 
 interface Props {
   storeId: number;
@@ -228,6 +229,13 @@ export default function DropshippingOverview({
             Completa los costos para obtener utilidad y margen confiables.
           </span>
         </div>
+      )}
+
+      {overview?.sales_attribution && (
+        <SalesAttributionAnalytics
+          data={overview.sales_attribution}
+          currency={effectiveCurrency}
+        />
       )}
 
       <div className="analytics-row">
