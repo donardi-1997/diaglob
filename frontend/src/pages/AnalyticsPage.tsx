@@ -15,6 +15,10 @@ import AnalyticsAutomations from "../components/AnalyticsAutomations";
 import DropshippingOverview from "../components/DropshippingOverview";
 import AdminAnalytics from "../components/AdminAnalytics";
 import { getAdminStatus } from "../services/adminAnalytics";
+import {
+  getAnalyticsRangeDates,
+  type AnalyticsQuickRange,
+} from "../utils/analyticsDateRange";
 
 interface AnalyticsPageProps {
   canWrite: boolean;
@@ -62,36 +66,6 @@ const BASE_TABS: {
   },
 ];
 
-type QuickRange = "" | "today" | "7d" | "30d" | "month";
-
-function getRangeDates(range: QuickRange): { from: string; to: string } {
-  const now = new Date();
-  const today = now.toISOString().split("T")[0];
-
-  if (range === "today") {
-    return { from: today, to: today };
-  }
-
-  if (range === "7d") {
-    const d = new Date(now);
-    d.setDate(d.getDate() - 7);
-    return { from: d.toISOString().split("T")[0], to: today };
-  }
-
-  if (range === "30d") {
-    const d = new Date(now);
-    d.setDate(d.getDate() - 30);
-    return { from: d.toISOString().split("T")[0], to: today };
-  }
-
-  if (range === "month") {
-    const first = new Date(now.getFullYear(), now.getMonth(), 1);
-    return { from: first.toISOString().split("T")[0], to: today };
-  }
-
-  return { from: "", to: "" };
-}
-
 export default function AnalyticsPage({
   canWrite: _canWrite,
   storeId,
@@ -100,7 +74,7 @@ export default function AnalyticsPage({
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<AnalyticsTab>("overview");
   const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
-  const [quickRange, setQuickRange] = useState<QuickRange>("");
+  const [quickRange, setQuickRange] = useState<AnalyticsQuickRange>("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
@@ -120,7 +94,7 @@ export default function AnalyticsPage({
     };
   }, []);
 
-  const dates = getRangeDates(quickRange);
+  const dates = getAnalyticsRangeDates(quickRange);
   const effectiveFrom = dates.from || dateFrom || undefined;
   const effectiveTo = dates.to || dateTo || undefined;
 
@@ -135,7 +109,7 @@ export default function AnalyticsPage({
       ]
     : BASE_TABS;
 
-  function handleQuickRange(range: QuickRange) {
+  function handleQuickRange(range: AnalyticsQuickRange) {
     setQuickRange(range);
     setDateFrom("");
     setDateTo("");
