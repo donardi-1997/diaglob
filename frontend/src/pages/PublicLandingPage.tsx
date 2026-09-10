@@ -1,28 +1,30 @@
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useState, useEffect } from "react";
 import {
-  Sun,
-  Moon,
-  Menu,
-  X,
-  ChevronDown,
-  Sparkles,
-  MessageSquare,
-  Bot,
-  ShoppingBag,
-  Workflow,
-  BarChart3,
-  Users,
-  Globe,
-  Check,
-  Database,
-  BrainCircuit,
-  FileSpreadsheet,
-  Table,
-  Package,
   ArrowRight,
-  LayoutDashboard,
+  BarChart3,
+  Bot,
+  BrainCircuit,
+  Check,
+  ChevronDown,
+  CreditCard,
+  Database,
+  Globe,
+  Megaphone,
+  Menu,
+  MessageSquare,
+  Moon,
+  Package,
+  ShoppingBag,
+  Sparkles,
+  Store,
+  Sun,
+  TrendingUp,
+  Workflow,
+  X,
 } from "lucide-react";
+
+import { getMarketingCopy, resolveMarketingLocale } from "../marketingCopy";
 
 interface PublicLandingPageProps {
   onNavigateToLogin: () => void;
@@ -30,159 +32,87 @@ interface PublicLandingPageProps {
 }
 
 const plans = [
-  {
-    id: "starter",
-    name: "Starter",
-    price: 19,
-    stores: 1,
-    features: [
-      "landingPlanStarterFeature1",
-      "landingPlanStarterFeature2",
-      "landingPlanStarterFeature3",
-      "landingPlanStarterFeature4",
-      "landingPlanStarterFeature5",
-      "landingPlanStarterFeature6",
-    ],
-  },
-  {
-    id: "growth",
-    name: "Growth",
-    price: 59,
-    stores: 2,
-    recommended: true,
-    features: [
-      "landingPlanGrowthFeature1",
-      "landingPlanGrowthFeature2",
-      "landingPlanGrowthFeature3",
-      "landingPlanGrowthFeature4",
-      "landingPlanGrowthFeature5",
-      "landingPlanGrowthFeature6",
-    ],
-  },
-  {
-    id: "pro",
-    name: "Pro",
-    price: 99,
-    stores: 3,
-    features: [
-      "landingPlanProFeature1",
-      "landingPlanProFeature2",
-      "landingPlanProFeature3",
-      "landingPlanProFeature4",
-      "landingPlanProFeature5",
-      "landingPlanProFeature6",
-    ],
-  },
-  {
-    id: "scale",
-    name: "Scale",
-    price: 179,
-    stores: 5,
-    features: [
-      "landingPlanScaleFeature1",
-      "landingPlanScaleFeature2",
-      "landingPlanScaleFeature3",
-      "landingPlanScaleFeature4",
-      "landingPlanScaleFeature5",
-      "landingPlanScaleFeature6",
-    ],
-  },
+  { id: "starter", name: "Starter", price: 19, stores: 1, ai: "1K" },
+  { id: "growth", name: "Growth", price: 49, stores: 2, ai: "5K" },
+  { id: "pro", name: "Pro", price: 99, stores: 5, ai: "20K", recommended: true },
+  { id: "scale", name: "Scale", price: 199, stores: 10, ai: "50K" },
 ];
 
-const features = [
-  {
-    icon: MessageSquare,
-    title: "landingFeatureConversationsTitle",
-    description: "landingFeatureConversationsDesc",
-    innovation: true,
-  },
-  {
-    icon: Bot,
-    title: "landingFeatureAgentsTitle",
-    description: "landingFeatureAgentsDesc",
-    innovation: true,
-  },
-  {
-    icon: ShoppingBag,
-    title: "landingFeatureCommerceTitle",
-    description: "landingFeatureCommerceDesc",
-    innovation: false,
-  },
-  {
-    icon: Workflow,
-    title: "landingFeatureAutomationsTitle",
-    description: "landingFeatureAutomationsDesc",
-    innovation: true,
-  },
-  {
-    icon: BarChart3,
-    title: "landingFeatureAnalyticsTitle",
-    description: "landingFeatureAnalyticsDesc",
-    innovation: false,
-  },
-  {
-    icon: Users,
-    title: "landingFeatureMultiStoreTitle",
-    description: "landingFeatureMultiStoreDesc",
-    innovation: false,
-  },
-];
+const productIcons = [BrainCircuit, ShoppingBag, BarChart3, Workflow, Store, Bot];
+const problemIcons = [Database, Workflow, TrendingUp];
+const outcomeIcons = [MessageSquare, Globe, BarChart3];
 
-const howItWorks = [
-  {
-    step: 1,
-    title: "landingHowStep1Title",
-    description: "landingHowStep1Desc",
+const landingUi = {
+  es: {
+    live: "EN VIVO",
+    aiAgent: "Agente IA",
+    knowledgeSynced: "Conocimiento sincronizado",
+    countries: "3 países",
+    oneWorkspace: "Un solo workspace",
+    commerce: "Comercio",
+    messaging: "Mensajería",
+    knowledge: "Conocimiento",
+    growthPayments: "Crecimiento y pagos",
+    localPayments: "Pagos locales",
+    operationsOs: "Sistema operativo",
+    coreOpsAnalytics: "Operación central + analítica",
+    primaryNav: "Navegación principal",
+    language: "Idioma",
+    capabilities: "Capacidades",
+    lightMode: "Modo claro",
+    darkMode: "Modo oscuro",
   },
-  {
-    step: 2,
-    title: "landingHowStep2Title",
-    description: "landingHowStep2Desc",
+  en: {
+    live: "LIVE",
+    aiAgent: "AI Agent",
+    knowledgeSynced: "Knowledge synced",
+    countries: "3 countries",
+    oneWorkspace: "One workspace",
+    commerce: "Commerce",
+    messaging: "Messaging",
+    knowledge: "Knowledge",
+    growthPayments: "Growth & payments",
+    localPayments: "Local payments",
+    operationsOs: "Operations OS",
+    coreOpsAnalytics: "Core operations + analytics",
+    primaryNav: "Primary navigation",
+    language: "Language",
+    capabilities: "Capabilities",
+    lightMode: "Light mode",
+    darkMode: "Dark mode",
   },
-  {
-    step: 3,
-    title: "landingHowStep3Title",
-    description: "landingHowStep3Desc",
+  "pt-BR": {
+    live: "AO VIVO",
+    aiAgent: "Agente IA",
+    knowledgeSynced: "Conhecimento sincronizado",
+    countries: "3 países",
+    oneWorkspace: "Um workspace",
+    commerce: "Comércio",
+    messaging: "Mensagens",
+    knowledge: "Conhecimento",
+    growthPayments: "Crescimento e pagamentos",
+    localPayments: "Pagamentos locais",
+    operationsOs: "Sistema operacional",
+    coreOpsAnalytics: "Operação central + analytics",
+    primaryNav: "Navegação principal",
+    language: "Idioma",
+    capabilities: "Recursos",
+    lightMode: "Modo claro",
+    darkMode: "Modo escuro",
   },
-];
-
-const faqItems = [
-  {
-    question: "landingFaqWhatIs",
-    answer: "landingFaqWhatIsAnswer",
-  },
-  {
-    question: "landingFaqWhatsapp",
-    answer: "landingFaqWhatsappAnswer",
-  },
-  {
-    question: "landingFaqShopify",
-    answer: "landingFaqShopifyAnswer",
-  },
-  {
-    question: "landingFaqMultiStore",
-    answer: "landingFaqMultiStoreAnswer",
-  },
-  {
-    question: "landingFaqAi",
-    answer: "landingFaqAiAnswer",
-  },
-  {
-    question: "landingFaqDropi",
-    answer: "landingFaqDropiAnswer",
-  },
-];
+} as const;
 
 export default function PublicLandingPage({
   onNavigateToLogin,
   onNavigateToRegister,
 }: PublicLandingPageProps) {
-  const { t, i18n } = useTranslation();
+  const { i18n } = useTranslation();
+  const copy = useMemo(() => getMarketingCopy(i18n.language), [i18n.language]);
+  const locale = resolveMarketingLocale(i18n.language);
+  const ui = landingUi[locale];
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [openFaq, setOpenFaq] = useState<number | null>(null);
-  const [theme, setTheme] = useState(
-    localStorage.getItem("diaglob-theme") || "dark"
-  );
+  const [openFaq, setOpenFaq] = useState<number | null>(0);
+  const [theme, setTheme] = useState(() => localStorage.getItem("diaglob-theme") || "dark");
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -190,757 +120,408 @@ export default function PublicLandingPage({
   }, [theme]);
 
   useEffect(() => {
-    document.title =
-      i18n.language === "en"
-        ? "Diaglob — Conversations, commerce and automation for ecommerce"
-        : "Diaglob — Conversaciones, comercio y automatización para ecommerce";
-  }, [i18n.language]);
+    const title =
+      locale === "en"
+        ? "Diaglob — Dropshipping operations, AI and analytics"
+        : locale === "pt-BR"
+          ? "Diaglob — Operação, IA e analytics para dropshipping"
+          : "Diaglob — Operación, IA y analítica para dropshipping";
+    const description = copy.hero.subtitle;
 
-  const toggleTheme = () =>
-    setTheme((current) => (current === "dark" ? "light" : "dark"));
+    document.title = title;
+    let meta = document.querySelector('meta[name="description"]');
+    if (!meta) {
+      meta = document.createElement("meta");
+      meta.setAttribute("name", "description");
+      document.head.appendChild(meta);
+    }
+    meta.setAttribute("content", description);
+  }, [copy.hero.subtitle, locale]);
 
-  const changeLanguage = (lang: string) => {
-    i18n.changeLanguage(lang);
-    localStorage.setItem("diaglob-language", lang);
+  const changeLanguage = (language: string) => {
+    void i18n.changeLanguage(language);
+    localStorage.setItem("diaglob-language", language);
   };
 
   const scrollTo = (id: string) => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    const navbarHeight = 64;
-    const y = el.getBoundingClientRect().top + window.scrollY - navbarHeight;
-    window.scrollTo({ top: y, behavior: "smooth" });
+    const element = document.getElementById(id);
+    if (!element) return;
+    const top = element.getBoundingClientRect().top + window.scrollY - 76;
+    window.scrollTo({ top, behavior: "smooth" });
     setMobileMenuOpen(false);
   };
 
   const navLinks = [
-    { label: t("landingNavProduct"), target: "innovation" },
-    { label: t("landingNavHow"), target: "how-it-works" },
-    { label: t("landingNavFeatures"), target: "features" },
-    { label: t("landingNavIntegrations"), target: "integrations" },
-    { label: t("landingNavPricing"), target: "pricing" },
-    { label: t("landingNavFaq"), target: "faq" },
+    { label: copy.nav.product, target: "product" },
+    { label: copy.nav.outcomes, target: "outcomes" },
+    { label: copy.nav.integrations, target: "integrations" },
+    { label: copy.nav.pricing, target: "pricing" },
+  ];
+
+  const integrationGroups = [
+    {
+      label: ui.commerce,
+      icon: ShoppingBag,
+      items: ["Shopify", "Nuvemshop", "Dropi"],
+    },
+    {
+      label: ui.messaging,
+      icon: MessageSquare,
+      items: ["WhatsApp", "Telegram"],
+    },
+    {
+      label: ui.knowledge,
+      icon: BrainCircuit,
+      items: ["Google Drive", "Google Sheets", "Google Docs"],
+    },
+    {
+      label: ui.growthPayments,
+      icon: CreditCard,
+      items: ["Meta Ads", ui.localPayments],
+    },
   ];
 
   return (
-    <div className="landing-page">
-      {/* NAVBAR */}
-      <header className="landing-navbar">
-        <div className="landing-container">
-          <div className="landing-navbar-inner">
-            <button className="landing-brand" onClick={() => scrollTo("hero")}>
-              <div className="brand-mark">
-                <Sparkles size={20} />
-              </div>
-              <div>
-                <div className="brand-name">DIAGLOB</div>
-                <div className="brand-version">AI COMMERCE</div>
-              </div>
-            </button>
+    <div className="marketing-page">
+      <header className="marketing-nav">
+        <div className="marketing-shell marketing-nav-inner">
+          <button className="marketing-brand" onClick={() => scrollTo("hero")} aria-label="Diaglob">
+            <span className="marketing-brand-mark"><Sparkles size={19} /></span>
+            <span className="marketing-brand-copy">
+              <strong>DIAGLOB</strong>
+              <small>AI COMMERCE OS</small>
+            </span>
+          </button>
 
-            <nav className="landing-nav-links">
-              {navLinks.map((link) => (
-                <button key={link.target + link.label} onClick={() => scrollTo(link.target)}>
-                  {link.label}
+          <nav className="marketing-nav-links" aria-label={ui.primaryNav}>
+            {navLinks.map((link) => (
+              <button key={link.target} onClick={() => scrollTo(link.target)}>{link.label}</button>
+            ))}
+          </nav>
+
+          <div className="marketing-nav-actions">
+            <div className="marketing-language" aria-label={ui.language}>
+              {(["es", "en", "pt-BR"] as const).map((language) => (
+                <button
+                  key={language}
+                  className={locale === language ? "active" : ""}
+                  onClick={() => changeLanguage(language)}
+                >
+                  {language === "pt-BR" ? "PT" : language.toUpperCase()}
                 </button>
               ))}
-            </nav>
-
-            <div className="landing-nav-actions">
-              <div className="landing-controls">
-                <div className="landing-lang-switch">
-                  <button
-                    className={i18n.language === "es" ? "active" : ""}
-                    onClick={() => changeLanguage("es")}
-                    aria-label="Español"
-                  >
-                    ES
-                  </button>
-                  <button
-                    className={i18n.language === "en" ? "active" : ""}
-                    onClick={() => changeLanguage("en")}
-                    aria-label="English"
-                  >
-                    EN
-                  </button>
-                  <button
-                    className={i18n.language === "pt-BR" ? "active" : ""}
-                    onClick={() => changeLanguage("pt-BR")}
-                    aria-label="Português (Brasil)"
-                  >
-                    PT-BR
-                  </button>
-                </div>
-                <button
-                  className="theme-toggle"
-                  onClick={toggleTheme}
-                  aria-label={theme === "dark" ? t("themeSwitchLight") : t("themeSwitchDark")}
-                >
-                  {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
-                </button>
-              </div>
-              <button className="landing-btn-ghost" onClick={onNavigateToLogin}>
-                {t("landingNavLogin")}
-              </button>
-              <button className="landing-btn-primary" onClick={onNavigateToRegister}>
-                {t("landingNavRegister")}
-              </button>
             </div>
-
             <button
-              className="landing-mobile-toggle"
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              aria-label="Menu"
+              className="marketing-icon-button"
+              onClick={() => setTheme((current) => current === "dark" ? "light" : "dark")}
+              aria-label={theme === "dark" ? ui.lightMode : ui.darkMode}
             >
-              {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+              {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
+            </button>
+            <button className="marketing-login-button" onClick={onNavigateToLogin}>{copy.nav.login}</button>
+            <button className="marketing-primary-button compact" onClick={onNavigateToRegister}>
+              {copy.nav.start}<ArrowRight size={16} />
             </button>
           </div>
+
+          <button
+            className="marketing-mobile-toggle"
+            onClick={() => setMobileMenuOpen((open) => !open)}
+            aria-label="Menu"
+            aria-expanded={mobileMenuOpen}
+          >
+            {mobileMenuOpen ? <X size={22} /> : <Menu size={22} />}
+          </button>
         </div>
 
         {mobileMenuOpen && (
-          <div className="landing-mobile-menu">
+          <div className="marketing-mobile-menu">
             {navLinks.map((link) => (
-              <button key={"m-" + link.target + link.label} onClick={() => scrollTo(link.target)}>
-                {link.label}
-              </button>
+              <button key={link.target} onClick={() => scrollTo(link.target)}>{link.label}</button>
             ))}
-            <div className="landing-mobile-actions">
-              <div className="landing-controls">
-                <div className="landing-lang-switch">
-                  <button
-                    className={i18n.language === "es" ? "active" : ""}
-                    onClick={() => changeLanguage("es")}
-                    aria-label="Español"
-                  >
-                    ES
-                  </button>
-                  <button
-                    className={i18n.language === "en" ? "active" : ""}
-                    onClick={() => changeLanguage("en")}
-                    aria-label="English"
-                  >
-                    EN
-                  </button>
-                  <button
-                    className={i18n.language === "pt-BR" ? "active" : ""}
-                    onClick={() => changeLanguage("pt-BR")}
-                    aria-label="Português (Brasil)"
-                  >
-                    PT-BR
-                  </button>
-                </div>
-                <button
-                  className="theme-toggle"
-                  onClick={toggleTheme}
-                  aria-label={theme === "dark" ? t("themeSwitchLight") : t("themeSwitchDark")}
-                >
-                  {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+            <div className="marketing-mobile-language">
+              {(["es", "en", "pt-BR"] as const).map((language) => (
+                <button key={language} className={locale === language ? "active" : ""} onClick={() => changeLanguage(language)}>
+                  {language === "pt-BR" ? "PT-BR" : language.toUpperCase()}
                 </button>
-              </div>
-              <button className="landing-btn-ghost" onClick={onNavigateToLogin}>
-                {t("landingNavLogin")}
-              </button>
-              <button className="landing-btn-primary" onClick={onNavigateToRegister}>
-                {t("landingNavRegister")}
-              </button>
+              ))}
             </div>
+            <button className="marketing-login-button" onClick={onNavigateToLogin}>{copy.nav.login}</button>
+            <button className="marketing-primary-button" onClick={onNavigateToRegister}>{copy.nav.start}</button>
           </div>
         )}
       </header>
 
       <main>
-        {/* HERO */}
-        <section className="landing-hero" id="hero">
-          <div className="landing-container">
-            <div className="landing-hero-content">
-              <div className="landing-hero-eyebrow">
-                <Sparkles size={14} />
-                <span>{t("landingHeroEyebrow")}</span>
-              </div>
-              <h1 className="landing-hero-title">{t("landingHeroTitle")}</h1>
-              <p className="landing-hero-subtitle">{t("landingHeroSubtitle")}</p>
-              <div className="landing-hero-ctas">
-                <button className="landing-btn-primary landing-btn-lg" onClick={onNavigateToRegister}>
-                  {t("landingHeroCta")}
+        <section className="marketing-hero" id="hero">
+          <div className="marketing-orb orb-one" />
+          <div className="marketing-orb orb-two" />
+          <div className="marketing-shell marketing-hero-grid">
+            <div className="marketing-hero-copy">
+              <div className="marketing-eyebrow"><Sparkles size={15} />{copy.hero.eyebrow}</div>
+              <h1>
+                {copy.hero.titleLead}
+                <span>{copy.hero.titleAccent}</span>
+              </h1>
+              <p className="marketing-hero-subtitle">{copy.hero.subtitle}</p>
+              <div className="marketing-hero-actions">
+                <button className="marketing-primary-button large" onClick={onNavigateToRegister}>
+                  {copy.hero.primary}<ArrowRight size={18} />
                 </button>
-                <button className="landing-btn-outline landing-btn-lg" onClick={() => scrollTo("how-it-works")}>
-                  {t("landingHeroCtaSecondary")}
+                <button className="marketing-secondary-button large" onClick={() => scrollTo("workflow")}>
+                  {copy.hero.secondary}
                 </button>
               </div>
-              <div className="landing-hero-pricing-note">{t("landingHeroPricingNote")}</div>
-            </div>
-            <div className="landing-hero-visual">
-              <div className="landing-mock-ui">
-                <div className="landing-mock-topbar">
-                  <div className="landing-mock-dots">
-                    <span></span><span></span><span></span>
-                  </div>
-                  <div className="landing-mock-title">Diaglob Dashboard</div>
-                </div>
-                <div className="landing-mock-body">
-                  <div className="landing-mock-sidebar-mock">
-                    <div className="landing-mock-nav-item active">
-                      <BarChart3 size={14} /> {t("landingMockOverview")}
-                    </div>
-                    <div className="landing-mock-nav-item">
-                      <MessageSquare size={14} /> {t("landingMockConversations")}
-                    </div>
-                    <div className="landing-mock-nav-item">
-                      <ShoppingBag size={14} /> {t("landingMockCommerce")}
-                    </div>
-                    <div className="landing-mock-nav-item">
-                      <Workflow size={14} /> {t("landingMockAutomations")}
-                    </div>
-                    <div className="landing-mock-nav-item">
-                      <BarChart3 size={14} /> {t("landingMockAnalytics")}
-                    </div>
-                  </div>
-                  <div className="landing-mock-content">
-                    <div className="landing-mock-stats">
-                      <div className="landing-mock-stat">
-                        <div className="landing-mock-stat-value">24</div>
-                        <div className="landing-mock-stat-label">{t("landingMockConversations")}</div>
-                      </div>
-                      <div className="landing-mock-stat">
-                        <div className="landing-mock-stat-value">81%</div>
-                        <div className="landing-mock-stat-label">{t("landingMockResolved")}</div>
-                      </div>
-                      <div className="landing-mock-stat">
-                        <div className="landing-mock-stat-value">12</div>
-                        <div className="landing-mock-stat-label">{t("landingMockOrders")}</div>
-                      </div>
-                    </div>
-                    <div className="landing-mock-chart">
-                      <div className="landing-mock-bar" style={{ height: "40%" }}></div>
-                      <div className="landing-mock-bar" style={{ height: "65%" }}></div>
-                      <div className="landing-mock-bar" style={{ height: "45%" }}></div>
-                      <div className="landing-mock-bar" style={{ height: "80%" }}></div>
-                      <div className="landing-mock-bar" style={{ height: "55%" }}></div>
-                      <div className="landing-mock-bar" style={{ height: "70%" }}></div>
-                      <div className="landing-mock-bar" style={{ height: "90%" }}></div>
-                    </div>
-                  </div>
-                </div>
+              <p className="marketing-hero-note"><Check size={15} />{copy.hero.note}</p>
+              <div className="marketing-trust-row">
+                {copy.hero.trust.map((item) => <span key={item}>{item}</span>)}
               </div>
             </div>
-          </div>
-        </section>
 
-        {/* SOCIAL PROOF BAR */}
-        <section className="landing-section landing-social-proof" id="social-proof">
-          <div className="landing-container">
-            <h2 className="landing-section-title">{t("landingSocialProofTitle")}</h2>
-            <div className="landing-social-proof-grid">
-              <div className="landing-social-proof-card">
-                <div className="landing-social-proof-value">{t("landingSocialProofStat1Value")}</div>
-                <div className="landing-social-proof-label">{t("landingSocialProofStat1Label")}</div>
-              </div>
-              <div className="landing-social-proof-card">
-                <div className="landing-social-proof-value">{t("landingSocialProofStat2Value")}</div>
-                <div className="landing-social-proof-label">{t("landingSocialProofStat2Label")}</div>
-              </div>
-              <div className="landing-social-proof-card">
-                <div className="landing-social-proof-value">{t("landingSocialProofStat3Value")}</div>
-                <div className="landing-social-proof-label">{t("landingSocialProofStat3Label")}</div>
-              </div>
-              <div className="landing-social-proof-card">
-                <div className="landing-social-proof-value">{t("landingSocialProofStat4Value")}</div>
-                <div className="landing-social-proof-label">{t("landingSocialProofStat4Label")}</div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* INNOVATION SHOWCASE */}
-        <section className="landing-section landing-innovation" id="innovation">
-          <div className="landing-container">
-            <h2 className="landing-section-title">{t("landingInnovationTitle")}</h2>
-            <p className="landing-section-subtitle">{t("landingInnovationSubtitle")}</p>
-            <div className="landing-innovation-grid">
-              <div className="landing-innovation-card">
-                <div className="landing-innovation-icon">
-                  <BrainCircuit size={28} />
+            <div className="marketing-product-demo" aria-label={copy.dashboard.label}>
+              <div className="demo-window">
+                <div className="demo-topbar">
+                  <div className="demo-dots"><span /><span /><span /></div>
+                  <span>{copy.dashboard.label}</span>
+                  <span className="demo-live"><i />{ui.live}</span>
                 </div>
-                <div className="landing-innovation-tag">{t("landingInnovationRagTag")}</div>
-                <h3>{t("landingInnovationRagTitle")}</h3>
-                <p>{t("landingInnovationRagDesc")}</p>
-              </div>
-              <div className="landing-innovation-card">
-                <div className="landing-innovation-icon">
-                  <Bot size={28} />
-                </div>
-                <div className="landing-innovation-tag">{t("landingInnovationAgentTag")}</div>
-                <h3>{t("landingInnovationAgentTitle")}</h3>
-                <p>{t("landingInnovationAgentDesc")}</p>
-              </div>
-              <div className="landing-innovation-card">
-                <div className="landing-innovation-icon">
-                  <Workflow size={28} />
-                </div>
-                <div className="landing-innovation-tag">{t("landingInnovationFlowTag")}</div>
-                <h3>{t("landingInnovationFlowTitle")}</h3>
-                <p>{t("landingInnovationFlowDesc")}</p>
-              </div>
-              <div className="landing-innovation-card">
-                <div className="landing-innovation-icon">
-                  <Globe size={28} />
-                </div>
-                <div className="landing-innovation-tag">{t("landingInnovationMultiTag")}</div>
-                <h3>{t("landingInnovationMultiTitle")}</h3>
-                <p>{t("landingInnovationMultiDesc")}</p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* HOW IT WORKS */}
-        <section className="landing-section landing-how" id="how-it-works">
-          <div className="landing-container">
-            <h2 className="landing-section-title">{t("landingHowTitle")}</h2>
-            <p className="landing-section-subtitle">{t("landingHowSubtitle")}</p>
-            <div className="landing-how-flow">
-              {howItWorks.map((step) => (
-                <div key={step.step} className="landing-how-step">
-                  <div className="landing-how-step-number">{step.step}</div>
-                  <h3 className="landing-how-step-title">{t(step.title)}</h3>
-                  <p className="landing-how-step-desc">{t(step.description)}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* FEATURES */}
-        <section className="landing-section landing-features" id="features">
-          <div className="landing-container">
-            <h2 className="landing-section-title">{t("landingFeaturesTitle")}</h2>
-            <p className="landing-section-subtitle">{t("landingFeaturesSubtitle")}</p>
-            <div className="landing-features-grid">
-              {features.map((f) => (
-                <div key={t(f.title)} className="landing-feature-card">
-                  <div className="landing-feature-icon">
-                    <f.icon size={24} />
+                <div className="demo-toolbar">
+                  <div>
+                    <small>{copy.dashboard.store}</small>
+                    <strong>{copy.dashboard.period}</strong>
                   </div>
-                  {f.innovation && (
-                    <div className="landing-feature-innovation-tag">{t("landingFeatureInnovationTag")}</div>
-                  )}
-                  <h3>{t(f.title)}</h3>
-                  <p>{t(f.description)}</p>
+                  <span className="demo-health"><Check size={13} />{copy.dashboard.healthy}</span>
                 </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* CONNECTED KNOWLEDGE + MULTI-COUNTRY */}
-        <section className="landing-section landing-built" id="built">
-          <div className="landing-container">
-            <h2 className="landing-section-title">{t("landingBuiltTitle")}</h2>
-            <p className="landing-section-subtitle">{t("landingBuiltSubtitle")}</p>
-
-            <div className="landing-built-grid">
-              {/* LEFT: Knowledge Flow */}
-              <div className="landing-built-panel">
-                <div className="landing-built-panel-label">{t("landingKnowledgeLabel")}</div>
-                <div className="landing-knowledge-diagram">
-                  {/* Sources column */}
-                  <div className="landing-kb-sources">
-                    <div className="landing-kb-source">
-                      <div className="landing-kb-source-icon"><Table size={16} /></div>
-                      <div className="landing-kb-source-info">
-                        <span className="landing-kb-source-name">{t("landingSourceGoogleSheets")}</span>
-                        <span className="landing-kb-badge available">{t("landingSourceGoogleSheetsStatus")}</span>
-                      </div>
-                    </div>
-                    <div className="landing-kb-source">
-                      <div className="landing-kb-source-icon"><FileSpreadsheet size={16} /></div>
-                      <div className="landing-kb-source-info">
-                        <span className="landing-kb-source-name">{t("landingSourceGoogleDocs")}</span>
-                        <span className="landing-kb-badge available">{t("landingSourceGoogleDocsStatus")}</span>
-                      </div>
-                    </div>
-                    <div className="landing-kb-source">
-                      <div className="landing-kb-source-icon"><Database size={16} /></div>
-                      <div className="landing-kb-source-info">
-                        <span className="landing-kb-source-name">{t("landingSourceGoogleDrive")}</span>
-                        <span className="landing-kb-badge available">{t("landingSourceGoogleDriveStatus")}</span>
-                      </div>
-                    </div>
-                    <div className="landing-kb-source">
-                      <div className="landing-kb-source-icon"><FileSpreadsheet size={16} /></div>
-                      <div className="landing-kb-source-info">
-                        <span className="landing-kb-source-name">{t("landingSourceExcel")}</span>
-                        <span className="landing-kb-badge available">{t("landingSourceExcelStatus")}</span>
-                      </div>
-                    </div>
-                    <div className="landing-kb-source">
-                      <div className="landing-kb-source-icon"><ShoppingBag size={16} /></div>
-                      <div className="landing-kb-source-info">
-                        <span className="landing-kb-source-name">{t("landingSourceShopify")}</span>
-                        <span className="landing-kb-badge available">{t("landingSourceShopifyStatus")}</span>
-                      </div>
-                    </div>
-                    <div className="landing-kb-source">
-                      <div className="landing-kb-source-icon"><Package size={16} /></div>
-                      <div className="landing-kb-source-info">
-                        <span className="landing-kb-source-name">{t("landingSourceDropi")}</span>
-                        <span className="landing-kb-badge coming-soon">{t("landingSourceDropiStatus")}</span>
-                      </div>
-                    </div>
+                <div className="demo-metric-grid">
+                  <div className="demo-metric featured">
+                    <span>{copy.dashboard.revenue}</span><strong>$42.8K</strong><small>+18.4%</small>
                   </div>
-
-                  {/* Connector */}
-                  <div className="landing-kb-connector">
-                    <div className="landing-kb-connector-line" />
-                    <ArrowRight size={16} className="landing-kb-connector-arrow" />
+                  <div className="demo-metric">
+                    <span>{copy.dashboard.profit}</span><strong>$12.6K</strong><small>29.4%</small>
                   </div>
-
-                  {/* Knowledge Base node */}
-                  <div className="landing-kb-central">
-                    <div className="landing-kb-node">
-                      <Database size={20} />
-                      <span>Diaglob</span>
-                    </div>
-                    <p className="landing-kb-node-desc">{t("landingKnowledgeDesc")}</p>
+                  <div className="demo-metric">
+                    <span>{copy.dashboard.delivery}</span><strong>84.7%</strong><small>+4.2%</small>
                   </div>
-
-                  {/* Connector */}
-                  <div className="landing-kb-connector">
-                    <div className="landing-kb-connector-line" />
-                    <ArrowRight size={16} className="landing-kb-connector-arrow" />
-                  </div>
-
-                  {/* AI Agent */}
-                  <div className="landing-kb-agent">
-                    <div className="landing-kb-agent-icon">
-                      <BrainCircuit size={20} />
-                    </div>
-                    <span className="landing-kb-agent-label">{t("landingAgentLabel")}</span>
-                    <p className="landing-kb-agent-desc">{t("landingAgentDesc")}</p>
+                  <div className="demo-metric">
+                    <span>{copy.dashboard.conversations}</span><strong>1,284</strong><small>IA</small>
                   </div>
                 </div>
-
-                {/* Results row */}
-                <div className="landing-kb-results">
-                  <div className="landing-kb-result">
-                    <Check size={14} />
-                    <div>
-                      <strong>{t("landingResultRespond")}</strong>
-                      <span>{t("landingResultRespondDesc")}</span>
-                    </div>
+                <div className="demo-chart-card">
+                  <div className="demo-chart-heading">
+                    <div><small>{copy.dashboard.orders}</small><strong>386</strong></div>
+                    <div className="demo-chart-legend"><span /><span /></div>
                   </div>
-                  <div className="landing-kb-result">
-                    <Check size={14} />
-                    <div>
-                      <strong>{t("landingResultRecommend")}</strong>
-                      <span>{t("landingResultRecommendDesc")}</span>
-                    </div>
-                  </div>
-                  <div className="landing-kb-result">
-                    <Check size={14} />
-                    <div>
-                      <strong>{t("landingResultAutomate")}</strong>
-                      <span>{t("landingResultAutomateDesc")}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <p className="landing-kb-highlight">{t("landingKnowledgeHighlight")}</p>
-              </div>
-
-              {/* RIGHT: Multi-country */}
-              <div className="landing-built-panel">
-                <div className="landing-built-panel-label">{t("landingBuiltMultiTitle")}</div>
-                <p className="landing-built-multi-sub">{t("landingBuiltMultiSubtitle")}</p>
-
-                <div className="landing-country-diagram">
-                  <div className="landing-country-stores">
-                    <div className="landing-country-card">
-                      <span className="landing-country-flag">🇨🇴</span>
-                      <div className="landing-country-info">
-                        <span className="landing-country-name">{t("landingStoreColombia")}</span>
-                        <div className="landing-country-badges">
-                          <span className="landing-country-badge">{t("landingStoreCurrencyCOP")}</span>
-                          <span className="landing-country-badge">{t("landingStoreLangEs")}</span>
-                        </div>
-                        <div className="landing-country-integrations">
-                          <span className="landing-ci"><MessageSquare size={12} /> WhatsApp</span>
-                          <span className="landing-ci"><ShoppingBag size={12} /> Shopify</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="landing-country-card">
-                      <span className="landing-country-flag">🇲🇽</span>
-                      <div className="landing-country-info">
-                        <span className="landing-country-name">{t("landingStoreMexico")}</span>
-                        <div className="landing-country-badges">
-                          <span className="landing-country-badge">{t("landingStoreCurrencyMXN")}</span>
-                          <span className="landing-country-badge">{t("landingStoreLangEs")}</span>
-                        </div>
-                        <div className="landing-country-integrations">
-                          <span className="landing-ci"><MessageSquare size={12} /> WhatsApp</span>
-                          <span className="landing-ci"><ShoppingBag size={12} /> Shopify</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="landing-country-card">
-                      <span className="landing-country-flag">🇺🇸</span>
-                      <div className="landing-country-info">
-                        <span className="landing-country-name">{t("landingStoreUsa")}</span>
-                        <div className="landing-country-badges">
-                          <span className="landing-country-badge">{t("landingStoreCurrencyUSD")}</span>
-                          <span className="landing-country-badge">{t("landingStoreLangEn")}</span>
-                        </div>
-                        <div className="landing-country-integrations">
-                          <span className="landing-ci"><MessageSquare size={12} /> WhatsApp</span>
-                          <span className="landing-ci"><ShoppingBag size={12} /> Shopify</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Connector down to ops center */}
-                  <div className="landing-country-connector">
-                    <div className="landing-country-connector-lines" />
-                  </div>
-
-                  {/* Operations Center */}
-                  <div className="landing-ops-node">
-                    <LayoutDashboard size={18} />
-                    <div>
-                      <strong>{t("landingOpsCenter")}</strong>
-                      <span>{t("landingOpsCenterDesc")}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <p className="landing-built-each-store">{t("landingBuiltEachStore")}</p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* INTEGRATIONS */}
-        <section className="landing-section landing-integrations" id="integrations">
-          <div className="landing-container">
-            <h2 className="landing-section-title">{t("landingIntegrationsTitle")}</h2>
-            <p className="landing-section-subtitle">{t("landingIntegrationsSubtitle")}</p>
-
-            {/* Main integrations grid */}
-            <div className="landing-integrations-grid">
-              <div className="landing-integration-card">
-                <div className="landing-integration-icon">
-                  <MessageSquare size={28} />
-                </div>
-                <h3>{t("landingIntegrationWhatsapp")}</h3>
-                <p>{t("landingIntegrationWhatsappDesc")}</p>
-                <div className="landing-integration-status available">
-                  <Check size={14} /> {t("landingIntegrationAvailable")}
-                </div>
-              </div>
-              <div className="landing-integration-card">
-                <div className="landing-integration-icon">
-                  <ShoppingBag size={28} />
-                </div>
-                <h3>{t("landingIntegrationShopify")}</h3>
-                <p>{t("landingIntegrationShopifyDesc")}</p>
-                <div className="landing-integration-status available">
-                  <Check size={14} /> {t("landingIntegrationAvailable")}
-                </div>
-              </div>
-              <div className="landing-integration-card">
-                <div className="landing-integration-icon">
-                  <ShoppingBag size={28} />
-                </div>
-                <h3>{t("landingIntegrationWoocommerce")}</h3>
-                <p>{t("landingIntegrationWoocommerceDesc")}</p>
-                <div className="landing-integration-status available">
-                  <Check size={14} /> {t("landingIntegrationAvailable")}
-                </div>
-              </div>
-              <div className="landing-integration-card">
-                <div className="landing-integration-icon">
-                  <Table size={28} />
-                </div>
-                <h3>{t("landingIntegrationGoogleSheets")}</h3>
-                <p>{t("landingIntegrationGoogleSheetsDesc")}</p>
-                <div className="landing-integration-status available">
-                  <Check size={14} /> {t("landingIntegrationAvailable")}
-                </div>
-              </div>
-              <div className="landing-integration-card">
-                <div className="landing-integration-icon">
-                  <FileSpreadsheet size={28} />
-                </div>
-                <h3>{t("landingIntegrationGoogleDocs")}</h3>
-                <p>{t("landingIntegrationGoogleDocsDesc")}</p>
-                <div className="landing-integration-status available">
-                  <Check size={14} /> {t("landingIntegrationAvailable")}
-                </div>
-              </div>
-              <div className="landing-integration-card">
-                <div className="landing-integration-icon">
-                  <Database size={28} />
-                </div>
-                <h3>{t("landingIntegrationGoogleDrive")}</h3>
-                <p>{t("landingIntegrationGoogleDriveDesc")}</p>
-                <div className="landing-integration-status available">
-                  <Check size={14} /> {t("landingIntegrationAvailable")}
-                </div>
-              </div>
-              <div className="landing-integration-card landing-integration-dropi">
-                <div className="landing-integration-icon">
-                  <Package size={28} />
-                </div>
-                <h3>{t("landingIntegrationDropiIndirect")}</h3>
-                <p>{t("landingIntegrationDropiIndirectDesc")}</p>
-                <div className="landing-dropi-caps">
-                  <div className="landing-dropi-cap available">
-                    <Check size={14} /> {t("landingDropiCapAvailable1")}
-                  </div>
-                  <div className="landing-dropi-cap available">
-                    <Check size={14} /> {t("landingDropiCapAvailable2")}
-                  </div>
-                  <div className="landing-dropi-cap available">
-                    <Check size={14} /> {t("landingDropiCapAvailable3")}
-                  </div>
-                  <div className="landing-dropi-cap available">
-                    <Check size={14} /> {t("landingDropiCapAvailable4")}
-                  </div>
-                  <div className="landing-dropi-cap coming-soon">
-                    <span className="landing-dropi-cap-dot"></span> {t("landingDropiCapComingSoon")}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* PRICING */}
-        <section className="landing-section landing-pricing" id="pricing">
-          <div className="landing-container">
-            <h2 className="landing-section-title">{t("landingPricingTitle")}</h2>
-            <p className="landing-section-subtitle">{t("landingPricingSubtitle")}</p>
-            <div className="landing-pricing-grid">
-              {plans.map((plan) => (
-                <div
-                  key={plan.id}
-                  className={`landing-pricing-card ${plan.recommended ? "recommended" : ""}`}
-                >
-                  {plan.recommended && (
-                    <div className="landing-pricing-badge">{t("landingPricingRecommended")}</div>
-                  )}
-                  <h3>{plan.name}</h3>
-                  <div className="landing-pricing-price">
-                    <span className="landing-pricing-amount">${plan.price}</span>
-                    <span className="landing-pricing-period">USD / {t("landingPricingMonth")}</span>
-                  </div>
-                  <div className="landing-pricing-stores">
-                    {plan.stores}{" "}
-                    {plan.stores === 1 ? t("landingPricingStore") : t("landingPricingStores")}
-                  </div>
-                  <ul className="landing-pricing-features">
-                    {plan.features.map((f) => (
-                      <li key={f}>
-                        <Check size={14} /> {t(f)}
-                      </li>
+                  <div className="demo-chart-bars">
+                    {[42, 58, 49, 72, 64, 83, 76, 92, 80, 96].map((height, index) => (
+                      <i key={index} style={{ height: `${height}%` }} />
                     ))}
-                  </ul>
-                  <button
-                    className={`landing-btn-primary landing-btn-full ${plan.recommended ? "recommended" : ""}`}
-                    onClick={onNavigateToRegister}
-                  >
-                    {t("landingPricingCta")}
-                  </button>
+                  </div>
                 </div>
-              ))}
+                <div className="demo-automation-row">
+                  <Workflow size={17} />
+                  <div><strong>8</strong><span>{copy.dashboard.automation}</span></div>
+                  <span className="demo-pulse" />
+                </div>
+              </div>
+              <div className="demo-floating-card floating-ai"><Bot size={18} /><div><strong>{ui.aiAgent}</strong><span>{ui.knowledgeSynced}</span></div><Check size={16} /></div>
+              <div className="demo-floating-card floating-store"><Globe size={18} /><div><strong>{ui.countries}</strong><span>{ui.oneWorkspace}</span></div></div>
             </div>
           </div>
         </section>
 
-        {/* FAQ */}
-        <section className="landing-section landing-faq" id="faq">
-          <div className="landing-container">
-            <h2 className="landing-section-title">{t("landingFaqTitle")}</h2>
-            <p className="landing-section-subtitle">{t("landingFaqSubtitle")}</p>
-            <div className="landing-faq-list">
-              {faqItems.map((item, i) => (
-                <div
-                  key={i}
-                  className={`landing-faq-item ${openFaq === i ? "open" : ""}`}
-                >
-                  <button
-                    className="landing-faq-question"
-                    onClick={() => setOpenFaq(openFaq === i ? null : i)}
-                    aria-expanded={openFaq === i}
-                  >
-                    <span>{t(item.question)}</span>
-                    <ChevronDown size={18} className="landing-faq-chevron" />
-                  </button>
-                  {openFaq === i && (
-                    <div className="landing-faq-answer">
-                      <p>{t(item.answer)}</p>
+        <section className="marketing-proof-strip" aria-label={ui.capabilities}>
+          <div className="marketing-shell marketing-proof-inner">
+            {[
+              ["Shopify", ShoppingBag], ["WhatsApp", MessageSquare], ["Google Knowledge", BrainCircuit],
+              ["Dropi", Package], ["Meta Ads", Megaphone], ["Analytics", BarChart3],
+            ].map(([label, Icon]) => {
+              const IconComponent = Icon as typeof ShoppingBag;
+              return <div key={label as string}><IconComponent size={18} /><span>{label as string}</span></div>;
+            })}
+          </div>
+        </section>
+
+        <section className="marketing-section marketing-problem" id="outcomes">
+          <div className="marketing-shell">
+            <div className="marketing-section-heading centered">
+              <span className="marketing-kicker">{copy.problem.eyebrow}</span>
+              <h2>{copy.problem.title}</h2>
+              <p>{copy.problem.subtitle}</p>
+            </div>
+            <div className="marketing-problem-grid">
+              {copy.problem.items.map((item, index) => {
+                const Icon = problemIcons[index];
+                return (
+                  <article key={item.title} className="marketing-problem-card">
+                    <span className="marketing-card-icon muted"><Icon size={22} /></span>
+                    <h3>{item.title}</h3><p>{item.text}</p>
+                  </article>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+
+        <section className="marketing-section marketing-outcomes">
+          <div className="marketing-shell">
+            <div className="marketing-section-heading">
+              <span className="marketing-kicker">{copy.outcomes.eyebrow}</span>
+              <h2>{copy.outcomes.title}</h2>
+              <p>{copy.outcomes.subtitle}</p>
+            </div>
+            <div className="marketing-outcome-grid">
+              {copy.outcomes.items.map((item, index) => {
+                const Icon = outcomeIcons[index];
+                return (
+                  <article key={item.title} className="marketing-outcome-card">
+                    <div className="marketing-outcome-top"><span className="marketing-card-icon"><Icon size={23} /></span><span className="marketing-proof-pill">{item.proof}</span></div>
+                    <h3>{item.title}</h3><p>{item.text}</p>
+                  </article>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+
+        <section className="marketing-section marketing-product" id="product">
+          <div className="marketing-shell">
+            <div className="marketing-section-heading centered narrow">
+              <span className="marketing-kicker">{copy.product.eyebrow}</span>
+              <h2>{copy.product.title}</h2>
+              <p>{copy.product.subtitle}</p>
+            </div>
+            <div className="marketing-product-grid">
+              {copy.product.cards.map((card, index) => {
+                const Icon = productIcons[index];
+                return (
+                  <article key={card.title} className={`marketing-product-card product-${index + 1}`}>
+                    <div className="marketing-product-card-head">
+                      <span className="marketing-card-icon"><Icon size={24} /></span>
+                      <span className="marketing-product-tag">{card.tag}</span>
                     </div>
-                  )}
-                </div>
+                    <h3>{card.title}</h3>
+                    <p>{card.text}</p>
+                    <ul>{card.bullets.map((bullet) => <li key={bullet}><Check size={14} />{bullet}</li>)}</ul>
+                  </article>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+
+        <section className="marketing-section marketing-integrations" id="integrations">
+          <div className="marketing-shell marketing-integrations-layout">
+            <div className="marketing-section-heading">
+              <span className="marketing-kicker">{copy.integrations.eyebrow}</span>
+              <h2>{copy.integrations.title}</h2>
+              <p>{copy.integrations.subtitle}</p>
+              <small>{copy.integrations.note}</small>
+            </div>
+            <div className="marketing-integration-board">
+              <div className="integration-core"><Sparkles size={22} /><strong>DIAGLOB</strong><span>{ui.operationsOs}</span></div>
+              {integrationGroups.map((group) => {
+                const Icon = group.icon;
+                return (
+                  <div className="integration-group" key={group.label}>
+                    <div className="integration-group-label"><Icon size={16} />{group.label}</div>
+                    <div className="integration-chips">{group.items.map((item) => <span key={item}>{item}</span>)}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+
+        <section className="marketing-section marketing-workflow" id="workflow">
+          <div className="marketing-shell">
+            <div className="marketing-section-heading centered narrow">
+              <span className="marketing-kicker">{copy.workflow.eyebrow}</span>
+              <h2>{copy.workflow.title}</h2>
+              <p>{copy.workflow.subtitle}</p>
+            </div>
+            <div className="marketing-steps">
+              {copy.workflow.steps.map((step, index) => (
+                <article key={step.title} className="marketing-step">
+                  <span className="marketing-step-number">0{index + 1}</span>
+                  <div><h3>{step.title}</h3><p>{step.text}</p></div>
+                  {index < copy.workflow.steps.length - 1 && <ArrowRight className="marketing-step-arrow" size={22} />}
+                </article>
               ))}
             </div>
           </div>
         </section>
 
-        {/* CTA FINAL */}
-        <section className="landing-section landing-cta-final" id="cta-final">
-          <div className="landing-container">
-            <h2>{t("landingCtaFinalTitle")}</h2>
-            <p>{t("landingCtaFinalSubtitle")}</p>
-            <div className="landing-hero-ctas">
-              <button className="landing-btn-primary landing-btn-lg" onClick={onNavigateToRegister}>
-                {t("landingCtaFinalButton")}
-              </button>
+        <section className="marketing-section marketing-pricing" id="pricing">
+          <div className="marketing-shell">
+            <div className="marketing-section-heading centered narrow">
+              <span className="marketing-kicker">{copy.pricing.eyebrow}</span>
+              <h2>{copy.pricing.title}</h2>
+              <p>{copy.pricing.subtitle}</p>
+            </div>
+            <div className="marketing-pricing-grid">
+              {plans.map((plan) => (
+                <article key={plan.id} className={`marketing-price-card ${plan.recommended ? "recommended" : ""}`}>
+                  {plan.recommended && <span className="marketing-recommended">{copy.pricing.recommended}</span>}
+                  <div className="marketing-price-name"><span>{plan.name}</span>{plan.id === "scale" && <Sparkles size={18} />}</div>
+                  <div className="marketing-price"><strong>${plan.price}</strong><span>{copy.pricing.perMonth}</span></div>
+                  <div className="marketing-price-divider" />
+                  <div className="marketing-price-feature"><Store size={17} /><span><strong>{plan.stores}</strong> {plan.stores === 1 ? copy.pricing.store : copy.pricing.stores}</span></div>
+                  <div className="marketing-price-feature"><Bot size={17} /><span><strong>{plan.ai}</strong> {copy.pricing.includedAi}</span></div>
+                  <div className="marketing-price-feature"><Check size={17} /><span>{ui.coreOpsAnalytics}</span></div>
+                  <button className={plan.recommended ? "marketing-primary-button full" : "marketing-secondary-button full"} onClick={onNavigateToRegister}>
+                    {copy.pricing.cta}<ArrowRight size={16} />
+                  </button>
+                </article>
+              ))}
+            </div>
+            <div className="marketing-ai-addon"><Sparkles size={20} /><div><strong>{copy.pricing.extraAi}</strong><span>{copy.pricing.footer}</span></div></div>
+          </div>
+        </section>
+
+        <section className="marketing-section marketing-faq">
+          <div className="marketing-shell marketing-faq-layout">
+            <div className="marketing-section-heading">
+              <span className="marketing-kicker">{copy.faq.eyebrow}</span>
+              <h2>{copy.faq.title}</h2>
+            </div>
+            <div className="marketing-faq-list">
+              {copy.faq.items.map((item, index) => (
+                <article className={`marketing-faq-item ${openFaq === index ? "open" : ""}`} key={item.q}>
+                  <button onClick={() => setOpenFaq(openFaq === index ? null : index)} aria-expanded={openFaq === index}>
+                    <span>{item.q}</span><ChevronDown size={19} />
+                  </button>
+                  {openFaq === index && <p>{item.a}</p>}
+                </article>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="marketing-final-cta">
+          <div className="marketing-shell marketing-final-card">
+            <div className="marketing-final-glow" />
+            <span className="marketing-kicker light">{copy.final.eyebrow}</span>
+            <h2>{copy.final.title}</h2>
+            <p>{copy.final.subtitle}</p>
+            <div className="marketing-hero-actions centered-actions">
+              <button className="marketing-primary-button large inverse" onClick={onNavigateToRegister}>{copy.final.cta}<ArrowRight size={18} /></button>
+              <button className="marketing-final-login" onClick={onNavigateToLogin}>{copy.final.login}</button>
             </div>
           </div>
         </section>
       </main>
 
-      {/* FOOTER */}
-      <footer className="landing-footer">
-        <div className="landing-container">
-          <div className="landing-footer-grid">
-            <div className="landing-footer-brand">
-              <div className="landing-brand">
-                <div className="brand-mark">
-                  <Sparkles size={20} />
-                </div>
-                <div>
-                  <div className="brand-name">DIAGLOB</div>
-                  <div className="brand-version">AI COMMERCE</div>
-                </div>
-              </div>
-              <p className="landing-footer-tagline">{t("landingFooterTagline")}</p>
-            </div>
-            <div className="landing-footer-col">
-              <h4>{t("landingFooterProduct")}</h4>
-              <button onClick={() => scrollTo("features")}>{t("landingFooterFeatures")}</button>
-              <button onClick={() => scrollTo("integrations")}>{t("landingFooterIntegrations")}</button>
-              <button onClick={() => scrollTo("pricing")}>{t("landingFooterPricing")}</button>
-            </div>
-            <div className="landing-footer-col">
-              <h4>{t("landingFooterLegal")}</h4>
-              <a href="/privacy">{t("landingFooterPrivacy")}</a>
-              <a href="/terms">{t("landingFooterTerms")}</a>
-            </div>
-            <div className="landing-footer-col">
-              <h4>{t("landingFooterAccount")}</h4>
-              <button onClick={onNavigateToLogin}>{t("landingFooterLogin")}</button>
-              <button onClick={onNavigateToRegister}>{t("landingFooterRegister")}</button>
-            </div>
+      <footer className="marketing-footer">
+        <div className="marketing-shell marketing-footer-grid">
+          <div className="marketing-footer-brand">
+            <div className="marketing-brand static"><span className="marketing-brand-mark"><Sparkles size={19} /></span><span className="marketing-brand-copy"><strong>DIAGLOB</strong><small>AI COMMERCE OS</small></span></div>
+            <p>{copy.footer.tagline}</p>
           </div>
-          <div className="landing-footer-bottom">
-            <span>&copy; {new Date().getFullYear()} Diaglob. {t("landingFooterRights")}</span>
-          </div>
+          <div><strong>{copy.footer.product}</strong><button onClick={() => scrollTo("product")}>{copy.nav.product}</button><button onClick={() => scrollTo("integrations")}>{copy.nav.integrations}</button><button onClick={() => scrollTo("pricing")}>{copy.nav.pricing}</button></div>
+          <div><strong>{copy.footer.legal}</strong><a href="/privacy">{copy.footer.privacy}</a><a href="/terms">{copy.footer.terms}</a></div>
+          <div><strong>{copy.footer.account}</strong><button onClick={onNavigateToLogin}>{copy.nav.login}</button><button onClick={onNavigateToRegister}>{copy.nav.start}</button></div>
         </div>
+        <div className="marketing-shell marketing-footer-bottom">© {new Date().getFullYear()} Diaglob. {copy.footer.rights}</div>
       </footer>
     </div>
   );
