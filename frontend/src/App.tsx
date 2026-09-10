@@ -45,6 +45,7 @@ const StoresPage = lazy(() => import("./pages/StoresPage"));
 const PlansPage = lazy(() => import("./pages/PlansPage"));
 const PublicLandingPage = lazy(() => import("./pages/PublicLandingPage"));
 const LegalPage = lazy(() => import("./pages/LegalPage"));
+const RefundPolicyPage = lazy(() => import("./pages/RefundPolicyPage"));
 const CommercePage = lazy(() => import("./pages/CommercePage"));
 const AutomationsPage = lazy(() => import("./pages/AutomationsPage"));
 const AnalyticsPage = lazy(() => import("./pages/AnalyticsPage"));
@@ -206,6 +207,15 @@ function App() {
           </Suspense>
         }
       />
+      <Route
+        path="/refund-policy"
+        element={
+          <Suspense fallback={<div className="page-loading">Cargando...</div>}>
+            <RefundPolicyPage />
+          </Suspense>
+        }
+      />
+      <Route path="/refund" element={<Navigate to="/refund-policy" replace />} />
       <Route
         path="/app/*"
         element={
