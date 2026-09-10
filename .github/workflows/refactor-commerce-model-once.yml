@@ -1,0 +1,68 @@
+name: One-time commerce model extraction
+
+on:
+  push:
+    branches:
+      - refactor/extract-commerce-connection-model
+
+permissions:
+  contents: write
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/extract-commerce-connection-model
+          fetch-depth: 0
+
+      - name: Extract CommerceConnection from models.py
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("backend/app/models.py")
+          text = path.read_text()
+
+          start_marker = """# ============================================================
+          # COMMERCE CONNECTION
+          # ============================================================
+          """
+          end_marker = """# ============================================================
+          # DROPPI CONNECTION
+          # ============================================================
+          """
+
+          if text.count(start_marker) != 1:
+              raise SystemExit(f"expected one commerce start marker, found {text.count(start_marker)}")
+          if text.count(end_marker) != 1:
+              raise SystemExit(f"expected one Dropi end marker, found {text.count(end_marker)}")
+
+          start = text.index(start_marker)
+          end = text.index(end_marker, start)
+          replacement = """# Commerce connection model is physically defined in app.model_domains.commerce.
+          # This import preserves the historical app.models import surface.
+          from .model_domains.commerce import CommerceConnection
+
+
+          """
+
+          updated = text[:start] + replacement + text[end:]
+          if "class CommerceConnection(Base):" in updated:
+              raise SystemExit("CommerceConnection class definition still remains in models.py")
+          if "from .model_domains.commerce import CommerceConnection" not in updated:
+              raise SystemExit("compatibility import missing from models.py")
+
+          path.write_text(updated)
+          PY
+
+      - name: Remove one-time helper and push extraction
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/refactor-commerce-model-once.yml
+          git add backend/app/models.py
+          git commit -m "refactor: physically extract commerce connection model"
+          git pull --rebase origin refactor/extract-commerce-connection-model
+          git push origin HEAD:refactor/extract-commerce-connection-model
