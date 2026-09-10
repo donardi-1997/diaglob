@@ -7,6 +7,7 @@ import {
   BrainCircuit,
   Check,
   CreditCard,
+  Lightbulb,
   MessageSquareText,
   Package,
   Plug,
@@ -23,6 +24,7 @@ import {
   type OperationsSummary,
 } from "../services/operations";
 import "../integrations-hub-v2.css";
+import "../onboarding-activation-polish.css";
 
 interface IntegrationsHubPageProps {
   storeId: number;
@@ -61,6 +63,9 @@ const COPY: Record<
     statusConnected: string;
     statusDisconnected: string;
     statusDegraded: string;
+    nextTitle: string;
+    nextSubtitle: string;
+    nextLabel: string;
     categories: Record<string, string>;
   }
 > = {
@@ -91,6 +96,9 @@ const COPY: Record<
     statusConnected: "Conectado",
     statusDisconnected: "Sin conectar",
     statusDegraded: "Atención requerida",
+    nextTitle: "¿Qué pasa después de conectar?",
+    nextSubtitle: "Usa estos siguientes pasos para convertir una conexión técnica en una operación activa.",
+    nextLabel: "Siguiente paso",
     categories: {
       commerce: "Comercio",
       messaging: "Mensajería",
@@ -128,6 +136,9 @@ const COPY: Record<
     statusConnected: "Connected",
     statusDisconnected: "Not connected",
     statusDegraded: "Needs attention",
+    nextTitle: "What happens after you connect?",
+    nextSubtitle: "Use these next steps to turn a technical connection into an active operating workflow.",
+    nextLabel: "Next step",
     categories: {
       commerce: "Commerce",
       messaging: "Messaging",
@@ -165,6 +176,9 @@ const COPY: Record<
     statusConnected: "Conectado",
     statusDisconnected: "Não conectado",
     statusDegraded: "Requer atenção",
+    nextTitle: "O que acontece depois de conectar?",
+    nextSubtitle: "Use estes próximos passos para transformar uma conexão técnica em uma operação ativa.",
+    nextLabel: "Próximo passo",
     categories: {
       commerce: "Comércio",
       messaging: "Mensagens",
@@ -174,6 +188,75 @@ const COPY: Record<
       knowledge: "Knowledge",
       ads: "Publicidade",
     },
+  },
+};
+
+const NEXT_STEP_COPY: Record<LocaleKey, Record<string, string>> = {
+  es: {
+    shopify:
+      "Sincroniza el catálogo y valida variantes/precios. Luego revisa Comercio para confirmar que los pedidos y productos queden listos para operar y medir.",
+    nuvemshop:
+      "Sincroniza productos y pedidos. Después revisa Comercio y Analíticas para validar catálogo, órdenes y rendimiento de la tienda.",
+    whatsapp:
+      "Completa el webhook y token de verificación en Meta y envía un mensaje de prueba. Las conversaciones nuevas aparecerán en la bandeja de Diaglob.",
+    telegram:
+      "Envía un mensaje de prueba para validar entrada y salida. Las conversaciones nuevas quedarán disponibles en la bandeja operativa.",
+    dropi:
+      "Valida catálogo, costos y disponibilidad del proveedor antes de usar esos datos en pedidos y analítica de rentabilidad.",
+    payments:
+      "Verifica credenciales y ambiente, ejecuta una prueba controlada y confirma conciliación antes de usar el proveedor en producción.",
+    commerce:
+      "Sincroniza el catálogo disponible y revisa Comercio para validar productos, variantes y pedidos antes de operar.",
+    messaging:
+      "Envía un mensaje de prueba y confirma que la conversación aparezca en la bandeja antes de activar automatizaciones o IA.",
+    supplier:
+      "Revisa que catálogo, costos y disponibilidad estén completos antes de usar el proveedor en la operación.",
+    default:
+      "Haz una prueba del flujo conectado y confirma que los datos esperados aparezcan en Diaglob antes de usarlo en producción.",
+  },
+  en: {
+    shopify:
+      "Sync the catalog and validate variants and prices. Then review Commerce to confirm products and orders are ready to operate and measure.",
+    nuvemshop:
+      "Sync products and orders, then review Commerce and Analytics to validate catalog, orders, and store performance.",
+    whatsapp:
+      "Finish the webhook and verification-token setup in Meta and send a test message. New conversations should appear in the Diaglob inbox.",
+    telegram:
+      "Send a test message to validate inbound and outbound delivery. New conversations should appear in the operating inbox.",
+    dropi:
+      "Validate supplier catalog, costs, and availability before using that data in orders and profitability analytics.",
+    payments:
+      "Verify credentials and environment, run a controlled test, and confirm reconciliation before using the provider in production.",
+    commerce:
+      "Sync the available catalog and review Commerce to validate products, variants, and orders before operating.",
+    messaging:
+      "Send a test message and confirm the conversation appears in the inbox before enabling automations or AI.",
+    supplier:
+      "Review catalog, costs, and availability before using the supplier in your operating workflow.",
+    default:
+      "Test the connected workflow and confirm expected data appears in Diaglob before using it in production.",
+  },
+  "pt-BR": {
+    shopify:
+      "Sincronize o catálogo e valide variantes e preços. Depois revise Comércio para confirmar que produtos e pedidos estão prontos para operar e medir.",
+    nuvemshop:
+      "Sincronize produtos e pedidos e depois revise Comércio e Analytics para validar catálogo, pedidos e desempenho da loja.",
+    whatsapp:
+      "Conclua o webhook e o token de verificação no Meta e envie uma mensagem de teste. Novas conversas aparecerão na caixa de entrada da Diaglob.",
+    telegram:
+      "Envie uma mensagem de teste para validar entrada e saída. Novas conversas ficarão disponíveis na caixa de entrada operacional.",
+    dropi:
+      "Valide catálogo, custos e disponibilidade do fornecedor antes de usar esses dados em pedidos e analytics de rentabilidade.",
+    payments:
+      "Verifique credenciais e ambiente, execute um teste controlado e confirme a conciliação antes de usar o provedor em produção.",
+    commerce:
+      "Sincronize o catálogo disponível e revise Comércio para validar produtos, variantes e pedidos antes de operar.",
+    messaging:
+      "Envie uma mensagem de teste e confirme que a conversa aparece na caixa de entrada antes de ativar automações ou IA.",
+    supplier:
+      "Revise catálogo, custos e disponibilidade antes de usar o fornecedor na operação.",
+    default:
+      "Teste o fluxo conectado e confirme que os dados esperados aparecem na Diaglob antes de usar em produção.",
   },
 };
 
@@ -190,6 +273,22 @@ function IntegrationIcon({ category }: { category: string }) {
   if (category === "payments" || category === "payment") return <CreditCard size={17} />;
   if (category === "knowledge") return <BrainCircuit size={17} />;
   return <Plug size={17} />;
+}
+
+function nextStepFor(integration: OperationsIntegration, locale: LocaleKey) {
+  const identity = `${integration.provider || ""} ${integration.key || ""} ${integration.name || ""}`.toLowerCase();
+  const copy = NEXT_STEP_COPY[locale];
+
+  if (identity.includes("shopify")) return copy.shopify;
+  if (identity.includes("nuvem")) return copy.nuvemshop;
+  if (identity.includes("whatsapp")) return copy.whatsapp;
+  if (identity.includes("telegram")) return copy.telegram;
+  if (identity.includes("dropi") || identity.includes("droppi")) return copy.dropi;
+  if (integration.category === "payments" || integration.category === "payment") return copy.payments;
+  if (integration.category === "commerce") return copy.commerce;
+  if (integration.category === "messaging") return copy.messaging;
+  if (integration.category === "supplier") return copy.supplier;
+  return copy.default;
 }
 
 export default function IntegrationsHubPage({
@@ -246,7 +345,8 @@ export default function IntegrationsHubPage({
 
   const hasSummary = summary !== null;
   const integrations = summary?.integrations || [];
-  const connectedCount = integrations.filter((integration) => integration.connected).length;
+  const connectedIntegrations = integrations.filter((integration) => integration.connected);
+  const connectedCount = connectedIntegrations.length;
   const attentionCount = integrations.filter(
     (integration) => integration.degraded || integration.status === "degraded",
   ).length;
@@ -400,6 +500,32 @@ export default function IntegrationsHubPage({
           </div>
         ) : null}
       </section>
+
+      {connectedIntegrations.length > 0 && (
+        <section className="integrations-hub-panel integrations-hub-next">
+          <div className="integrations-hub-panel-heading">
+            <div>
+              <span>ACTIVATION</span>
+              <h2>{copy.nextTitle}</h2>
+              <p>{copy.nextSubtitle}</p>
+            </div>
+          </div>
+          <div className="integrations-hub-next-grid">
+            {connectedIntegrations.map((integration) => (
+              <article className="integrations-hub-next-card" key={`next-${integration.key}`}>
+                <div className="integrations-hub-next-icon">
+                  <Lightbulb size={18} />
+                </div>
+                <div className="integrations-hub-next-copy">
+                  <span>{copy.nextLabel}</span>
+                  <strong>{integration.name}</strong>
+                  <p>{nextStepFor(integration, locale)}</p>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="integrations-hub-knowledge-card">
         <div className="integrations-hub-knowledge-icon">
