@@ -3,6 +3,10 @@ import { listAutomations } from "./automations";
 import { getConversations } from "./conversations";
 import { getCustomerList } from "./customers";
 import {
+  globalSearchMatches,
+  normalizeGlobalSearchQuery,
+} from "./globalSearchHelpers";
+import {
   listCommerceOrders,
   listCommerceProducts,
 } from "./integrations";
@@ -47,22 +51,6 @@ interface SearchWorkspaceOptions {
   query: string;
   storeId?: number;
   categories: GlobalSearchCategories;
-}
-
-
-export function normalizeGlobalSearchQuery(value: string) {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim()
-    .toLowerCase();
-}
-
-
-function matches(query: string, values: Array<string | null | undefined>) {
-  return values.some((value) =>
-    normalizeGlobalSearchQuery(value || "").includes(query),
-  );
 }
 
 
@@ -123,7 +111,7 @@ export async function searchWorkspace({
 
         return data.items
           .filter((conversation) =>
-            matches(normalized, [
+            globalSearchMatches(normalized, [
               conversation.name,
               conversation.phone,
               conversation.email,
@@ -179,7 +167,7 @@ export async function searchWorkspace({
 
         return data.items
           .filter((order) =>
-            matches(normalized, [
+            globalSearchMatches(normalized, [
               order.order_number,
               order.source,
               order.note,
@@ -208,7 +196,7 @@ export async function searchWorkspace({
 
         return data.items
           .filter((automation) =>
-            matches(normalized, [
+            globalSearchMatches(normalized, [
               automation.name,
               automation.description,
               automation.trigger_type,
@@ -239,7 +227,10 @@ export async function searchWorkspace({
             const belongsToStore =
               !storeId || agent.stores.some((store) => store.id === storeId);
 
-            return belongsToStore && matches(normalized, [agent.name, agent.role]);
+            return belongsToStore && globalSearchMatches(normalized, [
+              agent.name,
+              agent.role,
+            ]);
           })
           .slice(0, 6)
           .map((agent) => ({
@@ -268,7 +259,7 @@ export async function searchWorkspace({
               || knowledgeBase.scope === "organization"
               || knowledgeBase.stores.some((store) => store.id === storeId);
 
-            return belongsToStore && matches(normalized, [
+            return belongsToStore && globalSearchMatches(normalized, [
               knowledgeBase.name,
               knowledgeBase.scope,
               knowledgeBase.external_status,
