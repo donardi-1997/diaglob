@@ -1,7 +1,7 @@
+import type { ReactNode } from "react";
 import {
   Bot,
   CircleHelp,
-  DollarSign,
   ShieldCheck,
   Trophy,
   Users,
@@ -276,7 +276,7 @@ function AttributionCard({
   deliveredLabel,
   muted = false,
 }: {
-  icon: React.ReactNode;
+  icon: ReactNode;
   label: string;
   metrics: SalesAttributionMetrics;
   money: (value: number | null) => string;
@@ -301,8 +301,8 @@ function CompareRow({
   ai,
 }: {
   label: string;
-  human: React.ReactNode;
-  ai: React.ReactNode;
+  human: ReactNode;
+  ai: ReactNode;
 }) {
   return (
     <tr>
@@ -325,7 +325,7 @@ function ActorTable({
   title: string;
   actorLabel: string;
   rows: SalesAttributionActorPerformance[];
-  icon: React.ReactNode;
+  icon: ReactNode;
   copy: (typeof COPY)[LocaleKey];
   money: (value: number | null) => string;
   rate: (value: number | null) => string;
