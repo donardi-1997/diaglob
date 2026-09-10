@@ -68,7 +68,7 @@ export default function GettingStarted({
   useEffect(() => {
     if (!selectedStoreId) {
       setCommerceStatus(null);
-      setWhatsappStatus(null);
+      setWhatsAppStatus(null);
       setConnectionsLoading(false);
       return;
     }
@@ -82,7 +82,7 @@ export default function GettingStarted({
     ]).then(([commerce, whatsapp]) => {
       if (!mounted) return;
       setCommerceStatus(commerce);
-      setWhatsappStatus(whatsapp);
+      setWhatsAppStatus(whatsapp);
       setConnectionsLoading(false);
     });
 
