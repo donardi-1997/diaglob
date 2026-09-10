@@ -19,6 +19,10 @@ import {
   type OperationsSummary,
 } from "../services/operations";
 import { type Store } from "../services/stores";
+import {
+  degradedAlertMessage,
+  degradedStatusLabel,
+} from "../utils/operationsStatus";
 import GettingStarted from "../components/GettingStarted";
 
 interface DashboardPageProps {
@@ -43,34 +47,6 @@ function IntegrationIcon({
   if (category === "ads") return <Megaphone size={18} />;
   if (category === "payments") return <CreditCard size={18} />;
   return <Plug size={18} />;
-}
-
-function degradedStatusLabel(language?: string) {
-  if (language?.startsWith("pt")) return "Temporariamente indisponível";
-  if (language?.startsWith("en")) return "Temporarily unavailable";
-  return "Temporalmente no disponible";
-}
-
-function degradedAlertMessage(
-  language: string | undefined,
-  integrations: OperationsIntegration[],
-) {
-  const names = Array.from(
-    new Set(
-      integrations
-        .filter((integration) => integration.degraded)
-        .map((integration) => integration.name),
-    ),
-  );
-  const suffix = names.length ? `: ${names.join(", ")}` : "";
-
-  if (language?.startsWith("pt")) {
-    return `Status de integração temporariamente indisponível${suffix}`;
-  }
-  if (language?.startsWith("en")) {
-    return `Integration status temporarily unavailable${suffix}`;
-  }
-  return `Estado de integración temporalmente no disponible${suffix}`;
 }
 
 export default function DashboardPage({
