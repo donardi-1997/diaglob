@@ -13,12 +13,16 @@ import {
 interface CommerceProductsProps {
   storeId: number;
   canWrite: boolean;
+  initialSearchQuery?: string;
+  searchRequestKey?: number;
 }
 
 
 export default function CommerceProducts({
   storeId,
   canWrite: _canWrite,
+  initialSearchQuery,
+  searchRequestKey,
 }: CommerceProductsProps) {
   const { t } = useTranslation();
 
@@ -38,8 +42,10 @@ export default function CommerceProducts({
 
 
   useEffect(() => {
-    loadProducts();
-  }, [storeId]);
+    const nextQuery = initialSearchQuery?.trim() || "";
+    setSearchQuery(nextQuery);
+    void loadProducts(nextQuery || undefined);
+  }, [storeId, initialSearchQuery, searchRequestKey]);
 
 
   async function loadProducts(
@@ -72,7 +78,7 @@ export default function CommerceProducts({
   ) {
     e.preventDefault();
 
-    loadProducts(
+    void loadProducts(
       searchQuery.trim() || undefined,
     );
   }
