@@ -8,6 +8,7 @@ from app.model_domains.messaging import (
     WhatsAppMessageTemplate,
 )
 from app.model_domains.oauth import NuvemshopOAuthState, ShopifyOAuthState
+from app.model_domains.payments import PaymentConnection, PaymentTransaction
 from app.model_domains.tenancy import (
     MembershipStore,
     Organization,
@@ -59,6 +60,16 @@ def test_google_models_are_physically_defined_in_domain_module():
     assert GoogleConnection.__module__ == "app.model_domains.google"
 
 
+def test_payment_domain_exports_legacy_model_classes():
+    assert PaymentConnection is models.PaymentConnection
+    assert PaymentTransaction is models.PaymentTransaction
+
+
+def test_payment_models_are_physically_defined_in_domain_module():
+    assert PaymentConnection.__module__ == "app.model_domains.payments"
+    assert PaymentTransaction.__module__ == "app.model_domains.payments"
+
+
 def test_domain_imports_do_not_duplicate_sqlalchemy_tables():
     exported_models = [
         Organization,
@@ -77,6 +88,8 @@ def test_domain_imports_do_not_duplicate_sqlalchemy_tables():
         NuvemshopOAuthState,
         GoogleOAuthState,
         GoogleConnection,
+        PaymentConnection,
+        PaymentTransaction,
     ]
 
     for model in exported_models:
@@ -143,3 +156,64 @@ def test_google_table_contracts_are_preserved():
         "created_at",
         "updated_at",
     }
+
+
+def test_payment_table_contracts_are_preserved():
+    connection = PaymentConnection.__table__
+    transaction = PaymentTransaction.__table__
+
+    assert connection.name == "payment_connections"
+    assert transaction.name == "payment_transactions"
+    assert set(connection.columns.keys()) == {
+        "id",
+        "organization_id",
+        "store_id",
+        "provider",
+        "status",
+        "environment",
+        "client_id_encrypted",
+        "client_secret_encrypted",
+        "webhook_secret_encrypted",
+        "merchant_reference",
+        "last_event_id",
+        "last_event_at",
+        "last_error",
+        "connected_at",
+        "created_at",
+        "updated_at",
+    }
+    assert set(transaction.columns.keys()) == {
+        "id",
+        "organization_id",
+        "store_id",
+        "order_id",
+        "provider",
+        "provider_transaction_id",
+        "merchant_reference",
+        "idempotency_key",
+        "amount",
+        "currency",
+        "status",
+        "payment_method",
+        "customer_phone",
+        "provider_status",
+        "provider_error_code",
+        "provider_error_message",
+        "expires_at",
+        "paid_at",
+        "reversed_at",
+        "created_at",
+        "updated_at",
+    }
+    assert any(
+        constraint.name == "uq_payment_connection_store_provider"
+        for constraint in connection.constraints
+    )
+    assert any(
+        constraint.name == "uq_payment_txn_org_idempotency"
+        for constraint in transaction.constraints
+    )
+    assert any(
+        index.name == "ix_payment_txn_provider_txn_id"
+        for index in transaction.indexes
+    )
