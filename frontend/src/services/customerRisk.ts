@@ -47,6 +47,25 @@ export interface CustomerRiskReportPayload {
 }
 
 
+export interface CustomerRiskDispute {
+  id: number;
+  status: "open" | "accepted" | "rejected" | "withdrawn";
+  statement: string;
+  evidence_reference: string | null;
+  resolution_note: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  resolved_at: string | null;
+}
+
+
+export interface CustomerRiskDisputePayload {
+  statement: string;
+  evidence_reference?: string;
+  store_id?: number;
+}
+
+
 export async function getCustomerRisk(customerId: number) {
   const response = await api.get<CustomerRiskSummary>(
     `/api/customers/${customerId}/risk`,
@@ -70,6 +89,34 @@ export async function reportCustomerRisk(
 export async function dismissCustomerRiskReport(customerId: number) {
   const response = await api.delete<CustomerRiskSummary>(
     `/api/customers/${customerId}/risk/reports/mine`,
+  );
+  return response.data;
+}
+
+
+export async function getMyCustomerRiskDispute(customerId: number) {
+  const response = await api.get<{ dispute: CustomerRiskDispute | null }>(
+    `/api/customers/${customerId}/risk/disputes/mine`,
+  );
+  return response.data.dispute;
+}
+
+
+export async function submitCustomerRiskDispute(
+  customerId: number,
+  payload: CustomerRiskDisputePayload,
+) {
+  const response = await api.post<CustomerRiskDispute>(
+    `/api/customers/${customerId}/risk/disputes`,
+    payload,
+  );
+  return response.data;
+}
+
+
+export async function withdrawCustomerRiskDispute(customerId: number) {
+  const response = await api.delete<CustomerRiskDispute>(
+    `/api/customers/${customerId}/risk/disputes/mine`,
   );
   return response.data;
 }
