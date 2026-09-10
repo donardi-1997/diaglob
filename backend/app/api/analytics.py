@@ -12,6 +12,9 @@ from ..analytics import (
 )
 from ..db import get_db
 from ..models import OrganizationMembership, Store
+from ..services.customer_classification_service import (
+    get_customer_classification_analytics,
+)
 from ..services.operations_integrations import get_dynamic_operations_summary
 from .deps import require_permission
 
@@ -190,6 +193,47 @@ def get_analytics_commerce(
     )
 
     return get_commerce_analytics(
+        db=db,
+        organization_id=membership.organization_id,
+        store_id=store_id,
+        date_from=d_from,
+        date_to=d_to,
+    )
+
+
+@router.get(
+    "/api/stores/{store_id}"
+    "/analytics/customers"
+)
+def get_analytics_customers(
+    store_id: int,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    membership: OrganizationMembership = Depends(
+        require_permission("analytics.read")
+    ),
+    db: Session = Depends(get_db),
+):
+    store = (
+        db.query(Store)
+        .filter(
+            Store.id == store_id,
+            Store.organization_id
+            == membership.organization_id,
+            Store.deleted.is_(False),
+        )
+        .first()
+    )
+    if not store:
+        raise HTTPException(
+            status_code=404,
+            detail="Store not found",
+        )
+
+    d_from, d_to = get_date_range(
+        date_from, date_to
+    )
+    return get_customer_classification_analytics(
         db=db,
         organization_id=membership.organization_id,
         store_id=store_id,

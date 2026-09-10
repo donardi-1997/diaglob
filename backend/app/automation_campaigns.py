@@ -11,17 +11,27 @@ from sqlalchemy.orm import Session
 
 from .customers.intelligence import get_customer_metrics
 from .models import AutomationAudienceMember, AutomationCampaign, AutomationRecipientExecution, AutomationRun, Customer, Store, WhatsAppConnection
+from .services.customer_classification_service import CLASSIFICATIONS, VALUE_TIERS, enrich_customer_metrics
 from .whatsapp_compliance import evaluate_whatsapp_delivery_eligibility, get_last_whatsapp_inbound_by_customer
 
 AUTOMATION_TYPES = {"recovery", "high_intent_followup", "inactive_reactivation", "vip_reactivation", "failed_order_recovery", "post_purchase_followup", "custom"}
 STATUSES = {"draft", "active", "paused", "archived"}
 SCHEDULE_TYPES = {"once", "daily", "weekly", "every_n_days"}
-VARIABLES = {"customer.name", "store.name", "customer.segment", "customer.health"}
+VARIABLES = {
+    "customer.name",
+    "store.name",
+    "customer.segment",
+    "customer.health",
+    "customer.classification",
+    "customer.value_tier",
+}
 FILTER_ENUMS = {
     "segment": {"new", "interested", "high_intent", "buyer", "repeat_buyer", "vip", "inactive"},
     "priority": {"high", "medium", "low"},
     "health": {"active", "at_risk", "inactive"},
     "flag": {"at_risk"},
+    "classification": set(CLASSIFICATIONS),
+    "value_tier": set(VALUE_TIERS),
 }
 _VARIABLE_RE = re.compile(r"{{\s*([\w.]+)\s*}}")
 
@@ -74,10 +84,17 @@ def validate_campaign(data: dict[str, Any], store: Store) -> None:
 
 def audience_metrics(db: Session, org_id: int, store_id: int, audience_type: str, filters: dict[str, Any], member_ids: list[int] | None = None) -> list[dict[str, Any]]:
     metrics = get_customer_metrics(db, org_id, store_id)
+    metrics = enrich_customer_metrics(db, org_id, store_id, metrics)
     if audience_type == "fixed":
         wanted = set(member_ids or [])
         return [item for item in metrics if item["id"] in wanted]
-    for key, metric_key in (("segment", "primary_segment"), ("priority", "priority"), ("health", "customer_health")):
+    for key, metric_key in (
+        ("segment", "primary_segment"),
+        ("priority", "priority"),
+        ("health", "customer_health"),
+        ("classification", "commercial_classification"),
+        ("value_tier", "value_tier"),
+    ):
         values = filters.get(key, [])
         if values:
             metrics = [item for item in metrics if item.get(metric_key) in values]
@@ -104,7 +121,14 @@ def audience_metrics(db: Session, org_id: int, store_id: int, audience_type: str
 
 
 def render_template(template: str, customer: dict[str, Any], store: Store) -> str | None:
-    values = {"customer.name": customer.get("name"), "store.name": store.name, "customer.segment": customer.get("primary_segment"), "customer.health": customer.get("customer_health")}
+    values = {
+        "customer.name": customer.get("name"),
+        "store.name": store.name,
+        "customer.segment": customer.get("primary_segment"),
+        "customer.health": customer.get("customer_health"),
+        "customer.classification": customer.get("commercial_classification"),
+        "customer.value_tier": customer.get("value_tier"),
+    }
     if any(values[key] is None or values[key] == "" for key in _VARIABLE_RE.findall(template)):
         return None
     return _VARIABLE_RE.sub(lambda match: str(values[match.group(1)]), template)
@@ -153,7 +177,28 @@ def simulate_campaign(db: Session, campaign: AutomationCampaign, store: Store, p
 
 
 def explain(customer: dict[str, Any]) -> dict[str, Any]:
-    return {key: customer.get(key) for key in ("id", "name", "phone", "country_code", "primary_segment", "priority", "customer_health", "flags", "customer_score", "needs_attention", "needs_followup", "successful_order_count", "last_interaction_at")}
+    fields = (
+        "id",
+        "name",
+        "phone",
+        "country_code",
+        "primary_segment",
+        "priority",
+        "customer_health",
+        "flags",
+        "customer_score",
+        "needs_attention",
+        "needs_followup",
+        "successful_order_count",
+        "last_interaction_at",
+        "commercial_classification",
+        "value_tier",
+        "rfm_recency_days",
+        "rfm_frequency",
+        "rfm_monetary_value",
+        "rfm_score",
+    )
+    return {key: customer.get(key) for key in fields}
 
 
 def json_load(value: str | dict[str, Any]) -> dict[str, Any]:

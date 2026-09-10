@@ -1,0 +1,82 @@
+.customer-classification-analytics { display: grid; gap: 18px; transition: opacity 160ms ease; }
+.customer-classification-analytics.is-loading { opacity: 0.6; }
+.cca-state { padding: 42px 24px; text-align: center; color: var(--dg-shell-muted, #94a3b8); }
+.cca-state.is-error { color: #f87171; }
+
+.cca-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+.cca-kpis article {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--dg-shell-border, rgba(148, 163, 184, 0.16));
+  border-radius: 16px;
+  background: var(--dg-shell-surface, rgba(15, 23, 42, 0.72));
+}
+.cca-kpis svg { flex: 0 0 auto; color: var(--dg-shell-accent, #8b7cff); }
+.cca-kpis div { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.cca-kpis strong { font-size: 1.18rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cca-kpis span { color: var(--dg-shell-muted, #94a3b8); font-size: 0.75rem; }
+
+.cca-panel {
+  border: 1px solid var(--dg-shell-border, rgba(148, 163, 184, 0.16));
+  border-radius: 18px;
+  background: var(--dg-shell-surface, rgba(15, 23, 42, 0.72));
+  overflow: hidden;
+}
+.cca-panel > header { padding: 19px 20px; border-bottom: 1px solid var(--dg-shell-border, rgba(148, 163, 184, 0.16)); }
+.cca-panel h3 { margin: 0 0 5px; font-size: 1rem; }
+.cca-panel header p { margin: 0; color: var(--dg-shell-muted, #94a3b8); font-size: 0.78rem; line-height: 1.5; }
+
+.cca-distribution { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 18px; }
+.cca-distribution > article { padding: 15px; border: 1px solid var(--dg-shell-border, rgba(148, 163, 184, 0.12)); border-radius: 14px; background: var(--dg-shell-surface-strong, #111621); }
+.cca-distribution-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.cca-distribution-top > strong { font-size: 1.05rem; }
+.cca-bar { height: 5px; margin: 13px 0 9px; border-radius: 99px; background: rgba(148, 163, 184, 0.12); overflow: hidden; }
+.cca-bar span { display: block; height: 100%; border-radius: inherit; background: var(--dg-shell-accent, #8b7cff); }
+.cca-distribution-meta { display: flex; justify-content: space-between; gap: 8px; color: var(--dg-shell-muted, #94a3b8); font-size: 0.68rem; }
+.cca-distribution-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 13px; padding-top: 11px; border-top: 1px solid var(--dg-shell-border, rgba(148, 163, 184, 0.12)); }
+.cca-distribution-stats span { color: var(--dg-shell-muted, #94a3b8); font-size: 0.66rem; }
+.cca-distribution-stats strong { display: block; margin-top: 3px; color: var(--dg-shell-text, #f8fafc); font-size: 0.78rem; }
+
+.cca-table-wrap { overflow-x: auto; }
+.cca-table { width: 100%; min-width: 900px; border-collapse: collapse; }
+.cca-table th { padding: 12px 16px; text-align: left; color: var(--dg-shell-muted, #94a3b8); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.07em; }
+.cca-table td { padding: 14px 16px; border-top: 1px solid var(--dg-shell-border, rgba(148, 163, 184, 0.12)); font-size: 0.8rem; }
+.cca-table td > strong { display: block; }
+.cca-table td small { display: block; margin-top: 3px; color: var(--dg-shell-muted, #94a3b8); font-size: 0.68rem; }
+
+.cca-panel .cvc-classification {
+  display: inline-flex;
+  align-items: center;
+  min-height: 25px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  background: rgba(148, 163, 184, 0.12);
+}
+.cca-panel .cvc-classification.is-champion,
+.cca-panel .cvc-classification.is-loyal { background: rgba(34, 197, 94, 0.13); color: #4ade80; }
+.cca-panel .cvc-classification.is-repeat_customer,
+.cca-panel .cvc-classification.is-high_value { background: rgba(59, 130, 246, 0.13); color: #60a5fa; }
+.cca-panel .cvc-classification.is-recent_buyer,
+.cca-panel .cvc-classification.is-prospect { background: rgba(139, 92, 246, 0.14); color: #a78bfa; }
+.cca-panel .cvc-classification.is-value_at_risk { background: rgba(245, 158, 11, 0.14); color: #fbbf24; }
+.cca-panel .cvc-classification.is-dormant { background: rgba(239, 68, 68, 0.13); color: #f87171; }
+.cca-panel .cvc-classification.is-lead { color: var(--dg-shell-muted, #94a3b8); }
+
+@media (max-width: 980px) {
+  .cca-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cca-distribution { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 620px) {
+  .cca-kpis, .cca-distribution { grid-template-columns: 1fr; }
+  .cca-distribution { padding: 14px; }
+}

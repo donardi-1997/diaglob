@@ -10,6 +10,7 @@ import {
   ShoppingBag,
   Sparkles,
   TrendingUp,
+  Users,
   Workflow,
 } from "lucide-react";
 
@@ -17,6 +18,7 @@ import AnalyticsOverview from "../components/AnalyticsOverview";
 import AnalyticsConversations from "../components/AnalyticsConversations";
 import AnalyticsCommerce from "../components/AnalyticsCommerce";
 import AnalyticsAutomations from "../components/AnalyticsAutomations";
+import AnalyticsCustomerClassifications from "../components/AnalyticsCustomerClassifications";
 import DropshippingOverview from "../components/DropshippingOverview";
 import AdminAnalytics from "../components/AdminAnalytics";
 import { getAdminStatus } from "../services/adminAnalytics";
@@ -35,6 +37,7 @@ interface AnalyticsPageProps {
 type AnalyticsTab =
   | "overview"
   | "dropshipping"
+  | "customers"
   | "conversations"
   | "commerce"
   | "automations"
@@ -56,6 +59,11 @@ const BASE_TABS: {
     key: "dropshipping",
     labelKey: "analyticsTabDropshipping",
     icon: TrendingUp,
+  },
+  {
+    key: "customers",
+    labelKey: "customers",
+    icon: Users,
   },
   {
     key: "conversations",
@@ -104,6 +112,7 @@ const COPY: Record<
     sectionDescriptions: {
       overview: "Vista ejecutiva del volumen, actividad comercial y rendimiento operativo de la tienda.",
       dropshipping: "Unit economics, tasa de entrega, utilidad y productos que realmente generan margen.",
+      customers: "Valor, recompra y recencia para entender qué clientes sostienen el negocio y cuáles necesitan reactivación.",
       conversations: "Actividad conversacional y señales para entender cómo responde tu operación comercial.",
       commerce: "Comportamiento de productos y pedidos para identificar movimiento y oportunidades de venta.",
       automations: "Ejecuciones, confiabilidad y desempeño de los flujos que mantienen la operación en movimiento.",
@@ -112,6 +121,7 @@ const COPY: Record<
     sectionKickers: {
       overview: "PULSO DEL NEGOCIO",
       dropshipping: "RENTABILIDAD & ENTREGA",
+      customers: "VALOR & RETENCIÓN",
       conversations: "RELACIÓN CON CLIENTES",
       commerce: "COMERCIO",
       automations: "EFICIENCIA OPERATIVA",
@@ -132,6 +142,7 @@ const COPY: Record<
     sectionDescriptions: {
       overview: "Executive view of volume, commercial activity and operational performance for the active store.",
       dropshipping: "Unit economics, delivery rate, profit and the products that actually generate margin.",
+      customers: "Value, repeat purchase and recency to understand which customers sustain the business and which need reactivation.",
       conversations: "Conversation activity and signals to understand how your commercial operation responds.",
       commerce: "Product and order behavior to identify movement and selling opportunities.",
       automations: "Executions, reliability and performance of the workflows keeping your operation moving.",
@@ -140,6 +151,7 @@ const COPY: Record<
     sectionKickers: {
       overview: "BUSINESS PULSE",
       dropshipping: "PROFITABILITY & DELIVERY",
+      customers: "VALUE & RETENTION",
       conversations: "CUSTOMER RELATIONSHIPS",
       commerce: "COMMERCE",
       automations: "OPERATIONAL EFFICIENCY",
@@ -160,6 +172,7 @@ const COPY: Record<
     sectionDescriptions: {
       overview: "Visão executiva do volume, atividade comercial e desempenho operacional da loja ativa.",
       dropshipping: "Unit economics, taxa de entrega, lucro e os produtos que realmente geram margem.",
+      customers: "Valor, recompra e recência para entender quais clientes sustentam o negócio e quais precisam de reativação.",
       conversations: "Atividade das conversas e sinais para entender a resposta da sua operação comercial.",
       commerce: "Comportamento de produtos e pedidos para identificar movimento e oportunidades de venda.",
       automations: "Execuções, confiabilidade e desempenho dos fluxos que mantêm a operação em movimento.",
@@ -168,6 +181,7 @@ const COPY: Record<
     sectionKickers: {
       overview: "PULSO DO NEGÓCIO",
       dropshipping: "RENTABILIDADE & ENTREGA",
+      customers: "VALOR & RETENÇÃO",
       conversations: "RELACIONAMENTO COM CLIENTES",
       commerce: "COMÉRCIO",
       automations: "EFICIÊNCIA OPERACIONAL",
@@ -388,6 +402,14 @@ export default function AnalyticsPage({
           <DropshippingOverview
             storeId={storeId}
             currency={currency}
+            dateFrom={effectiveFrom}
+            dateTo={effectiveTo}
+          />
+        )}
+
+        {activeTab === "customers" && (
+          <AnalyticsCustomerClassifications
+            storeId={storeId}
             dateFrom={effectiveFrom}
             dateTo={effectiveTo}
           />
