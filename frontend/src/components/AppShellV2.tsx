@@ -6,7 +6,6 @@ import {
   LogOut,
   Menu,
   Moon,
-  Search,
   ShoppingBag,
   Sparkles,
   Sun,
@@ -14,6 +13,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
+import GlobalSearchPalette from "./GlobalSearchPalette";
+import type { GlobalSearchResult } from "../services/globalSearch";
 import type { Store } from "../services/stores";
 import "../app-shell-v2.css";
 import "../onboarding-activation-polish.css";
@@ -30,6 +31,7 @@ interface AppShellV2Props {
   navigation: AppNavigationItem[];
   activePage: string;
   onNavigate: (page: string) => void;
+  onSearchResult?: (result: GlobalSearchResult) => void;
   stores: Store[];
   selectedStoreId: string;
   selectedStoreName?: string;
@@ -64,12 +66,6 @@ const GROUP_LABELS: Record<string, Record<AppNavigationItem["group"], string>> =
   },
 };
 
-const SEARCH_LABELS: Record<string, string> = {
-  es: "Buscar en Diaglob",
-  en: "Search Diaglob",
-  "pt-BR": "Buscar no Diaglob",
-};
-
 const STORE_LABELS: Record<string, string> = {
   es: "Tienda activa",
   en: "Active store",
@@ -99,6 +95,7 @@ export default function AppShellV2({
   navigation,
   activePage,
   onNavigate,
+  onSearchResult,
   stores,
   selectedStoreId,
   selectedStoreName,
@@ -252,11 +249,20 @@ export default function AppShellV2({
           </div>
 
           <div className="dg-topbar-center">
-            <button type="button" className="dg-search-trigger" aria-label={SEARCH_LABELS[locale]}>
-              <Search size={16} />
-              <span>{SEARCH_LABELS[locale]}</span>
-              <kbd>⌘ K</kbd>
-            </button>
+            <GlobalSearchPalette
+              navigation={navigation}
+              stores={stores}
+              selectedStoreId={selectedStoreId}
+              locale={locale}
+              onChangeStore={onChangeStore}
+              onSelect={(result) => {
+                if (onSearchResult) {
+                  onSearchResult(result);
+                  return;
+                }
+                navigate(result.page);
+              }}
+            />
           </div>
 
           <div className="dg-topbar-actions">

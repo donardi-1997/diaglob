@@ -16,6 +16,10 @@ import { getPaymentProviders } from "../services/payments";
 interface CommercePageProps {
   canWrite: boolean;
   storeId: number;
+  searchKind?: "product" | "order";
+  searchEntityId?: number;
+  searchQuery?: string;
+  searchRequestKey?: number;
 }
 
 
@@ -61,6 +65,10 @@ const PIX_TAB = {
 export default function CommercePage({
   canWrite,
   storeId,
+  searchKind,
+  searchEntityId,
+  searchQuery,
+  searchRequestKey,
 }: CommercePageProps) {
   const { t } = useTranslation();
 
@@ -106,6 +114,14 @@ export default function CommercePage({
       cancelled = true;
     };
   }, [storeId]);
+
+  useEffect(() => {
+    if (searchKind === "product") {
+      setActiveTab("products");
+    } else if (searchKind === "order") {
+      setActiveTab("orders");
+    }
+  }, [searchKind, searchEntityId, searchRequestKey]);
 
   const tabs = useMemo(
     () => pixAvailable
@@ -165,6 +181,8 @@ export default function CommercePage({
           <CommerceProducts
             storeId={storeId}
             canWrite={canWrite}
+            initialSearchQuery={searchKind === "product" ? searchQuery : undefined}
+            searchRequestKey={searchKind === "product" ? searchRequestKey : undefined}
           />
         )}
 
@@ -172,6 +190,8 @@ export default function CommercePage({
           <CommerceOrders
             storeId={storeId}
             canWrite={canWrite}
+            initialOrderId={searchKind === "order" ? searchEntityId : undefined}
+            searchRequestKey={searchKind === "order" ? searchRequestKey : undefined}
           />
         )}
 

@@ -30,6 +30,7 @@ import {
 import AppShellV2, {
   type AppNavigationItem,
 } from "./components/AppShellV2";
+import type { GlobalSearchResult } from "./services/globalSearch";
 import LoginPage from "./pages/LoginPage";
 import { useWorkspace } from "./hooks/useWorkspace";
 import "./App.css";
@@ -58,6 +59,11 @@ interface NavigationDefinition {
   group: AppNavigationItem["group"];
   icon: AppNavigationItem["icon"];
   permission: string;
+}
+
+interface SearchTarget {
+  result: GlobalSearchResult;
+  requestKey: number;
 }
 
 const navigation: NavigationDefinition[] = [
@@ -198,6 +204,7 @@ function App() {
     localStorage.getItem("diaglob-theme") || "dark",
   );
   const [activePage, setActivePage] = useState("overview");
+  const [searchTarget, setSearchTarget] = useState<SearchTarget | null>(null);
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -236,17 +243,42 @@ function App() {
     localStorage.setItem("diaglob-language", language);
   };
 
+  const handleNavigate = (page: string) => {
+    setSearchTarget(null);
+    setActivePage(page);
+  };
+
+  const handleSearchResult = (result: GlobalSearchResult) => {
+    if (result.storeId && String(result.storeId) !== selectedStoreId) {
+      changeStore(String(result.storeId));
+    }
+
+    setSearchTarget((current) => ({
+      result,
+      requestKey: (current?.requestKey || 0) + 1,
+    }));
+    setActivePage(result.page);
+  };
+
+  const selectedSearchResult = searchTarget?.result;
+  const searchRequestKey = searchTarget?.requestKey;
+  const commerceSearchKind =
+    selectedSearchResult?.kind === "product"
+    || selectedSearchResult?.kind === "order"
+      ? selectedSearchResult.kind
+      : undefined;
+
   const appContent = (
     <Suspense fallback={<LoadingScreen />}>
       {activePage === "overview" && (
         <DashboardPage
           stores={stores}
           storeId={selectedStoreId ? Number(selectedStoreId) : null}
-          onNavigateToStores={() => setActivePage("settings")}
-          onNavigateToCommerce={() => setActivePage("commerce")}
-          onNavigateToWhatsApp={() => setActivePage("integrations")}
-          onNavigateToKnowledge={() => setActivePage("knowledge")}
-          onNavigateToAutomations={() => setActivePage("automations")}
+          onNavigateToStores={() => handleNavigate("settings")}
+          onNavigateToCommerce={() => handleNavigate("commerce")}
+          onNavigateToWhatsApp={() => handleNavigate("integrations")}
+          onNavigateToKnowledge={() => handleNavigate("knowledge")}
+          onNavigateToAutomations={() => handleNavigate("automations")}
         />
       )}
       {activePage === "plans" && <PlansPage />}
@@ -254,12 +286,37 @@ function App() {
         <ConversationsPage
           stores={stores}
           canWrite={can("conversations.write")}
+          initialConversationId={
+            selectedSearchResult?.kind === "conversation"
+              ? selectedSearchResult.entityId
+              : undefined
+          }
+          initialStoreId={
+            selectedSearchResult?.kind === "conversation"
+              ? selectedSearchResult.storeId
+              : undefined
+          }
+          searchRequestKey={
+            selectedSearchResult?.kind === "conversation"
+              ? searchRequestKey
+              : undefined
+          }
         />
       )}
       {activePage === "customers" && (
         <CustomersWorkspacePage
           canWrite={can("customers.write")}
           storeId={Number(selectedStoreId) || 0}
+          initialCustomerId={
+            selectedSearchResult?.kind === "customer"
+              ? selectedSearchResult.entityId
+              : undefined
+          }
+          searchRequestKey={
+            selectedSearchResult?.kind === "customer"
+              ? searchRequestKey
+              : undefined
+          }
         />
       )}
       {activePage === "team" && (
@@ -284,6 +341,10 @@ function App() {
         <CommercePage
           canWrite={can("commerce.write")}
           storeId={Number(selectedStoreId) || 0}
+          searchKind={commerceSearchKind}
+          searchEntityId={commerceSearchKind ? selectedSearchResult?.entityId : undefined}
+          searchQuery={commerceSearchKind ? selectedSearchResult?.query : undefined}
+          searchRequestKey={commerceSearchKind ? searchRequestKey : undefined}
         />
       )}
       {activePage === "integrations" && (
@@ -292,8 +353,8 @@ function App() {
           storeName={selectedStore?.name}
           shopDomain={selectedStore?.shopify_domain}
           canWrite={can("stores.write")}
-          onNavigateToKnowledge={() => setActivePage("knowledge")}
-          onNavigateToStores={() => setActivePage("settings")}
+          onNavigateToKnowledge={() => handleNavigate("knowledge")}
+          onNavigateToStores={() => handleNavigate("settings")}
         />
       )}
       {activePage === "automations" && (
@@ -391,7 +452,8 @@ function App() {
             <AppShellV2
               navigation={visibleNavigation}
               activePage={activePage}
-              onNavigate={setActivePage}
+              onNavigate={handleNavigate}
+              onSearchResult={handleSearchResult}
               stores={stores}
               selectedStoreId={selectedStoreId}
               selectedStoreName={selectedStore?.name}
