@@ -26,6 +26,7 @@ import {
 } from "../services/auth";
 import { saveSession } from "../services/authStorage";
 import { getMarketingCopy, resolveMarketingLocale } from "../marketingCopy";
+import "../onboarding-activation-polish.css";
 
 interface LoginPageProps {
   onAuthenticated: () => void;
@@ -43,12 +44,44 @@ export default function LoginPage({
   const { t, i18n } = useTranslation();
   const copy = useMemo(() => getMarketingCopy(i18n.language), [i18n.language]);
   const locale = resolveMarketingLocale(i18n.language);
+  const legalCopy = useMemo(() => {
+    if (locale === "en") {
+      return {
+        prefix: "I agree to the",
+        terms: "Terms of Service",
+        join: "and the",
+        privacy: "Privacy Policy",
+        required: "You must accept the Terms of Service and Privacy Policy to create your account.",
+        refunds: "Refund policy",
+      };
+    }
+    if (locale === "pt-BR") {
+      return {
+        prefix: "Aceito os",
+        terms: "Termos de Serviço",
+        join: "e a",
+        privacy: "Política de Privacidade",
+        required: "Você precisa aceitar os Termos de Serviço e a Política de Privacidade para criar sua conta.",
+        refunds: "Política de reembolso",
+      };
+    }
+    return {
+      prefix: "Acepto los",
+      terms: "Términos de servicio",
+      join: "y la",
+      privacy: "Política de privacidad",
+      required: "Debes aceptar los Términos de servicio y la Política de privacidad para crear tu cuenta.",
+      refunds: "Política de reembolsos",
+    };
+  }, [locale]);
+
   const [mode, setMode] = useState<AuthMode>(initialMode || "login");
   const [name, setName] = useState("");
   const [organizationName, setOrganizationName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmationCode, setConfirmationCode] = useState("");
+  const [acceptedLegal, setAcceptedLegal] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -110,6 +143,10 @@ export default function LoginPage({
     }
     if (!cleanOrganization) {
       setError(t("loginI18nOrganizationRequired"));
+      return;
+    }
+    if (!acceptedLegal) {
+      setError(legalCopy.required);
       return;
     }
 
@@ -315,12 +352,26 @@ export default function LoginPage({
                   <div className="marketing-auth-input"><LockKeyhole size={18} /><input type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} minLength={8} required /></div>
                   <small>{t("loginI18nPasswordHint")}</small>
                 </label>
+                <label className="marketing-auth-consent">
+                  <input
+                    type="checkbox"
+                    checked={acceptedLegal}
+                    onChange={(event) => setAcceptedLegal(event.target.checked)}
+                    required
+                  />
+                  <span>
+                    {legalCopy.prefix}{" "}
+                    <a href="/terms" target="_blank" rel="noopener noreferrer">{legalCopy.terms}</a>{" "}
+                    {legalCopy.join}{" "}
+                    <a href="/privacy" target="_blank" rel="noopener noreferrer">{legalCopy.privacy}</a>.
+                  </span>
+                </label>
                 {error && <div className="marketing-auth-error">{error}</div>}
                 <button className="marketing-primary-button auth-submit" type="submit" disabled={loading}>
                   {loading ? t("loginI18nCreating") : t("loginI18nCreateAccount")}
                 </button>
-                <div className="marketing-auth-legal">
-                  <a href="/privacy" target="_blank" rel="noopener noreferrer">{t("loginI18nPrivacy") || "Privacy"}</a><span>·</span><a href="/terms" target="_blank" rel="noopener noreferrer">{t("loginI18nTerms") || "Terms"}</a><span>·</span><a href="/refund-policy" target="_blank" rel="noopener noreferrer">{locale === "en" ? "Refunds" : locale === "pt-BR" ? "Reembolsos" : "Reembolsos"}</a>
+                <div className="marketing-auth-refund-link">
+                  <a href="/refund-policy" target="_blank" rel="noopener noreferrer">{legalCopy.refunds}</a>
                 </div>
                 <div className="marketing-auth-switch">
                   <span>{locale === "en" ? "Already have an account?" : locale === "pt-BR" ? "Já tem uma conta?" : "¿Ya tienes una cuenta?"}</span>

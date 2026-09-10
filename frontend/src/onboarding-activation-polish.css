@@ -1,0 +1,222 @@
+.integrations-hub-next {
+  overflow: hidden;
+}
+
+.integrations-hub-next-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.integrations-hub-next-card {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 16px;
+  border: 1px solid var(--dg-shell-border);
+  border-radius: 16px;
+  background: var(--dg-shell-surface-strong);
+}
+
+.integrations-hub-next-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  color: var(--dg-shell-accent);
+  background: var(--dg-shell-accent-soft);
+}
+
+.integrations-hub-next-copy {
+  min-width: 0;
+}
+
+.integrations-hub-next-copy > span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--dg-shell-accent);
+  font-size: 0.69rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.integrations-hub-next-copy strong {
+  display: block;
+  color: var(--dg-shell-text);
+  font-size: 0.94rem;
+}
+
+.integrations-hub-next-copy p {
+  margin: 6px 0 0;
+  color: var(--dg-shell-muted);
+  font-size: 0.84rem;
+  line-height: 1.55;
+}
+
+.dg-powered-by {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px 6px 0;
+  color: var(--dg-shell-subtle);
+  font-size: 0.68rem;
+  letter-spacing: 0.02em;
+}
+
+.dg-powered-by strong {
+  color: var(--dg-shell-muted);
+  font-weight: 700;
+}
+
+.dg-mobile-support-footer {
+  margin-top: auto;
+  padding: 12px 14px 16px;
+  border-top: 1px solid var(--dg-shell-border);
+}
+
+.dg-mobile-support-footer .dg-support-link {
+  margin-bottom: 8px;
+}
+
+.marketing-auth-consent {
+  display: grid !important;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 9px;
+  align-items: start;
+  cursor: pointer;
+  color: var(--dg-shell-muted);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.marketing-auth-consent input {
+  width: 16px;
+  height: 16px;
+  margin: 2px 0 0;
+  accent-color: var(--dg-shell-accent);
+}
+
+.marketing-auth-consent a {
+  color: var(--dg-shell-accent);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.marketing-auth-consent a:hover {
+  text-decoration: underline;
+}
+
+.marketing-auth-refund-link {
+  text-align: center;
+  color: var(--dg-shell-subtle);
+  font-size: 0.73rem;
+}
+
+.marketing-auth-refund-link a {
+  color: inherit;
+}
+
+.dg-dashboard-first-store {
+  margin-top: 18px;
+  padding: 22px;
+  border: 1px solid var(--dg-shell-border);
+  border-radius: 20px;
+  background: var(--dg-shell-surface);
+  box-shadow: var(--dg-shell-shadow-soft);
+}
+
+.dg-dashboard-first-store-header span {
+  color: var(--dg-shell-accent);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.dg-dashboard-first-store-header h2 {
+  margin: 5px 0 4px;
+  color: var(--dg-shell-text);
+  font-size: 1.05rem;
+}
+
+.dg-dashboard-first-store-header p {
+  margin: 0;
+  color: var(--dg-shell-muted);
+  font-size: 0.86rem;
+}
+
+.dg-dashboard-first-store-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.dg-dashboard-first-store-step {
+  position: relative;
+  min-height: 132px;
+  padding: 16px;
+  border: 1px solid var(--dg-shell-border);
+  border-radius: 16px;
+  background: var(--dg-shell-surface-strong);
+}
+
+.dg-dashboard-first-store-step-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  margin-bottom: 12px;
+  border-radius: 9px;
+  color: var(--dg-shell-accent);
+  background: var(--dg-shell-accent-soft);
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
+.dg-dashboard-first-store-step strong {
+  display: block;
+  color: var(--dg-shell-text);
+  font-size: 0.9rem;
+}
+
+.dg-dashboard-first-store-step p {
+  margin: 6px 0 0;
+  color: var(--dg-shell-muted);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+@media (max-width: 900px) {
+  .integrations-hub-next-grid,
+  .dg-dashboard-first-store-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dg-dashboard-first-store-step {
+    min-height: auto;
+  }
+}
+
+@media (max-width: 620px) {
+  .integrations-hub-next-card {
+    grid-template-columns: 34px minmax(0, 1fr);
+    padding: 14px;
+  }
+
+  .integrations-hub-next-icon {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+  }
+
+  .dg-dashboard-first-store {
+    padding: 16px;
+  }
+}
