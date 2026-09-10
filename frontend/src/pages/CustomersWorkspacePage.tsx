@@ -23,6 +23,7 @@ export default function CustomersWorkspacePage({
         customerId={initialCustomerId}
         storeId={storeId}
         requestKey={searchRequestKey}
+        canReport={canWrite}
       />
     </>
   );
