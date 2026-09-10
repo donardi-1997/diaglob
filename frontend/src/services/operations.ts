@@ -49,7 +49,7 @@ export interface OperationsIntegration {
   scope: string;
   payment_methods?: string[];
   degraded?: boolean;
-  error_code?: "integration_status_unavailable" | string;
+  error_code?: "integration_status_unavailable";
 }
 
 
