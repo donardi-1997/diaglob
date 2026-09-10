@@ -411,15 +411,74 @@ def get_subscription_price_id(
 
 
 # ============================================================
-# PLAN PRICES (monthly USD, source of truth)
+# PLAN PRICES (USD, source of truth for local fallback)
 # ============================================================
 
-PLAN_MONTHLY_PRICES: dict[str, Decimal] = {
-    "starter": Decimal("19.00"),
-    "growth": Decimal("59.00"),
-    "pro": Decimal("99.00"),
-    "scale": Decimal("179.00"),
+PLAN_PERIOD_PRICES: dict[str, dict[int, Decimal]] = {
+    "starter": {
+        1: Decimal("19.00"),
+        3: Decimal("54.00"),
+        6: Decimal("103.00"),
+        12: Decimal("190.00"),
+    },
+    "growth": {
+        1: Decimal("49.00"),
+        3: Decimal("140.00"),
+        6: Decimal("265.00"),
+        12: Decimal("490.00"),
+    },
+    "pro": {
+        1: Decimal("99.00"),
+        3: Decimal("282.00"),
+        6: Decimal("535.00"),
+        12: Decimal("990.00"),
+    },
+    "scale": {
+        1: Decimal("199.00"),
+        3: Decimal("570.00"),
+        6: Decimal("1075.00"),
+        12: Decimal("1990.00"),
+    },
 }
+
+PLAN_MONTHLY_PRICES: dict[str, Decimal] = {
+    plan: periods[1]
+    for plan, periods in PLAN_PERIOD_PRICES.items()
+}
+
+
+def add_billing_months(value: datetime, months: int) -> datetime:
+    """Advance by calendar months while clamping end-of-month dates."""
+    from calendar import monthrange
+
+    months = int(months)
+    if months <= 0:
+        raise ValueError("Billing period must be positive")
+
+    month_index = value.month - 1 + months
+    year = value.year + month_index // 12
+    month = month_index % 12 + 1
+    day = min(value.day, monthrange(year, month)[1])
+    return value.replace(year=year, month=month, day=day)
+
+
+def resolve_billing_period(
+    anchor: datetime,
+    billing_period_months: int,
+    now: datetime,
+) -> tuple[datetime, datetime]:
+    """Resolve the local fallback period containing ``now`` from an anchor."""
+    if anchor > now:
+        return anchor, add_billing_months(anchor, billing_period_months)
+
+    period_start = anchor
+    period_end = add_billing_months(period_start, billing_period_months)
+
+    while period_end <= now:
+        period_start = period_end
+        period_end = add_billing_months(period_start, billing_period_months)
+
+    return period_start, period_end
 
 
 # ============================================================
@@ -434,95 +493,95 @@ def calculate_local_proration(
     current_period_end: datetime,
     now: datetime | None = None,
 ) -> dict:
-    """
-    Calculate proration locally when Paddle API is unavailable.
+    """Calculate a new-cycle upgrade with decreasing unused-plan credit.
 
-    Uses Decimal arithmetic with ROUND_HALF_UP for financial accuracy.
+    The target plan starts a fresh billing period at upgrade time. The customer
+    receives credit only for the unused fraction of the current paid period:
 
-    Returns dict with:
-        current_plan, target_plan, currency, current_price,
-        target_price, days_elapsed, days_remaining, days_total,
-        credit_current, charge_new, net_proration_amount,
-        amount_due_now, next_full_charge, effective_date
+        amount due = full target period price - unused current-plan credit
+
+    As time passes, the unused credit decreases and the amount due increases.
+    Decimal arithmetic and ROUND_HALF_UP are used for financial values.
     """
+    from math import ceil
+
     if now is None:
         now = datetime.utcnow()
 
-    total_days = max(
-        (current_period_end - current_period_start).days,
-        1,
+    billing_period_months = int(billing_period_months or 1)
+
+    total_seconds = max(
+        (current_period_end - current_period_start).total_seconds(),
+        1.0,
+    )
+    elapsed_seconds = min(
+        max((now - current_period_start).total_seconds(), 0.0),
+        total_seconds,
+    )
+    remaining_seconds = max(total_seconds - elapsed_seconds, 0.0)
+
+    remaining_ratio = Decimal(str(remaining_seconds)) / Decimal(str(total_seconds))
+
+    current_monthly = PLAN_MONTHLY_PRICES.get(current_plan, Decimal("0"))
+    target_monthly = PLAN_MONTHLY_PRICES.get(target_plan, Decimal("0"))
+
+    current_period_total = PLAN_PERIOD_PRICES.get(current_plan, {}).get(
+        billing_period_months,
+        Decimal("0"),
+    )
+    target_period_total = PLAN_PERIOD_PRICES.get(target_plan, {}).get(
+        billing_period_months,
+        Decimal("0"),
     )
 
-    elapsed_days = max(
-        min((now - current_period_start).days, total_days),
-        0,
+    credit_current = (current_period_total * remaining_ratio).quantize(
+        Decimal("0.01"),
+        rounding=ROUND_HALF_UP,
     )
 
-    remaining_days = max(total_days - elapsed_days, 0)
+    if current_plan == target_plan:
+        charge_new = Decimal("0.00")
+        net = Decimal("0.00")
+    else:
+        charge_new = target_period_total.quantize(
+            Decimal("0.01"),
+            rounding=ROUND_HALF_UP,
+        )
+        net = charge_new - credit_current
 
-    remaining_ratio = (
-        Decimal(str(remaining_days))
-        / Decimal(str(total_days))
+    amount_due_now = max(net, Decimal("0.00")).quantize(
+        Decimal("0.01"),
+        rounding=ROUND_HALF_UP,
     )
 
-    current_monthly = PLAN_MONTHLY_PRICES.get(
-        current_plan, Decimal("0")
-    )
-
-    target_monthly = PLAN_MONTHLY_PRICES.get(
-        target_plan, Decimal("0")
-    )
-
-    current_period_total = (
-        current_monthly * billing_period_months
-    )
-
-    target_period_total = (
-        target_monthly * billing_period_months
-    )
-
-    credit_current = (
-        current_period_total * remaining_ratio
-    ).quantize(
-        Decimal("0.01"), rounding=ROUND_HALF_UP
-    )
-
-    charge_new = (
-        target_period_total * remaining_ratio
-    ).quantize(
-        Decimal("0.01"), rounding=ROUND_HALF_UP
-    )
-
-    net = charge_new - credit_current
-
-    amount_due_now = max(net, Decimal("0"))
+    days_total = max(int(ceil(total_seconds / 86400.0)), 1)
+    days_elapsed = max(min(int(elapsed_seconds // 86400.0), days_total), 0)
+    days_remaining = max(int(ceil(remaining_seconds / 86400.0)), 0)
+    new_cycle_end = add_billing_months(now, billing_period_months)
 
     return {
         "current_plan": current_plan,
         "target_plan": target_plan,
         "currency": "USD",
-        "current_price": str(
-            current_monthly.quantize(Decimal("0.01"))
-        ),
-        "target_price": str(
-            target_monthly.quantize(Decimal("0.01"))
-        ),
+        "current_price": str(current_monthly.quantize(Decimal("0.01"))),
+        "target_price": str(target_monthly.quantize(Decimal("0.01"))),
         "billing_period_months": billing_period_months,
-        "days_total": total_days,
-        "days_elapsed": elapsed_days,
-        "days_remaining": remaining_days,
+        "days_total": days_total,
+        "days_elapsed": days_elapsed,
+        "days_remaining": days_remaining,
         "credit": str(credit_current),
         "charge": str(charge_new),
         "net_proration_amount": str(
-            net.quantize(Decimal("0.01"))
+            net.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         ),
         "amount_due_now": str(amount_due_now),
         "next_full_charge": str(
-            target_period_total.quantize(Decimal("0.01"))
+            target_period_total.quantize(
+                Decimal("0.01"),
+                rounding=ROUND_HALF_UP,
+            )
         ),
-        "next_billed_at": (
-            current_period_end.isoformat()
-        ),
+        "next_billed_at": new_cycle_end.isoformat(),
         "effective_date": now.isoformat(),
         "source": "local",
     }

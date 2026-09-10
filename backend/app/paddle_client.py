@@ -79,6 +79,7 @@ def preview_subscription_update(
     items: list[dict],
     proration_billing_mode: str,
     on_payment_failure: str = "prevent_change",
+    next_billed_at: str | None = None,
 ) -> dict:
     url = f"{get_paddle_base_url()}/subscriptions/{subscription_id}/preview"
 
@@ -87,6 +88,9 @@ def preview_subscription_update(
         "proration_billing_mode": proration_billing_mode,
         "on_payment_failure": on_payment_failure,
     }
+
+    if next_billed_at is not None:
+        body["next_billed_at"] = next_billed_at
 
     try:
         response = httpx.patch(
@@ -111,6 +115,7 @@ def update_subscription(
     on_payment_failure: str = "prevent_change",
     custom_data: dict | None = None,
     timeout: int = 45,
+    next_billed_at: str | None = None,
 ) -> dict:
     url = f"{get_paddle_base_url()}/subscriptions/{subscription_id}"
 
@@ -122,6 +127,9 @@ def update_subscription(
 
     if custom_data is not None:
         body["custom_data"] = custom_data
+
+    if next_billed_at is not None:
+        body["next_billed_at"] = next_billed_at
 
     try:
         response = httpx.patch(

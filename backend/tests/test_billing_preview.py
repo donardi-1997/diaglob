@@ -638,7 +638,7 @@ class TestPreviewEdgeCases:
         amount = int(data["amount_due"])
         assert amount > 0
 
-    def test_subscription_status_trialing(
+    def test_subscription_status_trialing_rejects_paid_proration(
         self, client_factory, db
     ):
         org = _make_org(
@@ -654,8 +654,8 @@ class TestPreviewEdgeCases:
             json={"plan": "growth"},
         )
 
-        assert resp.status_code == 200
-        assert resp.json()["_source"] == "local"
+        assert resp.status_code == 409
+        assert "suscripción debe estar activa" in resp.json()["detail"]
 
     def test_manager_role_allowed(
         self, client_factory, db

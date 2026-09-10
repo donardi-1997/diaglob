@@ -35,9 +35,9 @@ const resources = {
       plansCheckingProration:
         "Consultando la prorrata con Paddle",
       plansPayDifferenceToday:
-        "Solo pagas la diferencia proporcional hoy.",
+        "El total de hoy descuenta únicamente el crédito no utilizado de tu plan actual.",
       plansNextRenewalFullPrice:
-        "En tu próxima renovación, el cobro será por el valor completo del nuevo plan según tu período de facturación.",
+        "Tu upgrade inicia un nuevo ciclo hoy. La próxima renovación cobrará el valor completo del nuevo plan según tu período.",
       plansPriceUnavailable:
         "Precio no disponible",
       plansProrationUnavailable:
@@ -76,9 +76,9 @@ const resources = {
       plansNewPlanLabel: "Nuevo plan",
       plansPayToday: "Pagarás hoy",
       plansProrationExplanation:
-        "Paddle calcula automáticamente el tiempo no utilizado de tu plan actual.",
+        "Tu crédito corresponde al tiempo no utilizado del plan actual y disminuye a medida que avanza tu ciclo.",
       plansNewPlanProratedCharge:
-        "Cargo proporcional nuevo plan",
+        "Precio completo nuevo plan",
       plansCurrentPlanCredit:
         "Crédito plan actual",
       plansNextRenewal:
@@ -2151,9 +2151,9 @@ const resources = {
       plansCheckingProration:
         "Checking proration with Paddle",
       plansPayDifferenceToday:
-        "You only pay the prorated difference today.",
+        "Today's total subtracts only the unused credit from your current plan.",
       plansNextRenewalFullPrice:
-        "On your next renewal, you'll be charged the full price of your new plan according to your billing period.",
+        "Your upgrade starts a new billing cycle today. The next renewal charges the full price of the new plan for your billing period.",
       plansPriceUnavailable: "Price unavailable",
       plansProrationUnavailable:
         "We couldn't calculate the proration. Please try again.",
@@ -2190,9 +2190,9 @@ const resources = {
       plansNewPlanLabel: "New plan",
       plansPayToday: "You'll pay today",
       plansProrationExplanation:
-        "Paddle automatically calculates the unused time on your current plan.",
+        "Your credit reflects the unused time on your current plan and decreases as your billing cycle progresses.",
       plansNewPlanProratedCharge:
-        "Prorated charge for new plan",
+        "Full price of new plan",
       plansCurrentPlanCredit:
         "Current plan credit",
       plansNextRenewal:
@@ -4219,8 +4219,8 @@ const resources = {
       plansImmediateUpgrade: "Upgrade disponível agora",
       plansCalculating: "Calculando...",
       plansCheckingProration: "Consultando a proporcionalidade com Paddle",
-      plansPayDifferenceToday: "Você paga apenas a diferença proporcional hoje.",
-      plansNextRenewalFullPrice: "Na sua próxima renovação, o cobro será pelo valor completo do novo plano conforme seu período de faturamento.",
+      plansPayDifferenceToday: "O total de hoje desconta apenas o crédito não utilizado do seu plano atual.",
+      plansNextRenewalFullPrice: "Seu upgrade inicia um novo ciclo hoje. Na próxima renovação, será cobrado o valor completo do novo plano conforme seu período.",
       plansPriceUnavailable: "Preço não disponível",
       plansProrationUnavailable: "Não foi possível calcular a proporcionalidade. Tente novamente.",
 

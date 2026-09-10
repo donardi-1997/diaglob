@@ -286,17 +286,6 @@ def preview_billing_upgrade(
         target_plan,
     )
 
-    if organization.subscription_status and organization.subscription_status not in {"active", "trialing"}:
-        logger.warning(
-            "billing.preview.rejected org=%s reason=subscription_not_active status=%s",
-            organization.id,
-            organization.subscription_status,
-        )
-        raise HTTPException(
-            status_code=409,
-            detail="La suscripcion debe estar activa para realizar un upgrade.",
-        )
-
     paddle_result = preview_upgrade_paddle(organization, target_plan)
 
     if paddle_result is not None:

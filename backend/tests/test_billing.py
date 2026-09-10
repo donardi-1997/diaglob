@@ -47,7 +47,7 @@ class TestLocalProrationCalculation:
         assert result["source"] == "local"
 
         assert float(result["current_price"]) == 19.00
-        assert float(result["target_price"]) == 59.00
+        assert float(result["target_price"]) == 49.00
 
         assert result["days_total"] == 30
         assert result["days_elapsed"] == 14
@@ -77,7 +77,7 @@ class TestLocalProrationCalculation:
             now=now,
         )
 
-        assert float(result["current_price"]) == 59.00
+        assert float(result["current_price"]) == 49.00
         assert float(result["target_price"]) == 99.00
 
         credit = Decimal(result["credit"])
@@ -103,7 +103,7 @@ class TestLocalProrationCalculation:
         )
 
         assert float(result["current_price"]) == 99.00
-        assert float(result["target_price"]) == 179.00
+        assert float(result["target_price"]) == 199.00
 
         amount_due = Decimal(result["amount_due_now"])
         assert amount_due > 0
@@ -150,7 +150,7 @@ class TestLocalProrationCalculation:
         assert result["days_remaining"] == 1
 
         amount_due = Decimal(result["amount_due_now"])
-        assert amount_due < Decimal("10.00")
+        assert amount_due > Decimal("45.00")
 
     def test_same_plan_returns_zero(self):
         now = datetime(2026, 8, 15, 0, 0, 0)
@@ -296,9 +296,9 @@ class TestPlanPrices:
 
     def test_prices_are_correct(self):
         assert PLAN_MONTHLY_PRICES["starter"] == Decimal("19.00")
-        assert PLAN_MONTHLY_PRICES["growth"] == Decimal("59.00")
+        assert PLAN_MONTHLY_PRICES["growth"] == Decimal("49.00")
         assert PLAN_MONTHLY_PRICES["pro"] == Decimal("99.00")
-        assert PLAN_MONTHLY_PRICES["scale"] == Decimal("179.00")
+        assert PLAN_MONTHLY_PRICES["scale"] == Decimal("199.00")
 
     def test_prices_are_ordered(self):
         assert (
@@ -307,3 +307,43 @@ class TestPlanPrices:
             < PLAN_MONTHLY_PRICES["pro"]
             < PLAN_MONTHLY_PRICES["scale"]
         )
+
+
+
+def test_upgrade_credit_decreases_and_amount_due_increases_over_time():
+    period_start = datetime(2026, 8, 1, 0, 0, 0)
+    period_end = datetime(2026, 8, 31, 0, 0, 0)
+
+    early = calculate_local_proration(
+        "starter", "growth", 1, period_start, period_end,
+        datetime(2026, 8, 1, 1, 0, 0),
+    )
+    middle = calculate_local_proration(
+        "starter", "growth", 1, period_start, period_end,
+        datetime(2026, 8, 15, 12, 0, 0),
+    )
+    late = calculate_local_proration(
+        "starter", "growth", 1, period_start, period_end,
+        datetime(2026, 8, 30, 12, 0, 0),
+    )
+
+    assert Decimal(early["credit"]) > Decimal(middle["credit"]) > Decimal(late["credit"])
+    assert Decimal(early["amount_due_now"]) < Decimal(middle["amount_due_now"]) < Decimal(late["amount_due_now"])
+    assert Decimal(early["charge"]) == Decimal("49.00")
+    assert Decimal(middle["charge"]) == Decimal("49.00")
+    assert Decimal(late["charge"]) == Decimal("49.00")
+
+
+def test_multi_month_upgrade_uses_full_discounted_target_period_price():
+    result = calculate_local_proration(
+        current_plan="starter",
+        target_plan="growth",
+        billing_period_months=3,
+        current_period_start=datetime(2026, 8, 1, 0, 0, 0),
+        current_period_end=datetime(2026, 11, 1, 0, 0, 0),
+        now=datetime(2026, 9, 15, 0, 0, 0),
+    )
+
+    assert Decimal(result["charge"]) == Decimal("140.00")
+    assert Decimal(result["next_full_charge"]) == Decimal("140.00")
+    assert result["next_billed_at"].startswith("2026-12-15")
