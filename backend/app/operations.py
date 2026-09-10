@@ -7,6 +7,7 @@ Operations Center dashboard. No mock data, no hardcodes.
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -26,6 +27,36 @@ from .models import (
     Store,
     WhatsAppConnection,
 )
+
+logger = logging.getLogger(__name__)
+
+
+def _get_whatsapp_connection_count(
+    db: Session,
+    organization_id: int,
+    store_id: int,
+) -> int | None:
+    """Return WhatsApp connection count without poisoning the summary session."""
+    try:
+        with db.begin_nested():
+            return (
+                db.query(WhatsAppConnection)
+                .filter(
+                    WhatsAppConnection.organization_id == organization_id,
+                    WhatsAppConnection.store_id == store_id,
+                    WhatsAppConnection.status == "connected",
+                )
+                .count()
+            )
+    except Exception:
+        logger.exception(
+            "Operations WhatsApp status lookup failed",
+            extra={
+                "organization_id": organization_id,
+                "store_id": store_id,
+            },
+        )
+        return None
 
 
 def get_operations_summary(
@@ -240,14 +271,10 @@ def get_operations_summary(
     )
 
     # --- Integrations ---
-    whatsapp_connected = (
-        db.query(WhatsAppConnection)
-        .filter(
-            WhatsAppConnection.organization_id == organization_id,
-            WhatsAppConnection.store_id == store_id,
-            WhatsAppConnection.status == "connected",
-        )
-        .count()
+    whatsapp_connected = _get_whatsapp_connection_count(
+        db=db,
+        organization_id=organization_id,
+        store_id=store_id,
     )
 
     store = (
@@ -368,7 +395,7 @@ def get_operations_summary(
         activity.append({
             "type": "automation",
             "icon": "workflow",
-            "title": f"Automation execution",
+            "title": "Automation execution",
             "detail": exe.status,
             "timestamp": exe.started_at.isoformat()
             if exe.started_at
@@ -409,7 +436,9 @@ def get_operations_summary(
             "active": active_agents,
         },
         "integrations": {
-            "whatsapp_connected": whatsapp_connected > 0,
+            "whatsapp_connected": (
+                whatsapp_connected is not None and whatsapp_connected > 0
+            ),
             "shopify_connected": shopify_connected,
         },
         "alerts": alerts,

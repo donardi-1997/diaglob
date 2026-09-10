@@ -19,6 +19,10 @@ import {
   type OperationsSummary,
 } from "../services/operations";
 import { type Store } from "../services/stores";
+import {
+  degradedAlertMessage,
+  degradedStatusLabel,
+} from "../utils/operationsStatus";
 import GettingStarted from "../components/GettingStarted";
 
 interface DashboardPageProps {
@@ -54,7 +58,7 @@ export default function DashboardPage({
   onNavigateToKnowledge,
   onNavigateToAutomations,
 }: DashboardPageProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [data, setData] = useState<OperationsSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -160,6 +164,8 @@ export default function DashboardPage({
   const products = data?.products;
   const alerts = data?.alerts || [];
   const activity = data?.activity || [];
+  const language = i18n.resolvedLanguage || i18n.language;
+  const degradedLabel = degradedStatusLabel(language);
 
   const formatTimeAgo = (timestamp: string) => {
     const now = Date.now();
@@ -234,7 +240,11 @@ export default function DashboardPage({
           {alerts.map((alert, i) => (
             <div key={i} className="dashboard-alert-item">
               <AlertTriangle size={16} />
-              <span>{alert.message}</span>
+              <span>
+                {alert.type === "integration_status_degraded"
+                  ? degradedAlertMessage(language, integrations)
+                  : alert.message}
+              </span>
             </div>
           ))}
         </section>
@@ -297,9 +307,11 @@ export default function DashboardPage({
                       />
                       {integration.connected
                         ? t("connected") || "Conectado"
-                        : integration.status === "disconnected"
-                          ? t("notConnected") || "No conectado"
-                          : integration.status}
+                        : integration.degraded || integration.status === "degraded"
+                          ? degradedLabel
+                          : integration.status === "disconnected"
+                            ? t("notConnected") || "No conectado"
+                            : integration.status}
                       {integration.payment_methods?.length
                         ? ` · ${integration.payment_methods
                             .map((method) => method.toUpperCase())
