@@ -5,7 +5,14 @@ commerce schema can evolve without adding more fields to app.models.
 """
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..db import Base
@@ -14,9 +21,9 @@ from ..db import Base
 class OrderSalesAttribution(Base):
     """Records the actor that closed/created a sale when Diaglob knows it.
 
-    No row means the order is intentionally unattributed. This is important
-    for imported provider orders where Diaglob has no trustworthy evidence of
-    who closed the sale.
+    No row means the order is intentionally unattributed. ``actor_label`` is a
+    historical snapshot so reports keep the original closer name even when a
+    user or AI agent is later removed.
     """
 
     __tablename__ = "order_sales_attributions"
@@ -28,9 +35,8 @@ class OrderSalesAttribution(Base):
             name="ck_order_sales_attribution_actor_type",
         ),
         CheckConstraint(
-            "(actor_type = 'human' AND human_user_id IS NOT NULL AND ai_agent_id IS NULL) "
-            "OR (actor_type = 'ai' AND ai_agent_id IS NOT NULL AND human_user_id IS NULL)",
-            name="ck_order_sales_attribution_actor_identity",
+            "NOT (human_user_id IS NOT NULL AND ai_agent_id IS NOT NULL)",
+            name="ck_order_sales_attribution_single_identity",
         ),
     )
 
@@ -50,7 +56,15 @@ class OrderSalesAttribution(Base):
         nullable=False,
         index=True,
     )
-    actor_type: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    actor_type: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        index=True,
+    )
+    actor_label: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+    )
     human_user_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
