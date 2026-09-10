@@ -16,6 +16,7 @@ import {
 
 import type { Store } from "../services/stores";
 import "../app-shell-v2.css";
+import "../onboarding-activation-polish.css";
 
 export interface AppNavigationItem {
   key: string;
@@ -75,6 +76,12 @@ const STORE_LABELS: Record<string, string> = {
   "pt-BR": "Loja ativa",
 };
 
+const SUPPORT_LABELS: Record<string, string> = {
+  es: "Soporte",
+  en: "Support",
+  "pt-BR": "Suporte",
+};
+
 const GROUP_ORDER: AppNavigationItem["group"][] = [
   "overview",
   "operations",
@@ -111,6 +118,9 @@ export default function AppShellV2({
   const locale = language === "pt-BR" ? "pt-BR" : language === "en" ? "en" : "es";
   const labels = GROUP_LABELS[locale];
   const currentItem = navigation.find((item) => item.key === activePage);
+  const supportHref =
+    supportUrl?.trim() ||
+    "mailto:adrianguerra9703@gmail.com?subject=Diaglob%20Support";
 
   const groupedNavigation = useMemo(
     () =>
@@ -168,6 +178,24 @@ export default function AppShellV2({
     </nav>
   );
 
+  const renderSupport = () => (
+    <>
+      <a
+        className="dg-support-link"
+        href={supportHref}
+        target={supportHref.startsWith("mailto:") ? undefined : "_blank"}
+        rel={supportHref.startsWith("mailto:") ? undefined : "noopener noreferrer"}
+      >
+        <HelpCircle size={17} />
+        <span>{SUPPORT_LABELS[locale]}</span>
+      </a>
+      <div className="dg-powered-by">
+        <span>Powered by</span>
+        <strong>Diaglob</strong>
+      </div>
+    </>
+  );
+
   return (
     <div className="dg-shell">
       <aside className="dg-sidebar">
@@ -182,15 +210,7 @@ export default function AppShellV2({
         <div className="dg-sidebar-scroll">{renderNavigation()}</div>
 
         <div className="dg-sidebar-footer">
-          <a
-            className="dg-support-link"
-            href={supportUrl || "#"}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <HelpCircle size={17} />
-            <span>Soporte</span>
-          </a>
+          {renderSupport()}
           <div className="dg-sidebar-user">
             <div className="dg-avatar">{initials(userEmail)}</div>
             <div className="dg-user-copy">
@@ -214,6 +234,7 @@ export default function AppShellV2({
               </button>
             </div>
             <div className="dg-mobile-nav-scroll">{renderNavigation()}</div>
+            <div className="dg-mobile-support-footer">{renderSupport()}</div>
           </aside>
         </div>
       )}
