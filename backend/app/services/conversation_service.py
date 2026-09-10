@@ -12,6 +12,7 @@ from ..ai_generation import generate_grounded_answer
 from ..commerce import search_products
 from ..models import Agent, Conversation, Message
 from ..rag import retrieve_agent_knowledge
+from .conversational_checkout_service import process_conversational_checkout_turn
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +126,26 @@ def create_message_with_ai(
         return serialized_message
 
     try:
+        checkout_answer = process_conversational_checkout_turn(
+            db,
+            conversation,
+            agent,
+            text,
+        )
+        if checkout_answer is not None:
+            ai_message = Message(
+                conversation_id=conversation.id,
+                agent_id=agent.id,
+                sender="ai",
+                text=checkout_answer,
+            )
+            db.add(ai_message)
+            conversation.preview = checkout_answer
+            conversation.unread = 0
+            conversation.updated_at = datetime.utcnow()
+            db.commit()
+            return serialized_message
+
         evidence = retrieve_agent_knowledge(
             agent=agent,
             query=text,
