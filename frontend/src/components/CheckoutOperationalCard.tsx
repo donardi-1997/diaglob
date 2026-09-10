@@ -193,7 +193,7 @@ export default function CheckoutOperationalCard({
 
   const statusLabel = STATUS_COPY[locale][checkout.status] || checkout.status;
   const terminal = TERMINAL_STATUSES.has(checkout.status);
-  const riskUnavailable = risk?.available === false;
+  const riskUnavailable = !risk || risk.available === false;
   const hasRisk = Boolean(risk?.available && risk.alert);
   const reportingOrganizations = risk?.reporting_organizations ?? 0;
   const address = [
