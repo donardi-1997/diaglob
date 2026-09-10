@@ -48,6 +48,7 @@ from ..services.billing_service import (
     validate_plan_downgrade,
     validate_plan_upgrade,
 )
+from ..services.ai_usage_packages import fulfill_ai_usage_package_transaction
 from ..services.paddle_webhooks import (
     SUPPORTED_EVENTS,
     SUBSCRIPTION_EVENTS,
@@ -158,6 +159,29 @@ async def paddle_billing_webhook(
             "reason": "organization_not_found",
             "event_type": event_type,
         }
+
+    if (
+        is_transaction_event
+        and custom_data.get("purchase_type") == "ai_usage_package"
+    ):
+        package_occurred_at = None
+        if occurred_at_raw:
+            try:
+                package_occurred_at = datetime.fromisoformat(
+                    occurred_at_raw.replace("Z", "+00:00")
+                ).replace(tzinfo=None)
+            except ValueError:
+                package_occurred_at = None
+
+        result = fulfill_ai_usage_package_transaction(
+            db=db,
+            organization_id=organization.id,
+            data=data,
+            occurred_at=package_occurred_at,
+        )
+        result["event_type"] = event_type
+        result["transaction_id"] = transaction_id
+        return result
 
     if not is_canonical_subscription(organization, subscription_id):
         return {

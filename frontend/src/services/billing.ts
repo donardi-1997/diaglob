@@ -200,3 +200,58 @@ export async function cancelBillingDowngrade(): Promise<{
 
   return response.data;
 }
+
+
+export interface AiUsagePackage {
+  key: string;
+  responses: number;
+  price_usd: string;
+  currency: string;
+  configured: boolean;
+}
+
+export interface AiUsageSummary {
+  plan: string;
+  included_ai_responses: number;
+  used_ai_responses: number;
+  remaining_included_ai_responses: number;
+  extra_ai_responses_purchased: number;
+  extra_ai_responses_remaining: number;
+  remaining_ai_responses: number;
+  usage_percent: number;
+  overage_ai_responses: number;
+  status: string;
+  usage_period_start: string | null;
+  usage_period_end: string | null;
+}
+
+export interface AiUsagePackagesResponse {
+  packages: AiUsagePackage[];
+  usage: AiUsageSummary;
+}
+
+export interface AiUsagePackageCheckoutResponse {
+  package_key: string;
+  responses: number;
+  price_usd: string;
+  currency: string;
+  transaction_id: string;
+  checkout_url: string;
+}
+
+export async function getAiUsagePackages(): Promise<AiUsagePackagesResponse> {
+  const response = await api.get<AiUsagePackagesResponse>(
+    "/api/billing/ai-packages",
+  );
+  return response.data;
+}
+
+export async function createAiUsagePackageCheckout(
+  packageKey: string,
+): Promise<AiUsagePackageCheckoutResponse> {
+  const response = await api.post<AiUsagePackageCheckoutResponse>(
+    "/api/billing/ai-packages/checkout",
+    { package_key: packageKey },
+  );
+  return response.data;
+}

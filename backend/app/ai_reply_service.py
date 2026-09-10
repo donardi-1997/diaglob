@@ -14,6 +14,7 @@ from .models import (
     WhatsAppConnection,
 )
 from .rag import retrieve_agent_knowledge
+from .services.ai_usage_service import acquire_ai_capacity, refund_ai_capacity
 from .telegram_models import TelegramConnection
 from .telegram_security import decrypt_telegram_secret
 from .whatsapp_client import (
@@ -194,6 +195,9 @@ def generate_auto_reply(
     if own_session:
         db = SessionLocal()
 
+    capacity_reservation = None
+    capacity_consumed = False
+
     try:
         conversation = (
             db.query(Conversation)
@@ -306,6 +310,19 @@ def generate_auto_reply(
             )
             return
 
+        capacity_reservation = acquire_ai_capacity(
+            db, conversation.organization_id
+        )
+        if not capacity_reservation.get("available"):
+            print(
+                "[DIAGLOB AUTO-REPLY]",
+                "ai_usage_exhausted, organization=",
+                conversation.organization_id,
+                "conversation=",
+                conversation_id,
+            )
+            return
+
         history_text = _build_history_text(
             db, conversation_id
         )
@@ -375,6 +392,8 @@ def generate_auto_reply(
             output_tokens = 0
 
         if not answer:
+            refund_ai_capacity(db, capacity_reservation)
+            capacity_reservation = None
             print(
                 "[DIAGLOB AUTO-REPLY]",
                 "empty_answer, conversation=",
@@ -414,6 +433,7 @@ def generate_auto_reply(
         conversation.unread = 0
         conversation.updated_at = datetime.utcnow()
         db.commit()
+        capacity_consumed = True
         db.refresh(ai_message)
 
         try:
@@ -440,6 +460,18 @@ def generate_auto_reply(
             )
 
     except Exception as exc:
+        if capacity_reservation and not capacity_consumed:
+            try:
+                db.rollback()
+                refund_ai_capacity(db, capacity_reservation)
+            except Exception as refund_exc:
+                print(
+                    "[DIAGLOB AUTO-REPLY]",
+                    "capacity_refund_failed, conversation=",
+                    conversation_id,
+                    "error=",
+                    repr(refund_exc),
+                )
         print(
             "[DIAGLOB AUTO-REPLY]",
             "error, conversation=",

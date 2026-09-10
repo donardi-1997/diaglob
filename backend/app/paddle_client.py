@@ -215,6 +215,49 @@ def resume_subscription(subscription_id: str) -> dict:
     return response.json().get("data") or {}
 
 
+def create_ai_package_transaction(
+    price_id: str,
+    organization_id: int,
+    package_key: str,
+    responses: int,
+) -> dict:
+    body = {
+        "items": [{"price_id": price_id, "quantity": 1}],
+        "collection_mode": "automatic",
+        "custom_data": {
+            "purchase_type": "ai_usage_package",
+            "organization_id": str(organization_id),
+            "package_key": package_key,
+            "responses": int(responses),
+        },
+    }
+
+    try:
+        response = httpx.post(
+            f"{get_paddle_base_url()}/transactions",
+            headers=get_paddle_headers(),
+            json=body,
+            timeout=20,
+        )
+    except httpx.RequestError as exc:
+        raise PaddleProviderError(
+            status_code=502,
+            detail={"message": "No fue posible conectar con Paddle", "error": str(exc)},
+        ) from exc
+
+    if response.status_code >= 400:
+        raise PaddleProviderError(
+            status_code=502,
+            detail={
+                "message": "Paddle rechazó la compra del paquete de IA",
+                "paddle_status": response.status_code,
+                "paddle_response": response.text,
+            },
+        )
+
+    return response.json().get("data") or {}
+
+
 def create_transaction(
     price_id: str,
     organization_id: int,

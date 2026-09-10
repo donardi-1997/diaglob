@@ -4,6 +4,23 @@ import { initReactI18next } from "react-i18next";
 const resources = {
   es: {
     translation: {
+      aiPackagesEyebrow: "CAPACIDAD DE IA",
+      aiPackagesTitle: "Respuestas de IA extra",
+      aiPackagesSubtitle: "Amplía tu capacidad sin cambiar de plan. Primero usas las respuestas incluidas del mes y luego tu saldo extra.",
+      aiPackagesThisMonth: "Uso incluido este mes",
+      aiPackagesExtraBalance: "Saldo extra",
+      aiPackagesAvailableNow: "Disponible ahora",
+      aiPackagesRefresh: "Actualizar",
+      aiPackagesPopular: "Popular",
+      aiPackagesOneTime: "Compra única",
+      aiPackagesResponses: "respuestas de IA",
+      aiPackagesNoExpiration: "hasta consumirlas",
+      aiPackagesBuy: "Comprar paquete",
+      aiPackagesUnavailable: "Configurar en Paddle",
+      aiPackagesFootnote: "El saldo extra no expira y se acredita automáticamente cuando Paddle confirma el pago.",
+      aiPackagesLoadError: "No pudimos cargar tu uso de IA.",
+      aiPackagesCheckoutError: "No pudimos abrir el pago del paquete de IA.",
+
       brandTagline: "Conversaciones inteligentes para comercio global",
 
       overview: "Resumen",
@@ -2122,6 +2139,23 @@ const resources = {
 
   en: {
     translation: {
+      aiPackagesEyebrow: "AI CAPACITY",
+      aiPackagesTitle: "Extra AI responses",
+      aiPackagesSubtitle: "Add capacity without changing plans. Your monthly included responses are used first, then your extra balance.",
+      aiPackagesThisMonth: "Included usage this month",
+      aiPackagesExtraBalance: "Extra balance",
+      aiPackagesAvailableNow: "Available now",
+      aiPackagesRefresh: "Refresh",
+      aiPackagesPopular: "Popular",
+      aiPackagesOneTime: "One-time purchase",
+      aiPackagesResponses: "AI responses",
+      aiPackagesNoExpiration: "until used",
+      aiPackagesBuy: "Buy package",
+      aiPackagesUnavailable: "Configure in Paddle",
+      aiPackagesFootnote: "Extra balance does not expire and is credited automatically when Paddle confirms payment.",
+      aiPackagesLoadError: "We could not load your AI usage.",
+      aiPackagesCheckoutError: "We could not open the AI package checkout.",
+
       brandTagline: "Intelligent conversations for global commerce",
 
       overview: "Overview",
@@ -4195,6 +4229,23 @@ const resources = {
 
   "pt-BR": {
     translation: {
+      aiPackagesEyebrow: "CAPACIDADE DE IA",
+      aiPackagesTitle: "Respostas de IA extras",
+      aiPackagesSubtitle: "Amplie sua capacidade sem mudar de plano. Primeiro você usa as respostas incluídas do mês e depois o saldo extra.",
+      aiPackagesThisMonth: "Uso incluído neste mês",
+      aiPackagesExtraBalance: "Saldo extra",
+      aiPackagesAvailableNow: "Disponível agora",
+      aiPackagesRefresh: "Atualizar",
+      aiPackagesPopular: "Popular",
+      aiPackagesOneTime: "Compra única",
+      aiPackagesResponses: "respostas de IA",
+      aiPackagesNoExpiration: "até consumir",
+      aiPackagesBuy: "Comprar pacote",
+      aiPackagesUnavailable: "Configurar no Paddle",
+      aiPackagesFootnote: "O saldo extra não expira e é creditado automaticamente quando o Paddle confirma o pagamento.",
+      aiPackagesLoadError: "Não foi possível carregar seu uso de IA.",
+      aiPackagesCheckoutError: "Não foi possível abrir o pagamento do pacote de IA.",
+
       brandTagline: "Conversas inteligentes para comércio global",
 
       overview: "Visão geral",
