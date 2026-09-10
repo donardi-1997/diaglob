@@ -217,6 +217,10 @@
   ],
   [
     "GET",
+    "/api/stores/{store_id}/analytics/customers"
+  ],
+  [
+    "GET",
     "/api/stores/{store_id}/analytics/dropshipping/orders"
   ],
   [
@@ -334,6 +338,14 @@
   [
     "GET",
     "/api/stores/{store_id}/commerce/summary"
+  ],
+  [
+    "GET",
+    "/api/stores/{store_id}/customers/audience"
+  ],
+  [
+    "GET",
+    "/api/stores/{store_id}/customers/classifications"
   ],
   [
     "GET",
