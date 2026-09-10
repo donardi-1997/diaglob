@@ -117,6 +117,46 @@ export interface DropshippingComparison {
   gross_margin_pp: number | null;
 }
 
+export interface SalesAttributionMetrics {
+  total_orders: number;
+  delivered_orders: number;
+  cancelled_orders: number;
+  returned_orders: number;
+  gross_order_value: number;
+  delivered_revenue: number;
+  total_cogs: number;
+  gross_profit: number;
+  gross_margin: number | null;
+  delivered_aov: number | null;
+  delivery_rate: number | null;
+  cancellation_rate: number | null;
+  return_rate: number | null;
+  cost_completeness_pct: number;
+  profitability_complete: boolean;
+}
+
+export interface SalesAttributionActorPerformance extends SalesAttributionMetrics {
+  actor_id: number | null;
+  actor_label: string;
+  order_share_pct: number | null;
+  revenue_share_pct: number | null;
+}
+
+export interface SalesAttributionAnalytics {
+  total_orders: number;
+  attributed_orders: number;
+  unattributed_orders: number;
+  attribution_rate_pct: number;
+  overall: SalesAttributionMetrics;
+  by_actor_type: {
+    human: SalesAttributionMetrics;
+    ai: SalesAttributionMetrics;
+    unattributed: SalesAttributionMetrics;
+  };
+  employees: SalesAttributionActorPerformance[];
+  ai_agents: SalesAttributionActorPerformance[];
+}
+
 export interface DropshippingOverview {
   currency: string;
   total_orders: number;
@@ -134,6 +174,7 @@ export interface DropshippingOverview {
   delivered_revenue: number;
   delivered_aov: number | null;
   comparison: DropshippingComparison | null;
+  sales_attribution: SalesAttributionAnalytics;
 }
 
 export async function getDropshippingOverview(storeId: number, dateFrom?: string, dateTo?: string) {
