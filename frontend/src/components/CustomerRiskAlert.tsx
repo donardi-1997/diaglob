@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, LoaderCircle, ShieldAlert, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -163,6 +163,10 @@ export default function CustomerRiskAlert({
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    setCurrent(risk ?? null);
+  }, [customerId, risk]);
 
   const value = current ?? risk;
   const reasonLabels = useMemo(() => {
