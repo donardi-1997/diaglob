@@ -9,6 +9,10 @@
   ],
   [
     "DELETE",
+    "/api/customers/{customer_id}/risk/reports/mine"
+  ],
+  [
+    "DELETE",
     "/api/integrations/google"
   ],
   [
@@ -114,6 +118,10 @@
   [
     "GET",
     "/api/customers/{customer_id}"
+  ],
+  [
+    "GET",
+    "/api/customers/{customer_id}/risk"
   ],
   [
     "GET",
@@ -506,6 +514,10 @@
   [
     "POST",
     "/api/conversations/{conversation_id}/whatsapp/send"
+  ],
+  [
+    "POST",
+    "/api/customers/{customer_id}/risk/reports"
   ],
   [
     "POST",
