@@ -17,6 +17,7 @@ import {
 } from "../services/billing";
 
 import AiUsagePackagesSection from "../components/AiUsagePackagesSection";
+import { getPaddleInitializationOptions } from "../config/paddle";
 
 import { Check, Crown, Rocket, Sparkles, Store, Zap } from "lucide-react";
 
@@ -855,24 +856,22 @@ export default function PlansPage() {
 
 
   useEffect(() => {
-    const token = import.meta.env.VITE_PADDLE_CLIENT_TOKEN;
+    try {
+      const options = getPaddleInitializationOptions(
+        import.meta.env.VITE_PADDLE_ENVIRONMENT,
+        import.meta.env.VITE_PADDLE_CLIENT_TOKEN,
+      );
 
-    if (!token) {
-      console.warn("VITE_PADDLE_CLIENT_TOKEN no configurado");
-
-      return;
+      initializePaddle(options)
+        .then((instance) => {
+          setPaddle(instance);
+        })
+        .catch((error) => {
+          console.error("Unable to initialize Paddle", error);
+        });
+    } catch (error) {
+      console.error("Invalid Paddle frontend configuration", error);
     }
-
-    initializePaddle({
-      environment: "sandbox",
-      token,
-    })
-      .then((instance) => {
-        setPaddle(instance);
-      })
-      .catch((error) => {
-        console.error("Unable to initialize Paddle", error);
-      });
   }, []);
 
   useEffect(() => {

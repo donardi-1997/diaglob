@@ -8,10 +8,6 @@ import os
 import httpx
 
 
-class PaddleConfigError(Exception):
-    """Raised when Paddle configuration is missing."""
-
-
 class PaddleProviderError(Exception):
     """Raised when Paddle API returns an error."""
 
@@ -21,17 +17,47 @@ class PaddleProviderError(Exception):
         super().__init__(str(detail))
 
 
-def get_paddle_base_url() -> str:
+class PaddleConfigError(PaddleProviderError):
+    """Raised when Paddle configuration is missing or inconsistent."""
+
+    def __init__(self, message: str):
+        super().__init__(status_code=503, detail={"message": message})
+
+
+def get_paddle_environment() -> str:
     environment = (
         os.getenv("PADDLE_ENVIRONMENT", "sandbox")
         .strip()
         .lower()
     )
 
+    if environment not in {"sandbox", "production"}:
+        raise PaddleConfigError(
+            "PADDLE_ENVIRONMENT must be 'sandbox' or 'production'"
+        )
+
+    return environment
+
+
+def get_paddle_base_url() -> str:
+    environment = get_paddle_environment()
+
     if environment == "production":
         return "https://api.paddle.com"
 
     return "https://sandbox-api.paddle.com"
+
+
+def _validate_api_key_environment(api_key: str, environment: str) -> None:
+    if api_key.startswith("pdl_sdbx_") and environment != "sandbox":
+        raise PaddleConfigError(
+            "Sandbox Paddle API key cannot be used with production environment"
+        )
+
+    if api_key.startswith("pdl_live_") and environment != "production":
+        raise PaddleConfigError(
+            "Live Paddle API key cannot be used with sandbox environment"
+        )
 
 
 def get_paddle_headers() -> dict:
@@ -40,9 +66,13 @@ def get_paddle_headers() -> dict:
     if not api_key:
         raise PaddleConfigError("Paddle API key not configured")
 
+    environment = get_paddle_environment()
+    _validate_api_key_environment(api_key, environment)
+
     return {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
+        "Paddle-Version": "1",
     }
 
 

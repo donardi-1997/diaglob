@@ -126,6 +126,11 @@ def resolve_paddle_price(
     if value:
         return value
 
+    # Never fall back to a repository CSV in live mode. Paddle sandbox and
+    # live catalogs have different price IDs, so production must be explicit.
+    if os.getenv("PADDLE_ENVIRONMENT", "sandbox").strip().lower() == "production":
+        return None
+
     return (
         CSV_PADDLE_PRICE_IDS
         .get(plan, {})
