@@ -45,6 +45,34 @@ function IntegrationIcon({
   return <Plug size={18} />;
 }
 
+function degradedStatusLabel(language?: string) {
+  if (language?.startsWith("pt")) return "Temporariamente indisponível";
+  if (language?.startsWith("en")) return "Temporarily unavailable";
+  return "Temporalmente no disponible";
+}
+
+function degradedAlertMessage(
+  language: string | undefined,
+  integrations: OperationsIntegration[],
+) {
+  const names = Array.from(
+    new Set(
+      integrations
+        .filter((integration) => integration.degraded)
+        .map((integration) => integration.name),
+    ),
+  );
+  const suffix = names.length ? `: ${names.join(", ")}` : "";
+
+  if (language?.startsWith("pt")) {
+    return `Status de integração temporariamente indisponível${suffix}`;
+  }
+  if (language?.startsWith("en")) {
+    return `Integration status temporarily unavailable${suffix}`;
+  }
+  return `Estado de integración temporalmente no disponible${suffix}`;
+}
+
 export default function DashboardPage({
   stores,
   storeId,
@@ -54,7 +82,7 @@ export default function DashboardPage({
   onNavigateToKnowledge,
   onNavigateToAutomations,
 }: DashboardPageProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [data, setData] = useState<OperationsSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -160,6 +188,8 @@ export default function DashboardPage({
   const products = data?.products;
   const alerts = data?.alerts || [];
   const activity = data?.activity || [];
+  const language = i18n.resolvedLanguage || i18n.language;
+  const degradedLabel = degradedStatusLabel(language);
 
   const formatTimeAgo = (timestamp: string) => {
     const now = Date.now();
@@ -234,7 +264,11 @@ export default function DashboardPage({
           {alerts.map((alert, i) => (
             <div key={i} className="dashboard-alert-item">
               <AlertTriangle size={16} />
-              <span>{alert.message}</span>
+              <span>
+                {alert.type === "integration_status_degraded"
+                  ? degradedAlertMessage(language, integrations)
+                  : alert.message}
+              </span>
             </div>
           ))}
         </section>
@@ -297,9 +331,11 @@ export default function DashboardPage({
                       />
                       {integration.connected
                         ? t("connected") || "Conectado"
-                        : integration.status === "disconnected"
-                          ? t("notConnected") || "No conectado"
-                          : integration.status}
+                        : integration.degraded || integration.status === "degraded"
+                          ? degradedLabel
+                          : integration.status === "disconnected"
+                            ? t("notConnected") || "No conectado"
+                            : integration.status}
                       {integration.payment_methods?.length
                         ? ` · ${integration.payment_methods
                             .map((method) => method.toUpperCase())
