@@ -5,6 +5,7 @@ import { BrowserRouter } from 'react-router-dom'
 import App from './App'
 import i18n from './i18n'
 import './index.css'
+import './conversations-layout-fix.css'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

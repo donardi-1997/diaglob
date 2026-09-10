@@ -1,0 +1,66 @@
+/* Conversation viewport invariants.
+   The inbox is a constrained grid inside a constrained flex column.
+   Long message histories must scroll inside .chat-body instead of increasing
+   the grid row's min-content height and pushing the composer off-screen. */
+
+.conversations-content {
+  min-height: 0;
+}
+
+.inbox-layout {
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.conversation-list-panel,
+.chat-panel,
+.customer-panel {
+  min-height: 0;
+}
+
+.chat-panel {
+  height: 100%;
+  overflow: hidden;
+}
+
+.chat-header,
+.ai-conversation-status,
+.chat-composer {
+  flex: 0 0 auto;
+}
+
+.chat-body {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.chat-composer {
+  position: relative;
+  z-index: 2;
+}
+
+.customer-panel {
+  overflow-y: auto;
+}
+
+@media (max-width: 620px) {
+  /* The mobile inbox intentionally becomes document-flow based. Avoid forcing
+     the desktop one-row viewport model when panels stack vertically. */
+  .inbox-layout {
+    grid-template-rows: none;
+    overflow: visible;
+  }
+
+  .chat-panel {
+    height: auto;
+    overflow: visible;
+  }
+
+  .chat-body {
+    flex: none;
+    max-height: 60vh;
+  }
+}

@@ -160,8 +160,8 @@ const COPY: Record<
       "Empieza por el mercado principal de tu operación. Podrás añadir conexiones y automatizaciones después.",
     dangerTitle: "Zona de peligro",
     dangerBody:
-      "Cerrar tu cuenta desactivará tu acceso a todas las organizaciones y tiendas. Esta acción es irreversible.",
-    closeAccount: "Cerrar cuenta",
+      "Eliminar tu cuenta desactivará tu acceso a todas las organizaciones y tiendas. Esta acción es irreversible.",
+    closeAccount: "Eliminar cuenta",
     closeWarning:
       "Esta acción es permanente. Se eliminará tu cuenta de usuario y se desactivará tu acceso.",
     closeLoss1: "Perderás acceso a todas tus organizaciones",
@@ -222,8 +222,8 @@ const COPY: Record<
       "Start with your main operating market. You can add connections and automations afterwards.",
     dangerTitle: "Danger zone",
     dangerBody:
-      "Closing your account disables access to every organization and store. This action cannot be undone.",
-    closeAccount: "Close account",
+      "Deleting your account disables access to every organization and store. This action cannot be undone.",
+    closeAccount: "Delete account",
     closeWarning:
       "This action is permanent. Your user account will be deleted and your access disabled.",
     closeLoss1: "You will lose access to every organization",
@@ -284,8 +284,8 @@ const COPY: Record<
       "Comece pelo principal mercado da operação. Você poderá adicionar conexões e automações depois.",
     dangerTitle: "Zona de perigo",
     dangerBody:
-      "Fechar sua conta desativa o acesso a todas as organizações e lojas. Esta ação é irreversível.",
-    closeAccount: "Fechar conta",
+      "Excluir sua conta desativa o acesso a todas as organizações e lojas. Esta ação é irreversível.",
+    closeAccount: "Excluir conta",
     closeWarning:
       "Esta ação é permanente. Sua conta de usuário será excluída e seu acesso desativado.",
     closeLoss1: "Você perderá acesso a todas as organizações",
@@ -541,7 +541,7 @@ export default function StoresPage({
           err?.response?.data?.detail ||
           err?.message ||
           t("storesI18nDeleteAccountError") ||
-          "Unable to close account.",
+          "Unable to delete account.",
       );
     }
   }
@@ -1017,11 +1017,11 @@ export default function StoresPage({
             if (event.target === event.currentTarget && !deleting) setDeleteConfirmOpen(false);
           }}
         >
-          <div className="stores-v2-modal" role="dialog" aria-modal="true" aria-labelledby="close-account-title">
+          <div className="stores-v2-modal" role="dialog" aria-modal="true" aria-labelledby="delete-account-title">
             <div className="stores-v2-modal-header">
               <div>
                 <span className="stores-v2-modal-kicker">{copy.dangerTitle}</span>
-                <h2 id="close-account-title">{copy.closeAccount}</h2>
+                <h2 id="delete-account-title">{copy.closeAccount}</h2>
               </div>
               <button type="button" className="stores-v2-icon-button" onClick={() => setDeleteConfirmOpen(false)} disabled={deleting}>
                 <X size={18} />
