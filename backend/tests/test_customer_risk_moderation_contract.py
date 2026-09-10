@@ -128,7 +128,7 @@ def test_accepted_dispute_marks_external_signal_disputed_and_audits_both_sides(d
         statement="The shared signal appears to refer to a transaction that was resolved.",
         evidence_reference="CASE-456",
     )
-    dispute_id = disputed["dispute"]["id"]
+    dispute_id = disputed["id"]
 
     # Tenant summary remains aggregate; reporter-private fields never leak.
     summary = get_customer_risk_summary(
