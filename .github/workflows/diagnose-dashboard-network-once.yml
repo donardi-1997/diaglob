@@ -1,0 +1,84 @@
+name: Diagnose Dashboard Network Once
+
+on:
+  push:
+    branches:
+      - fix/dashboard-network-error
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure SSH
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_SSH_KEY_B64: ${{ secrets.PROD_SSH_KEY_B64 }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          echo "$PROD_SSH_KEY_B64" | base64 --decode > ~/.ssh/diaglob_actions_prod
+          chmod 600 ~/.ssh/diaglob_actions_prod
+          ssh-keyscan -H "$PROD_HOST" >> ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Diagnose production dashboard network
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+        run: |
+          ssh -i ~/.ssh/diaglob_actions_prod "$PROD_USER@$PROD_HOST" 'bash -s' <<'REMOTE'
+          set +e
+          echo '=== DEPLOYED COMMIT ==='
+          git -C /opt/diaglob/app rev-parse HEAD
+          git -C /opt/diaglob/app log -1 --oneline
+
+          echo '=== API SERVICE ==='
+          sudo systemctl is-active diaglob-api
+          sudo systemctl status diaglob-api --no-pager -l | tail -n 35
+
+          echo '=== LOCAL HEALTH ==='
+          curl -sS -D - http://127.0.0.1:8000/health -o /tmp/diaglob_health_body
+          cat /tmp/diaglob_health_body
+          echo
+
+          echo '=== PUBLIC HEALTH FROM SERVER ==='
+          curl -sS -o /tmp/diaglob_public_health -w 'http_code=%{http_code} remote_ip=%{remote_ip} ssl_verify=%{ssl_verify_result}\n' https://api.diaglob.tech/health
+          cat /tmp/diaglob_public_health
+          echo
+
+          echo '=== CORS PREFLIGHT TO OPERATIONS SUMMARY ==='
+          curl -sS -D - -o /tmp/diaglob_cors_body -X OPTIONS \
+            -H 'Origin: https://diaglob.tech' \
+            -H 'Access-Control-Request-Method: GET' \
+            -H 'Access-Control-Request-Headers: authorization,content-type,x-organization-id,x-store-id' \
+            http://127.0.0.1:8000/api/stores/1/operations/summary
+          cat /tmp/diaglob_cors_body
+          echo
+
+          echo '=== COMPILED FRONTEND API TARGETS ==='
+          grep -RhoE 'https?://[^"[:space:]]+' /opt/diaglob/app/frontend/dist/assets/api-*.js 2>/dev/null | sort -u | head -n 20
+          grep -RHnE '127\.0\.0\.1:8000|api\.diaglob\.tech' /opt/diaglob/app/frontend/dist/assets/api-*.js 2>/dev/null | head -n 10
+
+          echo '=== RECENT API LOGS ==='
+          sudo journalctl -u diaglob-api --since '20 minutes ago' --no-pager -n 180
+
+          echo '=== RECENT NGINX ERRORS ==='
+          sudo tail -n 120 /var/log/nginx/error.log 2>/dev/null || true
+          REMOTE
+
+      - name: Remove one-time diagnostic workflow
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/diagnose-dashboard-network-once.yml
+          git commit -m "chore: remove one-time dashboard diagnostic workflow"
+          git push origin HEAD:fix/dashboard-network-error
