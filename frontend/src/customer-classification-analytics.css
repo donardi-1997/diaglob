@@ -51,6 +51,26 @@
 .cca-table td > strong { display: block; }
 .cca-table td small { display: block; margin-top: 3px; color: var(--dg-shell-muted, #94a3b8); font-size: 0.68rem; }
 
+.cca-panel .cvc-classification {
+  display: inline-flex;
+  align-items: center;
+  min-height: 25px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  background: rgba(148, 163, 184, 0.12);
+}
+.cca-panel .cvc-classification.is-champion,
+.cca-panel .cvc-classification.is-loyal { background: rgba(34, 197, 94, 0.13); color: #4ade80; }
+.cca-panel .cvc-classification.is-repeat_customer,
+.cca-panel .cvc-classification.is-high_value { background: rgba(59, 130, 246, 0.13); color: #60a5fa; }
+.cca-panel .cvc-classification.is-recent_buyer,
+.cca-panel .cvc-classification.is-prospect { background: rgba(139, 92, 246, 0.14); color: #a78bfa; }
+.cca-panel .cvc-classification.is-value_at_risk { background: rgba(245, 158, 11, 0.14); color: #fbbf24; }
+.cca-panel .cvc-classification.is-dormant { background: rgba(239, 68, 68, 0.13); color: #f87171; }
+.cca-panel .cvc-classification.is-lead { color: var(--dg-shell-muted, #94a3b8); }
+
 @media (max-width: 980px) {
   .cca-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .cca-distribution { grid-template-columns: repeat(2, minmax(0, 1fr)); }
