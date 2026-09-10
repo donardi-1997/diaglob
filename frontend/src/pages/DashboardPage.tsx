@@ -1,18 +1,22 @@
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useState, useEffect } from "react";
 import {
-  MessageSquareText,
-  ShoppingBag,
-  Workflow,
-  BarChart3,
+  Activity,
   AlertTriangle,
-  Settings,
+  ArrowUpRight,
+  BarChart3,
   BrainCircuit,
   CreditCard,
   Megaphone,
+  MessageSquareText,
   Package,
   Plug,
+  Settings,
+  ShoppingBag,
+  Workflow,
 } from "lucide-react";
+
+import GettingStarted from "../components/GettingStarted";
 import {
   getOperationsSummary,
   type OperationsIntegration,
@@ -23,7 +27,7 @@ import {
   degradedAlertMessage,
   degradedStatusLabel,
 } from "../utils/operationsStatus";
-import GettingStarted from "../components/GettingStarted";
+import "../dashboard-v2.css";
 
 interface DashboardPageProps {
   stores: Store[];
@@ -35,18 +39,33 @@ interface DashboardPageProps {
   onNavigateToAutomations?: () => void;
 }
 
-function IntegrationIcon({
-  category,
-}: {
-  category: OperationsIntegration["category"];
-}) {
-  if (category === "messaging") return <MessageSquareText size={18} />;
-  if (category === "commerce") return <ShoppingBag size={18} />;
-  if (category === "supplier") return <Package size={18} />;
-  if (category === "knowledge") return <BrainCircuit size={18} />;
-  if (category === "ads") return <Megaphone size={18} />;
-  if (category === "payments") return <CreditCard size={18} />;
-  return <Plug size={18} />;
+function IntegrationIcon({ category }: { category: string }) {
+  if (category === "messaging") return <MessageSquareText size={17} />;
+  if (category === "commerce") return <ShoppingBag size={17} />;
+  if (category === "supplier") return <Package size={17} />;
+  if (category === "knowledge") return <BrainCircuit size={17} />;
+  if (category === "ads") return <Megaphone size={17} />;
+  if (category === "payments") return <CreditCard size={17} />;
+  return <Plug size={17} />;
+}
+
+function DashboardSkeleton() {
+  return (
+    <div className="dg-dashboard">
+      <div className="dg-dashboard-hero">
+        <div>
+          <span className="dg-dashboard-kicker">DIAGLOB</span>
+          <h1>Centro de operaciones</h1>
+          <p>Cargando el estado de tu negocio...</p>
+        </div>
+      </div>
+      <div className="dg-dashboard-loading-grid">
+        {Array.from({ length: 4 }).map((_, index) => (
+          <div className="dg-dashboard-skeleton" key={index} />
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export default function DashboardPage({
@@ -70,6 +89,7 @@ export default function DashboardPage({
     }
 
     let mounted = true;
+    setLoading(true);
 
     async function load() {
       try {
@@ -83,76 +103,136 @@ export default function DashboardPage({
           setError(
             err?.response?.data?.detail ||
               err?.message ||
-              "Unable to load operations data"
+              "Unable to load operations data",
           );
         }
       } finally {
-        if (mounted) {
-          setLoading(false);
-        }
+        if (mounted) setLoading(false);
       }
     }
 
-    load();
-
+    void load();
     return () => {
       mounted = false;
     };
   }, [storeId]);
 
+  const language = i18n.resolvedLanguage || i18n.language;
+  const locale = language === "pt-BR" ? "pt-BR" : language === "en" ? "en" : "es";
+  const selectedStore = stores.find((store) => store.id === storeId);
+
+  const copy = useMemo(() => {
+    if (locale === "en") {
+      return {
+        kicker: "Operations center",
+        title: "Your business, under control.",
+        subtitle: "Monitor conversations, orders, automations and integrations from one operational view.",
+        healthy: "Operational",
+        quickCommerce: "View commerce",
+        quickKnowledge: "Knowledge",
+        quickAutomations: "Automations",
+        activityTitle: "Recent activity",
+        activityHelp: "Latest events from the active store",
+        integrationsTitle: "Integration health",
+        integrationsHelp: "Connection status for your operating stack",
+        noActivity: "No recent activity yet.",
+        noIntegrations: "No integrations available yet.",
+        conversationsMeta: "active in the last 24h",
+        ordersMeta: "orders in the last 24h",
+        automationMeta: "active automations",
+        productMeta: "product variants",
+        aiResolved: "resolved by AI",
+        orderValue: "order value",
+        executions: "executions today",
+        connected: "connected",
+      };
+    }
+
+    if (locale === "pt-BR") {
+      return {
+        kicker: "Centro de operações",
+        title: "Seu negócio, sob controle.",
+        subtitle: "Monitore conversas, pedidos, automações e integrações em uma única visão operacional.",
+        healthy: "Operacional",
+        quickCommerce: "Ver comércio",
+        quickKnowledge: "Knowledge",
+        quickAutomations: "Automações",
+        activityTitle: "Atividade recente",
+        activityHelp: "Últimos eventos da loja ativa",
+        integrationsTitle: "Saúde das integrações",
+        integrationsHelp: "Estado das conexões do seu stack operacional",
+        noActivity: "Ainda não há atividade recente.",
+        noIntegrations: "Ainda não há integrações disponíveis.",
+        conversationsMeta: "ativas nas últimas 24h",
+        ordersMeta: "pedidos nas últimas 24h",
+        automationMeta: "automações ativas",
+        productMeta: "variantes de produto",
+        aiResolved: "resolvidas por IA",
+        orderValue: "valor em pedidos",
+        executions: "execuções hoje",
+        connected: "conectadas",
+      };
+    }
+
+    return {
+      kicker: "Centro de operaciones",
+      title: "Tu negocio, bajo control.",
+      subtitle: "Monitorea conversaciones, pedidos, automatizaciones e integraciones desde una sola vista operativa.",
+      healthy: "Operativo",
+      quickCommerce: "Ver comercio",
+      quickKnowledge: "Knowledge",
+      quickAutomations: "Automatizaciones",
+      activityTitle: "Actividad reciente",
+      activityHelp: "Últimos eventos de la tienda activa",
+      integrationsTitle: "Salud de integraciones",
+      integrationsHelp: "Estado de conexión de tu stack operativo",
+      noActivity: "Todavía no hay actividad reciente.",
+      noIntegrations: "Todavía no hay integraciones disponibles.",
+      conversationsMeta: "activas en las últimas 24h",
+      ordersMeta: "pedidos en las últimas 24h",
+      automationMeta: "automatizaciones activas",
+      productMeta: "variantes de producto",
+      aiResolved: "resueltas por IA",
+      orderValue: "valor en pedidos",
+      executions: "ejecuciones hoy",
+      connected: "conectadas",
+    };
+  }, [locale]);
+
   if (!storeId) {
     return (
-      <div className="content">
-        <section className="page-heading">
+      <div className="dg-dashboard">
+        <section className="dg-dashboard-hero">
           <div>
-            <span className="eyebrow">DIAGLOB</span>
-            <h1>{t("overview")}</h1>
+            <span className="dg-dashboard-kicker">DIAGLOB</span>
+            <h1>{t("emptyNoStoreTitle") || "Crea tu primera tienda"}</h1>
+            <p>{t("emptyNoStoreHelp") || "Una tienda te permite gestionar productos, pedidos y conversaciones."}</p>
+          </div>
+          <div className="dg-dashboard-hero-actions">
+            {onNavigateToStores && (
+              <button className="dg-dashboard-action is-primary" onClick={onNavigateToStores}>
+                <Settings size={16} />
+                {t("emptyNoStoreAction") || "Crear tienda"}
+              </button>
+            )}
           </div>
         </section>
-        <div className="empty-state">
-          <Settings size={48} />
-          <h3>{t("emptyNoStoreTitle") || "Crea tu primera tienda"}</h3>
-          <p>{t("emptyNoStoreHelp") || "Una tienda te permite gestionar productos, pedidos y conversaciones."}</p>
-          {onNavigateToStores && (
-            <button className="primary-button" onClick={onNavigateToStores}>
-              {t("emptyNoStoreAction") || "Crear tienda"}
-            </button>
-          )}
-        </div>
       </div>
     );
   }
 
-  if (loading) {
-    return (
-      <div className="content">
-        <section className="page-heading">
-          <div>
-            <span className="eyebrow">DIAGLOB</span>
-            <h1>{t("overview")}</h1>
-          </div>
-        </section>
-        <div className="loading-state">
-          <p>{t("dashboardLoading") || "Cargando resumen..."}</p>
-        </div>
-      </div>
-    );
-  }
+  if (loading) return <DashboardSkeleton />;
 
   if (error) {
     return (
-      <div className="content">
-        <section className="page-heading">
+      <div className="dg-dashboard">
+        <section className="dg-dashboard-hero">
           <div>
-            <span className="eyebrow">DIAGLOB</span>
-            <h1>{t("overview")}</h1>
+            <span className="dg-dashboard-kicker">DIAGLOB</span>
+            <h1>{t("dashboardError") || "No pudimos cargar el resumen."}</h1>
+            <p>{error}</p>
           </div>
         </section>
-        <div className="error-state">
-          <AlertTriangle size={32} />
-          <h3>{t("dashboardError") || "No pudimos cargar el resumen."}</h3>
-          <p>{error}</p>
-        </div>
       </div>
     );
   }
@@ -164,13 +244,11 @@ export default function DashboardPage({
   const products = data?.products;
   const alerts = data?.alerts || [];
   const activity = data?.activity || [];
-  const language = i18n.resolvedLanguage || i18n.language;
   const degradedLabel = degradedStatusLabel(language);
+  const connectedCount = integrations.filter((integration) => integration.connected).length;
 
   const formatTimeAgo = (timestamp: string) => {
-    const now = Date.now();
-    const then = new Date(timestamp).getTime();
-    const diffMs = now - then;
+    const diffMs = Date.now() - new Date(timestamp).getTime();
     const diffMin = Math.floor(diffMs / 60000);
     const diffHr = Math.floor(diffMin / 60);
     const diffDay = Math.floor(diffHr / 24);
@@ -181,64 +259,116 @@ export default function DashboardPage({
     return `${diffDay}d`;
   };
 
+  const formatMoney = (value: number) => {
+    try {
+      return new Intl.NumberFormat(locale, {
+        style: "currency",
+        currency: selectedStore?.currency || "COP",
+        maximumFractionDigits: 0,
+      }).format(value || 0);
+    } catch {
+      return String(value || 0);
+    }
+  };
+
+  const metricCards = [
+    {
+      icon: MessageSquareText,
+      value: conv?.total || 0,
+      label: t("conversations") || "Conversaciones",
+      trend: `${conv?.active_24h || 0} ${copy.conversationsMeta}`,
+      meta: `${Math.round(conv?.ai_resolved_pct || 0)}% ${copy.aiResolved}`,
+    },
+    {
+      icon: ShoppingBag,
+      value: orders?.total || 0,
+      label: t("commerce") || "Pedidos",
+      trend: `${orders?.last_24h || 0} ${copy.ordersMeta}`,
+      meta: `${formatMoney(orders?.total_value || 0)} ${copy.orderValue}`,
+    },
+    {
+      icon: Workflow,
+      value: autos?.total || 0,
+      label: t("automations") || "Automatizaciones",
+      trend: `${autos?.active || 0} ${copy.automationMeta}`,
+      meta: `${autos?.executions_24h || 0} ${copy.executions}`,
+    },
+    {
+      icon: BarChart3,
+      value: products?.total || 0,
+      label: t("products") || "Productos",
+      trend: `${products?.variants || 0} ${copy.productMeta}`,
+      meta: `${connectedCount}/${integrations.length} ${copy.connected}`,
+    },
+  ];
+
   return (
-    <div className="content">
-      <section className="page-heading">
+    <div className="dg-dashboard">
+      <section className="dg-dashboard-hero">
         <div>
-          <span className="eyebrow">DIAGLOB</span>
-          <h1>{t("overview")}</h1>
-          <p>{t("brandTagline")}</p>
+          <span className="dg-dashboard-kicker">
+            <span className="dg-dashboard-kicker-dot" />
+            {copy.kicker} · {copy.healthy}
+          </span>
+          <h1>{selectedStore?.name ? `${selectedStore.name}: ${copy.title}` : copy.title}</h1>
+          <p>{copy.subtitle}</p>
+        </div>
+
+        <div className="dg-dashboard-hero-actions">
+          {onNavigateToCommerce && (
+            <button className="dg-dashboard-action is-primary" onClick={onNavigateToCommerce}>
+              <ShoppingBag size={15} />
+              {copy.quickCommerce}
+              <ArrowUpRight size={14} />
+            </button>
+          )}
+          {onNavigateToKnowledge && (
+            <button className="dg-dashboard-action" onClick={onNavigateToKnowledge}>
+              <BrainCircuit size={15} />
+              {copy.quickKnowledge}
+            </button>
+          )}
+          {onNavigateToAutomations && (
+            <button className="dg-dashboard-action" onClick={onNavigateToAutomations}>
+              <Workflow size={15} />
+              {copy.quickAutomations}
+            </button>
+          )}
         </div>
       </section>
 
-      <GettingStarted
-        stores={stores}
-        selectedStoreId={storeId}
-        onNavigateToStores={onNavigateToStores || (() => {})}
-        onNavigateToCommerce={onNavigateToCommerce || (() => {})}
-        onNavigateToWhatsApp={onNavigateToWhatsApp || (() => {})}
-        onNavigateToKnowledge={onNavigateToKnowledge || (() => {})}
-        onNavigateToAutomations={onNavigateToAutomations || (() => {})}
-      />
+      <div className="dg-dashboard-getting-started">
+        <GettingStarted
+          stores={stores}
+          selectedStoreId={storeId}
+          onNavigateToStores={onNavigateToStores || (() => {})}
+          onNavigateToCommerce={onNavigateToCommerce || (() => {})}
+          onNavigateToWhatsApp={onNavigateToWhatsApp || (() => {})}
+          onNavigateToKnowledge={onNavigateToKnowledge || (() => {})}
+          onNavigateToAutomations={onNavigateToAutomations || (() => {})}
+        />
+      </div>
 
-      <section className="stats-grid">
-        <div className="stat-card">
-          <div className="stat-icon">
-            <MessageSquareText size={20} />
-          </div>
-          <div className="stat-value">{conv?.total || 0}</div>
-          <div className="stat-label">{t("conversations")}</div>
-        </div>
-
-        <div className="stat-card">
-          <div className="stat-icon">
-            <ShoppingBag size={20} />
-          </div>
-          <div className="stat-value">{orders?.total || 0}</div>
-          <div className="stat-label">{t("commerce")}</div>
-        </div>
-
-        <div className="stat-card">
-          <div className="stat-icon">
-            <Workflow size={20} />
-          </div>
-          <div className="stat-value">{autos?.total || 0}</div>
-          <div className="stat-label">{t("automations")}</div>
-        </div>
-
-        <div className="stat-card">
-          <div className="stat-icon">
-            <BarChart3 size={20} />
-          </div>
-          <div className="stat-value">{products?.total || 0}</div>
-          <div className="stat-label">{t("products") || "Productos"}</div>
-        </div>
+      <section className="dg-dashboard-metrics">
+        {metricCards.map(({ icon: Icon, value, label, trend, meta }) => (
+          <article className="dg-metric-card" key={label}>
+            <div className="dg-metric-top">
+              <div className="dg-metric-icon"><Icon size={19} /></div>
+              <span className="dg-metric-trend">{trend}</span>
+            </div>
+            <div>
+              <div className="dg-metric-value">{value.toLocaleString(locale)}</div>
+              <div className="dg-metric-label">{label}</div>
+              <div className="dg-metric-meta">{meta}</div>
+            </div>
+          </article>
+        ))}
       </section>
 
       {alerts.length > 0 && (
-        <section className="dashboard-alerts">
-          {alerts.map((alert, i) => (
-            <div key={i} className="dashboard-alert-item">
+        <section className="dg-dashboard-alert-stack">
+          {alerts.map((alert, index) => (
+            <div key={`${alert.type}-${index}`} className="dg-dashboard-alert-v2">
               <AlertTriangle size={16} />
               <span>
                 {alert.type === "integration_status_degraded"
@@ -250,61 +380,60 @@ export default function DashboardPage({
         </section>
       )}
 
-      <div className="dashboard-grid">
-        <div className="panel">
-          <div className="panel-header">
-            <h2>{t("activity")}</h2>
-          </div>
-
-          <div className="activity-list">
-            {activity.length === 0 && (
-              <div className="empty-activity">
-                {t("dashboardNoActivity") || "Sin actividad reciente."}
-              </div>
-            )}
-            {activity.slice(0, 5).map((a, i) => (
-              <div key={i} className="activity-item">
-                <div className="activity-icon">
-                  <MessageSquareText size={16} />
-                </div>
-                <div className="activity-copy">
-                  <strong>{a.title}</strong>
-                  <span>{a.detail}</span>
-                </div>
-                <span className="activity-time">
-                  {a.timestamp ? formatTimeAgo(a.timestamp) : ""}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="right-column">
-          <div className="panel">
-            <div className="panel-header">
-              <h2>{t("integrations") || "Integraciones"}</h2>
+      <section className="dg-dashboard-content-grid">
+        <article className="dg-dashboard-panel">
+          <header className="dg-dashboard-panel-header">
+            <div className="dg-dashboard-panel-title">
+              <h2>{copy.activityTitle}</h2>
+              <p>{copy.activityHelp}</p>
             </div>
+            <span className="dg-dashboard-panel-badge">{activity.length}</span>
+          </header>
 
-            <div className="agent-list">
-              {integrations.length === 0 && (
-                <div className="empty-activity">
-                  {t("notConnected") || "No conectado"}
+          {activity.length === 0 ? (
+            <div className="dg-dashboard-empty">{copy.noActivity}</div>
+          ) : (
+            <div className="dg-activity-v2">
+              {activity.slice(0, 7).map((item, index) => (
+                <div className="dg-activity-row" key={`${item.timestamp || "activity"}-${index}`}>
+                  <div className="dg-activity-icon"><Activity size={16} /></div>
+                  <div className="dg-activity-copy">
+                    <strong>{item.title}</strong>
+                    <span>{item.detail}</span>
+                  </div>
+                  <span className="dg-activity-time">
+                    {item.timestamp ? formatTimeAgo(item.timestamp) : ""}
+                  </span>
                 </div>
-              )}
+              ))}
+            </div>
+          )}
+        </article>
 
-              {integrations.map((integration) => (
-                <div className="agent-item" key={integration.key}>
-                  <div className="agent-icon">
+        <article className="dg-dashboard-panel">
+          <header className="dg-dashboard-panel-header">
+            <div className="dg-dashboard-panel-title">
+              <h2>{copy.integrationsTitle}</h2>
+              <p>{copy.integrationsHelp}</p>
+            </div>
+            <span className="dg-dashboard-panel-badge">{connectedCount}/{integrations.length}</span>
+          </header>
+
+          {integrations.length === 0 ? (
+            <div className="dg-dashboard-empty">{copy.noIntegrations}</div>
+          ) : (
+            <div className="dg-integration-list">
+              {integrations.map((integration: OperationsIntegration) => (
+                <div
+                  className={`dg-integration-row ${integration.connected ? "is-connected" : ""}`}
+                  key={integration.key}
+                >
+                  <div className="dg-integration-icon">
                     <IntegrationIcon category={integration.category} />
                   </div>
-                  <div className="agent-copy">
+                  <div className="dg-integration-copy">
                     <strong>{integration.name}</strong>
                     <span>
-                      <span
-                        className={`mini-status ${
-                          integration.connected ? "connected" : ""
-                        }`}
-                      />
                       {integration.connected
                         ? t("connected") || "Conectado"
                         : integration.degraded || integration.status === "degraded"
@@ -312,19 +441,15 @@ export default function DashboardPage({
                           : integration.status === "disconnected"
                             ? t("notConnected") || "No conectado"
                             : integration.status}
-                      {integration.payment_methods?.length
-                        ? ` · ${integration.payment_methods
-                            .map((method) => method.toUpperCase())
-                            .join(", ")}`
-                        : ""}
                     </span>
                   </div>
+                  <span className={`dg-integration-status ${integration.connected ? "is-connected" : ""}`} />
                 </div>
               ))}
             </div>
-          </div>
-        </div>
-      </div>
+          )}
+        </article>
+      </section>
     </div>
   );
 }
