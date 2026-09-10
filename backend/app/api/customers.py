@@ -10,6 +10,9 @@ from ..models import (
     OrganizationMembership,
     Store,
 )
+from ..services.customer_audience_service import (
+    list_classified_audience_customers,
+)
 from ..services.customer_classification_service import (
     get_customer_classifications,
 )
@@ -68,6 +71,52 @@ def list_customer_classifications(
         classification=classification,
         value_tier=value_tier,
         search=search,
+        page=max(1, page),
+        page_size=min(max(1, page_size), 100),
+        sort=sort,
+    )
+
+
+@router.get(
+    "/api/stores/{store_id}/customers/audience"
+)
+def list_customer_audience(
+    store_id: int,
+    search: str | None = None,
+    page: int = 1,
+    page_size: int = 25,
+    segment: str | None = None,
+    priority: str | None = None,
+    health: str | None = None,
+    country: str | None = None,
+    classification: str | None = None,
+    value_tier: str | None = None,
+    needs_attention: bool | None = None,
+    has_orders: bool | None = None,
+    sort: str = "priority_desc",
+    membership: OrganizationMembership = Depends(
+        require_permission("automations.read")
+    ),
+    db: Session = Depends(get_db),
+):
+    _validate_store(
+        db,
+        membership.organization_id,
+        store_id,
+    )
+    return list_classified_audience_customers(
+        db=db,
+        organization_id=membership.organization_id,
+        store_id=store_id,
+        search=search,
+        segment=segment,
+        priority=priority,
+        health=health,
+        country=country,
+        classification=classification,
+        value_tier=value_tier,
+        needs_attention=needs_attention,
+        has_orders=has_orders,
         page=max(1, page),
         page_size=min(max(1, page_size), 100),
         sort=sort,
