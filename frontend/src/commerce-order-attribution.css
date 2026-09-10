@@ -1,0 +1,319 @@
+.commerce-orders-meta {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 14px;
+}
+
+.order-attribution-info {
+  max-width: 680px;
+  margin: 0;
+  color: var(--text-muted, #64748b);
+  font-size: 0.82rem;
+  line-height: 1.5;
+  text-align: right;
+}
+
+.order-attribution-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.order-attribution-cell small {
+  color: var(--text-muted, #64748b);
+  font-size: 0.68rem;
+}
+
+.order-attribution-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 230px;
+  padding: 5px 9px;
+  border: 1px solid var(--border-color, rgba(148, 163, 184, 0.24));
+  border-radius: 999px;
+  background: var(--surface-secondary, rgba(148, 163, 184, 0.08));
+  color: var(--text-primary, inherit);
+  font-size: 0.76rem;
+  font-weight: 650;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.order-attribution-badge.human {
+  border-color: rgba(59, 130, 246, 0.24);
+  background: rgba(59, 130, 246, 0.09);
+}
+
+.order-attribution-badge.ai {
+  border-color: rgba(139, 92, 246, 0.25);
+  background: rgba(139, 92, 246, 0.1);
+}
+
+.order-attribution-badge.unattributed {
+  color: var(--text-muted, #64748b);
+  font-weight: 550;
+}
+
+.order-attribution-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.order-attribution-edit-button,
+.order-attribution-close,
+.order-attribution-secondary,
+.order-attribution-primary,
+.order-attribution-type-picker button {
+  font: inherit;
+}
+
+.order-attribution-edit-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 32px;
+  padding: 0 9px;
+  border: 1px solid var(--border-color, rgba(148, 163, 184, 0.28));
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-primary, inherit);
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+
+.order-attribution-edit-button:hover {
+  background: var(--surface-secondary, rgba(148, 163, 184, 0.08));
+}
+
+.order-attribution-editor-row > td {
+  padding: 0 !important;
+  border-top: 0 !important;
+}
+
+.order-attribution-editor {
+  margin: 0 12px 14px;
+  padding: 18px;
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  border-radius: 14px;
+  background: var(--surface-secondary, rgba(99, 102, 241, 0.045));
+}
+
+.order-attribution-editor-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.order-attribution-editor-heading strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 0.9rem;
+}
+
+.order-attribution-editor-heading p {
+  max-width: 700px;
+  margin: 0;
+  color: var(--text-muted, #64748b);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.order-attribution-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted, #64748b);
+  cursor: pointer;
+}
+
+.order-attribution-close:hover {
+  background: rgba(148, 163, 184, 0.1);
+}
+
+.order-attribution-type-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.order-attribution-type-picker button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--border-color, rgba(148, 163, 184, 0.25));
+  border-radius: 9px;
+  background: var(--surface-primary, transparent);
+  color: var(--text-secondary, inherit);
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.order-attribution-type-picker button.active {
+  border-color: rgba(99, 102, 241, 0.42);
+  background: rgba(99, 102, 241, 0.12);
+  color: var(--text-primary, inherit);
+}
+
+.order-attribution-select-field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  max-width: 420px;
+}
+
+.order-attribution-select-field > span {
+  color: var(--text-secondary, inherit);
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+
+.order-attribution-select-field select {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 11px;
+  border: 1px solid var(--border-color, rgba(148, 163, 184, 0.28));
+  border-radius: 9px;
+  outline: none;
+  background: var(--surface-primary, transparent);
+  color: var(--text-primary, inherit);
+}
+
+.order-attribution-select-field select:focus {
+  border-color: rgba(99, 102, 241, 0.6);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+}
+
+.order-attribution-editor-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.order-attribution-secondary,
+.order-attribution-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 13px;
+  border-radius: 9px;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.order-attribution-secondary {
+  border: 1px solid var(--border-color, rgba(148, 163, 184, 0.28));
+  background: transparent;
+  color: var(--text-primary, inherit);
+}
+
+.order-attribution-primary {
+  border: 1px solid transparent;
+  background: var(--accent-color, #6366f1);
+  color: #fff;
+}
+
+.order-attribution-secondary:disabled,
+.order-attribution-primary:disabled,
+.order-attribution-close:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.order-attribution-notice,
+.order-attribution-inline-error {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.order-attribution-notice {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.order-attribution-notice.warning {
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.order-attribution-notice.success {
+  border: 1px solid rgba(34, 197, 94, 0.25);
+  background: rgba(34, 197, 94, 0.08);
+}
+
+.order-attribution-inline-error {
+  margin-top: 12px;
+  margin-bottom: 0;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  background: rgba(239, 68, 68, 0.08);
+}
+
+@media (max-width: 980px) {
+  .commerce-orders-meta {
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .order-attribution-info {
+    text-align: left;
+  }
+
+  .commerce-orders-table.attribution-enabled {
+    min-width: 980px;
+  }
+}
+
+@media (max-width: 640px) {
+  .order-attribution-editor {
+    margin: 0 8px 12px;
+    padding: 14px;
+  }
+
+  .order-attribution-type-picker {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .order-attribution-type-picker button,
+  .order-attribution-select-field {
+    width: 100%;
+    max-width: none;
+  }
+
+  .order-attribution-editor-footer {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .order-attribution-edit-button span {
+    display: none;
+  }
+}
