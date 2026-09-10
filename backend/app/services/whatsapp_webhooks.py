@@ -8,7 +8,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from ..ai_reply_service import generate_auto_reply, _detect_handoff
+from ..ai_reply_service import _detect_handoff
 from ..automations import safe_emit_event
 from ..models import (
     Conversation,
@@ -16,6 +16,7 @@ from ..models import (
     Message,
     WhatsAppConnection,
 )
+from .checkout_reply_service import generate_checkout_or_auto_reply
 
 logger = logging.getLogger(__name__)
 
@@ -313,7 +314,7 @@ def schedule_ai_replies(db: Session, inbound_conversation_ids: list[int], backgr
             continue
 
         background_tasks.add_task(
-            generate_auto_reply,
+            generate_checkout_or_auto_reply,
             conversation_id=cid,
         )
 
