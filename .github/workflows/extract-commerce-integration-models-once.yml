@@ -1,0 +1,56 @@
+name: One-time commerce integration model extraction
+
+on:
+  push:
+    branches:
+      - refactor/extract-commerce-integration-models
+
+permissions:
+  contents: write
+
+jobs:
+  extract:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/extract-commerce-integration-models
+          fetch-depth: 0
+
+      - name: Extract model block
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('backend/app/models.py')
+          text = path.read_text()
+          start = '''# ============================================================\n# COMMERCE CONNECTION\n# ============================================================\n'''
+          end = '''# ============================================================\n# WHATSAPP CONNECTION\n# ============================================================\n'''
+
+          if text.count(start) != 1:
+              raise SystemExit(f'expected one commerce marker, found {text.count(start)}')
+          if text.count(end) != 1:
+              raise SystemExit(f'expected one WhatsApp marker, found {text.count(end)}')
+
+          before, rest = text.split(start, 1)
+          _, after = rest.split(end, 1)
+          replacement = '''# Commerce integration models are physically defined in app.model_domains.commerce_integrations.\n# These imports preserve the historical app.models import surface.\nfrom .model_domains.commerce_integrations import (\n    CommerceConnection,\n    DropiConnection,\n    MetaAdsConnection,\n)\n\n\n'''
+          updated = before + replacement + end + after
+
+          for class_name in ('CommerceConnection', 'DropiConnection', 'MetaAdsConnection'):
+              if f'class {class_name}(Base):' in updated:
+                  raise SystemExit(f'{class_name} definition still present in models.py')
+          path.write_text(updated)
+          PY
+
+      - name: Commit extraction and remove helper
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/extract-commerce-integration-models-once.yml
+          git add backend/app/models.py
+          git commit -m "refactor: extract commerce integration models"
+          git push origin HEAD:refactor/extract-commerce-integration-models
