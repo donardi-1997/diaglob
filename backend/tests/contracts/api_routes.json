@@ -9,6 +9,10 @@
   ],
   [
     "DELETE",
+    "/api/customers/{customer_id}/risk/disputes/mine"
+  ],
+  [
+    "DELETE",
     "/api/customers/{customer_id}/risk/reports/mine"
   ],
   [
@@ -77,6 +81,26 @@
   ],
   [
     "GET",
+    "/api/admin/customer-risk/disputes"
+  ],
+  [
+    "GET",
+    "/api/admin/customer-risk/disputes/{dispute_id}"
+  ],
+  [
+    "GET",
+    "/api/admin/customer-risk/reports"
+  ],
+  [
+    "GET",
+    "/api/admin/customer-risk/reports/{report_id}"
+  ],
+  [
+    "GET",
+    "/api/admin/customer-risk/stats"
+  ],
+  [
+    "GET",
     "/api/admin/organizations"
   ],
   [
@@ -122,6 +146,10 @@
   [
     "GET",
     "/api/customers/{customer_id}/risk"
+  ],
+  [
+    "GET",
+    "/api/customers/{customer_id}/risk/disputes/mine"
   ],
   [
     "GET",
@@ -453,6 +481,14 @@
   ],
   [
     "PATCH",
+    "/api/admin/customer-risk/disputes/{dispute_id}/resolution"
+  ],
+  [
+    "PATCH",
+    "/api/admin/customer-risk/reports/{report_id}/moderation"
+  ],
+  [
+    "PATCH",
     "/api/billing/auto-renew"
   ],
   [
@@ -518,6 +554,10 @@
   [
     "POST",
     "/api/conversations/{conversation_id}/whatsapp/send"
+  ],
+  [
+    "POST",
+    "/api/customers/{customer_id}/risk/disputes"
   ],
   [
     "POST",
