@@ -1,6 +1,8 @@
 """Commerce order orchestration with explicit sales attribution."""
 from sqlalchemy.orm import Session
 
+from ..models import Agent, CommerceConnection, Conversation, Store
+from ..shopify_cod_orders import create_shopify_cod_order
 from .sales_attribution import enrich_orders_with_attribution, record_order_attribution
 from .shopify_service import (
     create_order as create_shopify_order,
@@ -57,6 +59,108 @@ def create_attributed_shopify_order(
                 if actor_type == "ai"
                 else "diaglob_order_creation"
             ),
+        )
+
+    return result
+
+
+def create_attributed_shopify_cod_order(
+    db: Session,
+    organization_id: int,
+    store_id: int,
+    *,
+    customer_id: int,
+    variant_local_id: int,
+    quantity: int,
+    customer_email: str | None,
+    customer_phone: str,
+    shipping_address: dict,
+    note: str,
+    idempotency_key: str,
+    ai_agent_id: int,
+    conversation_id: int,
+) -> dict:
+    """Create one confirmed conversational COD order and attribute it to AI.
+
+    Validate tenant/store/agent/conversation ownership before the Shopify side
+    effect. Attribution is then persisted only after a local created order is
+    available.
+    """
+    store = (
+        db.query(Store)
+        .filter(
+            Store.id == store_id,
+            Store.organization_id == organization_id,
+            Store.deleted.is_(False),
+            Store.active.is_(True),
+        )
+        .first()
+    )
+    if not store:
+        raise ValueError("Store not found")
+
+    agent = (
+        db.query(Agent)
+        .filter(
+            Agent.id == ai_agent_id,
+            Agent.organization_id == organization_id,
+            Agent.active.is_(True),
+        )
+        .first()
+    )
+    if not agent or store_id not in {item.id for item in agent.stores if item.active}:
+        raise ValueError("AI agent does not belong to this store")
+
+    conversation = (
+        db.query(Conversation.id)
+        .filter(
+            Conversation.id == conversation_id,
+            Conversation.organization_id == organization_id,
+            Conversation.store_id == store_id,
+        )
+        .first()
+    )
+    if not conversation:
+        raise ValueError("Conversation does not belong to this store")
+
+    connection = (
+        db.query(CommerceConnection)
+        .filter(
+            CommerceConnection.organization_id == organization_id,
+            CommerceConnection.store_id == store_id,
+            CommerceConnection.provider == "shopify",
+            CommerceConnection.status == "connected",
+        )
+        .first()
+    )
+    if not connection:
+        raise ValueError("SHOPIFY_NOT_CONNECTED")
+
+    result = create_shopify_cod_order(
+        db=db,
+        store=store,
+        connection=connection,
+        customer_id=customer_id,
+        variant_local_id=variant_local_id,
+        quantity=quantity,
+        customer_email=customer_email,
+        customer_phone=customer_phone,
+        shipping_address=shipping_address,
+        note=note,
+        idempotency_key=idempotency_key,
+    )
+
+    order_id = result.get("order_id")
+    if result.get("ok") and order_id is not None:
+        record_order_attribution(
+            db,
+            organization_id,
+            store_id,
+            int(order_id),
+            actor_type="ai",
+            ai_agent_id=ai_agent_id,
+            conversation_id=conversation_id,
+            source="ai_conversational_checkout",
         )
 
     return result
