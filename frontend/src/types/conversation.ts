@@ -1,3 +1,5 @@
+import type { CustomerRiskSummary } from "../services/customerRisk";
+
 export type ConversationMode =
   "ai" | "human";
 
@@ -20,6 +22,7 @@ export interface ConversationAgent {
 
 export interface ConversationSummary {
   id: number;
+  customer_id: number;
   name: string;
   preview: string;
   time: string;
@@ -41,6 +44,7 @@ export interface ConversationSummary {
 
   mode: ConversationMode;
   tags: string[];
+  customer_risk: CustomerRiskSummary;
 }
 
 

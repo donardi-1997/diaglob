@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
+import CustomerRiskAlert from "../components/CustomerRiskAlert";
 import {
   getConversation,
   getConversations,
@@ -407,6 +408,12 @@ export default function ConversationsPage({
                         <b>{item.unread}</b>
                       )}
                     </div>
+
+                    <CustomerRiskAlert
+                      customerId={item.customer_id}
+                      risk={item.customer_risk}
+                      compact
+                    />
                   </div>
                 </button>
               ))
@@ -624,6 +631,12 @@ export default function ConversationsPage({
                   : t("customer")}
               </span>
             </div>
+
+            <CustomerRiskAlert
+              key={conversation.customer_id}
+              customerId={conversation.customer_id}
+              risk={conversation.customer_risk}
+            />
 
             <InfoSection
               title={t("customerInformation")}

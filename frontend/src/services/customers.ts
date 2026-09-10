@@ -1,4 +1,5 @@
 import { api } from "./api";
+import type { CustomerRiskSummary } from "./customerRisk";
 
 
 export interface SpendByCurrency {
@@ -64,6 +65,7 @@ export interface CustomerItem {
   unknown_order_count: number;
   last_failed_order_days: number | null;
   needs_attention: boolean;
+  customer_risk: CustomerRiskSummary;
 }
 
 

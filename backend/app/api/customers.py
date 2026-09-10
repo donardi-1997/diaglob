@@ -16,6 +16,10 @@ from ..services.customer_audience_service import (
 from ..services.customer_classification_service import (
     get_customer_classifications,
 )
+from ..services.customer_risk_service import (
+    enrich_customer_detail_response,
+    enrich_customer_list_response,
+)
 from .deps import require_permission
 
 router = APIRouter()
@@ -177,7 +181,7 @@ def list_customers(
     page_size = min(max(1, page_size), 100)
     page = max(1, page)
 
-    return get_customer_list(
+    result = get_customer_list(
         db=db,
         organization_id=membership.organization_id,
         store_id=store_id,
@@ -191,6 +195,11 @@ def list_customers(
         priority=priority,
         health=health,
         needs_attention=needs_attention,
+    )
+    return enrich_customer_list_response(
+        db=db,
+        organization_id=membership.organization_id,
+        response=result,
     )
 
 
@@ -227,4 +236,8 @@ def get_customer_detail(
             detail="Customer not found",
         )
 
-    return result
+    return enrich_customer_detail_response(
+        db=db,
+        organization_id=membership.organization_id,
+        response=result,
+    )

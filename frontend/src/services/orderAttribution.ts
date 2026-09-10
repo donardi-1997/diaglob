@@ -1,4 +1,5 @@
 import { api } from "./api";
+import type { CustomerRiskSummary } from "./customerRisk";
 import type { CommerceOrder } from "./integrations";
 
 
@@ -15,6 +16,8 @@ export interface OrderSalesAttribution {
 
 export type AttributedCommerceOrder = CommerceOrder & {
   sales_attribution: OrderSalesAttribution | null;
+  customer_id: number | null;
+  customer_risk: CustomerRiskSummary;
 };
 
 

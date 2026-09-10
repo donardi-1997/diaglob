@@ -14,10 +14,15 @@ from ..models import (
     OrganizationMembership,
     Store,
 )
-from .deps import get_allowed_store_ids, get_current_membership, get_store_scope, require_permission
 from ..services.conversation_service import (
     ConversationDeliveryError,
     create_message_with_ai,
+)
+from ..services.customer_risk_service import enrich_conversation_payloads
+from .deps import (
+    get_allowed_store_ids,
+    get_store_scope,
+    require_permission,
 )
 
 router = APIRouter()
@@ -182,6 +187,11 @@ def list_conversations(
 
     if store is not None:
         query = query.filter(Conversation.store_id == store.id)
+        conversations = (
+            query
+            .order_by(Conversation.updated_at.desc())
+            .all()
+        )
     else:
         allowed_store_ids = get_allowed_store_ids(membership)
 
@@ -189,11 +199,9 @@ def list_conversations(
             if not allowed_store_ids:
                 conversations = []
             else:
-                query = query.filter(
-                    Conversation.store_id.in_(allowed_store_ids)
-                )
                 conversations = (
                     query
+                    .filter(Conversation.store_id.in_(allowed_store_ids))
                     .order_by(Conversation.updated_at.desc())
                     .all()
                 )
@@ -204,12 +212,16 @@ def list_conversations(
                 .all()
             )
 
-    if store is not None:
-        conversations = (
-            query
-            .order_by(Conversation.updated_at.desc())
-            .all()
-        )
+    payloads = [
+        serialize_conversation(conversation)
+        for conversation in conversations
+    ]
+    payloads = enrich_conversation_payloads(
+        db=db,
+        organization_id=membership.organization_id,
+        conversations=conversations,
+        payloads=payloads,
+    )
 
     return {
         "scope": {
@@ -222,10 +234,7 @@ def list_conversations(
                 else "allowed_stores"
             ),
         },
-        "items": [
-            serialize_conversation(conversation)
-            for conversation in conversations
-        ],
+        "items": payloads,
         "total": len(conversations),
     }
 
@@ -246,8 +255,16 @@ def get_conversation(
         db,
     )
 
+    base_payload = serialize_conversation(conversation)
+    payload = enrich_conversation_payloads(
+        db=db,
+        organization_id=membership.organization_id,
+        conversations=[conversation],
+        payloads=[base_payload],
+    )[0]
+
     return {
-        **serialize_conversation(conversation),
+        **payload,
         "messages": [
             serialize_message(message)
             for message in conversation.messages

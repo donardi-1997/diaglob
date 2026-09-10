@@ -10,6 +10,7 @@ import {
   X,
 } from "lucide-react";
 
+import CustomerRiskAlert from "./CustomerRiskAlert";
 import { getAgents, type Agent } from "../services/agents";
 import {
   listAttributedCommerceOrders,
@@ -409,7 +410,16 @@ export default function CommerceOrders({
                   ref={order.id === initialOrderId ? focusedOrderRef : undefined}
                   className={order.id === initialOrderId ? "commerce-order-search-hit" : undefined}
                 >
-                  <td className="commerce-order-number">#{order.order_number}</td>
+                  <td className="commerce-order-number">
+                    <div>#{order.order_number}</div>
+                    {order.customer_id && (
+                      <CustomerRiskAlert
+                        customerId={order.customer_id}
+                        risk={order.customer_risk}
+                        compact
+                      />
+                    )}
+                  </td>
                   <td>{order.currency} {order.total_amount.toFixed(2)}</td>
                   <td>
                     <span className={`commerce-badge ${getStatusBadgeClass(order)}`}>
