@@ -7,7 +7,7 @@ transaction id makes webhook fulfillment idempotent.
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..db import Base
@@ -21,6 +21,14 @@ class AiUsageCreditGrant(Base):
             "provider",
             "provider_transaction_id",
             name="uq_ai_credit_grant_provider_transaction",
+        ),
+        CheckConstraint(
+            "responses_total > 0",
+            name="ck_ai_credit_grant_total_positive",
+        ),
+        CheckConstraint(
+            "responses_remaining >= 0 AND responses_remaining <= responses_total",
+            name="ck_ai_credit_grant_remaining_bounds",
         ),
     )
 
