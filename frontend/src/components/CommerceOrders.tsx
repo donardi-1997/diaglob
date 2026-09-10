@@ -1,9 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
+  ArrowRight,
   Bot,
   Check,
+  ChevronDown,
+  ChevronUp,
   ExternalLink,
+  History,
   LoaderCircle,
   Pencil,
   UserRound,
@@ -13,9 +17,11 @@ import {
 import CustomerRiskAlert from "./CustomerRiskAlert";
 import { getAgents, type Agent } from "../services/agents";
 import {
+  getOrderSalesAttributionHistory,
   listAttributedCommerceOrders,
   updateOrderSalesAttribution,
   type AttributedCommerceOrder,
+  type OrderSalesAttributionChange,
 } from "../services/orderAttribution";
 import { getTeam, type TeamMember } from "../services/team";
 import type { CommerceOrder } from "../services/integrations";
@@ -56,6 +62,15 @@ const COPY = {
     optionsError: "No se pudieron cargar todos los empleados o agentes. Puedes seguir viendo los pedidos.",
     saveError: "No se pudo actualizar la atribución de esta venta.",
     info: "Los pedidos importados pueden aparecer sin atribución. Puedes asignarlos al empleado o agente IA que realmente cerró la venta.",
+    history: "Historial",
+    historyTitle: "Historial de atribución",
+    historyHelp: "Registro inmutable de correcciones manuales, de la más reciente a la más antigua.",
+    historyEmpty: "Esta venta no tiene correcciones manuales registradas.",
+    historyError: "No se pudo cargar el historial de atribución.",
+    assigned: "Asignación",
+    reassigned: "Reasignación",
+    cleared: "Atribución eliminada",
+    changedBy: "Modificado por",
   },
   en: {
     closer: "Closed by",
@@ -78,6 +93,15 @@ const COPY = {
     optionsError: "Not all employees or agents could be loaded. You can keep viewing orders.",
     saveError: "This sale attribution could not be updated.",
     info: "Imported orders may appear unattributed. You can assign them to the employee or AI agent who actually closed the sale.",
+    history: "History",
+    historyTitle: "Attribution history",
+    historyHelp: "Immutable log of manual corrections, newest first.",
+    historyEmpty: "This sale has no recorded manual corrections.",
+    historyError: "The attribution history could not be loaded.",
+    assigned: "Assignment",
+    reassigned: "Reassignment",
+    cleared: "Attribution cleared",
+    changedBy: "Changed by",
   },
   "pt-BR": {
     closer: "Fechada por",
@@ -100,6 +124,15 @@ const COPY = {
     optionsError: "Nem todos os colaboradores ou agentes puderam ser carregados. Você pode continuar vendo os pedidos.",
     saveError: "Não foi possível atualizar a atribuição desta venda.",
     info: "Pedidos importados podem aparecer sem atribuição. Você pode atribuí-los ao colaborador ou agente IA que realmente fechou a venda.",
+    history: "Histórico",
+    historyTitle: "Histórico de atribuição",
+    historyHelp: "Registro imutável das correções manuais, da mais recente para a mais antiga.",
+    historyEmpty: "Esta venda não possui correções manuais registradas.",
+    historyError: "Não foi possível carregar o histórico de atribuição.",
+    assigned: "Atribuição",
+    reassigned: "Reatribuição",
+    cleared: "Atribuição removida",
+    changedBy: "Alterado por",
   },
 } as const;
 
@@ -157,6 +190,12 @@ export default function CommerceOrders({
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
   const [saveError, setSaveError] = useState("");
+  const [historyOrderId, setHistoryOrderId] = useState<number | null>(null);
+  const [historyByOrder, setHistoryByOrder] = useState<
+    Record<number, OrderSalesAttributionChange[]>
+  >({});
+  const [historyLoadingOrderId, setHistoryLoadingOrderId] = useState<number | null>(null);
+  const [historyErrors, setHistoryErrors] = useState<Record<number, string>>({});
   const focusedOrderRef = useRef<HTMLTableRowElement>(null);
 
   const employees = useMemo(
@@ -188,6 +227,9 @@ export default function CommerceOrders({
       setError("");
       setOptionsError("");
       setEditingOrderId(null);
+      setHistoryOrderId(null);
+      setHistoryByOrder({});
+      setHistoryErrors({});
 
       const requests: Promise<unknown>[] = [
         listAttributedCommerceOrders(storeId),
@@ -287,6 +329,42 @@ export default function CommerceOrders({
     setSaveError("");
   }
 
+  async function loadHistory(orderId: number, force = false) {
+    if (!force && historyByOrder[orderId] !== undefined) return;
+
+    setHistoryLoadingOrderId(orderId);
+    setHistoryErrors((current) => {
+      const next = { ...current };
+      delete next[orderId];
+      return next;
+    });
+
+    try {
+      const result = await getOrderSalesAttributionHistory(storeId, orderId);
+      setHistoryByOrder((current) => ({
+        ...current,
+        [orderId]: result.items,
+      }));
+    } catch {
+      setHistoryErrors((current) => ({
+        ...current,
+        [orderId]: copy.historyError,
+      }));
+    } finally {
+      setHistoryLoadingOrderId((current) => current === orderId ? null : current);
+    }
+  }
+
+  function toggleHistory(orderId: number) {
+    if (historyOrderId === orderId) {
+      setHistoryOrderId(null);
+      return;
+    }
+
+    setHistoryOrderId(orderId);
+    void loadHistory(orderId);
+  }
+
   async function saveAttribution(orderId: number) {
     if (draftType !== "unattributed" && !draftActorId) return;
 
@@ -313,6 +391,16 @@ export default function CommerceOrders({
       ));
       setEditingOrderId(null);
       setSaveMessage(copy.saved);
+
+      if (historyOrderId === orderId) {
+        void loadHistory(orderId, true);
+      } else {
+        setHistoryByOrder((current) => {
+          const next = { ...current };
+          delete next[orderId];
+          return next;
+        });
+      }
     } catch (err: unknown) {
       const apiError = err as {
         response?: { data?: { detail?: string } };
@@ -345,6 +433,17 @@ export default function CommerceOrders({
         )}
       </div>
     );
+  }
+
+  function historyActionLabel(change: OrderSalesAttributionChange) {
+    if (change.action === "assign") return copy.assigned;
+    if (change.action === "clear") return copy.cleared;
+    return copy.reassigned;
+  }
+
+  function historyActorLabel(type: "human" | "ai" | null, label: string | null) {
+    if (!type || !label) return copy.unattributed;
+    return `${type === "human" ? copy.human : copy.ai} · ${label}`;
   }
 
   if (loading) {
@@ -404,9 +503,8 @@ export default function CommerceOrders({
           </thead>
           <tbody>
             {orders.map((order) => (
-              <>
+              <Fragment key={order.id}>
                 <tr
-                  key={order.id}
                   ref={order.id === initialOrderId ? focusedOrderRef : undefined}
                   className={order.id === initialOrderId ? "commerce-order-search-hit" : undefined}
                 >
@@ -434,6 +532,19 @@ export default function CommerceOrders({
                       : "—"}
                   </td>
                   <td className="order-attribution-actions">
+                    <button
+                      type="button"
+                      className="order-attribution-history-button"
+                      onClick={() => toggleHistory(order.id)}
+                      aria-expanded={historyOrderId === order.id}
+                      aria-label={copy.history}
+                    >
+                      <History size={14} />
+                      <span>{copy.history}</span>
+                      {historyOrderId === order.id
+                        ? <ChevronUp size={13} />
+                        : <ChevronDown size={13} />}
+                    </button>
                     {canWrite && (
                       <button
                         type="button"
@@ -458,8 +569,76 @@ export default function CommerceOrders({
                   </td>
                 </tr>
 
+                {historyOrderId === order.id && (
+                  <tr className="order-attribution-history-row">
+                    <td colSpan={7}>
+                      <div className="order-attribution-history-panel">
+                        <div className="order-attribution-history-heading">
+                          <div>
+                            <strong>{copy.historyTitle}</strong>
+                            <p>{copy.historyHelp}</p>
+                          </div>
+                          <button
+                            type="button"
+                            className="order-attribution-close"
+                            onClick={() => setHistoryOrderId(null)}
+                            aria-label={copy.cancel}
+                          >
+                            <X size={16} />
+                          </button>
+                        </div>
+
+                        {historyLoadingOrderId === order.id ? (
+                          <div className="order-attribution-history-loading">
+                            <LoaderCircle className="spin" size={18} />
+                          </div>
+                        ) : historyErrors[order.id] ? (
+                          <div className="order-attribution-inline-error">
+                            {historyErrors[order.id]}
+                          </div>
+                        ) : (historyByOrder[order.id] ?? []).length === 0 ? (
+                          <div className="order-attribution-history-empty">
+                            {copy.historyEmpty}
+                          </div>
+                        ) : (
+                          <ol className="order-attribution-history-list">
+                            {(historyByOrder[order.id] ?? []).map((change) => (
+                              <li key={change.id}>
+                                <div className="order-attribution-history-event">
+                                  <strong>{historyActionLabel(change)}</strong>
+                                  <time dateTime={change.created_at}>
+                                    {new Date(change.created_at).toLocaleString()}
+                                  </time>
+                                </div>
+                                <div className="order-attribution-history-transition">
+                                  <span>
+                                    {historyActorLabel(
+                                      change.previous_actor_type,
+                                      change.previous_actor_label,
+                                    )}
+                                  </span>
+                                  <ArrowRight size={14} />
+                                  <span>
+                                    {historyActorLabel(
+                                      change.new_actor_type,
+                                      change.new_actor_label,
+                                    )}
+                                  </span>
+                                </div>
+                                <small>
+                                  {copy.changedBy}: {change.changed_by_label}
+                                </small>
+                              </li>
+                            ))}
+                          </ol>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+
                 {editingOrderId === order.id && (
-                  <tr key={`${order.id}-editor`} className="order-attribution-editor-row">
+                  <tr className="order-attribution-editor-row">
                     <td colSpan={7}>
                       <div className="order-attribution-editor">
                         <div className="order-attribution-editor-heading">
@@ -560,7 +739,7 @@ export default function CommerceOrders({
                     </td>
                   </tr>
                 )}
-              </>
+              </Fragment>
             ))}
           </tbody>
         </table>
