@@ -445,6 +445,10 @@
   ],
   [
     "PATCH",
+    "/api/stores/{store_id}/commerce/orders/{order_id}/sales-attribution"
+  ],
+  [
+    "PATCH",
     "/api/team/{membership_id}"
   ],
   [
