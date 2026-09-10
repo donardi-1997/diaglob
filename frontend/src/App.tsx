@@ -48,7 +48,7 @@ const RefundPolicyPage = lazy(() => import("./pages/RefundPolicyPage"));
 const CommercePage = lazy(() => import("./pages/CommercePage"));
 const AutomationsPage = lazy(() => import("./pages/AutomationsPage"));
 const AnalyticsPage = lazy(() => import("./pages/AnalyticsPage"));
-const CustomersPage = lazy(() => import("./pages/CustomersPage"));
+const CustomersWorkspacePage = lazy(() => import("./pages/CustomersWorkspacePage"));
 const IntegrationsHubPage = lazy(() => import("./pages/IntegrationsHubPage"));
 
 interface NavigationDefinition {
@@ -257,7 +257,7 @@ function App() {
         />
       )}
       {activePage === "customers" && (
-        <CustomersPage
+        <CustomersWorkspacePage
           canWrite={can("customers.write")}
           storeId={Number(selectedStoreId) || 0}
         />
