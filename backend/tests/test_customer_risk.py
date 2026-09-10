@@ -8,6 +8,8 @@ from app.db import Base
 from app.model_domains.customer_risk import CustomerRiskReport
 from app.models import Customer, CustomerStoreProfile, Order, Organization, Store, User
 from app.services.customer_risk_service import (
+    CustomerRiskConfigurationError,
+    customer_fingerprints,
     dismiss_current_organization_report,
     enrich_order_payloads,
     get_customer_risk_summary,
@@ -26,7 +28,10 @@ TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engin
 
 @pytest.fixture(autouse=True)
 def setup_db(monkeypatch):
-    monkeypatch.setenv("CUSTOMER_RISK_HMAC_SECRET", "test-risk-secret-that-is-not-production")
+    monkeypatch.setenv(
+        "CUSTOMER_RISK_HMAC_SECRET",
+        "test-risk-secret-that-is-not-production",
+    )
     Base.metadata.create_all(bind=engine)
     yield
     Base.metadata.drop_all(bind=engine)
@@ -41,7 +46,13 @@ def db():
         session.close()
 
 
-def _seed_org(db, *, slug: str, email: str, phone: str = "+57 300 555 0101"):
+def _seed_org(
+    db,
+    *,
+    slug: str,
+    email: str,
+    phone: str = "+57 300 555 0101",
+):
     org = Organization(
         name=f"Org {slug}",
         slug=slug,
@@ -281,3 +292,133 @@ def test_phone_normalization_and_order_enrichment(db):
     assert enriched[0]["customer_id"] == customer_b.id
     assert enriched[0]["customer_risk"]["alert"] is True
     assert enriched[0]["customer_risk"]["external_reporting_organizations"] == 1
+
+
+def test_report_survives_identifier_change_rebinds_only_on_explicit_update(db):
+    old_phone = "+57 300 111 2233"
+    old_email = "old-risk@example.com"
+    new_phone = "+57 301 444 5566"
+    new_email = "new-risk@example.com"
+
+    org_a, store_a, user_a, customer_a = _seed_org(
+        db,
+        slug="identity-a",
+        email=old_email,
+        phone=old_phone,
+    )
+    org_old, _, _, customer_old = _seed_org(
+        db,
+        slug="identity-old",
+        email=old_email,
+        phone=old_phone,
+    )
+    org_new, _, _, customer_new = _seed_org(
+        db,
+        slug="identity-new",
+        email=new_email,
+        phone=new_phone,
+    )
+
+    first = report_customer(
+        db=db,
+        organization_id=org_a.id,
+        reporter_user_id=user_a.id,
+        customer_id=customer_a.id,
+        reporter_store_id=store_a.id,
+        reason="payment_abuse",
+    )
+    report_id = first["current_organization_report"]["id"]
+
+    customer_a.phone = new_phone
+    customer_a.email = new_email
+    db.commit()
+
+    # Editing identity must not orphan the reporting organization's own signal
+    # or silently move the shared fingerprint to the new identifier.
+    own_after_edit = get_customer_risk_summary(
+        db=db,
+        organization_id=org_a.id,
+        customer_id=customer_a.id,
+    )
+    assert own_after_edit["reported_by_current_organization"] is True
+    assert own_after_edit["current_organization_report"]["id"] == report_id
+    assert own_after_edit["matched_on"] == []
+
+    old_shared = get_customer_risk_summary(
+        db=db,
+        organization_id=org_old.id,
+        customer_id=customer_old.id,
+    )
+    new_shared = get_customer_risk_summary(
+        db=db,
+        organization_id=org_new.id,
+        customer_id=customer_new.id,
+    )
+    assert old_shared["alert"] is True
+    assert new_shared["alert"] is False
+
+    # Explicitly updating the report rebinds the single existing row to the
+    # customer's current identifiers instead of creating a duplicate.
+    updated = report_customer(
+        db=db,
+        organization_id=org_a.id,
+        reporter_user_id=user_a.id,
+        customer_id=customer_a.id,
+        reporter_store_id=store_a.id,
+        reason="identity_mismatch",
+        notes="Identifiers reviewed manually",
+    )
+    assert db.query(CustomerRiskReport).count() == 1
+    assert updated["current_organization_report"]["id"] == report_id
+    assert get_customer_risk_summary(
+        db=db,
+        organization_id=org_old.id,
+        customer_id=customer_old.id,
+    )["alert"] is False
+    assert get_customer_risk_summary(
+        db=db,
+        organization_id=org_new.id,
+        customer_id=customer_new.id,
+    )["alert"] is True
+
+    # A later identity edit must still leave the report dismissible by its
+    # durable local_customer_id link.
+    customer_a.phone = "+57 302 777 8899"
+    customer_a.email = "third-risk@example.com"
+    db.commit()
+    dismissed = dismiss_current_organization_report(
+        db=db,
+        organization_id=org_a.id,
+        reporter_user_id=user_a.id,
+        customer_id=customer_a.id,
+    )
+    assert dismissed["alert"] is False
+    assert get_customer_risk_summary(
+        db=db,
+        organization_id=org_new.id,
+        customer_id=customer_new.id,
+    )["alert"] is False
+
+
+def test_phone_normalization_is_conservative_for_brazil_and_unknown_markets():
+    expected = "5511999999999"
+    assert normalize_phone("+55 11 99999-9999", "BR") == expected
+    assert normalize_phone("55 11 99999-9999", "BR") == expected
+    assert normalize_phone("11 99999-9999", "BR") == expected
+    assert normalize_phone("011 99999-9999", "BR") == expected
+    assert normalize_phone("9999999", "BR") == ""
+    assert normalize_phone("3005550101", None) == ""
+    assert normalize_phone("+57 3005550101", None) == "573005550101"
+
+
+def test_customer_risk_requires_dedicated_hmac_secret(monkeypatch):
+    monkeypatch.delenv("CUSTOMER_RISK_HMAC_SECRET", raising=False)
+    monkeypatch.setenv("SHOPIFY_TOKEN_ENCRYPTION_KEY", "x" * 44)
+    monkeypatch.setenv("WHATSAPP_TOKEN_ENCRYPTION_KEY", "y" * 44)
+
+    with pytest.raises(CustomerRiskConfigurationError):
+        customer_fingerprints(
+            phone="+57 300 555 0101",
+            email="risk@example.com",
+            country_code="CO",
+        )
