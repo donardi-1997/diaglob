@@ -181,6 +181,11 @@ def normalize_delivery_address(raw: str, country_code: str) -> tuple[str | None,
     normalized = re.sub(r"\s+", " ", normalized)
 
     numeric_groups = re.findall(r"\d+[A-Za-z]?", normalized)
+    # A Colombian COD street address needs enough numbering to identify the
+    # actual property. A value such as "Calle 80" names only the road and must
+    # never advance to address confirmation.
+    if country_code.upper() == "CO" and street_type and len(numeric_groups) < 3:
+        return None, 0
     if len(numeric_groups) >= 1:
         score += 15
     if len(numeric_groups) >= 3 or "#" in normalized:
