@@ -20,6 +20,12 @@ import {
   type DropshippingProduct,
   type DropshippingProfitability,
 } from "../services/analytics";
+import {
+  allDropshippingSectionsFailed,
+  getFailedDropshippingSections,
+  settledValue,
+  type DropshippingAnalyticsSection,
+} from "../utils/dropshippingAnalyticsState";
 
 interface Props {
   storeId: number;
@@ -29,18 +35,25 @@ interface Props {
 }
 
 interface DashboardData {
-  overview: DropshippingOverview;
-  profitability: DropshippingProfitability;
-  products: DropshippingProduct[];
-  orders: DropshippingOrders;
+  overview: DropshippingOverview | null;
+  profitability: DropshippingProfitability | null;
+  products: DropshippingProduct[] | null;
+  orders: DropshippingOrders | null;
 }
 
-function formatError(err: unknown, fallback: string): string {
-  const value = err as {
-    response?: { data?: { detail?: string } };
-    message?: string;
-  };
-  return value.response?.data?.detail || value.message || fallback;
+const SECTION_LABELS: Record<DropshippingAnalyticsSection, string> = {
+  overview: "resumen operativo",
+  profitability: "rentabilidad",
+  products: "productos",
+  orders: "embudo de pedidos",
+};
+
+function SectionUnavailable() {
+  return (
+    <div className="commerce-empty">
+      Temporalmente no disponible. El resto de las analíticas sigue activo.
+    </div>
+  );
 }
 
 export default function DropshippingOverview({
@@ -53,27 +66,40 @@ export default function DropshippingOverview({
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [unavailableSections, setUnavailableSections] = useState<
+    DropshippingAnalyticsSection[]
+  >([]);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError("");
+    setData(null);
+    setUnavailableSections([]);
 
-    Promise.all([
+    Promise.allSettled([
       getDropshippingOverview(storeId, dateFrom, dateTo),
       getDropshippingProfitability(storeId, dateFrom, dateTo),
       getDropshippingProducts(storeId, dateFrom, dateTo),
       getDropshippingOrders(storeId, dateFrom, dateTo),
     ])
-      .then(([overview, profitability, products, orders]) => {
-        if (!cancelled) {
-          setData({ overview, profitability, products, orders });
+      .then((results) => {
+        if (cancelled) return;
+
+        const failedSections = getFailedDropshippingSections(results);
+        setUnavailableSections(failedSections);
+
+        if (allDropshippingSectionsFailed(failedSections)) {
+          setError(t("analyticsLoadError"));
+          return;
         }
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          setError(formatError(err, t("analyticsLoadError")));
-        }
+
+        setData({
+          overview: settledValue(results[0]),
+          profitability: settledValue(results[1]),
+          products: settledValue(results[2]),
+          orders: settledValue(results[3]),
+        });
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -85,7 +111,7 @@ export default function DropshippingOverview({
   }, [storeId, dateFrom, dateTo, t]);
 
   const topProducts = useMemo(
-    () => data?.products.slice(0, 10) ?? [],
+    () => data?.products?.slice(0, 10) ?? [],
     [data],
   );
 
@@ -105,8 +131,11 @@ export default function DropshippingOverview({
     return <div className="commerce-empty">{t("analyticsNoData")}</div>;
   }
 
-  const { overview, profitability, orders } = data;
-  const effectiveCurrency = overview.currency || currency;
+  const { overview, profitability, products, orders } = data;
+  const effectiveCurrency = overview?.currency || currency;
+  const unavailableLabels = unavailableSections.map(
+    (section) => SECTION_LABELS[section],
+  );
 
   const formatCurrency = (value: number | null) => {
     if (value === null || value === undefined) return "—";
@@ -141,37 +170,62 @@ export default function DropshippingOverview({
 
   return (
     <div className="dropshipping-overview">
-      <div className="analytics-stats-grid">
-        <div className="analytics-stat-card">
-          <div className="analytics-stat-icon"><Truck size={18} /></div>
-          <div className="analytics-stat-value">{overview.delivered_orders}</div>
-          <div className="analytics-stat-label">{t("dsDeliveredOrders")}</div>
-          <Delta value={overview.comparison?.delivered_orders_pct ?? null} />
+      {unavailableLabels.length > 0 && (
+        <div className="stores-alert" style={{ marginBottom: 16 }}>
+          <AlertTriangle size={16} />
+          <span>
+            Algunas analíticas no están disponibles temporalmente: {unavailableLabels.join(", ")}.
+            Los demás datos continúan visibles.
+          </span>
         </div>
+      )}
 
-        <div className="analytics-stat-card">
-          <div className="analytics-stat-icon"><DollarSign size={18} /></div>
-          <div className="analytics-stat-value">{formatCurrency(overview.delivered_revenue)}</div>
-          <div className="analytics-stat-label">{t("dsDeliveredRevenue")}</div>
-          <Delta value={overview.comparison?.delivered_revenue_pct ?? null} />
+      {(overview || profitability) && (
+        <div className="analytics-stats-grid">
+          {overview && (
+            <>
+              <div className="analytics-stat-card">
+                <div className="analytics-stat-icon"><Truck size={18} /></div>
+                <div className="analytics-stat-value">{overview.delivered_orders}</div>
+                <div className="analytics-stat-label">{t("dsDeliveredOrders")}</div>
+                <Delta value={overview.comparison?.delivered_orders_pct ?? null} />
+              </div>
+
+              <div className="analytics-stat-card">
+                <div className="analytics-stat-icon"><DollarSign size={18} /></div>
+                <div className="analytics-stat-value">{formatCurrency(overview.delivered_revenue)}</div>
+                <div className="analytics-stat-label">{t("dsDeliveredRevenue")}</div>
+                <Delta value={overview.comparison?.delivered_revenue_pct ?? null} />
+              </div>
+
+              <div className="analytics-stat-card">
+                <div className="analytics-stat-icon"><Target size={18} /></div>
+                <div className="analytics-stat-value">{formatRate(overview.delivery_rate)}</div>
+                <div className="analytics-stat-label">{t("dsDeliveryRate")}</div>
+                <Delta value={overview.comparison?.delivery_rate_pp ?? null} suffix=" pp" />
+              </div>
+            </>
+          )}
+
+          {profitability && (
+            <div className="analytics-stat-card">
+              <div className="analytics-stat-icon"><DollarSign size={18} /></div>
+              <div className="analytics-stat-value">{formatCurrency(profitability.gross_profit)}</div>
+              <div className="analytics-stat-label">Utilidad bruta</div>
+              <Delta value={overview?.comparison?.gross_profit_pct ?? null} />
+            </div>
+          )}
         </div>
+      )}
 
-        <div className="analytics-stat-card">
-          <div className="analytics-stat-icon"><Target size={18} /></div>
-          <div className="analytics-stat-value">{formatRate(overview.delivery_rate)}</div>
-          <div className="analytics-stat-label">{t("dsDeliveryRate")}</div>
-          <Delta value={overview.comparison?.delivery_rate_pp ?? null} suffix=" pp" />
+      {!overview && (
+        <div className="analytics-card">
+          <h3><Target size={17} /> Resumen operativo</h3>
+          <SectionUnavailable />
         </div>
+      )}
 
-        <div className="analytics-stat-card">
-          <div className="analytics-stat-icon"><DollarSign size={18} /></div>
-          <div className="analytics-stat-value">{formatCurrency(profitability.gross_profit)}</div>
-          <div className="analytics-stat-label">Utilidad bruta</div>
-          <Delta value={overview.comparison?.gross_profit_pct ?? null} />
-        </div>
-      </div>
-
-      {!profitability.profitability_complete && (
+      {profitability && !profitability.profitability_complete && (
         <div className="stores-alert" style={{ marginBottom: 16 }}>
           <AlertTriangle size={16} />
           <span>
@@ -184,99 +238,119 @@ export default function DropshippingOverview({
       <div className="analytics-row">
         <div className="analytics-card">
           <h3><DollarSign size={17} /> Rentabilidad entregada</h3>
-          <div className="analytics-metrics-list">
-            <div className="analytics-metric-row">
-              <span>Ingresos entregados</span>
-              <span className="analytics-metric-value">{formatCurrency(profitability.delivered_revenue)}</span>
+          {profitability ? (
+            <div className="analytics-metrics-list">
+              <div className="analytics-metric-row">
+                <span>Ingresos entregados</span>
+                <span className="analytics-metric-value">{formatCurrency(profitability.delivered_revenue)}</span>
+              </div>
+              <div className="analytics-metric-row">
+                <span>COGS</span>
+                <span className="analytics-metric-value">{formatCurrency(profitability.total_cogs)}</span>
+              </div>
+              <div className="analytics-metric-row">
+                <span>Utilidad bruta</span>
+                <span className="analytics-metric-value">{formatCurrency(profitability.gross_profit)}</span>
+              </div>
+              <div className="analytics-metric-row">
+                <span>Margen bruto</span>
+                <span className="analytics-metric-value">{formatRate(profitability.gross_margin)}</span>
+              </div>
+              <div className="analytics-metric-row">
+                <span>Utilidad por pedido entregado</span>
+                <span className="analytics-metric-value">{formatCurrency(profitability.profit_per_delivered_order)}</span>
+              </div>
             </div>
-            <div className="analytics-metric-row">
-              <span>COGS</span>
-              <span className="analytics-metric-value">{formatCurrency(profitability.total_cogs)}</span>
-            </div>
-            <div className="analytics-metric-row">
-              <span>Utilidad bruta</span>
-              <span className="analytics-metric-value">{formatCurrency(profitability.gross_profit)}</span>
-            </div>
-            <div className="analytics-metric-row">
-              <span>Margen bruto</span>
-              <span className="analytics-metric-value">{formatRate(profitability.gross_margin)}</span>
-            </div>
-            <div className="analytics-metric-row">
-              <span>Utilidad por pedido entregado</span>
-              <span className="analytics-metric-value">{formatCurrency(profitability.profit_per_delivered_order)}</span>
-            </div>
-          </div>
+          ) : (
+            <SectionUnavailable />
+          )}
         </div>
 
         <div className="analytics-card">
           <h3><Percent size={17} /> Calidad operativa</h3>
-          <div className="analytics-metrics-list">
-            <div className="analytics-metric-row">
-              <span>{t("dsConfirmationRate")}</span>
-              <span className="analytics-metric-value">{formatRate(overview.confirmation_rate)}</span>
+          {overview || profitability ? (
+            <div className="analytics-metrics-list">
+              {overview && (
+                <>
+                  <div className="analytics-metric-row">
+                    <span>{t("dsConfirmationRate")}</span>
+                    <span className="analytics-metric-value">{formatRate(overview.confirmation_rate)}</span>
+                  </div>
+                  <div className="analytics-metric-row">
+                    <span>{t("dsDeliveryRate")}</span>
+                    <span className="analytics-metric-value">{formatRate(overview.delivery_rate)}</span>
+                  </div>
+                  <div className="analytics-metric-row">
+                    <span>{t("dsCancellationRate")}</span>
+                    <span className="analytics-metric-value">{formatRate(overview.cancellation_rate)}</span>
+                  </div>
+                  <div className="analytics-metric-row">
+                    <span>{t("dsReturnRate")}</span>
+                    <span className="analytics-metric-value">{formatRate(overview.return_rate)}</span>
+                  </div>
+                </>
+              )}
+              {profitability && (
+                <div className="analytics-metric-row">
+                  <span>Completitud de costos</span>
+                  <span className="analytics-metric-value">{formatRate(profitability.cost_completeness_pct)}</span>
+                </div>
+              )}
             </div>
-            <div className="analytics-metric-row">
-              <span>{t("dsDeliveryRate")}</span>
-              <span className="analytics-metric-value">{formatRate(overview.delivery_rate)}</span>
-            </div>
-            <div className="analytics-metric-row">
-              <span>{t("dsCancellationRate")}</span>
-              <span className="analytics-metric-value">{formatRate(overview.cancellation_rate)}</span>
-            </div>
-            <div className="analytics-metric-row">
-              <span>{t("dsReturnRate")}</span>
-              <span className="analytics-metric-value">{formatRate(overview.return_rate)}</span>
-            </div>
-            <div className="analytics-metric-row">
-              <span>Completitud de costos</span>
-              <span className="analytics-metric-value">{formatRate(profitability.cost_completeness_pct)}</span>
-            </div>
-          </div>
+          ) : (
+            <SectionUnavailable />
+          )}
         </div>
       </div>
 
       <div className="analytics-card">
         <h3><ShoppingCart size={17} /> {t("dsFunnel")}</h3>
-        <div className="funnel">
-          <div className="funnel-step">
-            <span className="funnel-value">{orders.total}</span>
-            <span className="funnel-label">{t("dsCreated")}</span>
-          </div>
-          <div className="funnel-arrow">→</div>
-          <div className="funnel-step">
-            <span className="funnel-value">{orders.confirmed}</span>
-            <span className="funnel-label">{t("dsConfirmed")}</span>
-          </div>
-          <div className="funnel-arrow">→</div>
-          <div className="funnel-step">
-            <span className="funnel-value">{orders.shipped}</span>
-            <span className="funnel-label">{t("dsShipped")}</span>
-          </div>
-          <div className="funnel-arrow">→</div>
-          <div className="funnel-step">
-            <span className="funnel-value">{orders.delivered}</span>
-            <span className="funnel-label">{t("dsDelivered")}</span>
-          </div>
-        </div>
-        <div className="analytics-metrics-list" style={{ marginTop: 16 }}>
-          <div className="analytics-metric-row">
-            <span>Cancelados</span>
-            <span className="analytics-metric-value">{orders.cancelled}</span>
-          </div>
-          <div className="analytics-metric-row">
-            <span>Devueltos</span>
-            <span className="analytics-metric-value">{orders.returned}</span>
-          </div>
-          {orders.unknown > 0 && (
-            <div className="analytics-metric-row">
-              <span>Estado desconocido</span>
-              <span className="analytics-metric-value">{orders.unknown}</span>
+        {orders ? (
+          <>
+            <div className="funnel">
+              <div className="funnel-step">
+                <span className="funnel-value">{orders.total}</span>
+                <span className="funnel-label">{t("dsCreated")}</span>
+              </div>
+              <div className="funnel-arrow">→</div>
+              <div className="funnel-step">
+                <span className="funnel-value">{orders.confirmed}</span>
+                <span className="funnel-label">{t("dsConfirmed")}</span>
+              </div>
+              <div className="funnel-arrow">→</div>
+              <div className="funnel-step">
+                <span className="funnel-value">{orders.shipped}</span>
+                <span className="funnel-label">{t("dsShipped")}</span>
+              </div>
+              <div className="funnel-arrow">→</div>
+              <div className="funnel-step">
+                <span className="funnel-value">{orders.delivered}</span>
+                <span className="funnel-label">{t("dsDelivered")}</span>
+              </div>
             </div>
-          )}
-        </div>
+            <div className="analytics-metrics-list" style={{ marginTop: 16 }}>
+              <div className="analytics-metric-row">
+                <span>Cancelados</span>
+                <span className="analytics-metric-value">{orders.cancelled}</span>
+              </div>
+              <div className="analytics-metric-row">
+                <span>Devueltos</span>
+                <span className="analytics-metric-value">{orders.returned}</span>
+              </div>
+              {orders.unknown > 0 && (
+                <div className="analytics-metric-row">
+                  <span>Estado desconocido</span>
+                  <span className="analytics-metric-value">{orders.unknown}</span>
+                </div>
+              )}
+            </div>
+          </>
+        ) : (
+          <SectionUnavailable />
+        )}
       </div>
 
-      {overview.comparison && (
+      {overview?.comparison && (
         <div className="analytics-card">
           <h3>Comparación con período anterior</h3>
           <div className="analytics-metrics-list">
@@ -306,7 +380,9 @@ export default function DropshippingOverview({
 
       <div className="analytics-card">
         <h3><PackageCheck size={17} /> Productos más rentables · entregados</h3>
-        {topProducts.length === 0 ? (
+        {products === null ? (
+          <SectionUnavailable />
+        ) : topProducts.length === 0 ? (
           <div className="commerce-empty">No hay productos entregados en el período seleccionado.</div>
         ) : (
           <div className="analytics-metrics-list">
