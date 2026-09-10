@@ -100,6 +100,7 @@ RATE_LIMIT_RULES = {
     "/api/auth/login": (10, 60),
     "/api/auth/register": (5, 60),
     "/api/billing/checkout": (10, 60),
+    "/api/billing/ai-packages/checkout": (10, 60),
     "/api/billing/upgrade": (10, 60),
     "/api/billing/upgrade/preview": (20, 60),
     "/api/billing/downgrade": (10, 60),
@@ -170,6 +171,7 @@ from .api.admin import router as admin_router  # noqa: E402
 from .api.automations import router as automations_router  # noqa: E402
 from .api.auth import router as auth_router  # noqa: E402
 from .api.billing import router as billing_router  # noqa: E402
+from .api.ai_usage import router as ai_usage_router  # noqa: E402
 from .api.commerce import router as commerce_router  # noqa: E402
 from .api.conversations import router as conversations_router  # noqa: E402
 from .api.customers import router as customers_router  # noqa: E402
@@ -203,6 +205,7 @@ app.include_router(knowledge_router)
 app.include_router(payments_router)
 app.include_router(google_router)
 app.include_router(billing_router)
+app.include_router(ai_usage_router)
 app.include_router(automations_router)
 app.include_router(whatsapp_router)
 app.include_router(telegram_router)

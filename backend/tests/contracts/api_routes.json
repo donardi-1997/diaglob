@@ -85,6 +85,10 @@
   ],
   [
     "GET",
+    "/api/billing/ai-packages"
+  ],
+  [
+    "GET",
     "/api/commerce/products"
   ],
   [
@@ -438,6 +442,10 @@
   [
     "PATCH",
     "/api/team/{membership_id}"
+  ],
+  [
+    "POST",
+    "/api/billing/ai-packages/checkout"
   ],
   [
     "POST",

@@ -1,0 +1,326 @@
+.ai-packages-section {
+  position: relative;
+  margin-top: 28px;
+  padding: 26px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 82% 0%, rgba(124, 108, 255, 0.15), transparent 34%),
+    linear-gradient(150deg, rgba(255, 255, 255, 0.025), transparent 44%),
+    var(--panel);
+}
+
+.ai-packages-section::before {
+  content: "";
+  position: absolute;
+  width: 220px;
+  height: 220px;
+  right: -110px;
+  top: -130px;
+  border-radius: 50%;
+  border: 1px solid rgba(124, 108, 255, 0.16);
+  pointer-events: none;
+}
+
+.ai-packages-heading {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.ai-packages-heading h2 {
+  margin: 0;
+  font-size: 21px;
+  letter-spacing: -0.025em;
+}
+
+.ai-packages-heading p {
+  max-width: 700px;
+  margin: 7px 0 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.ai-packages-refresh {
+  min-height: 36px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--control-bg);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.ai-packages-refresh:hover:not(:disabled) {
+  background: var(--control-hover);
+  color: var(--text);
+}
+
+.ai-packages-refresh:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.ai-packages-refresh .spinning {
+  animation: ai-package-spin 0.8s linear infinite;
+}
+
+@keyframes ai-package-spin {
+  to { transform: rotate(360deg); }
+}
+
+.ai-usage-overview {
+  position: relative;
+  margin-top: 20px;
+  display: grid;
+  grid-template-columns: minmax(260px, 1.5fr) repeat(2, minmax(160px, 0.65fr));
+  gap: 10px;
+}
+
+.ai-usage-main,
+.ai-usage-extra-balance,
+.ai-usage-total-balance {
+  min-height: 82px;
+  padding: 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.ai-usage-icon,
+.ai-package-spark {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.ai-usage-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.ai-usage-copy > span,
+.ai-usage-extra-balance span,
+.ai-usage-total-balance span {
+  display: block;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.ai-usage-copy strong,
+.ai-usage-extra-balance strong,
+.ai-usage-total-balance strong {
+  display: block;
+  margin-top: 3px;
+  color: var(--text);
+  font-size: 18px;
+}
+
+.ai-usage-extra-balance > svg,
+.ai-usage-total-balance > svg {
+  color: var(--accent);
+}
+
+.ai-usage-progress {
+  height: 5px;
+  margin-top: 9px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--elevated);
+}
+
+.ai-usage-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), #9a8eff);
+  transition: width 300ms ease;
+}
+
+.ai-packages-grid {
+  position: relative;
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.ai-package-card {
+  position: relative;
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--control-bg);
+  transition: transform 180ms ease, border-color 180ms ease, background 180ms ease;
+}
+
+.ai-package-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(124, 108, 255, 0.28);
+  background: var(--control-hover);
+}
+
+.ai-package-card.featured {
+  border-color: rgba(124, 108, 255, 0.34);
+  box-shadow: 0 14px 38px rgba(66, 52, 190, 0.09);
+}
+
+.ai-package-badge {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.ai-package-card-top {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 750;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+.ai-package-spark {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+}
+
+.ai-package-responses {
+  display: block;
+  margin-top: 20px;
+  font-size: clamp(27px, 3vw, 38px);
+  letter-spacing: -0.055em;
+}
+
+.ai-package-unit {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.ai-package-price {
+  margin-top: 18px;
+  padding-top: 14px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.ai-package-price strong {
+  font-size: 17px;
+}
+
+.ai-package-price span {
+  color: var(--text-muted);
+  font-size: 9px;
+  text-align: right;
+}
+
+.ai-package-card button {
+  width: 100%;
+  min-height: 39px;
+  margin-top: 15px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--accent);
+  color: white;
+  font-size: 11px;
+  font-weight: 800;
+  box-shadow: 0 8px 22px rgba(124, 108, 255, 0.16);
+}
+
+.ai-package-card button:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.ai-package-card button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+  box-shadow: none;
+}
+
+.ai-packages-error {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border: 1px solid rgba(244, 92, 92, 0.22);
+  border-radius: 9px;
+  background: rgba(244, 92, 92, 0.07);
+  color: #e88b8b;
+  font-size: 11px;
+}
+
+.ai-packages-footnote {
+  margin: 14px 0 0;
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+@media (max-width: 900px) {
+  .ai-usage-overview {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .ai-usage-main {
+    grid-column: 1 / -1;
+  }
+
+  .ai-packages-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 620px) {
+  .ai-packages-section {
+    padding: 18px;
+  }
+
+  .ai-packages-heading {
+    flex-direction: column;
+  }
+
+  .ai-packages-refresh {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .ai-usage-overview {
+    grid-template-columns: 1fr;
+  }
+
+  .ai-usage-main {
+    grid-column: auto;
+  }
+}

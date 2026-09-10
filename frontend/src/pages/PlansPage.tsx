@@ -16,6 +16,8 @@ import {
   type BillingUpgradePreview,
 } from "../services/billing";
 
+import AiUsagePackagesSection from "../components/AiUsagePackagesSection";
+
 import { Check, Crown, Rocket, Sparkles, Store, Zap } from "lucide-react";
 
 const plans = [
@@ -1425,6 +1427,13 @@ export default function PlansPage() {
           );
         })}
       </div>
+
+      <AiUsagePackagesSection
+        paddle={paddle}
+        enabled={Boolean(
+          currentPlan && currentPlan.toLowerCase() !== "none"
+        )}
+      />
 
       <section className="auto-renew-plan-section">
         <div className="auto-renew-plan-copy">
