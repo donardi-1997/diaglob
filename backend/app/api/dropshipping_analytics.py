@@ -9,6 +9,7 @@ from ..models import Store
 from ..services.dropshipping_analytics import (
     get_dropshipping_overview,
     get_order_funnel,
+    get_product_detail,
     get_product_profitability,
     get_profitability,
 )
@@ -131,9 +132,9 @@ def dropshipping_products(
     db: Session = Depends(get_db),
     date_from: str | None = Query(None),
     date_to: str | None = Query(None),
-    limit: int = Query(50, ge=1, le=200),
+    limit: int = Query(200, ge=1, le=200),
 ):
-    """Product profitability breakdown."""
+    """Product lifecycle and profitability breakdown."""
     _validate_store(store_id, membership, db)
     parsed_from, parsed_to = _parse_range(date_from, date_to)
 
@@ -145,6 +146,34 @@ def dropshipping_products(
         parsed_to,
         limit,
     )
+
+
+@router.get(
+    "/api/stores/{store_id}/analytics/dropshipping/products/{product_id}",
+)
+def dropshipping_product_detail(
+    store_id: int,
+    product_id: int,
+    membership=Depends(require_permission("analytics.read")),
+    db: Session = Depends(get_db),
+    date_from: str | None = Query(None),
+    date_to: str | None = Query(None),
+):
+    """Detailed lifecycle, profitability, trend and variant metrics for a product."""
+    _validate_store(store_id, membership, db)
+    parsed_from, parsed_to = _parse_range(date_from, date_to)
+
+    result = get_product_detail(
+        db,
+        membership.organization_id,
+        store_id,
+        product_id,
+        parsed_from,
+        parsed_to,
+    )
+    if result is None:
+        raise HTTPException(status_code=404, detail="Product not found")
+    return result
 
 
 @router.get(
