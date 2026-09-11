@@ -2,7 +2,7 @@
   "tests/test_admin_growth_service.py": 0.672068,
   "tests/test_ai_usage_packages.py": 0.493821,
   "tests/test_alembic_heads.py": 0.031052,
-  "tests/test_analytics.py": 9.260334,
+  "tests/test_analytics.py": 1.574715,
   "tests/test_architecture_boundaries.py": 0.03424,
   "tests/test_automation_campaigns.py": 5.738708,
   "tests/test_automation_flows.py": 4.531943,
