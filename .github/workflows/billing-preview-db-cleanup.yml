@@ -4,9 +4,11 @@ on:
   push:
     branches:
       - perf/billing-preview-db-cleanup
+    paths:
+      - .github/workflows/billing-preview-db-cleanup.yml
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   focused:
@@ -14,6 +16,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: perf/billing-preview-db-cleanup
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -28,7 +32,21 @@ jobs:
           pip install -r backend/requirements.txt
           pip install ruff pytest
 
-      - name: Focused regression and Billing Preview suite
+      - name: Apply Billing Preview fixture refactor
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('backend/tests/test_billing_preview.py')
+          text = path.read_text(encoding='utf-8')
+          old = '''@pytest.fixture(autouse=True)\ndef setup_db():\n    _rate_limit_store.clear()\n    Base.metadata.create_all(bind=engine)\n    yield\n    _rate_limit_store.clear()\n    Base.metadata.drop_all(bind=engine)\n'''
+          new = '''@pytest.fixture(scope="module", autouse=True)\ndef setup_db():\n    Base.metadata.drop_all(bind=engine)\n    Base.metadata.create_all(bind=engine)\n    yield\n    Base.metadata.drop_all(bind=engine)\n\n\n@pytest.fixture(autouse=True)\ndef cleanup_db(setup_db):\n    _rate_limit_store.clear()\n    yield\n    _rate_limit_store.clear()\n    with engine.begin() as connection:\n        for table in reversed(Base.metadata.sorted_tables):\n            connection.execute(table.delete())\n'''
+          if text.count(old) != 1:
+              raise SystemExit(f'expected fixture block exactly once, found {text.count(old)}')
+          path.write_text(text.replace(old, new), encoding='utf-8')
+          PY
+
+      - name: Focused GREEN and timing collection
         working-directory: backend
         run: |
           python -m pytest -q --tb=short \
@@ -38,7 +56,35 @@ jobs:
             --timings-output /tmp/billing-preview-timings.json
           cat /tmp/billing-preview-timings.json
 
-      - name: Lint focused files
+      - name: Refresh Billing Preview timing
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          measured = json.loads(Path('/tmp/billing-preview-timings.json').read_text())
+          key = 'tests/test_billing_preview.py'
+          if key not in measured:
+              raise SystemExit(f'{key} missing from timing collector output')
+
+          path = Path('backend/test_timings.json')
+          timings = json.loads(path.read_text())
+          old = timings[key]
+          timings[key] = measured[key]
+          path.write_text(json.dumps(timings, indent=2, sort_keys=True) + '\n')
+          print(f'{key}: {old:.6f}s -> {timings[key]:.6f}s')
+          PY
+
+      - name: Verify focused diff
         run: |
           ruff check backend/tests/test_billing_preview.py backend/tests/test_ci_db_fixture_scope.py backend/tools/test_timings.py
           git diff --check
+          git diff -- backend/tests/test_billing_preview.py backend/test_timings.json
+
+      - name: Commit GREEN implementation
+        run: |
+          git config user.name "Adrian Felipe Guerra"
+          git config user.email "adrianguerra9703@gmail.com"
+          git add backend/tests/test_billing_preview.py backend/test_timings.json
+          git commit -m "perf: reuse DB schema in Billing Preview tests"
+          git push origin HEAD:perf/billing-preview-db-cleanup
