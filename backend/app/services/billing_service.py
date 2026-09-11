@@ -13,7 +13,6 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 
 from ..billing import (
-    add_billing_months,
     calculate_local_proration,
     resolve_billing_period,
 )
@@ -69,15 +68,6 @@ class DowngradeNoopError(Exception):
 
 class AutoRenewConflictError(Exception):
     pass
-
-
-def _build_upgrade_next_billed_at(
-    billing_period_months: int,
-    now: datetime | None = None,
-) -> str:
-    current = now or datetime.utcnow()
-    cycle_end = add_billing_months(current, int(billing_period_months or 1))
-    return cycle_end.replace(microsecond=0).isoformat() + "Z"
 
 
 def _provider_for(organization: Organization) -> BillingProvider:
@@ -495,9 +485,6 @@ def preview_upgrade_provider(
     if not target_price_id:
         return None
 
-    next_billed_at = _build_upgrade_next_billed_at(
-        organization.billing_period_months
-    )
     provider_data = provider.preview_subscription_update(
         subscription_id=organization.billing_subscription_id,
         items=[{"price_id": target_price_id, "quantity": 1}],
