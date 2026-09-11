@@ -41,67 +41,74 @@ jobs:
           text = path.read_text(encoding='utf-8')
 
           marker = '@pytest.fixture()\ndef db():\n'
-          shared = '''@pytest.fixture(scope="module")
-def campaign_engine():
-    engine = create_engine(
-        "sqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    Base.metadata.create_all(engine)
-    yield engine
-    Base.metadata.drop_all(engine)
-
-
-def _clear_db_rows(engine):
-    with engine.begin() as connection:
-        for table in reversed(Base.metadata.sorted_tables):
-            connection.execute(table.delete())
-
-
-'''
+          shared = (
+              '@pytest.fixture(scope="module")\n'
+              'def campaign_engine():\n'
+              '    engine = create_engine(\n'
+              '        "sqlite://",\n'
+              '        connect_args={"check_same_thread": False},\n'
+              '        poolclass=StaticPool,\n'
+              '    )\n'
+              '    Base.metadata.create_all(engine)\n'
+              '    yield engine\n'
+              '    Base.metadata.drop_all(engine)\n'
+              '\n'
+              '\n'
+              'def _clear_db_rows(engine):\n'
+              '    with engine.begin() as connection:\n'
+              '        for table in reversed(Base.metadata.sorted_tables):\n'
+              '            connection.execute(table.delete())\n'
+              '\n'
+              '\n'
+          )
           if 'def campaign_engine()' in text:
               raise SystemExit('campaign_engine already exists')
           if text.count(marker) != 1:
               raise SystemExit(f'expected db fixture marker once, found {text.count(marker)}')
           text = text.replace(marker, shared + marker, 1)
 
-          old_db = '''@pytest.fixture()
-def db():
-    engine = create_engine("sqlite://")
-    Base.metadata.create_all(engine)
-    session = sessionmaker(bind=engine)()
-'''
-          new_db = '''@pytest.fixture()
-def db(campaign_engine):
-    session = sessionmaker(bind=campaign_engine)()
-'''
+          old_db = (
+              '@pytest.fixture()\n'
+              'def db():\n'
+              '    engine = create_engine("sqlite://")\n'
+              '    Base.metadata.create_all(engine)\n'
+              '    session = sessionmaker(bind=engine)()\n'
+          )
+          new_db = (
+              '@pytest.fixture()\n'
+              'def db(campaign_engine):\n'
+              '    session = sessionmaker(bind=campaign_engine)()\n'
+          )
           if text.count(old_db) != 1:
               raise SystemExit(f'expected db setup once, found {text.count(old_db)}')
           text = text.replace(old_db, new_db, 1)
 
-          old_db_teardown = '''    session.close()
-    Base.metadata.drop_all(engine)
-'''
-          new_db_teardown = '''    session.close()
-    _clear_db_rows(campaign_engine)
-'''
+          old_db_teardown = (
+              '    session.close()\n'
+              '    Base.metadata.drop_all(engine)\n'
+          )
+          new_db_teardown = (
+              '    session.close()\n'
+              '    _clear_db_rows(campaign_engine)\n'
+          )
           if text.count(old_db_teardown) != 1:
               raise SystemExit(
                   f'expected db teardown once, found {text.count(old_db_teardown)}'
               )
           text = text.replace(old_db_teardown, new_db_teardown, 1)
 
-          old_endpoint = '''@pytest.fixture()
-def endpoint_db():
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
-    Base.metadata.create_all(engine)
-    session = sessionmaker(bind=engine)()
-'''
-          new_endpoint = '''@pytest.fixture()
-def endpoint_db(campaign_engine):
-    session = sessionmaker(bind=campaign_engine)()
-'''
+          old_endpoint = (
+              '@pytest.fixture()\n'
+              'def endpoint_db():\n'
+              '    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)\n'
+              '    Base.metadata.create_all(engine)\n'
+              '    session = sessionmaker(bind=engine)()\n'
+          )
+          new_endpoint = (
+              '@pytest.fixture()\n'
+              'def endpoint_db(campaign_engine):\n'
+              '    session = sessionmaker(bind=campaign_engine)()\n'
+          )
           if text.count(old_endpoint) != 1:
               raise SystemExit(
                   f'expected endpoint setup once, found {text.count(old_endpoint)}'
