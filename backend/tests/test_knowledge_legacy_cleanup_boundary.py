@@ -72,6 +72,11 @@ def _make_legacy_kb(db):
         knowledge_base_id=knowledge_base.id,
         name="Legacy source",
         source_type="file",
+        s3_bucket=KNOWLEDGE_BUCKET,
+        s3_key=(
+            f"organizations/{organization.id}/knowledge-bases/"
+            f"{knowledge_base.id}/documents/source.txt"
+        ),
     )
     db.add(source)
     db.commit()
