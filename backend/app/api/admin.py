@@ -22,6 +22,9 @@ from ..services.admin_dashboard_service import (
     get_organization_list,
 )
 from ..services.admin_growth_service import get_admin_growth_metrics
+from ..services.customer_risk_moderation_analytics_service import (
+    get_customer_risk_moderation_analytics,
+)
 from ..services.customer_risk_moderation_service import (
     CustomerRiskModerationNotFoundError,
     CustomerRiskModerationValidationError,
@@ -121,11 +124,18 @@ def admin_attention(
 
 @router.get("/customer-risk/stats")
 def admin_customer_risk_stats(
+    analytics_days: int | None = None,
     user: User = Depends(_require_platform_admin),
     db: Session = Depends(get_db),
 ):
-    """Moderation workload and configured anti-abuse limits."""
-    return get_customer_risk_moderation_stats(db)
+    """Moderation workload, limits and optional read-only analytics."""
+    payload = get_customer_risk_moderation_stats(db)
+    if analytics_days is not None:
+        payload["analytics"] = get_customer_risk_moderation_analytics(
+            db,
+            days=analytics_days,
+        )
+    return payload
 
 
 @router.get("/customer-risk/reports")
