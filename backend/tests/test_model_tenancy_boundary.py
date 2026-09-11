@@ -6,9 +6,9 @@ from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
-from app import models as legacy
 from app.db import Base
 from app.model_domains import tenancy
+from app import models as legacy
 
 
 def test_legacy_model_surface_reexports_tenancy_classes():
@@ -21,7 +21,10 @@ def test_legacy_model_surface_reexports_tenancy_classes():
 
     assert legacy.agent_stores is tenancy.agent_stores
     assert legacy.knowledge_base_stores is tenancy.knowledge_base_stores
-    assert legacy.organization_invitation_stores is tenancy.organization_invitation_stores
+    assert (
+        legacy.organization_invitation_stores
+        is tenancy.organization_invitation_stores
+    )
 
 
 def test_tenancy_models_are_physically_owned_by_domain_module():
@@ -51,9 +54,12 @@ def test_tenancy_table_contracts_remain_registered_once():
 
 
 def test_store_and_membership_unique_constraints_are_preserved():
-    store_constraints = {constraint.name for constraint in tenancy.Store.__table__.constraints}
+    store_constraints = {
+        constraint.name for constraint in tenancy.Store.__table__.constraints
+    }
     membership_constraints = {
-        constraint.name for constraint in tenancy.OrganizationMembership.__table__.constraints
+        constraint.name
+        for constraint in tenancy.OrganizationMembership.__table__.constraints
     }
 
     assert "uq_store_org_slug" in store_constraints
@@ -62,13 +68,26 @@ def test_store_and_membership_unique_constraints_are_preserved():
 
 def test_relationship_secondaries_keep_the_same_association_tables():
     store_relationships = inspect(tenancy.Store).relationships
-    invitation_relationships = inspect(tenancy.OrganizationInvitation).relationships
-    membership_relationships = inspect(tenancy.OrganizationMembership).relationships
+    invitation_relationships = inspect(
+        tenancy.OrganizationInvitation
+    ).relationships
+    membership_relationships = inspect(
+        tenancy.OrganizationMembership
+    ).relationships
 
     assert store_relationships.agents.secondary is tenancy.agent_stores
-    assert store_relationships.knowledge_bases.secondary is tenancy.knowledge_base_stores
-    assert invitation_relationships.stores.secondary is tenancy.organization_invitation_stores
-    assert membership_relationships.stores.secondary is tenancy.MembershipStore.__table__
+    assert (
+        store_relationships.knowledge_bases.secondary
+        is tenancy.knowledge_base_stores
+    )
+    assert (
+        invitation_relationships.stores.secondary
+        is tenancy.organization_invitation_stores
+    )
+    assert (
+        membership_relationships.stores.secondary
+        is tenancy.MembershipStore.__table__
+    )
 
 
 def test_store_active_since_event_listeners_survive_physical_move():
