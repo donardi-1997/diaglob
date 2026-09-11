@@ -56,8 +56,9 @@ TestingSessionLocal = sessionmaker(
 )
 
 
-@pytest.fixture()
+@pytest.fixture(scope="module")
 def setup_db():
+    Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     yield
     Base.metadata.drop_all(bind=engine)
@@ -70,6 +71,9 @@ def db(setup_db):
         yield session
     finally:
         session.close()
+        with engine.begin() as connection:
+            for table in reversed(Base.metadata.sorted_tables):
+                connection.execute(table.delete())
 
 
 @pytest.fixture()
