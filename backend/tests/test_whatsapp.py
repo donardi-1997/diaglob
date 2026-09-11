@@ -66,11 +66,20 @@ _ai_svc_orig_session = _ai_svc.SessionLocal
 _ai_svc.SessionLocal = TestingSessionLocal
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(scope="module", autouse=True)
 def setup_db():
+    Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     yield
     Base.metadata.drop_all(bind=engine)
+
+
+@pytest.fixture(autouse=True)
+def cleanup_db(setup_db):
+    yield
+    with engine.begin() as connection:
+        for table in reversed(Base.metadata.sorted_tables):
+            connection.execute(table.delete())
 
 
 @pytest.fixture()
