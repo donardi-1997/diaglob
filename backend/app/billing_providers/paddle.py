@@ -107,7 +107,11 @@ class PaddleBillingProvider(BillingProvider):
         try:
             return func(*args, **kwargs)
         except paddle_client.PaddleConfigError as exc:
-            raise BillingProviderConfigurationError(str(exc)) from exc
+            raise BillingProviderError(
+                provider=self.name,
+                status_code=503,
+                detail={"message": str(exc)},
+            ) from exc
         except paddle_client.PaddleProviderError as exc:
             raise BillingProviderError(
                 provider=self.name,
