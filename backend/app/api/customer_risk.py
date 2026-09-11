@@ -11,14 +11,18 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..models import OrganizationMembership
+from ..services.customer_risk_governance_service import CustomerRiskRateLimitError
 from ..services.customer_risk_service import (
     CustomerRiskAccessError,
     CustomerRiskConfigurationError,
     CustomerRiskNotFoundError,
     CustomerRiskValidationError,
     dismiss_current_organization_report,
+    get_current_organization_dispute,
     get_customer_risk_summary,
     report_customer,
+    submit_customer_risk_dispute,
+    withdraw_current_organization_dispute,
 )
 from .deps import get_allowed_store_ids, require_permission
 
@@ -40,6 +44,12 @@ class CustomerRiskReportCreate(BaseModel):
     store_id: int | None = None
 
 
+class CustomerRiskDisputeCreate(BaseModel):
+    statement: str = Field(min_length=20, max_length=2000)
+    evidence_reference: str | None = Field(default=None, max_length=1000)
+    store_id: int | None = None
+
+
 def _raise_service_error(exc: Exception) -> None:
     if isinstance(exc, CustomerRiskNotFoundError):
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -47,6 +57,8 @@ def _raise_service_error(exc: Exception) -> None:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     if isinstance(exc, CustomerRiskConfigurationError):
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if isinstance(exc, CustomerRiskRateLimitError):
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
     if isinstance(exc, CustomerRiskValidationError):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     raise exc
@@ -72,6 +84,7 @@ def get_customer_risk(
         CustomerRiskAccessError,
         CustomerRiskConfigurationError,
         CustomerRiskValidationError,
+        CustomerRiskRateLimitError,
     ) as exc:
         _raise_service_error(exc)
 
@@ -102,6 +115,7 @@ def create_customer_risk_report(
         CustomerRiskAccessError,
         CustomerRiskConfigurationError,
         CustomerRiskValidationError,
+        CustomerRiskRateLimitError,
     ) as exc:
         _raise_service_error(exc)
 
@@ -127,5 +141,89 @@ def dismiss_customer_risk_report(
         CustomerRiskAccessError,
         CustomerRiskConfigurationError,
         CustomerRiskValidationError,
+        CustomerRiskRateLimitError,
+    ) as exc:
+        _raise_service_error(exc)
+
+
+@router.get("/api/customers/{customer_id}/risk/disputes/mine")
+def get_my_customer_risk_dispute(
+    customer_id: int,
+    membership: OrganizationMembership = Depends(
+        require_permission("customers.read")
+    ),
+    db: Session = Depends(get_db),
+):
+    try:
+        return {
+            "dispute": get_current_organization_dispute(
+                db=db,
+                organization_id=membership.organization_id,
+                customer_id=customer_id,
+                allowed_store_ids=get_allowed_store_ids(membership),
+            )
+        }
+    except (
+        CustomerRiskNotFoundError,
+        CustomerRiskAccessError,
+        CustomerRiskConfigurationError,
+        CustomerRiskValidationError,
+        CustomerRiskRateLimitError,
+    ) as exc:
+        _raise_service_error(exc)
+
+
+@router.post("/api/customers/{customer_id}/risk/disputes")
+def create_customer_risk_dispute(
+    customer_id: int,
+    payload: CustomerRiskDisputeCreate,
+    membership: OrganizationMembership = Depends(
+        require_permission("customers.write")
+    ),
+    db: Session = Depends(get_db),
+):
+    try:
+        return submit_customer_risk_dispute(
+            db=db,
+            organization_id=membership.organization_id,
+            requester_user_id=membership.user_id,
+            customer_id=customer_id,
+            statement=payload.statement,
+            evidence_reference=payload.evidence_reference,
+            requester_store_id=payload.store_id,
+            allowed_store_ids=get_allowed_store_ids(membership),
+        )
+    except (
+        CustomerRiskNotFoundError,
+        CustomerRiskAccessError,
+        CustomerRiskConfigurationError,
+        CustomerRiskValidationError,
+        CustomerRiskRateLimitError,
+    ) as exc:
+        _raise_service_error(exc)
+
+
+@router.delete("/api/customers/{customer_id}/risk/disputes/mine")
+def withdraw_customer_risk_dispute(
+    customer_id: int,
+    membership: OrganizationMembership = Depends(
+        require_permission("customers.write")
+    ),
+    db: Session = Depends(get_db),
+):
+    try:
+        return withdraw_current_organization_dispute(
+            db=db,
+            organization_id=membership.organization_id,
+            requester_user_id=membership.user_id,
+            customer_id=customer_id,
+            allowed_store_ids=get_allowed_store_ids(membership),
+        )
+    except (
+        CustomerRiskNotFoundError,
+        CustomerRiskAccessError,
+        CustomerRiskConfigurationError,
+        CustomerRiskValidationError,
+        CustomerRiskRateLimitError,
     ) as exc:
         _raise_service_error(exc)

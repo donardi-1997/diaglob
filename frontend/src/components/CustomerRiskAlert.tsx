@@ -1,10 +1,20 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, LoaderCircle, ShieldAlert, X } from "lucide-react";
+import {
+  AlertTriangle,
+  LoaderCircle,
+  Scale,
+  ShieldAlert,
+  X,
+} from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import {
   dismissCustomerRiskReport,
+  getMyCustomerRiskDispute,
   reportCustomerRisk,
+  submitCustomerRiskDispute,
+  withdrawCustomerRiskDispute,
+  type CustomerRiskDispute,
   type CustomerRiskReason,
   type CustomerRiskSummary,
 } from "../services/customerRisk";
@@ -48,6 +58,24 @@ const COPY = {
     withdrawFailed: "No se pudo retirar el reporte.",
     noSignals: "Sin señales compartidas",
     noSignalsHelp: "No hay reportes activos coincidentes con los identificadores de este cliente.",
+    dispute: "Disputar señal",
+    disputeTitle: "Disputar una señal compartida",
+    disputeHelp: "Explica por qué consideras que la alerta debe revisarse. Tu organización no verá quién originó los reportes externos.",
+    disputeStatement: "Explicación de la disputa",
+    disputeStatementHint: "Describe hechos concretos y cualquier contexto que ayude a moderación.",
+    disputeEvidence: "Referencia de evidencia (opcional)",
+    disputeSubmit: "Enviar a revisión",
+    disputeUpdate: "Actualizar disputa",
+    disputeWithdraw: "Retirar disputa",
+    disputeFailed: "No se pudo enviar la disputa.",
+    disputeLoadFailed: "No se pudo cargar el estado de la disputa.",
+    disputeWithdrawFailed: "No se pudo retirar la disputa.",
+    disputeRateLimited: "Se alcanzó el límite de envíos de riesgo. Intenta nuevamente más tarde.",
+    disputeOpen: "En revisión",
+    disputeAccepted: "Disputa aceptada",
+    disputeRejected: "Disputa rechazada",
+    disputeWithdrawn: "Disputa retirada",
+    resolution: "Resolución de moderación",
     reasons: {
       suspected_fraud: "Posible fraude",
       payment_abuse: "Problema de pago o contracargo",
@@ -82,6 +110,24 @@ const COPY = {
     withdrawFailed: "The report could not be withdrawn.",
     noSignals: "No shared signals",
     noSignalsHelp: "There are no active reports matching this customer's identifiers.",
+    dispute: "Dispute signal",
+    disputeTitle: "Dispute a shared signal",
+    disputeHelp: "Explain why you believe the alert should be reviewed. Your organization will not see who submitted external reports.",
+    disputeStatement: "Dispute explanation",
+    disputeStatementHint: "Describe concrete facts and any context that can help moderation.",
+    disputeEvidence: "Evidence reference (optional)",
+    disputeSubmit: "Send for review",
+    disputeUpdate: "Update dispute",
+    disputeWithdraw: "Withdraw dispute",
+    disputeFailed: "The dispute could not be submitted.",
+    disputeLoadFailed: "The dispute status could not be loaded.",
+    disputeWithdrawFailed: "The dispute could not be withdrawn.",
+    disputeRateLimited: "The risk submission limit has been reached. Try again later.",
+    disputeOpen: "Under review",
+    disputeAccepted: "Dispute accepted",
+    disputeRejected: "Dispute rejected",
+    disputeWithdrawn: "Dispute withdrawn",
+    resolution: "Moderation resolution",
     reasons: {
       suspected_fraud: "Suspected fraud",
       payment_abuse: "Payment or chargeback issue",
@@ -116,6 +162,24 @@ const COPY = {
     withdrawFailed: "Não foi possível retirar o relato.",
     noSignals: "Sem sinais compartilhados",
     noSignalsHelp: "Não há relatos ativos que coincidam com os identificadores deste cliente.",
+    dispute: "Contestar sinal",
+    disputeTitle: "Contestar um sinal compartilhado",
+    disputeHelp: "Explique por que o alerta deve ser revisado. Sua organização não verá quem enviou relatos externos.",
+    disputeStatement: "Explicação da contestação",
+    disputeStatementHint: "Descreva fatos concretos e qualquer contexto que ajude a moderação.",
+    disputeEvidence: "Referência de evidência (opcional)",
+    disputeSubmit: "Enviar para revisão",
+    disputeUpdate: "Atualizar contestação",
+    disputeWithdraw: "Retirar contestação",
+    disputeFailed: "Não foi possível enviar a contestação.",
+    disputeLoadFailed: "Não foi possível carregar o estado da contestação.",
+    disputeWithdrawFailed: "Não foi possível retirar a contestação.",
+    disputeRateLimited: "O limite de envios de risco foi atingido. Tente novamente mais tarde.",
+    disputeOpen: "Em revisão",
+    disputeAccepted: "Contestação aceita",
+    disputeRejected: "Contestação rejeitada",
+    disputeWithdrawn: "Contestação retirada",
+    resolution: "Resolução da moderação",
     reasons: {
       suspected_fraud: "Possível fraude",
       payment_abuse: "Problema de pagamento ou chargeback",
@@ -164,6 +228,14 @@ export default function CustomerRiskAlert({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
+  const [disputeOpen, setDisputeOpen] = useState(false);
+  const [dispute, setDispute] = useState<CustomerRiskDispute | null>(null);
+  const [disputeStatement, setDisputeStatement] = useState("");
+  const [disputeEvidence, setDisputeEvidence] = useState("");
+  const [disputeLoading, setDisputeLoading] = useState(false);
+  const [disputeSaving, setDisputeSaving] = useState(false);
+  const [disputeError, setDisputeError] = useState("");
+
   useEffect(() => {
     setCurrent(risk ?? null);
   }, [customerId, risk]);
@@ -202,8 +274,9 @@ export default function CustomerRiskAlert({
       });
       publish(next);
       setFormOpen(false);
-    } catch {
-      setError(copy.failed);
+    } catch (err: unknown) {
+      const apiError = err as { response?: { status?: number } };
+      setError(apiError.response?.status === 429 ? copy.disputeRateLimited : copy.failed);
     } finally {
       setSaving(false);
     }
@@ -219,6 +292,66 @@ export default function CustomerRiskAlert({
       setError(copy.withdrawFailed);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function openDispute() {
+    setDisputeOpen(true);
+    setDisputeError("");
+    setDisputeLoading(true);
+    try {
+      const currentDispute = await getMyCustomerRiskDispute(customerId);
+      setDispute(currentDispute);
+      if (currentDispute?.status === "open") {
+        setDisputeStatement(currentDispute.statement);
+        setDisputeEvidence(currentDispute.evidence_reference ?? "");
+      } else {
+        setDisputeStatement("");
+        setDisputeEvidence("");
+      }
+    } catch {
+      setDisputeError(copy.disputeLoadFailed);
+    } finally {
+      setDisputeLoading(false);
+    }
+  }
+
+  async function submitDispute() {
+    if (disputeStatement.trim().length < 20) return;
+    setDisputeSaving(true);
+    setDisputeError("");
+    try {
+      const next = await submitCustomerRiskDispute(customerId, {
+        statement: disputeStatement.trim(),
+        evidence_reference: disputeEvidence.trim() || undefined,
+        store_id: storeId,
+      });
+      setDispute(next);
+      setDisputeStatement(next.statement);
+      setDisputeEvidence(next.evidence_reference ?? "");
+    } catch (err: unknown) {
+      const apiError = err as { response?: { status?: number } };
+      setDisputeError(
+        apiError.response?.status === 429
+          ? copy.disputeRateLimited
+          : copy.disputeFailed,
+      );
+    } finally {
+      setDisputeSaving(false);
+    }
+  }
+
+  async function withdrawDispute() {
+    setDisputeSaving(true);
+    setDisputeError("");
+    try {
+      setDispute(await withdrawCustomerRiskDispute(customerId));
+      setDisputeStatement("");
+      setDisputeEvidence("");
+    } catch {
+      setDisputeError(copy.disputeWithdrawFailed);
+    } finally {
+      setDisputeSaving(false);
     }
   }
 
@@ -244,6 +377,16 @@ export default function CustomerRiskAlert({
         ? copy.elevated
         : copy.notice
     : copy.noSignals;
+  const canDispute = canReport && value.alert && value.external_reporting_organizations > 0;
+  const disputeStatusLabel = dispute
+    ? dispute.status === "open"
+      ? copy.disputeOpen
+      : dispute.status === "accepted"
+        ? copy.disputeAccepted
+        : dispute.status === "rejected"
+          ? copy.disputeRejected
+          : copy.disputeWithdrawn
+    : null;
 
   return (
     <>
@@ -276,6 +419,11 @@ export default function CustomerRiskAlert({
         </div>
         {canReport && (
           <div className="customer-risk-actions">
+            {canDispute && (
+              <button type="button" className="customer-risk-dispute-button" onClick={() => void openDispute()}>
+                <Scale size={14} /> {copy.dispute}
+              </button>
+            )}
             <button type="button" onClick={openForm}>
               {value.reported_by_current_organization ? copy.update : copy.report}
             </button>
@@ -363,6 +511,108 @@ export default function CustomerRiskAlert({
               >
                 {saving && <LoaderCircle className="spin" size={14} />}
                 {saving ? copy.saving : copy.save}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {disputeOpen && (
+        <div className="customer-risk-modal-backdrop" role="presentation">
+          <div className="customer-risk-modal" role="dialog" aria-modal="true">
+            <div className="customer-risk-modal-header">
+              <div>
+                <strong>{copy.disputeTitle}</strong>
+                <p>{copy.disputeHelp}</p>
+              </div>
+              <button
+                type="button"
+                className="customer-risk-close"
+                onClick={() => setDisputeOpen(false)}
+                disabled={disputeSaving}
+                aria-label={copy.cancel}
+              >
+                <X size={17} />
+              </button>
+            </div>
+
+            {disputeLoading ? (
+              <div className="customer-risk-dispute-loading">
+                <LoaderCircle className="spin" size={18} />
+              </div>
+            ) : (
+              <>
+                {disputeStatusLabel && (
+                  <div className={`customer-risk-dispute-status status-${dispute?.status}`}>
+                    <Scale size={15} />
+                    <strong>{disputeStatusLabel}</strong>
+                    {dispute?.resolution_note && (
+                      <span>{copy.resolution}: {dispute.resolution_note}</span>
+                    )}
+                  </div>
+                )}
+
+                <label>
+                  <span>{copy.disputeStatement}</span>
+                  <textarea
+                    value={disputeStatement}
+                    minLength={20}
+                    maxLength={2000}
+                    rows={5}
+                    placeholder={copy.disputeStatementHint}
+                    onChange={(event) => setDisputeStatement(event.target.value)}
+                  />
+                </label>
+
+                <label>
+                  <span>{copy.disputeEvidence}</span>
+                  <input
+                    value={disputeEvidence}
+                    maxLength={1000}
+                    placeholder={copy.evidenceHint}
+                    onChange={(event) => setDisputeEvidence(event.target.value)}
+                  />
+                </label>
+              </>
+            )}
+
+            {disputeError && <div className="customer-risk-error">{disputeError}</div>}
+
+            <div className="customer-risk-modal-footer">
+              {dispute?.status === "open" && (
+                <button
+                  type="button"
+                  className="customer-risk-withdraw"
+                  onClick={() => void withdrawDispute()}
+                  disabled={disputeSaving || disputeLoading}
+                >
+                  {copy.disputeWithdraw}
+                </button>
+              )}
+              <button
+                type="button"
+                className="customer-risk-cancel"
+                onClick={() => setDisputeOpen(false)}
+                disabled={disputeSaving}
+              >
+                {copy.cancel}
+              </button>
+              <button
+                type="button"
+                className="customer-risk-save"
+                onClick={() => void submitDispute()}
+                disabled={
+                  disputeSaving
+                  || disputeLoading
+                  || disputeStatement.trim().length < 20
+                }
+              >
+                {disputeSaving && <LoaderCircle className="spin" size={14} />}
+                {disputeSaving
+                  ? copy.saving
+                  : dispute?.status === "open"
+                    ? copy.disputeUpdate
+                    : copy.disputeSubmit}
               </button>
             </div>
           </div>

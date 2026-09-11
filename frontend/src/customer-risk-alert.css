@@ -111,6 +111,13 @@
   font-weight: 650;
 }
 
+.customer-risk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
 .customer-risk-actions button,
 .customer-risk-save,
 .customer-risk-cancel,
@@ -129,6 +136,15 @@
   border: 0;
   color: #fff;
   background: var(--dg-shell-accent, #6d5dfc);
+}
+
+.customer-risk-actions .customer-risk-dispute-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--dg-shell-border-strong, rgba(15, 23, 42, 0.13));
+  background: var(--dg-shell-surface, #fff);
+  color: var(--dg-shell-text, #111827);
 }
 
 .customer-risk-modal-backdrop {
@@ -232,6 +248,46 @@
   font-size: 0.75rem;
 }
 
+.customer-risk-dispute-loading {
+  min-height: 92px;
+  display: grid;
+  place-items: center;
+  color: var(--dg-shell-muted, #6b7280);
+}
+
+.customer-risk-dispute-status {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 6px 8px;
+  padding: 10px 11px;
+  border: 1px solid rgba(99, 102, 241, 0.22);
+  border-radius: 10px;
+  background: rgba(99, 102, 241, 0.07);
+  font-size: 0.76rem;
+}
+
+.customer-risk-dispute-status > span {
+  grid-column: 1 / -1;
+  color: var(--dg-shell-muted, #6b7280);
+  line-height: 1.45;
+}
+
+.customer-risk-dispute-status.status-accepted {
+  border-color: rgba(22, 163, 74, 0.24);
+  background: rgba(22, 163, 74, 0.08);
+}
+
+.customer-risk-dispute-status.status-rejected {
+  border-color: rgba(220, 38, 38, 0.2);
+  background: rgba(220, 38, 38, 0.06);
+}
+
+.customer-risk-dispute-status.status-withdrawn {
+  border-color: var(--dg-shell-border, rgba(15, 23, 42, 0.08));
+  background: rgba(148, 163, 184, 0.06);
+}
+
 .customer-risk-modal-footer {
   display: flex;
   justify-content: flex-end;
@@ -270,10 +326,13 @@
 
   .customer-risk-actions {
     grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: 1fr;
   }
 
   .customer-risk-actions button {
     width: 100%;
+    justify-content: center;
   }
 
   .customer-risk-modal-footer > button {
