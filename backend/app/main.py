@@ -1,11 +1,8 @@
 """Diaglob API — FastAPI application bootstrap."""
 
 import logging
-import time
-from collections import defaultdict
-from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -13,28 +10,12 @@ from starlette.responses import Response
 
 from .db import Base, engine
 from .models import OrganizationMembership
+from .runtime.lifespan import build_lifespan
+from .runtime.rate_limit import InMemoryRateLimitBackend, RateLimitMiddleware
+from .settings import get_settings
 
 logger = logging.getLogger(__name__)
-
-
-# ============================================================
-# LIFESPAN
-# ============================================================
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Application lifespan: runs startup/shutdown logic.
-
-    CRITICAL: Base.metadata.create_all is NOT called here.
-    Schema is managed by Alembic. For local/test environments
-    that need automatic schema creation, use alembic upgrade head
-    or the test-local create_all fixtures.
-    """
-    from .services.knowledge_provisioning import reconcile_knowledge_base_provisioning
-
-    reconcile_knowledge_base_provisioning()
-
-    yield
+settings = get_settings()
 
 
 # ============================================================
@@ -45,28 +26,13 @@ app = FastAPI(
     title="Diaglob API",
     version="0.5.0",
     description="Backend API for Diaglob",
-    lifespan=lifespan,
+    lifespan=build_lifespan(settings),
 )
+
 
 # ============================================================
 # MIDDLEWARE
 # ============================================================
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:5174",
-        "http://127.0.0.1:5174",
-        "https://diaglob.tech",
-        "https://www.diaglob.tech",
-        "https://app.diaglob.tech",
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -87,80 +53,30 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
+# Add the rate limiter first so SecurityHeaders and CORS wrap 429 responses too.
+# The backend boundary is replaceable; V1 preserves the current single-process
+# deployment behavior without coupling the middleware to process-global state.
+rate_limit_backend = InMemoryRateLimitBackend()
+app.add_middleware(
+    RateLimitMiddleware,
+    backend=rate_limit_backend,
+    enabled=settings.rate_limit_enabled,
+)
 app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.allowed_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
+if settings.is_production and settings.rate_limit_enabled:
+    logger.warning(
+        "rate_limit.backend=in_memory; configure a shared backend before "
+        "running multiple API workers or instances"
+    )
 
-# ============================================================
-# RATE LIMITING (simple in-memory)
-# ============================================================
-
-_rate_limit_store: dict[str, list[float]] = defaultdict(list)
-
-RATE_LIMIT_RULES = {
-    "/api/auth/login": (10, 60),
-    "/api/auth/register": (5, 60),
-    "/api/billing/checkout": (10, 60),
-    "/api/billing/ai-packages/checkout": (10, 60),
-    "/api/billing/upgrade": (10, 60),
-    "/api/billing/upgrade/preview": (20, 60),
-    "/api/billing/downgrade": (10, 60),
-    "/webhooks/whatsapp": (100, 60),
-}
-
-
-class RateLimitMiddleware(BaseHTTPMiddleware):
-    async def dispatch(
-        self,
-        request: Request,
-        call_next,
-    ) -> Response:
-        path = request.url.path
-        client_ip = (
-            request.client.host
-            if request.client
-            else "unknown"
-        )
-
-        rule = RATE_LIMIT_RULES.get(path)
-
-        if rule:
-            max_requests, window_seconds = rule
-            key = f"{path}:{client_ip}"
-            now = time.time()
-
-            _rate_limit_store[key] = [
-                t
-                for t in _rate_limit_store[key]
-                if now - t < window_seconds
-            ]
-
-            if len(_rate_limit_store[key]) >= max_requests:
-                response = Response(
-                    content='{"detail":"Rate limit exceeded"}',
-                    status_code=429,
-                    media_type="application/json",
-                )
-                origin = request.headers.get("origin", "")
-                allowed_origins = [
-                    "http://localhost:5173",
-                    "http://127.0.0.1:5173",
-                    "http://localhost:5174",
-                    "http://127.0.0.1:5174",
-                    "https://diaglob.tech",
-                    "https://www.diaglob.tech",
-                    "https://app.diaglob.tech",
-                ]
-                if origin in allowed_origins:
-                    response.headers["Access-Control-Allow-Origin"] = origin
-                    response.headers["Access-Control-Allow-Credentials"] = "true"
-                return response
-
-            _rate_limit_store[key].append(now)
-
-        return await call_next(request)
-
-
-app.add_middleware(RateLimitMiddleware)
 
 # ============================================================
 # API ROUTERS
@@ -217,6 +133,7 @@ app.include_router(dropshipping_analytics_router)
 app.include_router(dropi_router)
 app.include_router(markets_router)
 app.include_router(admin_router)
+
 
 # ============================================================
 # TEST COMPATIBILITY RE-EXPORTS
