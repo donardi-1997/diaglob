@@ -1,0 +1,44 @@
+name: Reconcile Bedrock Google V2
+
+on:
+  push:
+    branches:
+      - perf/bedrock-google-db-cleanup-v2
+    paths:
+      - .github/workflows/reconcile-bedrock-google-v2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout clean branch
+        uses: actions/checkout@v4
+        with:
+          ref: perf/bedrock-google-db-cleanup-v2
+          fetch-depth: 0
+
+      - name: Fetch reconciled source branch
+        run: git fetch origin perf/bedrock-google-db-cleanup:refs/remotes/origin/perf/bedrock-google-db-cleanup
+
+      - name: Apply reconciled test optimization files
+        run: |
+          git checkout origin/perf/bedrock-google-db-cleanup -- \
+            backend/test_timings.json \
+            backend/tests/test_bedrock_knowledge_base.py \
+            backend/tests/test_ci_db_fixture_scope.py \
+            backend/tests/test_google_sheets.py
+          git diff --check
+
+      - name: Commit reconciled files
+        run: |
+          git config user.name "Adrian Felipe Guerra"
+          git config user.email "adrianguerra9703@gmail.com"
+          git add backend/test_timings.json \
+            backend/tests/test_bedrock_knowledge_base.py \
+            backend/tests/test_ci_db_fixture_scope.py \
+            backend/tests/test_google_sheets.py
+          git commit -m "perf: reapply Bedrock and Google DB cleanup on latest main"
+          git push origin HEAD:perf/bedrock-google-db-cleanup-v2
