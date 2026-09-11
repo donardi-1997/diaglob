@@ -4,7 +4,7 @@
   "tests/test_alembic_heads.py": 0.031052,
   "tests/test_analytics.py": 1.574715,
   "tests/test_architecture_boundaries.py": 0.03424,
-  "tests/test_automation_campaigns.py": 5.738708,
+  "tests/test_automation_campaigns.py": 1.62421,
   "tests/test_automation_flows.py": 4.531943,
   "tests/test_automations.py": 2.374577,
   "tests/test_automations_hardening.py": 0.130502,

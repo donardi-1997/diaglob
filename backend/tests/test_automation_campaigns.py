@@ -33,11 +33,27 @@ from app.whatsapp_compliance import evaluate_whatsapp_delivery_eligibility, get_
 from app.services.automation_campaigns_service import _replace_campaign_members
 
 
-@pytest.fixture()
-def db():
-    engine = create_engine("sqlite://")
+@pytest.fixture(scope="module")
+def campaign_engine():
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     Base.metadata.create_all(engine)
-    session = sessionmaker(bind=engine)()
+    yield engine
+    Base.metadata.drop_all(engine)
+
+
+def _clear_db_rows(engine):
+    with engine.begin() as connection:
+        for table in reversed(Base.metadata.sorted_tables):
+            connection.execute(table.delete())
+
+
+@pytest.fixture()
+def db(campaign_engine):
+    session = sessionmaker(bind=campaign_engine)()
     organization = Organization(name="Campaign Org", slug="campaign-org")
     session.add(organization)
     session.flush()
@@ -46,7 +62,7 @@ def db():
     session.flush()
     yield session, organization, store
     session.close()
-    Base.metadata.drop_all(engine)
+    _clear_db_rows(campaign_engine)
 
 
 def campaign_data():
@@ -355,10 +371,8 @@ def test_replacing_fixed_members_does_not_change_historical_run_recipients(db):
 # ============================================================
 
 @pytest.fixture()
-def endpoint_db():
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
-    Base.metadata.create_all(engine)
-    session = sessionmaker(bind=engine)()
+def endpoint_db(campaign_engine):
+    session = sessionmaker(bind=campaign_engine)()
     organization = Organization(name="Endpoint Org", slug="endpoint-org", plan="starter", subscription_status="active")
     session.add(organization); session.flush()
     store = Store(organization_id=organization.id, name="Endpoint Store", slug="endpoint-store", country_code="CO", currency="COP", timezone="America/Bogota", default_language="es")
@@ -376,7 +390,7 @@ def endpoint_db():
     other_store = Store(organization_id=other_org.id, name="Other Store", slug="other-store", country_code="CO", currency="COP", timezone="America/Bogota", default_language="es")
     session.add(other_store); session.flush()
     yield session, organization, store, membership, other_org, other_store, other_membership
-    session.close(); Base.metadata.drop_all(engine)
+    session.close(); _clear_db_rows(campaign_engine)
 
 
 def _make_endpoint_client(db, membership):
