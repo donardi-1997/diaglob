@@ -60,6 +60,21 @@ class Settings(BaseSettings):
         default=True,
         validation_alias="RATE_LIMIT_ENABLED",
     )
+    sentry_dsn: str | None = Field(default=None, validation_alias="SENTRY_DSN")
+    sentry_environment: str = Field(
+        default="development",
+        validation_alias="SENTRY_ENVIRONMENT",
+    )
+    sentry_release: str | None = Field(
+        default=None,
+        validation_alias="SENTRY_RELEASE",
+    )
+    sentry_traces_sample_rate: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        validation_alias="SENTRY_TRACES_SAMPLE_RATE",
+    )
 
     @field_validator("environment")
     @classmethod
