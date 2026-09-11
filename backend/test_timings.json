@@ -11,7 +11,7 @@
   "tests/test_bedrock_knowledge_base.py": 2.660995,
   "tests/test_bedrock_resources_adapter_boundary.py": 0.006701,
   "tests/test_billing.py": 0.007821,
-  "tests/test_billing_preview.py": 6.802568,
+  "tests/test_billing_preview.py": 1.437655,
   "tests/test_billing_provider_architecture.py": 0.003425,
   "tests/test_billing_upgrade_cycle.py": 0.014108,
   "tests/test_ci_db_fixture_scope.py": 0.060317,
