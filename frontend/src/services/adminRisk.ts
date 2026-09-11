@@ -37,6 +37,68 @@ export interface AdminRiskStats {
   };
 }
 
+export interface AdminRiskModerationAnalytics {
+  window: {
+    days: number;
+    from: string;
+    to: string;
+  };
+  summary: {
+    reports_created: number;
+    moderated_reports: number;
+    moderation_actions: number;
+    disputes_created: number;
+    disputes_resolved: number;
+    average_report_resolution_hours: number | null;
+    average_dispute_resolution_hours: number | null;
+    confirmation_rate: number;
+    appeal_acceptance_rate: number;
+  };
+  outcomes: {
+    reports: {
+      confirmed: number;
+      dismissed: number;
+      disputed: number;
+      reset_pending: number;
+    };
+    disputes: {
+      accepted: number;
+      rejected: number;
+    };
+  };
+  backlog: {
+    pending_reports: number;
+    disputed_reports: number;
+    open_disputes: number;
+    pending_reports_over_24h: number;
+    open_disputes_over_24h: number;
+  };
+  daily: Array<{
+    date: string;
+    reports_created: number;
+    reports_moderated: number;
+    disputes_created: number;
+    disputes_resolved: number;
+  }>;
+  reason_breakdown: Array<{
+    reason: CustomerRiskReason;
+    count: number;
+    percentage: number;
+  }>;
+  reporting_organizations: Array<{
+    organization_id: number;
+    organization_name: string | null;
+    report_count: number;
+    evidence_rate: number;
+    confirmed: number;
+    dismissed: number;
+    disputed: number;
+    pending: number;
+    dismissal_rate: number;
+  }>;
+  governance_note: string;
+}
+
 export interface AdminRiskReportListItem {
   id: number;
   status: RiskReportStatus;
@@ -127,6 +189,14 @@ export interface AdminRiskDisputeDetail extends AdminRiskDisputeListItem {
 export async function getAdminRiskStats() {
   const response = await api.get<AdminRiskStats>("/api/admin/customer-risk/stats");
   return response.data;
+}
+
+export async function getAdminRiskAnalytics(days = 30) {
+  const response = await api.get<AdminRiskStats & { analytics: AdminRiskModerationAnalytics }>(
+    "/api/admin/customer-risk/stats",
+    { params: { analytics_days: days } },
+  );
+  return response.data.analytics;
 }
 
 export async function listAdminRiskReports(params?: {
