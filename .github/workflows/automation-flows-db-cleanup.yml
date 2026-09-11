@@ -39,56 +39,58 @@ jobs:
 
           path = Path('backend/tests/test_automation_flows.py')
           text = path.read_text(encoding='utf-8')
-          old = '''@pytest.fixture()
-def db():
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
-    Base.metadata.create_all(engine)
-    session = sessionmaker(bind=engine)()
-    org = Organization(name="Flow Org", slug="flow-org", plan="starter", subscription_status="active")
-    session.add(org)
-    session.flush()
-    store = Store(organization_id=org.id, name="Flow Store", slug="flow-store",
-                  country_code="CO", currency="COP", timezone="America/Bogota",
-                  default_language="es")
-    session.add(store)
-    session.flush()
-    yield session, org, store
-    session.close()
-    Base.metadata.drop_all(engine)
-'''
-          new = '''@pytest.fixture(scope="module")
-def flow_engine():
-    engine = create_engine(
-        "sqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    Base.metadata.create_all(engine)
-    yield engine
-    Base.metadata.drop_all(engine)
-
-
-def _clear_flow_db_rows(engine):
-    with engine.begin() as connection:
-        for table in reversed(Base.metadata.sorted_tables):
-            connection.execute(table.delete())
-
-
-@pytest.fixture()
-def db(flow_engine):
-    session = sessionmaker(bind=flow_engine)()
-    org = Organization(name="Flow Org", slug="flow-org", plan="starter", subscription_status="active")
-    session.add(org)
-    session.flush()
-    store = Store(organization_id=org.id, name="Flow Store", slug="flow-store",
-                  country_code="CO", currency="COP", timezone="America/Bogota",
-                  default_language="es")
-    session.add(store)
-    session.flush()
-    yield session, org, store
-    session.close()
-    _clear_flow_db_rows(flow_engine)
-'''
+          old = (
+              '@pytest.fixture()\n'
+              'def db():\n'
+              '    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)\n'
+              '    Base.metadata.create_all(engine)\n'
+              '    session = sessionmaker(bind=engine)()\n'
+              '    org = Organization(name="Flow Org", slug="flow-org", plan="starter", subscription_status="active")\n'
+              '    session.add(org)\n'
+              '    session.flush()\n'
+              '    store = Store(organization_id=org.id, name="Flow Store", slug="flow-store",\n'
+              '                  country_code="CO", currency="COP", timezone="America/Bogota",\n'
+              '                  default_language="es")\n'
+              '    session.add(store)\n'
+              '    session.flush()\n'
+              '    yield session, org, store\n'
+              '    session.close()\n'
+              '    Base.metadata.drop_all(engine)\n'
+          )
+          new = (
+              '@pytest.fixture(scope="module")\n'
+              'def flow_engine():\n'
+              '    engine = create_engine(\n'
+              '        "sqlite://",\n'
+              '        connect_args={"check_same_thread": False},\n'
+              '        poolclass=StaticPool,\n'
+              '    )\n'
+              '    Base.metadata.create_all(engine)\n'
+              '    yield engine\n'
+              '    Base.metadata.drop_all(engine)\n'
+              '\n'
+              '\n'
+              'def _clear_flow_db_rows(engine):\n'
+              '    with engine.begin() as connection:\n'
+              '        for table in reversed(Base.metadata.sorted_tables):\n'
+              '            connection.execute(table.delete())\n'
+              '\n'
+              '\n'
+              '@pytest.fixture()\n'
+              'def db(flow_engine):\n'
+              '    session = sessionmaker(bind=flow_engine)()\n'
+              '    org = Organization(name="Flow Org", slug="flow-org", plan="starter", subscription_status="active")\n'
+              '    session.add(org)\n'
+              '    session.flush()\n'
+              '    store = Store(organization_id=org.id, name="Flow Store", slug="flow-store",\n'
+              '                  country_code="CO", currency="COP", timezone="America/Bogota",\n'
+              '                  default_language="es")\n'
+              '    session.add(store)\n'
+              '    session.flush()\n'
+              '    yield session, org, store\n'
+              '    session.close()\n'
+              '    _clear_flow_db_rows(flow_engine)\n'
+          )
           if text.count(old) != 1:
               raise SystemExit(f'expected original db fixture once, found {text.count(old)}')
           path.write_text(text.replace(old, new, 1), encoding='utf-8')
