@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from ..model_domains.ai_usage import AiUsageCreditGrant
 from ..models import Conversation, Message, Organization
 from ..plan_limits import get_organization_limits
+from .trial_service import refresh_trial_state
 
 logger = logging.getLogger(__name__)
 
@@ -86,10 +87,19 @@ def get_ai_usage(
     if not organization:
         return {"error": "Organization not found"}
 
-    if billing_period_start is None and billing_period_end is None:
-        billing_period_start, billing_period_end = get_ai_usage_window()
-
+    trial_entitlement = refresh_trial_state(db, organization)
     plan = (organization.plan or "none").strip().lower()
+
+    if billing_period_start is None and billing_period_end is None:
+        if (
+            plan == "trial"
+            and trial_entitlement is not None
+            and trial_entitlement.started_at is not None
+        ):
+            billing_period_start = trial_entitlement.started_at
+            billing_period_end = trial_entitlement.ends_at
+        else:
+            billing_period_start, billing_period_end = get_ai_usage_window()
     included = get_organization_limits(organization).included_ai_responses
     used = _count_ai_responses(
         db,
@@ -99,6 +109,10 @@ def get_ai_usage(
     )
 
     purchased_total, extra_remaining = _extra_credit_totals(db, organization_id)
+    if plan == "trial":
+        # Trial is intentionally capped. Purchased/legacy credits cannot
+        # extend free usage beyond the 1,000-response allowance.
+        extra_remaining = 0
     remaining_included = max(included - used, 0)
     remaining = remaining_included + extra_remaining
     usage_pct = (used / included * 100) if included > 0 else 0
@@ -201,7 +215,35 @@ def acquire_ai_capacity(
     if not organization:
         return {"available": False, "source": None, "reason": "organization_not_found"}
 
-    start, end = get_ai_usage_window(now)
+    trial_entitlement = refresh_trial_state(db, organization, now=now)
+    plan = (organization.plan or "none").strip().lower()
+    subscription_status = (
+        organization.subscription_status or ""
+    ).strip().lower()
+
+    if subscription_status in {
+        "trial_pending",
+        "trial_expired",
+        "trial_blocked",
+    }:
+        return {
+            "available": False,
+            "source": None,
+            "grant_id": None,
+            "reason": subscription_status,
+        }
+
+    if (
+        plan == "trial"
+        and subscription_status == "trialing"
+        and trial_entitlement is not None
+        and trial_entitlement.started_at is not None
+    ):
+        start = trial_entitlement.started_at
+        end = trial_entitlement.ends_at
+    else:
+        start, end = get_ai_usage_window(now)
+
     included = get_organization_limits(organization).included_ai_responses
     used = _count_ai_responses(db, organization_id, start, end)
 
@@ -211,6 +253,14 @@ def acquire_ai_capacity(
             "source": "included",
             "grant_id": None,
             "remaining_included": max(included - used, 0),
+        }
+
+    if plan == "trial":
+        return {
+            "available": False,
+            "source": None,
+            "grant_id": None,
+            "reason": "trial_ai_limit_reached",
         }
 
     grant = (

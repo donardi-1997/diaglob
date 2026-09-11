@@ -11,6 +11,12 @@ class OrganizationPlanLimits:
 
 
 PLAN_LIMITS: dict[str, OrganizationPlanLimits] = {
+    "trial": OrganizationPlanLimits(
+        active_stores=1,
+        monthly_customers=1_000,
+        members=2,
+        included_ai_responses=1_000,
+    ),
     "starter": OrganizationPlanLimits(
         active_stores=1,
         monthly_customers=1_000,

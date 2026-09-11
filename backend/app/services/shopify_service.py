@@ -24,6 +24,10 @@ from ..shopify_oauth import (
     verify_shopify_hmac,
 )
 from ..shopify_security import encrypt_shopify_secret
+from .trial_service import (
+    TrialIdentityAlreadyUsed,
+    activate_trial_for_verified_store,
+)
 from ..shopify_sync import (
     sync_shopify_products,
     test_shopify_connection,
@@ -234,6 +238,23 @@ def process_oauth_callback(db: Session, query_params: dict) -> str:
         )
         db.commit()
         return _shopify_connect_frontend_url(connected=False)
+
+    try:
+        activate_trial_for_verified_store(
+            db,
+            organization_id=oauth_state.organization_id,
+            store_id=oauth_state.store_id,
+            provider="shopify",
+            external_identity=normalized_shop,
+        )
+    except TrialIdentityAlreadyUsed as exc:
+        (
+            db.query(ShopifyOAuthState)
+            .filter(ShopifyOAuthState.id == oauth_state.id)
+            .update({ShopifyOAuthState.used: True}, synchronize_session=False)
+        )
+        db.commit()
+        raise ShopifyConnectionError(str(exc)) from exc
 
     now = datetime.utcnow()
     connection = CommerceConnection(

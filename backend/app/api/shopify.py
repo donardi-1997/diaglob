@@ -127,6 +127,17 @@ def _map_oauth_error(exc: Exception):
             raise HTTPException(status_code=409, detail={"code": code, "message": "Esta tienda Shopify ya está conectada a DIAGLOB."})
         if code == "SHOPIFY_NOT_CONFIGURED":
             raise HTTPException(status_code=503, detail={"code": code, "message": str(exc)})
+        if code in {"TRIAL_STORE_ALREADY_USED", "TRIAL_NOT_AVAILABLE"}:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": code,
+                    "message": (
+                        "Esta tienda ya utilizó una prueba gratuita de DIAGLOB. "
+                        "Puedes conectarla con un plan de pago."
+                    ),
+                },
+            )
         raise HTTPException(status_code=409, detail=str(exc))
     if isinstance(exc, ShopifyProviderError):
         raise HTTPException(status_code=502, detail=str(exc))
@@ -160,7 +171,7 @@ def shopify_oauth_callback(
 
     try:
         redirect_url = svc_process_oauth_callback(db, query_params)
-    except (ShopifyOAuthError, ShopifyProviderError) as exc:
+    except (ShopifyOAuthError, ShopifyProviderError, ShopifyConnectionError) as exc:
         _map_oauth_error(exc)
 
     return RedirectResponse(redirect_url)

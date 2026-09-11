@@ -9,6 +9,14 @@ export interface Organization {
 
   plan: string;
   plan_name: string;
+  subscription_status: string | null;
+  trial: {
+    status: string;
+    started_at: string | null;
+    ends_at: string | null;
+    days_remaining: number | null;
+    ai_response_limit: number;
+  };
   billing_period_months: number;
   next_billed_at: string | null;
 

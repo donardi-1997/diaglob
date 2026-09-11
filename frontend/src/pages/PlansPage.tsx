@@ -276,6 +276,14 @@ export default function PlansPage() {
 
   const [loadingPlan, setLoadingPlan] = useState(true);
 
+  const [trialStatus, setTrialStatus] = useState<{
+    status: string;
+    started_at: string | null;
+    ends_at: string | null;
+    days_remaining: number | null;
+    ai_response_limit: number;
+  } | null>(null);
+
   const [checkoutPlan, setCheckoutPlan] = useState<string | null>(null);
 
   const [checkoutError, setCheckoutError] = useState("");
@@ -322,6 +330,11 @@ export default function PlansPage() {
     getDaysUntilBilling(
       nextBilledAt,
     );
+
+  const hasPaidPlan = Boolean(
+    currentPlan &&
+    (planOrder[currentPlan.toLowerCase()] ?? 0) > 0,
+  );
 
   const getBillingPeriodLabel = (
     period: number,
@@ -907,7 +920,9 @@ export default function PlansPage() {
             ).toLowerCase();
 
           const hasActivePlan =
-            normalizedPlan !== "none";
+            (planOrder[normalizedPlan] ?? 0) > 0;
+
+          setTrialStatus(organization.trial);
 
           if (hasActivePlan) {
             setCurrentBillingPeriod(
@@ -980,6 +995,76 @@ export default function PlansPage() {
           <p>{t("plansSubtitle")}</p>
         </div>
       </section>
+
+      {trialStatus?.status === "pending" && (
+        <div className="plans-current-status">
+          <strong>
+            {t("plansTrialPendingTitle", {
+              defaultValue: "Tu prueba gratis está lista",
+            })}
+          </strong>
+          <br />
+          <span>
+            {t("plansTrialPendingHelp", {
+              defaultValue:
+                "Conecta tu primera tienda Shopify o Nuvemshop para iniciar tus 7 días gratis.",
+            })}
+          </span>
+        </div>
+      )}
+
+      {trialStatus?.status === "active" && (
+        <div className="plans-current-status">
+          <strong>
+            {t("plansTrialActiveTitle", {
+              defaultValue: "Prueba gratuita activa",
+            })}
+          </strong>
+          <br />
+          <span>
+            {t("plansTrialActiveHelp", {
+              count: trialStatus.days_remaining ?? 0,
+              limit: trialStatus.ai_response_limit,
+              defaultValue:
+                "Te quedan {{count}} días · hasta {{limit}} respuestas IA durante la prueba.",
+            })}
+          </span>
+        </div>
+      )}
+
+      {trialStatus?.status === "expired" && (
+        <div className="plans-current-status">
+          <strong>
+            {t("plansTrialExpiredTitle", {
+              defaultValue: "Tu prueba gratuita terminó",
+            })}
+          </strong>
+          <br />
+          <span>
+            {t("plansTrialExpiredHelp", {
+              defaultValue:
+                "Tus datos siguen disponibles. Elige un plan para reactivar las funciones operativas y la IA.",
+            })}
+          </span>
+        </div>
+      )}
+
+      {trialStatus?.status === "blocked" && (
+        <div className="plans-current-status">
+          <strong>
+            {t("plansTrialBlockedTitle", {
+              defaultValue: "Prueba gratuita no disponible",
+            })}
+          </strong>
+          <br />
+          <span>
+            {t("plansTrialBlockedHelp", {
+              defaultValue:
+                "La tienda verificada ya utilizó una prueba gratuita. Puedes continuar eligiendo un plan de pago.",
+            })}
+          </span>
+        </div>
+      )}
 
       {pendingPlan && (
         <div className="scheduled-plan-banner">
@@ -1068,8 +1153,7 @@ export default function PlansPage() {
             </p>
           </div>
 
-          {currentPlan &&
-            currentPlan.toLowerCase() !== "none" && (
+          {hasPaidPlan && (
               <div className="billing-current-period">
                 <span>{t("plansCurrentPeriod")}</span>
                 <strong>
@@ -1087,8 +1171,7 @@ export default function PlansPage() {
 
             const periodLocked =
               Boolean(
-                currentPlan &&
-                currentPlan.toLowerCase() !== "none" &&
+                hasPaidPlan &&
                 period.months !== currentBillingPeriod
               );
 
@@ -1131,8 +1214,7 @@ export default function PlansPage() {
           })}
         </div>
 
-        {currentPlan &&
-          currentPlan.toLowerCase() !== "none" && (
+        {hasPaidPlan && (
             <div className="billing-period-locked-note">
               <span>
                 {t("plansCurrentPeriodLockedPrefix")}{" "}
@@ -1304,7 +1386,7 @@ export default function PlansPage() {
 
                 {currentPlan &&
                   !isPending &&
-                  currentPlan.toLowerCase() !== "none" &&
+                  hasPaidPlan &&
                   isImmediateUpgrade && (
                     <div className="plan-upgrade-price">
                       <span className="plan-upgrade-label">
@@ -1405,8 +1487,7 @@ export default function PlansPage() {
                     ? t("plansCurrentPlan")
                     : checkoutPlan === plan.id
                       ? (
-                          currentPlan &&
-                          currentPlan.toLowerCase() !== "none"
+                          hasPaidPlan
                             ? t("plansCalculating")
                             : t("plansOpeningPayment")
                         )
@@ -1418,7 +1499,7 @@ export default function PlansPage() {
                               planOrder[plan.id]
                               ? t("plansDowngrade")
                               : currentPlan &&
-                                  currentPlan.toLowerCase() !== "none"
+                                  hasPaidPlan
                                 ? t("plansUpgrade")
                                 : t("plansChoosePlan")
                           )}
@@ -1430,11 +1511,10 @@ export default function PlansPage() {
 
       <AiUsagePackagesSection
         paddle={paddle}
-        enabled={Boolean(
-          currentPlan && currentPlan.toLowerCase() !== "none"
-        )}
+        enabled={hasPaidPlan}
       />
 
+      {hasPaidPlan && (
       <section className="auto-renew-plan-section">
         <div className="auto-renew-plan-copy">
           <span className="eyebrow">
@@ -1481,6 +1561,7 @@ export default function PlansPage() {
           </button>
         </div>
       </section>
+      )}
 
 
       {upgradePreview && upgradePlan && (

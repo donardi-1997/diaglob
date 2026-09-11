@@ -21,6 +21,7 @@ from ..models import (
 from ..plan_limits import get_organization_limits
 from ..plans import get_plan
 from ..permissions import get_permissions_for_role
+from ..services.trial_service import serialize_trial_status
 from .deps import (
     get_current_membership,
     serialize_store_short,
@@ -329,6 +330,7 @@ def get_organization(
     db: Session = Depends(get_db),
 ):
     organization = membership.organization
+    trial_status = serialize_trial_status(db, organization)
 
     plan = get_plan(
         organization.plan
@@ -392,6 +394,8 @@ def get_organization(
 
         "plan": organization.plan,
         "plan_name": plan["name"],
+        "subscription_status": organization.subscription_status,
+        "trial": trial_status,
         "billing_period_months":
             organization.billing_period_months,
 
