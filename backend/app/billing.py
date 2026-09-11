@@ -493,15 +493,16 @@ def calculate_local_proration(
     current_period_end: datetime,
     now: datetime | None = None,
 ) -> dict:
-    """Calculate a new-cycle upgrade with decreasing unused-plan credit.
+    """Prorate an upgrade inside the current paid billing cycle.
 
-    The target plan starts a fresh billing period at upgrade time. The customer
-    receives credit only for the unused fraction of the current paid period:
+    Both the unused current-plan credit and the target-plan charge are limited
+    to the remaining fraction of the existing period. The upgrade therefore
+    changes the plan immediately without moving the renewal date:
 
-        amount due = full target period price - unused current-plan credit
+        amount due = prorated target charge - unused current-plan credit
 
-    As time passes, the unused credit decreases and the amount due increases.
-    Decimal arithmetic and ROUND_HALF_UP are used for financial values.
+    At the existing renewal date the customer is charged the full target-plan
+    period price. Decimal arithmetic and ROUND_HALF_UP are used for money.
     """
     from math import ceil
 
@@ -543,7 +544,7 @@ def calculate_local_proration(
         charge_new = Decimal("0.00")
         net = Decimal("0.00")
     else:
-        charge_new = target_period_total.quantize(
+        charge_new = (target_period_total * remaining_ratio).quantize(
             Decimal("0.01"),
             rounding=ROUND_HALF_UP,
         )
@@ -557,7 +558,6 @@ def calculate_local_proration(
     days_total = max(int(ceil(total_seconds / 86400.0)), 1)
     days_elapsed = max(min(int(elapsed_seconds // 86400.0), days_total), 0)
     days_remaining = max(int(ceil(remaining_seconds / 86400.0)), 0)
-    new_cycle_end = add_billing_months(now, billing_period_months)
 
     return {
         "current_plan": current_plan,
@@ -581,7 +581,7 @@ def calculate_local_proration(
                 rounding=ROUND_HALF_UP,
             )
         ),
-        "next_billed_at": new_cycle_end.isoformat(),
+        "next_billed_at": current_period_end.isoformat(),
         "effective_date": now.isoformat(),
         "source": "local",
     }
