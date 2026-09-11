@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   degradedAlertMessage,
   degradedStatusLabel,
+  operationsAlertMessage,
   operationsHealthLabel,
   sortOperationsAlerts,
 } from "../src/utils/operationsStatus.ts";
@@ -102,5 +103,45 @@ test("sorts Operations Center alerts by severity without mutating input", () => 
   assert.deepEqual(
     alerts.map((alert) => alert.severity),
     ["info", "error", "warning"],
+  );
+});
+
+
+test("localizes known operational alerts instead of exposing backend English", () => {
+  assert.equal(
+    operationsAlertMessage(
+      "es",
+      {
+        type: "failed_automations",
+        severity: "warning",
+        message: "2 automation(s) failed in the last 7 days",
+      },
+      [],
+    ),
+    "2 automatizaciones fallaron en los últimos 7 días",
+  );
+  assert.equal(
+    operationsAlertMessage(
+      "pt-BR",
+      {
+        type: "unknown_orders",
+        severity: "warning",
+        message: "3 order(s) with unknown status",
+      },
+      [],
+    ),
+    "3 pedidos estão com status desconhecido",
+  );
+  assert.equal(
+    operationsAlertMessage(
+      "en",
+      {
+        type: "no_commerce",
+        severity: "info",
+        message: "No commerce platform connected for this store",
+      },
+      [],
+    ),
+    "No commerce platform is connected to this store",
   );
 });
