@@ -366,6 +366,12 @@ def create_store(
         else None
     )
 
+    if payload.active:
+        ensure_active_store_capacity(
+            db,
+            membership.organization_id,
+        )
+
     store = Store(
         organization_id=
             membership.organization_id,

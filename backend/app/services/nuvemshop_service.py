@@ -28,6 +28,10 @@ from ..integrations.nuvemshop.client import (
 )
 from ..models import CommerceConnection, Customer, NuvemshopOAuthState, Order, OrderItem, Product, ProductVariant, Store
 from ..nuvemshop_security import encrypt_secret, decrypt_secret
+from .trial_service import (
+    TrialIdentityAlreadyUsed,
+    activate_trial_for_verified_store,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -193,7 +197,30 @@ def connect_account(
         .first()
     )
     if existing:
-        raise NuvemshopConnectionError("Commerce connection already exists for this store")
+        raise NuvemshopConnectionError("COMMERCE_ALREADY_CONNECTED")
+
+    conflicting = (
+        db.query(CommerceConnection)
+        .filter(
+            CommerceConnection.provider == "nuvemshop",
+            CommerceConnection.external_store_url == str(nuvemshop_store_id),
+        )
+        .first()
+    )
+    if conflicting:
+        raise NuvemshopConnectionError("NUVEMSHOP_STORE_ALREADY_CONNECTED")
+
+    try:
+        activate_trial_for_verified_store(
+            db,
+            organization_id=organization_id,
+            store_id=store_id,
+            provider="nuvemshop",
+            external_identity=str(nuvemshop_store_id),
+        )
+    except TrialIdentityAlreadyUsed as exc:
+        db.commit()
+        raise NuvemshopConnectionError(str(exc)) from exc
 
     now = datetime.utcnow()
 

@@ -20,6 +20,10 @@ from ..models import (
 )
 from ..organization_entitlements import memberships_allow_multi_org_access
 from ..permissions import has_permission
+from ..services.trial_service import (
+    pending_trial_can_bootstrap_store,
+    refresh_trial_state,
+)
 
 
 bearer_scheme = HTTPBearer(
@@ -165,6 +169,7 @@ def require_permission(
         membership: OrganizationMembership = Depends(
             get_current_membership
         ),
+        db: Session = Depends(get_db),
     ):
         if not has_permission(
             membership.role,
@@ -191,21 +196,15 @@ def require_permission(
             write_request
             and not billing_exception
         ):
-            organization = (
-                membership.organization
-            )
+            organization = membership.organization
+            refresh_trial_state(db, organization)
 
-            plan = (
-                organization.plan
-                or "none"
-            ).strip().lower()
-
+            plan = (organization.plan or "none").strip().lower()
             subscription_status = (
-                organization.subscription_status
-                or ""
+                organization.subscription_status or ""
             ).strip().lower()
 
-            active_plan = (
+            paid_active = (
                 plan in {
                     "starter",
                     "growth",
@@ -214,23 +213,44 @@ def require_permission(
                     "agency",
                     "enterprise",
                 }
-                and subscription_status in {
-                    "active",
-                    "trialing",
-                }
+                and subscription_status in {"active", "trialing"}
+            )
+            trial_active = (
+                plan == "trial"
+                and subscription_status == "trialing"
+            )
+            trial_bootstrap = (
+                permission == "stores.write"
+                and pending_trial_can_bootstrap_store(db, organization)
             )
 
-            if not active_plan:
+            if not (paid_active or trial_active or trial_bootstrap):
+                if subscription_status == "trial_pending":
+                    code = "TRIAL_ACTIVATION_REQUIRED"
+                    message = (
+                        "Conecta tu primera tienda para iniciar tus 7 días gratis."
+                    )
+                elif subscription_status == "trial_expired":
+                    code = "TRIAL_EXPIRED"
+                    message = (
+                        "Tu prueba gratuita terminó. Elige un plan para continuar."
+                    )
+                elif subscription_status == "trial_blocked":
+                    code = "TRIAL_NOT_ELIGIBLE"
+                    message = (
+                        "Esta cuenta no es elegible para otra prueba gratuita. "
+                        "Elige un plan para continuar."
+                    )
+                else:
+                    code = "PLAN_REQUIRED"
+                    message = (
+                        "No tienes un plan activo. "
+                        "Elige un plan para utilizar esta función."
+                    )
+
                 raise HTTPException(
                     status_code=402,
-                    detail={
-                        "code": "PLAN_REQUIRED",
-                        "message": (
-                            "No tienes un plan activo. "
-                            "Elige un plan para utilizar "
-                            "esta función."
-                        ),
-                    },
+                    detail={"code": code, "message": message},
                 )
 
         return membership

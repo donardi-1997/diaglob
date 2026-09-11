@@ -21,6 +21,7 @@ from ..models import (
     User,
 )
 from ..permissions import get_permissions_for_role
+from ..services.trial_service import create_pending_trial
 from .deps import (
     bearer_scheme,
     get_current_user,
@@ -604,6 +605,12 @@ def provision_registration(
 
         db.add(organization)
         db.flush()
+
+        create_pending_trial(
+            db,
+            organization,
+            now=datetime.utcnow(),
+        )
 
         membership = (
             OrganizationMembership(

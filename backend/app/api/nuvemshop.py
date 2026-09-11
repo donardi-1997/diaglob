@@ -57,6 +57,9 @@ def _map_nuvemshop_error(exc: Exception):
         detail_map = {
             "STORE_NOT_ACTIVE": (409, {"code": code, "message": "La tienda debe estar activa para conectar Nuvemshop."}),
             "COMMERCE_ALREADY_CONNECTED": (409, {"code": code, "message": "Esta tienda ya tiene una integración de comercio."}),
+            "NUVEMSHOP_STORE_ALREADY_CONNECTED": (409, {"code": code, "message": "Esta tienda Nuvemshop ya está conectada a DIAGLOB."}),
+            "TRIAL_STORE_ALREADY_USED": (409, {"code": code, "message": "Esta tienda ya utilizó una prueba gratuita de DIAGLOB. Puedes conectarla con un plan de pago."}),
+            "TRIAL_NOT_AVAILABLE": (409, {"code": code, "message": "La prueba gratuita ya no está disponible para esta cuenta."}),
             "NUVEMSHOP_NOT_CONFIGURED": (503, {"code": code, "message": "Nuvemshop no está configurado en el servidor."}),
             "TOKEN_EXCHANGE_FAILED": (502, {"code": code, "message": "No fue posible completar la autenticación con Nuvemshop."}),
             "STORE_INFO_FAILED": (502, {"code": code, "message": "No fue posible obtener la información de la tienda."}),
