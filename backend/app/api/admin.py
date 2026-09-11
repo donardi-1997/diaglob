@@ -124,21 +124,18 @@ def admin_attention(
 
 @router.get("/customer-risk/stats")
 def admin_customer_risk_stats(
+    analytics_days: int | None = None,
     user: User = Depends(_require_platform_admin),
     db: Session = Depends(get_db),
 ):
-    """Moderation workload and configured anti-abuse limits."""
-    return get_customer_risk_moderation_stats(db)
-
-
-@router.get("/customer-risk/analytics")
-def admin_customer_risk_analytics(
-    days: int = 30,
-    user: User = Depends(_require_platform_admin),
-    db: Session = Depends(get_db),
-):
-    """Read-only moderation workload, outcomes and response-time analytics."""
-    return get_customer_risk_moderation_analytics(db, days=days)
+    """Moderation workload, limits and optional read-only analytics."""
+    payload = get_customer_risk_moderation_stats(db)
+    if analytics_days is not None:
+        payload["analytics"] = get_customer_risk_moderation_analytics(
+            db,
+            days=analytics_days,
+        )
+    return payload
 
 
 @router.get("/customer-risk/reports")
