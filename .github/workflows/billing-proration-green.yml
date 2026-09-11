@@ -1,0 +1,132 @@
+name: Billing Proration Green
+
+on:
+  push:
+    branches:
+      - fix/billing-upgrade-proration
+    paths:
+      - .github/workflows/billing-proration-green.yml
+
+permissions:
+  contents: write
+
+jobs:
+  verify-and-commit:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/billing-upgrade-proration
+
+      - name: Apply provider billing-anchor fix
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("backend/app/services/billing_service.py")
+          text = path.read_text()
+
+          old_execute = '''    next_billed_at = _build_upgrade_next_billed_at(
+              organization.billing_period_months
+          )
+
+          provider_data = provider.update_subscription(
+              subscription_id=organization.billing_subscription_id,
+              items=[{"price_id": target_price_id, "quantity": 1}],
+              proration_billing_mode="prorated_immediately",
+              on_payment_failure="prevent_change",
+              custom_data={
+                  "organization_id": str(organization.id),
+                  "plan": target_plan,
+              },
+              next_billed_at=next_billed_at,
+          )
+          '''
+
+          new_execute = '''    provider_data = provider.update_subscription(
+              subscription_id=organization.billing_subscription_id,
+              items=[{"price_id": target_price_id, "quantity": 1}],
+              proration_billing_mode="prorated_immediately",
+              on_payment_failure="prevent_change",
+              custom_data={
+                  "organization_id": str(organization.id),
+                  "plan": target_plan,
+              },
+          )
+          '''
+
+          old_preview = '''    next_billed_at = _build_upgrade_next_billed_at(
+              organization.billing_period_months
+          )
+          provider_data = provider.preview_subscription_update(
+              subscription_id=organization.billing_subscription_id,
+              items=[{"price_id": target_price_id, "quantity": 1}],
+              proration_billing_mode="prorated_immediately",
+              on_payment_failure="prevent_change",
+              next_billed_at=next_billed_at,
+          )
+          '''
+
+          new_preview = '''    provider_data = provider.preview_subscription_update(
+              subscription_id=organization.billing_subscription_id,
+              items=[{"price_id": target_price_id, "quantity": 1}],
+              proration_billing_mode="prorated_immediately",
+              on_payment_failure="prevent_change",
+          )
+          '''
+
+          if old_execute not in text:
+              raise SystemExit("execute_upgrade billing-anchor block not found")
+          if old_preview not in text:
+              raise SystemExit("preview_upgrade_provider billing-anchor block not found")
+
+          text = text.replace(old_execute, new_execute, 1)
+          text = text.replace(old_preview, new_preview, 1)
+          path.write_text(text)
+          PY
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install pytest ruff
+
+      - name: Verify focused backend billing suite
+        working-directory: backend
+        run: |
+          ruff check app/billing.py app/services/billing_service.py tests/test_billing.py tests/test_billing_upgrade_cycle.py tests/test_billing_preview.py
+          python -m pytest -q --tb=short \
+            tests/test_billing.py \
+            tests/test_billing_upgrade_cycle.py \
+            tests/test_billing_preview.py
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Verify frontend billing contract
+        working-directory: frontend
+        run: |
+          npm ci
+          npm test
+          npm run build
+
+      - name: Commit provider fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/app/services/billing_service.py
+          git diff --cached --check
+          git commit -m "fix: preserve provider billing anchor on upgrades"
+          git push origin HEAD:fix/billing-upgrade-proration
