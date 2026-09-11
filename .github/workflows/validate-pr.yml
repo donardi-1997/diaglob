@@ -99,6 +99,30 @@ jobs:
           test -s /tmp/backend-test-files.txt
           echo "Shard ${{ matrix.shard }} test files: $(wc -l < /tmp/backend-test-files.txt)"
 
+      - name: Report backend timing balance
+        if: matrix.shard == 0
+        working-directory: backend
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from tools.test_sharding import assign_shards, discover_test_files, load_timings
+
+          timings = load_timings(Path("test_timings.json"))
+          weighted = discover_test_files(timings=timings)
+          weights = dict(weighted)
+          shards = assign_shards(weighted, 2)
+
+          covered = sum(1 for path, _ in weighted if path in timings)
+          print(f"Historical timing coverage: {covered}/{len(weighted)} files")
+          for index, files in enumerate(shards):
+              total = sum(weights[path] for path in files)
+              print(f"Shard {index}: {len(files)} files, estimated {total:.3f}s")
+
+          print("Slowest 20 backend test files:")
+          for path, duration in sorted(timings.items(), key=lambda item: (-item[1], item[0]))[:20]:
+              print(f"  {duration:8.3f}s  {path}")
+          PY
+
       - name: Backend tests
         working-directory: backend
         run: |
