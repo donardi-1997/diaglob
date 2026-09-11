@@ -411,10 +411,6 @@ def execute_upgrade(
     target_price_id = provider.get_price_id(
         target_plan, organization.billing_period_months
     )
-    next_billed_at = _build_upgrade_next_billed_at(
-        organization.billing_period_months
-    )
-
     provider_data = provider.update_subscription(
         subscription_id=organization.billing_subscription_id,
         items=[{"price_id": target_price_id, "quantity": 1}],
@@ -424,7 +420,6 @@ def execute_upgrade(
             "organization_id": str(organization.id),
             "plan": target_plan,
         },
-        next_billed_at=next_billed_at,
     )
 
     confirmed_price_id = (
@@ -508,7 +503,6 @@ def preview_upgrade_provider(
         items=[{"price_id": target_price_id, "quantity": 1}],
         proration_billing_mode="prorated_immediately",
         on_payment_failure="prevent_change",
-        next_billed_at=next_billed_at,
     )
     if not provider_data:
         return None
