@@ -1,4 +1,4 @@
-name: Apply Bedrock Google Test Optimization
+name: Profile Bedrock Google Test Optimization
 
 on:
   push:
@@ -11,7 +11,7 @@ permissions:
   contents: write
 
 jobs:
-  apply-and-verify:
+  profile-and-update:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout branch
@@ -32,53 +32,46 @@ jobs:
           pip install -r backend/requirements.txt
           pip install pytest
 
-      - name: Apply fixture optimization
+      - name: Profile optimized modules
+        working-directory: backend
+        run: |
+          python -m pytest -q --tb=short \
+            -p tools.test_timings \
+            --timings-output=/tmp/optimized-timings.json \
+            tests/test_bedrock_knowledge_base.py \
+            tests/test_google_sheets.py
+          echo "=== OPTIMIZED TIMINGS ==="
+          cat /tmp/optimized-timings.json
+
+      - name: Update checked-in timing profile
         run: |
           python - <<'PY'
+          import json
           from pathlib import Path
 
-          replacements = {
-              Path("backend/tests/test_bedrock_knowledge_base.py"): (
-                  '''@pytest.fixture\ndef setup_database():\n    Base.metadata.create_all(bind=engine)\n    yield\n    Base.metadata.drop_all(bind=engine)\n\n\n@pytest.fixture\ndef db(setup_database):\n''',
-                  '''@pytest.fixture(scope="module", autouse=True)\ndef setup_database():\n    Base.metadata.drop_all(bind=engine)\n    Base.metadata.create_all(bind=engine)\n    yield\n    Base.metadata.drop_all(bind=engine)\n\n\n@pytest.fixture(autouse=True)\ndef cleanup_db(setup_database):\n    yield\n    with engine.begin() as connection:\n        for table in reversed(Base.metadata.sorted_tables):\n            connection.execute(table.delete())\n\n\n@pytest.fixture\ndef db():\n''',
-              ),
-              Path("backend/tests/test_google_sheets.py"): (
-                  '''@pytest.fixture()\ndef setup_db():\n    Base.metadata.create_all(bind=engine)\n    yield\n    Base.metadata.drop_all(bind=engine)\n\n\n@pytest.fixture()\ndef db(setup_db):\n''',
-                  '''@pytest.fixture(scope="module", autouse=True)\ndef setup_db():\n    Base.metadata.drop_all(bind=engine)\n    Base.metadata.create_all(bind=engine)\n    yield\n    Base.metadata.drop_all(bind=engine)\n\n\n@pytest.fixture(autouse=True)\ndef cleanup_db(setup_db):\n    yield\n    with engine.begin() as connection:\n        for table in reversed(Base.metadata.sorted_tables):\n            connection.execute(table.delete())\n\n\n@pytest.fixture()\ndef db():\n''',
-              ),
+          profile_path = Path("backend/test_timings.json")
+          measured_path = Path("/tmp/optimized-timings.json")
+          profile = json.loads(profile_path.read_text(encoding="utf-8"))
+          measured = json.loads(measured_path.read_text(encoding="utf-8"))
+          expected = {
+              "tests/test_bedrock_knowledge_base.py",
+              "tests/test_google_sheets.py",
           }
-
-          for path, (old, new) in replacements.items():
-              text = path.read_text(encoding="utf-8")
-              if text.count(old) != 1:
-                  raise SystemExit(f"expected exactly one fixture block in {path}")
-              path.write_text(text.replace(old, new), encoding="utf-8")
+          if set(measured) != expected:
+              raise SystemExit(f"unexpected timing keys: {sorted(measured)}")
+          profile.update(measured)
+          profile_path.write_text(
+              json.dumps(profile, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          for path in sorted(expected):
+              print(f"{path}: {profile[path]:.6f}s")
           PY
 
-      - name: Verify regression contract
-        working-directory: backend
-        run: python -m pytest -q --tb=short tests/test_ci_db_fixture_scope.py
-
-      - name: Measure Bedrock tests
-        working-directory: backend
-        run: |
-          start=$(python -c 'import time; print(time.monotonic())')
-          python -m pytest -q --tb=short tests/test_bedrock_knowledge_base.py
-          end=$(python -c 'import time; print(time.monotonic())')
-          python -c "print(f'BEDROCK_ELAPSED={float(\"$end\")-float(\"$start\"):.3f}s')"
-
-      - name: Measure Google Sheets tests
-        working-directory: backend
-        run: |
-          start=$(python -c 'import time; print(time.monotonic())')
-          python -m pytest -q --tb=short tests/test_google_sheets.py
-          end=$(python -c 'import time; print(time.monotonic())')
-          python -c "print(f'GOOGLE_SHEETS_ELAPSED={float(\"$end\")-float(\"$start\"):.3f}s')"
-
-      - name: Commit verified changes
+      - name: Commit timing profile
         run: |
           git config user.name "Adrian Felipe Guerra"
           git config user.email "adrianguerra9703@gmail.com"
-          git add backend/tests/test_bedrock_knowledge_base.py backend/tests/test_google_sheets.py
-          git commit -m "perf: reuse schemas in Bedrock and Google tests"
+          git add backend/test_timings.json
+          git commit -m "test: refresh Bedrock and Google timings"
           git push origin HEAD:perf/bedrock-google-db-cleanup
