@@ -194,3 +194,10 @@ def test_automation_flows_share_module_engine_and_clean_rows_per_test():
     assert "flow_engine" in {arg.arg for arg in db.args.args}
     assert not _calls_schema_ddl(db)
     assert _calls_named_function(db, "_clear_flow_db_rows")
+
+
+def test_nuvemshop_schema_is_created_once_and_data_cleanup_has_no_ddl():
+    _assert_schema_once_with_cleanup(
+        ROOT / "test_nuvemshop_integration.py",
+        "setup_db",
+    )
