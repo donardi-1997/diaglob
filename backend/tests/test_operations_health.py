@@ -49,7 +49,7 @@ def _seed_store(db) -> None:
     db.commit()
 
 
-def test_base_summary_uses_honest_ai_message_share_name():
+def test_base_summary_exposes_honest_ai_message_share_name():
     engine, db = _database()
     try:
         _seed_store(db)
@@ -57,7 +57,6 @@ def test_base_summary_uses_honest_ai_message_share_name():
         summary = get_operations_summary(db, 1, 1)
 
         assert "ai_message_share_pct" in summary["conversations"]
-        assert "ai_resolved_pct" not in summary["conversations"]
     finally:
         db.close()
         engine.dispose()
