@@ -46,7 +46,7 @@
   "tests/test_model_domain_imports.py": 0.006574,
   "tests/test_model_knowledge_boundary.py": 0.003619,
   "tests/test_model_tenancy_boundary.py": 0.080321,
-  "tests/test_nuvemshop_integration.py": 4.957326,
+  "tests/test_nuvemshop_integration.py": 0.914677,
   "tests/test_nuvemshop_migration.py": 0.081067,
   "tests/test_observability.py": 0.008718,
   "tests/test_operations.py": 0.232386,
