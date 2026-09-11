@@ -52,6 +52,15 @@ def _calls_schema_ddl(function: ast.FunctionDef) -> bool:
     return False
 
 
+def _calls_row_delete(function: ast.FunctionDef) -> bool:
+    for node in ast.walk(function):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+            continue
+        if node.func.attr == "delete":
+            return True
+    return False
+
+
 def _assert_db_schema_is_opt_in(path: Path, schema_fixture: str) -> None:
     functions = _fixture_functions(path)
     schema = functions[schema_fixture]
@@ -81,6 +90,26 @@ def _assert_schema_once_with_cleanup(path: Path, schema_fixture: str) -> None:
     assert not _calls_schema_ddl(cleanup)
 
 
+def _assert_opt_in_schema_once_with_db_cleanup(path: Path, schema_fixture: str) -> None:
+    functions = _fixture_functions(path)
+    schema = functions[schema_fixture]
+    db = functions["db"]
+
+    assert _calls_schema_ddl(schema)
+    assert _fixture_scope(schema) == "module"
+    assert not _is_autouse_fixture(schema)
+    assert schema_fixture in {arg.arg for arg in db.args.args}
+
+    assert not _calls_schema_ddl(db)
+    assert _calls_row_delete(db)
+
+    for function in functions.values():
+        if _is_autouse_fixture(function):
+            assert not _calls_schema_ddl(function), (
+                f"autouse fixture {function.name} must not create/drop the DB schema"
+            )
+
+
 def test_bedrock_schema_is_created_once_and_data_cleanup_has_no_ddl():
     _assert_schema_once_with_cleanup(
         ROOT / "test_bedrock_knowledge_base.py",
@@ -95,8 +124,8 @@ def test_google_sheets_schema_is_created_once_and_data_cleanup_has_no_ddl():
     )
 
 
-def test_automations_schema_setup_is_only_requested_by_db_fixture():
-    _assert_db_schema_is_opt_in(
+def test_automations_schema_is_opt_in_created_once_and_db_cleans_rows():
+    _assert_opt_in_schema_once_with_db_cleanup(
         ROOT / "test_automations.py",
         "setup_db",
     )
