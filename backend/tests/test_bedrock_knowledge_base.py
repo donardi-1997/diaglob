@@ -221,15 +221,24 @@ def configured_provisioning(monkeypatch):
     monkeypatch.setattr(provisioning, "POLL_INTERVAL_SECONDS", 0)
 
 
-@pytest.fixture
+@pytest.fixture(scope="module", autouse=True)
 def setup_database():
+    Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     yield
     Base.metadata.drop_all(bind=engine)
 
 
+@pytest.fixture(autouse=True)
+def cleanup_db(setup_database):
+    yield
+    with engine.begin() as connection:
+        for table in reversed(Base.metadata.sorted_tables):
+            connection.execute(table.delete())
+
+
 @pytest.fixture
-def db(setup_database):
+def db():
     session = TestingSessionLocal()
     try:
         yield session
