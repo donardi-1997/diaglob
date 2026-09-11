@@ -4,9 +4,11 @@ on:
   push:
     branches:
       - perf/automation-campaigns-db-cleanup
+    paths:
+      - .github/workflows/automation-campaigns-db-cleanup.yml
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   focused:
@@ -14,6 +16,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: perf/automation-campaigns-db-cleanup
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -28,9 +32,135 @@ jobs:
           pip install -r backend/requirements.txt
           pip install ruff pytest
 
-      - name: Focused RED regression
+      - name: Apply shared Automation Campaigns engine
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('backend/tests/test_automation_campaigns.py')
+          text = path.read_text(encoding='utf-8')
+
+          marker = '@pytest.fixture()\ndef db():\n'
+          shared = '''@pytest.fixture(scope="module")
+def campaign_engine():
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    yield engine
+    Base.metadata.drop_all(engine)
+
+
+def _clear_db_rows(engine):
+    with engine.begin() as connection:
+        for table in reversed(Base.metadata.sorted_tables):
+            connection.execute(table.delete())
+
+
+'''
+          if 'def campaign_engine()' in text:
+              raise SystemExit('campaign_engine already exists')
+          if text.count(marker) != 1:
+              raise SystemExit(f'expected db fixture marker once, found {text.count(marker)}')
+          text = text.replace(marker, shared + marker, 1)
+
+          old_db = '''@pytest.fixture()
+def db():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine)()
+'''
+          new_db = '''@pytest.fixture()
+def db(campaign_engine):
+    session = sessionmaker(bind=campaign_engine)()
+'''
+          if text.count(old_db) != 1:
+              raise SystemExit(f'expected db setup once, found {text.count(old_db)}')
+          text = text.replace(old_db, new_db, 1)
+
+          old_db_teardown = '''    session.close()
+    Base.metadata.drop_all(engine)
+'''
+          new_db_teardown = '''    session.close()
+    _clear_db_rows(campaign_engine)
+'''
+          if text.count(old_db_teardown) != 1:
+              raise SystemExit(
+                  f'expected db teardown once, found {text.count(old_db_teardown)}'
+              )
+          text = text.replace(old_db_teardown, new_db_teardown, 1)
+
+          old_endpoint = '''@pytest.fixture()
+def endpoint_db():
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine)()
+'''
+          new_endpoint = '''@pytest.fixture()
+def endpoint_db(campaign_engine):
+    session = sessionmaker(bind=campaign_engine)()
+'''
+          if text.count(old_endpoint) != 1:
+              raise SystemExit(
+                  f'expected endpoint setup once, found {text.count(old_endpoint)}'
+              )
+          text = text.replace(old_endpoint, new_endpoint, 1)
+
+          old_endpoint_teardown = '    session.close(); Base.metadata.drop_all(engine)\n'
+          new_endpoint_teardown = '    session.close(); _clear_db_rows(campaign_engine)\n'
+          if text.count(old_endpoint_teardown) != 1:
+              raise SystemExit(
+                  'expected endpoint teardown once, found '
+                  f'{text.count(old_endpoint_teardown)}'
+              )
+          text = text.replace(old_endpoint_teardown, new_endpoint_teardown, 1)
+
+          path.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Focused GREEN and timing collection
         working-directory: backend
         run: |
           python -m pytest -q --tb=short \
             tests/test_ci_db_fixture_scope.py \
-            tests/test_automation_campaigns.py
+            tests/test_automation_campaigns.py \
+            -p tools.test_timings \
+            --timings-output /tmp/automation-campaigns-timings.json
+          cat /tmp/automation-campaigns-timings.json
+
+      - name: Refresh Automation Campaigns timing
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          measured = json.loads(
+              Path('/tmp/automation-campaigns-timings.json').read_text()
+          )
+          key = 'tests/test_automation_campaigns.py'
+          if key not in measured:
+              raise SystemExit(f'{key} missing from timing collector output')
+
+          path = Path('backend/test_timings.json')
+          timings = json.loads(path.read_text())
+          old = timings[key]
+          timings[key] = measured[key]
+          path.write_text(json.dumps(timings, indent=2, sort_keys=True) + '\n')
+          print(f'{key}: {old:.6f}s -> {timings[key]:.6f}s')
+          PY
+
+      - name: Verify focused diff
+        run: |
+          ruff check backend/tests/test_automation_campaigns.py backend/tests/test_ci_db_fixture_scope.py backend/tools/test_timings.py
+          git diff --check
+          git diff -- backend/tests/test_automation_campaigns.py backend/test_timings.json
+
+      - name: Commit GREEN implementation
+        run: |
+          git config user.name "Adrian Felipe Guerra"
+          git config user.email "adrianguerra9703@gmail.com"
+          git add backend/tests/test_automation_campaigns.py backend/test_timings.json
+          git commit -m "perf: reuse DB engine in Automation Campaigns tests"
+          git push origin HEAD:perf/automation-campaigns-db-cleanup
