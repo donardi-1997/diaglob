@@ -6,7 +6,7 @@ export interface OperationsConversation {
   total: number;
   messages_total: number;
   messages_24h: number;
-  ai_resolved_pct: number;
+  ai_message_share_pct: number;
 }
 
 
@@ -69,6 +69,19 @@ export interface OperationsActivity {
 }
 
 
+export type OperationsHealthStatus =
+  | "operational"
+  | "attention"
+  | "degraded";
+
+
+export interface OperationsHealth {
+  status: OperationsHealthStatus;
+  issues: number;
+  critical_issues: number;
+}
+
+
 export interface OperationsSummary {
   conversations: OperationsConversation;
   orders: OperationsOrders;
@@ -78,6 +91,7 @@ export interface OperationsSummary {
   integrations: OperationsIntegration[];
   alerts: OperationsAlert[];
   activity: OperationsActivity[];
+  health: OperationsHealth;
 }
 
 

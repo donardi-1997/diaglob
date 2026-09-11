@@ -140,7 +140,7 @@ def get_operations_summary(
     )
 
     total_ai_human = ai_messages + human_messages
-    ai_resolved_pct = (
+    ai_message_share_pct = (
         round((ai_messages / total_ai_human) * 100, 1)
         if total_ai_human > 0
         else 0.0
@@ -413,7 +413,9 @@ def get_operations_summary(
             "total": total_conversations,
             "messages_total": total_messages,
             "messages_24h": recent_messages,
-            "ai_resolved_pct": ai_resolved_pct,
+            "ai_message_share_pct": ai_message_share_pct,
+            # Internal compatibility alias. Dynamic Operations output removes it.
+            "ai_resolved_pct": ai_message_share_pct,
         },
         "orders": {
             "total": total_orders,

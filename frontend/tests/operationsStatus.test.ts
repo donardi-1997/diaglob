@@ -4,6 +4,9 @@ import test from "node:test";
 import {
   degradedAlertMessage,
   degradedStatusLabel,
+  operationsAlertMessage,
+  operationsHealthLabel,
+  sortOperationsAlerts,
 } from "../src/utils/operationsStatus.ts";
 
 
@@ -65,5 +68,80 @@ test("omits the suffix when degraded integration names are unavailable", () => {
   assert.equal(
     degradedAlertMessage("en", []),
     "Integration status temporarily unavailable",
+  );
+});
+
+
+test("renders Operations Center health labels in all supported languages", () => {
+  assert.equal(operationsHealthLabel("operational", "es"), "Operativo");
+  assert.equal(operationsHealthLabel("attention", "es"), "Requiere atención");
+  assert.equal(operationsHealthLabel("degraded", "es"), "Degradado");
+
+  assert.equal(operationsHealthLabel("operational", "en"), "Operational");
+  assert.equal(operationsHealthLabel("attention", "en"), "Needs attention");
+  assert.equal(operationsHealthLabel("degraded", "en"), "Degraded");
+
+  assert.equal(operationsHealthLabel("operational", "pt-BR"), "Operacional");
+  assert.equal(operationsHealthLabel("attention", "pt-BR"), "Requer atenção");
+  assert.equal(operationsHealthLabel("degraded", "pt-BR"), "Degradado");
+});
+
+
+test("sorts Operations Center alerts by severity without mutating input", () => {
+  const alerts = [
+    { type: "setup", severity: "info" as const, message: "Info" },
+    { type: "failure", severity: "error" as const, message: "Error" },
+    { type: "warning", severity: "warning" as const, message: "Warning" },
+  ];
+
+  const sorted = sortOperationsAlerts(alerts);
+
+  assert.deepEqual(
+    sorted.map((alert) => alert.severity),
+    ["error", "warning", "info"],
+  );
+  assert.deepEqual(
+    alerts.map((alert) => alert.severity),
+    ["info", "error", "warning"],
+  );
+});
+
+
+test("localizes known operational alerts instead of exposing backend English", () => {
+  assert.equal(
+    operationsAlertMessage(
+      "es",
+      {
+        type: "failed_automations",
+        severity: "warning",
+        message: "2 automation(s) failed in the last 7 days",
+      },
+      [],
+    ),
+    "2 automatizaciones fallaron en los últimos 7 días",
+  );
+  assert.equal(
+    operationsAlertMessage(
+      "pt-BR",
+      {
+        type: "unknown_orders",
+        severity: "warning",
+        message: "3 order(s) with unknown status",
+      },
+      [],
+    ),
+    "3 pedidos estão com status desconhecido",
+  );
+  assert.equal(
+    operationsAlertMessage(
+      "en",
+      {
+        type: "no_commerce",
+        severity: "info",
+        message: "No commerce platform connected for this store",
+      },
+      [],
+    ),
+    "No commerce platform is connected to this store",
   );
 });
