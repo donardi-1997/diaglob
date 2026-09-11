@@ -1,3 +1,6 @@
+import importlib
+import sys
+
 import pytest
 from pydantic import ValidationError
 
@@ -46,3 +49,16 @@ def test_sentry_uses_privacy_safe_configuration(monkeypatch):
 def test_sentry_sample_rate_rejects_values_above_one():
     with pytest.raises(ValidationError):
         Settings(sentry_traces_sample_rate=1.1)
+
+
+def test_app_bootstrap_initializes_observability_once(monkeypatch):
+    seen = []
+    monkeypatch.setattr(
+        "app.runtime.observability.initialize_observability",
+        lambda settings: seen.append(settings) or False,
+    )
+
+    sys.modules.pop("app.main", None)
+    main = importlib.import_module("app.main")
+
+    assert seen == [main.settings]
