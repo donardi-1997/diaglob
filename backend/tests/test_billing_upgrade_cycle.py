@@ -10,7 +10,7 @@ from app.services.billing_service import (
     UpgradeNotAllowedError,
     _build_upgrade_next_billed_at,
     execute_upgrade,
-    preview_upgrade_paddle,
+    preview_upgrade_provider,
     validate_plan_upgrade,
 )
 
@@ -20,6 +20,17 @@ def _http_response(data=None):
     response.status_code = 200
     response.json.return_value = {"data": data or {}}
     return response
+
+
+def _provider() -> MagicMock:
+    provider = MagicMock()
+    provider.name = "paddle"
+    provider.is_configured.return_value = True
+    provider.get_price_id.return_value = "pri_growth"
+    provider.get_subscription_price_id.return_value = "pri_growth"
+    provider.get_plan_from_price_id.return_value = "growth"
+    provider.get_billing_period_from_price_id.return_value = 1
+    return provider
 
 
 def test_add_billing_months_clamps_end_of_month():
@@ -70,14 +81,15 @@ def test_apply_client_serializes_new_billing_anchor(monkeypatch):
     assert body["next_billed_at"] == "2026-10-10T03:15:42Z"
 
 
-def test_preview_upgrade_passes_restarted_cycle_to_paddle(monkeypatch):
-    monkeypatch.setenv("PADDLE_API_KEY", "test_key")
+def test_preview_upgrade_passes_restarted_cycle_to_provider():
     organization = SimpleNamespace(
         id=7,
+        billing_provider="paddle",
         billing_subscription_id="sub_123",
         billing_period_months=1,
     )
-    paddle_preview = {
+    provider = _provider()
+    provider.preview_subscription_update.return_value = {
         "immediate_transaction": {
             "details": {
                 "totals": {
@@ -93,29 +105,30 @@ def test_preview_upgrade_passes_restarted_cycle_to_paddle(monkeypatch):
     }
 
     with patch(
-        "app.services.billing_service.get_paddle_price_id",
-        return_value="pri_growth",
+        "app.services.billing_service._provider_for",
+        return_value=provider,
     ), patch(
         "app.services.billing_service._build_upgrade_next_billed_at",
         return_value="2026-10-10T03:15:42Z",
-    ), patch(
-        "app.services.billing_service.preview_subscription_update",
-        return_value=paddle_preview,
-    ) as preview:
-        result = preview_upgrade_paddle(organization, "growth")
+    ):
+        result = preview_upgrade_provider(organization, "growth")
 
     assert result is not None
-    assert preview.call_args.kwargs["next_billed_at"] == "2026-10-10T03:15:42Z"
+    assert provider.preview_subscription_update.call_args.kwargs[
+        "next_billed_at"
+    ] == "2026-10-10T03:15:42Z"
+    assert result["billing_provider"] == "paddle"
 
 
-def test_preview_upgrade_prefers_paddle_update_summary(monkeypatch):
-    monkeypatch.setenv("PADDLE_API_KEY", "test_key")
+def test_preview_upgrade_prefers_provider_update_summary():
     organization = SimpleNamespace(
         id=7,
+        billing_provider="paddle",
         billing_subscription_id="sub_123",
         billing_period_months=1,
     )
-    paddle_preview = {
+    provider = _provider()
+    provider.preview_subscription_update.return_value = {
         "immediate_transaction": {
             "details": {
                 "totals": {
@@ -124,20 +137,12 @@ def test_preview_upgrade_prefers_paddle_update_summary(monkeypatch):
                     "tax": "0",
                     "currency_code": "USD",
                 },
-                "line_items": [
-                    {"totals": {"total": "9999"}},
-                ],
+                "line_items": [{"totals": {"total": "9999"}}],
             }
         },
         "update_summary": {
-            "credit": {
-                "amount": "-1200",
-                "currency_code": "USD",
-            },
-            "charge": {
-                "amount": "4900",
-                "currency_code": "USD",
-            },
+            "credit": {"amount": "-1200", "currency_code": "USD"},
+            "charge": {"amount": "4900", "currency_code": "USD"},
             "result": {
                 "action": "charge",
                 "amount": "3700",
@@ -148,16 +153,13 @@ def test_preview_upgrade_prefers_paddle_update_summary(monkeypatch):
     }
 
     with patch(
-        "app.services.billing_service.get_paddle_price_id",
-        return_value="pri_growth",
+        "app.services.billing_service._provider_for",
+        return_value=provider,
     ), patch(
         "app.services.billing_service._build_upgrade_next_billed_at",
         return_value="2026-10-10T03:15:42Z",
-    ), patch(
-        "app.services.billing_service.preview_subscription_update",
-        return_value=paddle_preview,
     ):
-        result = preview_upgrade_paddle(organization, "growth")
+        result = preview_upgrade_provider(organization, "growth")
 
     assert result is not None
     assert result["amount_due"] == "3700"
@@ -181,6 +183,7 @@ def test_execute_upgrade_uses_same_restarted_cycle_contract():
     organization = SimpleNamespace(
         id=7,
         plan="starter",
+        billing_provider=None,
         billing_subscription_id="sub_123",
         billing_period_months=1,
         billing_price_id="pri_starter",
@@ -189,31 +192,25 @@ def test_execute_upgrade_uses_same_restarted_cycle_contract():
         pending_plan_effective_at=None,
         pending_plan_prepared_at=None,
     )
+    provider = _provider()
+    provider.update_subscription.return_value = {
+        "status": "active",
+        "next_billed_at": "2026-10-10T03:15:42Z",
+    }
     db = MagicMock()
 
     with patch(
-        "app.services.billing_service.get_paddle_price_id",
-        return_value="pri_growth",
+        "app.services.billing_service._provider_for",
+        return_value=provider,
     ), patch(
         "app.services.billing_service._build_upgrade_next_billed_at",
         return_value="2026-10-10T03:15:42Z",
-    ), patch(
-        "app.services.billing_service.update_subscription",
-        return_value={
-            "status": "active",
-            "next_billed_at": "2026-10-10T03:15:42Z",
-        },
-    ) as update, patch(
-        "app.services.billing_service.get_subscription_price_id",
-        return_value="pri_growth",
-    ), patch(
-        "app.services.billing_service.get_plan_from_price_id",
-        return_value="growth",
-    ), patch(
-        "app.services.billing_service.get_billing_period_from_price_id",
-        return_value=1,
     ):
         result = execute_upgrade(organization, "growth", db)
 
-    assert update.call_args.kwargs["next_billed_at"] == "2026-10-10T03:15:42Z"
+    assert provider.update_subscription.call_args.kwargs[
+        "next_billed_at"
+    ] == "2026-10-10T03:15:42Z"
     assert result["next_billed_at"] == "2026-10-10T03:15:42Z"
+    assert result["billing_provider"] == "paddle"
+    assert organization.billing_provider == "paddle"
