@@ -60,10 +60,14 @@ jobs:
           echo "Frontend validation required: $frontend"
 
   backend:
-    name: Backend validation
+    name: Backend validation (shard ${{ matrix.shard }})
     needs: changes
     if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1]
 
     steps:
       - name: Checkout
@@ -83,12 +87,24 @@ jobs:
           pip install ruff pytest
 
       - name: Ruff
+        if: matrix.shard == 0
         working-directory: backend
-        run: ruff check app/ tests/
+        run: ruff check app/ tests/ tools/
+
+      - name: Select backend test shard
+        working-directory: backend
+        run: |
+          set -euo pipefail
+          python -m tools.test_sharding --index "${{ matrix.shard }}" --count 2 > /tmp/backend-test-files.txt
+          test -s /tmp/backend-test-files.txt
+          echo "Shard ${{ matrix.shard }} test files: $(wc -l < /tmp/backend-test-files.txt)"
 
       - name: Backend tests
         working-directory: backend
-        run: python -m pytest -q --tb=short
+        run: |
+          set -euo pipefail
+          mapfile -t test_files < /tmp/backend-test-files.txt
+          python -m pytest -q --tb=short "${test_files[@]}"
 
   frontend:
     name: Frontend validation
