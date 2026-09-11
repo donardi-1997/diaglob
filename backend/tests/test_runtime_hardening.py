@@ -89,7 +89,7 @@ def test_rate_limit_response_keeps_cors_and_security_headers():
     assert response.headers["x-frame-options"] == "DENY"
 
 
-def test_start_knowledge_reconciliation_uses_daemon_worker(monkeypatch):
+def test_start_knowledge_reconciliation_uses_one_daemon_worker_per_process(monkeypatch):
     started = threading.Event()
     release = threading.Event()
 
@@ -103,6 +103,7 @@ def test_start_knowledge_reconciliation_uses_daemon_worker(monkeypatch):
         slow_reconciliation,
     )
     monkeypatch.setattr(lifespan_module, "_reconciliation_thread", None)
+    monkeypatch.setattr(lifespan_module, "_reconciliation_started", False)
 
     worker = lifespan_module.start_knowledge_reconciliation()
 
@@ -110,12 +111,15 @@ def test_start_knowledge_reconciliation_uses_daemon_worker(monkeypatch):
     assert worker.daemon is True
     assert worker.is_alive() is True
 
-    # A second startup while the first reconciliation is active reuses the worker.
+    # Repeated app lifespans in the same process must not start duplicate work.
     assert lifespan_module.start_knowledge_reconciliation() is worker
 
     release.set()
     worker.join(timeout=0.5)
     assert worker.is_alive() is False
+
+    # Even after completion, the process-level startup attempt is not repeated.
+    assert lifespan_module.start_knowledge_reconciliation() is worker
 
 
 def test_lifespan_schedules_knowledge_reconciliation_without_joining(monkeypatch):
