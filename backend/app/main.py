@@ -57,6 +57,13 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 # The backend boundary is replaceable; V1 preserves the current single-process
 # deployment behavior without coupling the middleware to process-global state.
 rate_limit_backend = InMemoryRateLimitBackend()
+
+# Temporary compatibility shim for legacy tests that reset the old module-level
+# store via ``_rate_limit_store.clear()``. The state itself now belongs to the
+# backend object; migrate those tests to ``rate_limit_backend.clear()`` and remove
+# this alias in a follow-up cleanup.
+_rate_limit_store = rate_limit_backend
+
 app.add_middleware(
     RateLimitMiddleware,
     backend=rate_limit_backend,
