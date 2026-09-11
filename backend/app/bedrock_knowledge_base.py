@@ -46,6 +46,10 @@ from .knowledge_provisioning.cleanup import (
     CleanupResult,
     cleanup_remote_resources,
 )
+from .knowledge_provisioning.orchestrator import (
+    ProvisioningOperations,
+    provision_knowledge_base,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -698,152 +702,35 @@ def _cleanup_remote_resources(
     )
 
 
+
+
+def _provisioning_operations() -> ProvisioningOperations:
+    """Capture the facade's current provisioning callables at invocation time."""
+    return ProvisioningOperations(
+        claim_provisioning=_claim_provisioning,
+        create_vector_index=create_s3_vectors_index,
+        set_stage=_set_provisioning_stage,
+        get_knowledge_base=get_bedrock_knowledge_base,
+        wait_for_knowledge_base=wait_for_bedrock_knowledge_base,
+        create_knowledge_base=create_bedrock_knowledge_base,
+        commit_state=_commit_state,
+        get_data_source=get_bedrock_data_source,
+        wait_for_data_source=wait_for_bedrock_data_source,
+        create_data_source=create_bedrock_data_source,
+        cleanup_remote_resources=_cleanup_remote_resources,
+        as_utc=_as_utc,
+    )
+
+
 def provision_diaglob_knowledge_base(
     db: Session, knowledge_base: KnowledgeBase
 ) -> tuple[str, str]:
     """Provision one isolated index, Bedrock KB, and Data Source."""
-    if knowledge_base.external_status == "ready":
-        if knowledge_base.external_id and knowledge_base.external_data_source_id:
-            return knowledge_base.external_id, knowledge_base.external_data_source_id
-        raise BedrockProvisioningError(
-            "ready_resource_ids_missing", resource="knowledge_base"
-        )
-
-    _claim_provisioning(db, knowledge_base)
-    org_id = knowledge_base.organization_id
-    kb_id = knowledge_base.id
-    logger.info(
-        "knowledge_base_provisioning_started organization_id=%s knowledge_base_id=%s stage=%s",
-        org_id,
-        kb_id,
-        knowledge_base.provisioning_stage,
+    return provision_knowledge_base(
+        db,
+        knowledge_base,
+        operations=_provisioning_operations(),
     )
-    index_arn: str | None = None
-    bedrock_kb_id = knowledge_base.external_id
-    bedrock_ds_id = knowledge_base.external_data_source_id
-    failure: BedrockProvisioningError | None = None
-
-    try:
-        vector_index = create_s3_vectors_index(org_id, kb_id)
-        index_arn = vector_index["indexArn"]
-
-        _set_provisioning_stage(db, knowledge_base, "creating_knowledge_base")
-        if bedrock_kb_id:
-            remote_kb = get_bedrock_knowledge_base(bedrock_kb_id)
-            if remote_kb is None:
-                bedrock_kb_id = None
-                bedrock_ds_id = None
-                knowledge_base.external_id = None
-                knowledge_base.external_data_source_id = None
-                _commit_state(db)
-            else:
-                wait_for_bedrock_knowledge_base(
-                    bedrock_kb_id, org_id, kb_id, index_arn
-                )
-
-        if not bedrock_kb_id:
-            remote_kb = create_bedrock_knowledge_base(
-                org_id=org_id,
-                kb_id=kb_id,
-                index_arn=index_arn,
-            )
-            bedrock_kb_id = remote_kb.get("knowledgeBaseId")
-            if not bedrock_kb_id:
-                raise BedrockProvisioningError(
-                    "bedrock_kb_create_failed", resource="knowledge_base"
-                )
-            knowledge_base.external_id = bedrock_kb_id
-            _commit_state(db)
-            wait_for_bedrock_knowledge_base(
-                bedrock_kb_id, org_id, kb_id, index_arn
-            )
-
-        _set_provisioning_stage(db, knowledge_base, "creating_data_source")
-        if bedrock_ds_id:
-            remote_ds = get_bedrock_data_source(bedrock_kb_id, bedrock_ds_id)
-            if remote_ds is None:
-                bedrock_ds_id = None
-                knowledge_base.external_data_source_id = None
-                _commit_state(db)
-            else:
-                wait_for_bedrock_data_source(
-                    bedrock_kb_id, bedrock_ds_id, org_id, kb_id
-                )
-
-        if not bedrock_ds_id:
-            remote_ds = create_bedrock_data_source(
-                bedrock_kb_id=bedrock_kb_id,
-                org_id=org_id,
-                kb_id=kb_id,
-            )
-            bedrock_ds_id = remote_ds.get("dataSourceId")
-            if not bedrock_ds_id:
-                raise BedrockProvisioningError(
-                    "bedrock_data_source_create_failed", resource="data_source"
-                )
-            knowledge_base.external_data_source_id = bedrock_ds_id
-            _commit_state(db)
-            wait_for_bedrock_data_source(
-                bedrock_kb_id, bedrock_ds_id, org_id, kb_id
-            )
-
-        _set_provisioning_stage(db, knowledge_base, "finalizing")
-        knowledge_base.external_status = "ready"
-        knowledge_base.external_last_error = None
-        knowledge_base.provisioning_stage = "ready"
-        knowledge_base.provisioning_stage_started_at = datetime.now(timezone.utc)
-        _commit_state(db)
-        logger.info(
-            "knowledge_base_provisioning_completed organization_id=%s knowledge_base_id=%s total_duration_seconds=%s",
-            org_id,
-            kb_id,
-            round(
-                (datetime.now(timezone.utc) - _as_utc(knowledge_base.provisioning_started_at)).total_seconds(),
-                3,
-            ) if knowledge_base.provisioning_started_at else None,
-        )
-        return bedrock_kb_id, bedrock_ds_id
-    except BedrockProvisioningError as error:
-        failure = error
-    except Exception as error:
-        logger.exception("Unexpected Bedrock provisioning failure")
-        failure = BedrockProvisioningError("provisioning_failed")
-
-    db.rollback()
-    cleanup = _cleanup_remote_resources(
-        org_id,
-        kb_id,
-        index_arn,
-        bedrock_kb_id,
-        bedrock_ds_id,
-    )
-    knowledge_base.external_id = cleanup.bedrock_kb_id
-    knowledge_base.external_data_source_id = cleanup.bedrock_ds_id
-    knowledge_base.external_status = "failed"
-    knowledge_base.provisioning_stage = "failed"
-    knowledge_base.provisioning_stage_started_at = datetime.now(timezone.utc)
-    knowledge_base.external_last_error = (
-        failure.persistence_code if cleanup.succeeded else "cleanup_failed"
-    )
-    _commit_state(db, "failure_state_persist_failed")
-    logger.error(
-        "knowledge_base_provisioning_failed organization_id=%s knowledge_base_id=%s error_code=%s stage=%s classification=%s cleanup_succeeded=%s",
-        org_id,
-        kb_id,
-        knowledge_base.external_last_error,
-        failure.resource,
-        failure.classification,
-        cleanup.succeeded,
-    )
-    raise BedrockProvisioningError(
-        failure.code if cleanup.succeeded else "cleanup_failed",
-        resource=failure.resource,
-        classification=failure.classification,
-        aws_service=failure.aws_service if cleanup.succeeded else None,
-        aws_operation=failure.aws_operation if cleanup.succeeded else None,
-        aws_error_code=failure.aws_error_code if cleanup.succeeded else None,
-        aws_request_id=failure.aws_request_id if cleanup.succeeded else None,
-    ) from failure
 
 
 def cleanup_bedrock_resources(db: Session, knowledge_base: KnowledgeBase) -> None:
