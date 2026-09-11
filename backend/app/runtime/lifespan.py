@@ -1,9 +1,9 @@
 """Application lifecycle orchestration.
 
-External reconciliation is launched in a daemon worker and is not awaited before the
-API begins serving traffic. Failures are logged and isolated from process startup or
-shutdown so a transient Bedrock/DB reconciliation problem cannot make the HTTP
-service unavailable.
+External reconciliation is launched once per process in a daemon worker and is not
+awaited before the API begins serving traffic. Failures are logged and isolated from
+process startup or shutdown so a transient Bedrock/DB reconciliation problem cannot
+make the HTTP service unavailable.
 """
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 _reconciliation_lock = threading.Lock()
 _reconciliation_thread: threading.Thread | None = None
+_reconciliation_started = False
 
 
 def run_knowledge_reconciliation() -> None:
@@ -34,13 +35,14 @@ def run_knowledge_reconciliation() -> None:
 
 
 def start_knowledge_reconciliation() -> threading.Thread:
-    """Start reconciliation without blocking startup or duplicating active workers."""
-    global _reconciliation_thread
+    """Start at most one reconciliation worker for the lifetime of this process."""
+    global _reconciliation_started, _reconciliation_thread
 
     with _reconciliation_lock:
-        if _reconciliation_thread is not None and _reconciliation_thread.is_alive():
+        if _reconciliation_started and _reconciliation_thread is not None:
             return _reconciliation_thread
 
+        _reconciliation_started = True
         _reconciliation_thread = threading.Thread(
             target=run_knowledge_reconciliation,
             name="knowledge-startup-reconciliation",
