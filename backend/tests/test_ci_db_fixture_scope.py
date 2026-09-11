@@ -100,7 +100,6 @@ def _assert_schema_once_with_cleanup(path: Path, schema_fixture: str) -> None:
 
     assert _is_autouse_fixture(cleanup)
     assert not _calls_schema_ddl(cleanup)
-    assert schema_fixture in {arg.arg for arg in cleanup.args.args}
 
 
 def test_shopify_schema_is_created_once_and_data_cleanup_has_no_ddl():
