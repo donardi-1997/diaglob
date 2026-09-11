@@ -74,6 +74,16 @@ class InMemoryRateLimitBackend:
             bucket.timestamps.append(now)
             return True
 
+    def clear(self) -> None:
+        """Clear all buckets.
+
+        Primarily useful for test isolation and operational diagnostics. Keeping the
+        reset operation on the backend avoids exposing its internal dictionary.
+        """
+        with self._lock:
+            self._buckets.clear()
+            self._last_prune = time.monotonic()
+
     def _prune_if_needed(self, now: float) -> None:
         if now - self._last_prune < self._prune_interval_seconds:
             return
