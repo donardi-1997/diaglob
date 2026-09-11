@@ -8,12 +8,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from .db import Base, engine
 from .models import OrganizationMembership
 from .runtime.lifespan import build_lifespan
+from .runtime.observability import initialize_observability
 from .runtime.rate_limit import InMemoryRateLimitBackend, RateLimitMiddleware
 from .runtime.security import SecurityHeadersMiddleware
 from .settings import get_settings
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
+initialize_observability(settings)
 
 
 # ============================================================
