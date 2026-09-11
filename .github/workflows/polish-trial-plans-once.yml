@@ -1,0 +1,30 @@
+name: One-off Trial Billing UI Polish
+
+on:
+  push:
+    branches:
+      - feature/merchant-trial-anti-abuse
+    paths:
+      - .github/workflows/polish-trial-plans-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  polish:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply trial billing UI polish
+        run: python3 scripts/polish_trial_plans_once.py
+      - name: Commit UI polish
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/src/pages/PlansPage.tsx
+          git diff --cached --quiet && exit 0
+          git commit -m "feat: show merchant trial status in billing UI"
+          git push origin HEAD:${GITHUB_REF_NAME}
