@@ -27,62 +27,24 @@ jobs:
           path = Path("backend/app/services/billing_service.py")
           text = path.read_text()
 
-          old_execute = '''    next_billed_at = _build_upgrade_next_billed_at(
-              organization.billing_period_months
+          anchor_block = (
+              "    next_billed_at = _build_upgrade_next_billed_at(\n"
+              "        organization.billing_period_months\n"
+              "    )\n"
           )
+          next_billed_arg = "        next_billed_at=next_billed_at,\n"
 
-          provider_data = provider.update_subscription(
-              subscription_id=organization.billing_subscription_id,
-              items=[{"price_id": target_price_id, "quantity": 1}],
-              proration_billing_mode="prorated_immediately",
-              on_payment_failure="prevent_change",
-              custom_data={
-                  "organization_id": str(organization.id),
-                  "plan": target_plan,
-              },
-              next_billed_at=next_billed_at,
-          )
-          '''
+          if text.count(anchor_block) != 2:
+              raise SystemExit(
+                  f"expected 2 upgrade billing-anchor blocks, found {text.count(anchor_block)}"
+              )
+          if text.count(next_billed_arg) != 2:
+              raise SystemExit(
+                  f"expected 2 upgrade next_billed_at arguments, found {text.count(next_billed_arg)}"
+              )
 
-          new_execute = '''    provider_data = provider.update_subscription(
-              subscription_id=organization.billing_subscription_id,
-              items=[{"price_id": target_price_id, "quantity": 1}],
-              proration_billing_mode="prorated_immediately",
-              on_payment_failure="prevent_change",
-              custom_data={
-                  "organization_id": str(organization.id),
-                  "plan": target_plan,
-              },
-          )
-          '''
-
-          old_preview = '''    next_billed_at = _build_upgrade_next_billed_at(
-              organization.billing_period_months
-          )
-          provider_data = provider.preview_subscription_update(
-              subscription_id=organization.billing_subscription_id,
-              items=[{"price_id": target_price_id, "quantity": 1}],
-              proration_billing_mode="prorated_immediately",
-              on_payment_failure="prevent_change",
-              next_billed_at=next_billed_at,
-          )
-          '''
-
-          new_preview = '''    provider_data = provider.preview_subscription_update(
-              subscription_id=organization.billing_subscription_id,
-              items=[{"price_id": target_price_id, "quantity": 1}],
-              proration_billing_mode="prorated_immediately",
-              on_payment_failure="prevent_change",
-          )
-          '''
-
-          if old_execute not in text:
-              raise SystemExit("execute_upgrade billing-anchor block not found")
-          if old_preview not in text:
-              raise SystemExit("preview_upgrade_provider billing-anchor block not found")
-
-          text = text.replace(old_execute, new_execute, 1)
-          text = text.replace(old_preview, new_preview, 1)
+          text = text.replace(anchor_block + "\n", "", 2)
+          text = text.replace(next_billed_arg, "", 2)
           path.write_text(text)
           PY
 
