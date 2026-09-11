@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Activity,
@@ -11,6 +11,7 @@ import {
   MessageSquareText,
   Package,
   Plug,
+  RefreshCw,
   Settings,
   ShoppingBag,
   Workflow,
@@ -26,6 +27,8 @@ import { type Store } from "../services/stores";
 import {
   degradedAlertMessage,
   degradedStatusLabel,
+  operationsHealthLabel,
+  sortOperationsAlerts,
 } from "../utils/operationsStatus";
 import "../dashboard-v2.css";
 import "../onboarding-activation-polish.css";
@@ -81,26 +84,29 @@ export default function DashboardPage({
   const { t, i18n } = useTranslation();
   const [data, setData] = useState<OperationsSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
+  const requestIdRef = useRef(0);
 
-  useEffect(() => {
-    if (!storeId) {
-      setLoading(false);
-      return;
-    }
+  const loadSummary = useCallback(
+    async (targetStoreId: number, initial: boolean) => {
+      const requestId = ++requestIdRef.current;
 
-    let mounted = true;
-    setLoading(true);
+      if (initial) {
+        setLoading(true);
+        setError("");
+      } else {
+        setRefreshing(true);
+      }
 
-    async function load() {
       try {
-        const summary = await getOperationsSummary(storeId!);
-        if (mounted) {
-          setData(summary);
-          setError("");
-        }
+        const summary = await getOperationsSummary(targetStoreId);
+        if (requestId !== requestIdRef.current) return;
+        setData(summary);
+        setError("");
       } catch (err: any) {
-        if (mounted) {
+        if (requestId !== requestIdRef.current) return;
+        if (initial) {
           setError(
             err?.response?.data?.detail ||
               err?.message ||
@@ -108,15 +114,32 @@ export default function DashboardPage({
           );
         }
       } finally {
-        if (mounted) setLoading(false);
+        if (requestId === requestIdRef.current) {
+          if (initial) setLoading(false);
+          else setRefreshing(false);
+        }
       }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!storeId) {
+      requestIdRef.current += 1;
+      setLoading(false);
+      return;
     }
 
-    void load();
+    void loadSummary(storeId, true);
+    const intervalId = window.setInterval(() => {
+      void loadSummary(storeId, false);
+    }, 30_000);
+
     return () => {
-      mounted = false;
+      requestIdRef.current += 1;
+      window.clearInterval(intervalId);
     };
-  }, [storeId]);
+  }, [loadSummary, storeId]);
 
   const language = i18n.resolvedLanguage || i18n.language;
   const locale = language === "pt-BR" ? "pt-BR" : language === "en" ? "en" : "es";
@@ -128,10 +151,10 @@ export default function DashboardPage({
         kicker: "Operations center",
         title: "Your business, under control.",
         subtitle: "Monitor conversations, orders, automations and integrations from one operational view.",
-        healthy: "Operational",
         quickCommerce: "View commerce",
         quickKnowledge: "Knowledge",
         quickAutomations: "Automations",
+        refresh: "Refresh",
         activityTitle: "Recent activity",
         activityHelp: "Latest events from the active store",
         integrationsTitle: "Integration health",
@@ -142,7 +165,7 @@ export default function DashboardPage({
         ordersMeta: "orders in the last 24h",
         automationMeta: "active automations",
         productMeta: "product variants",
-        aiResolved: "resolved by AI",
+        aiMessageShare: "AI message share",
         orderValue: "order value",
         executions: "executions today",
         connected: "connected",
@@ -154,10 +177,10 @@ export default function DashboardPage({
         kicker: "Centro de operações",
         title: "Seu negócio, sob controle.",
         subtitle: "Monitore conversas, pedidos, automações e integrações em uma única visão operacional.",
-        healthy: "Operacional",
         quickCommerce: "Ver comércio",
         quickKnowledge: "Knowledge",
         quickAutomations: "Automações",
+        refresh: "Atualizar",
         activityTitle: "Atividade recente",
         activityHelp: "Últimos eventos da loja ativa",
         integrationsTitle: "Saúde das integrações",
@@ -168,7 +191,7 @@ export default function DashboardPage({
         ordersMeta: "pedidos nas últimas 24h",
         automationMeta: "automações ativas",
         productMeta: "variantes de produto",
-        aiResolved: "resolvidas por IA",
+        aiMessageShare: "mensagens enviadas por IA",
         orderValue: "valor em pedidos",
         executions: "execuções hoje",
         connected: "conectadas",
@@ -179,10 +202,10 @@ export default function DashboardPage({
       kicker: "Centro de operaciones",
       title: "Tu negocio, bajo control.",
       subtitle: "Monitorea conversaciones, pedidos, automatizaciones e integraciones desde una sola vista operativa.",
-      healthy: "Operativo",
       quickCommerce: "Ver comercio",
       quickKnowledge: "Knowledge",
       quickAutomations: "Automatizaciones",
+      refresh: "Actualizar",
       activityTitle: "Actividad reciente",
       activityHelp: "Últimos eventos de la tienda activa",
       integrationsTitle: "Salud de integraciones",
@@ -193,7 +216,7 @@ export default function DashboardPage({
       ordersMeta: "pedidos en las últimas 24h",
       automationMeta: "automatizaciones activas",
       productMeta: "variantes de producto",
-      aiResolved: "resueltas por IA",
+      aiMessageShare: "mensajes enviados por IA",
       orderValue: "valor en pedidos",
       executions: "ejecuciones hoy",
       connected: "conectadas",
@@ -300,9 +323,13 @@ export default function DashboardPage({
   const autos = data?.automations;
   const integrations = data?.integrations || [];
   const products = data?.products;
-  const alerts = data?.alerts || [];
+  const alerts = sortOperationsAlerts(data?.alerts || []);
   const activity = data?.activity || [];
   const degradedLabel = degradedStatusLabel(language);
+  const healthLabel = operationsHealthLabel(
+    data?.health?.status || "operational",
+    language,
+  );
   const connectedCount = integrations.filter((integration) => integration.connected).length;
 
   const formatTimeAgo = (timestamp: string) => {
@@ -335,7 +362,7 @@ export default function DashboardPage({
       value: conv?.total || 0,
       label: t("conversations") || "Conversaciones",
       trend: `${conv?.active_24h || 0} ${copy.conversationsMeta}`,
-      meta: `${Math.round(conv?.ai_resolved_pct || 0)}% ${copy.aiResolved}`,
+      meta: `${Math.round(conv?.ai_message_share_pct || 0)}% ${copy.aiMessageShare}`,
     },
     {
       icon: ShoppingBag,
@@ -366,13 +393,21 @@ export default function DashboardPage({
         <div>
           <span className="dg-dashboard-kicker">
             <span className="dg-dashboard-kicker-dot" />
-            {copy.kicker} · {copy.healthy}
+            {copy.kicker} · {healthLabel}
           </span>
           <h1>{selectedStore?.name ? `${selectedStore.name}: ${copy.title}` : copy.title}</h1>
           <p>{copy.subtitle}</p>
         </div>
 
         <div className="dg-dashboard-hero-actions">
+          <button
+            className="dg-dashboard-action"
+            onClick={() => void loadSummary(storeId, false)}
+            disabled={refreshing}
+          >
+            <RefreshCw size={15} />
+            {copy.refresh}
+          </button>
           {onNavigateToCommerce && (
             <button className="dg-dashboard-action is-primary" onClick={onNavigateToCommerce}>
               <ShoppingBag size={15} />
