@@ -6,7 +6,7 @@ clean boundary for a Redis-backed implementation without changing routing code.
 """
 from __future__ import annotations
 
-import asyncio
+import threading
 import time
 from collections import deque
 from dataclasses import dataclass
@@ -51,13 +51,13 @@ class InMemoryRateLimitBackend:
 
     def __init__(self, prune_interval_seconds: int = 60) -> None:
         self._buckets: dict[str, _Bucket] = {}
-        self._lock = asyncio.Lock()
+        self._lock = threading.Lock()
         self._last_prune = time.monotonic()
         self._prune_interval_seconds = max(int(prune_interval_seconds), 1)
 
     async def allow(self, key: str, rule: RateLimitRule) -> bool:
         now = time.monotonic()
-        async with self._lock:
+        with self._lock:
             self._prune_if_needed(now)
             bucket = self._buckets.setdefault(
                 key,
