@@ -1,0 +1,65 @@
+name: Apply Automations Test Fixture Optimization
+
+on:
+  push:
+    branches:
+      - perf/automations-test-fixture
+    paths:
+      - .github/workflows/apply-automations-test-fixture.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-measure:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: perf/automations-test-fixture
+
+      - name: Apply fixture refactor
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("backend/tests/test_automations.py")
+          text = path.read_text(encoding="utf-8")
+          old = '''@pytest.fixture(autouse=True)\ndef setup_db():\n    Base.metadata.create_all(bind=engine)\n    yield\n    Base.metadata.drop_all(bind=engine)\n\n\n@pytest.fixture()\ndef db():\n'''
+          new = '''@pytest.fixture()\ndef setup_db():\n    Base.metadata.create_all(bind=engine)\n    yield\n    Base.metadata.drop_all(bind=engine)\n\n\n@pytest.fixture()\ndef db(setup_db):\n'''
+          if old not in text:
+              raise SystemExit("Automations fixture block not found")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+          PY
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install pytest ruff
+
+      - name: Verify focused tests and measure
+        working-directory: backend
+        run: |
+          set -euo pipefail
+          ruff check tests/test_automations.py tests/test_ci_db_fixture_scope.py
+          python -m pytest -q --tb=short tests/test_ci_db_fixture_scope.py
+          echo "=== AUTOMATIONS ==="
+          python -m pytest -q --tb=short tests/test_automations.py
+
+      - name: Commit optimized fixture
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/tests/test_automations.py
+          git commit -m "perf: scope automations test database setup to db fixture"
+          git push origin HEAD:perf/automations-test-fixture
