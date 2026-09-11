@@ -1,0 +1,31 @@
+name: One-off Merchant Trial Integration
+
+on:
+  push:
+    branches:
+      - feature/merchant-trial-anti-abuse
+    paths:
+      - .github/workflows/refactor-trial-integration-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply trial integration
+        run: python3 scripts/refactor_trial_integration_once.py
+      - name: Commit integration
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/app/api/auth.py backend/app/api/deps.py backend/app/api/stores.py backend/app/api/shopify.py backend/app/api/nuvemshop.py backend/app/api/organizations.py backend/app/services/shopify_service.py backend/app/services/nuvemshop_service.py backend/app/services/ai_usage_service.py frontend/src/services/organizations.ts
+          git diff --cached --quiet && exit 0
+          git commit -m "feat: wire merchant trial lifecycle"
+          git push origin HEAD:${GITHUB_REF_NAME}
