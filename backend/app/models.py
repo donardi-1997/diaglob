@@ -1,5 +1,3 @@
-from sqlalchemy import event
-from sqlalchemy import inspect as sa_inspect
 from datetime import datetime
 
 from sqlalchemy import (
@@ -1203,43 +1201,8 @@ class OrderItem(Base):
 
 
 
-# ============================================================
-# STORE ACTIVITY TRACKING
-# ============================================================
-
-@event.listens_for(Store, "before_insert")
-def _diaglob_store_active_since_insert(
-    mapper,
-    connection,
-    target,
-):
-    if target.active:
-        if target.active_since is None:
-            target.active_since = datetime.utcnow()
-    else:
-        target.active_since = None
-
-
-@event.listens_for(Store, "before_update")
-def _diaglob_store_active_since_update(
-    mapper,
-    connection,
-    target,
-):
-    state = sa_inspect(target)
-
-    history = (
-        state.attrs.active.history
-    )
-
-    if not history.has_changes():
-        return
-
-    if target.active:
-        target.active_since = datetime.utcnow()
-    else:
-        target.active_since = None
-
+# Store activity listeners are physically defined with Store in
+# app.model_domains.tenancy.
 
 
 # ============================================================
