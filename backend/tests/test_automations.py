@@ -56,7 +56,7 @@ TestingSessionLocal = sessionmaker(
 )
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture()
 def setup_db():
     Base.metadata.create_all(bind=engine)
     yield
@@ -64,7 +64,7 @@ def setup_db():
 
 
 @pytest.fixture()
-def db():
+def db(setup_db):
     session = TestingSessionLocal()
     try:
         yield session
