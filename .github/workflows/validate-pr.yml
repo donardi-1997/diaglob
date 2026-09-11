@@ -12,8 +12,57 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  validate:
-    name: Backend + Frontend validation
+  changes:
+    name: Detect changed scopes
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.scope.outputs.backend }}
+      frontend: ${{ steps.scope.outputs.frontend }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect backend and frontend changes
+        id: scope
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          files="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
+          backend=false
+          frontend=false
+
+          while IFS= read -r file; do
+            case "$file" in
+              backend/*)
+                backend=true
+                ;;
+              frontend/*)
+                frontend=true
+                ;;
+              .github/workflows/validate-pr.yml)
+                backend=true
+                frontend=true
+                ;;
+            esac
+          done <<< "$files"
+
+          echo "backend=$backend" >> "$GITHUB_OUTPUT"
+          echo "frontend=$frontend" >> "$GITHUB_OUTPUT"
+
+          echo "Backend validation required: $backend"
+          echo "Frontend validation required: $frontend"
+
+  backend:
+    name: Backend validation
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -41,6 +90,16 @@ jobs:
         working-directory: backend
         run: python -m pytest -q --tb=short
 
+  frontend:
+    name: Frontend validation
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
@@ -63,3 +122,33 @@ jobs:
       - name: Frontend build
         working-directory: frontend
         run: npm run build
+
+  validate:
+    name: Backend + Frontend validation
+    if: always()
+    needs: [changes, backend, frontend]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Verify validation results
+        shell: bash
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          BACKEND_RESULT: ${{ needs.backend.result }}
+          FRONTEND_RESULT: ${{ needs.frontend.result }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$CHANGES_RESULT" != "success" ]]; then
+            echo "Change detection failed: $CHANGES_RESULT"
+            exit 1
+          fi
+
+          for result in "$BACKEND_RESULT" "$FRONTEND_RESULT"; do
+            if [[ "$result" != "success" && "$result" != "skipped" ]]; then
+              echo "Validation job failed or was cancelled: $result"
+              exit 1
+            fi
+          done
+
+          echo "Relevant validation jobs passed."
