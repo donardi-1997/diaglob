@@ -1,0 +1,39 @@
+name: One-off Messaging Formatting
+
+on:
+  push:
+    branches:
+      - refactor/model-messaging-domain
+    paths:
+      - scripts/format_model_messaging_once.py
+      - .github/workflows/format-model-messaging-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/model-messaging-domain
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Format Messaging domain
+        run: python scripts/format_model_messaging_once.py
+      - name: Commit formatting
+        run: |
+          if git diff --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/app/model_domains/messaging.py
+          git commit -m "style: format messaging model imports"
+          git fetch origin refactor/model-messaging-domain
+          git rebase origin/refactor/model-messaging-domain
+          git push origin HEAD:refactor/model-messaging-domain
