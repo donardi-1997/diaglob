@@ -248,6 +248,11 @@ def process_oauth_callback(db: Session, query_params: dict) -> str:
             external_identity=normalized_shop,
         )
     except TrialIdentityAlreadyUsed as exc:
+        (
+            db.query(ShopifyOAuthState)
+            .filter(ShopifyOAuthState.id == oauth_state.id)
+            .update({ShopifyOAuthState.used: True}, synchronize_session=False)
+        )
         db.commit()
         raise ShopifyConnectionError(str(exc)) from exc
 

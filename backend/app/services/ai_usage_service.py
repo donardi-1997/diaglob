@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from ..model_domains.ai_usage import AiUsageCreditGrant
 from ..models import Conversation, Message, Organization
 from ..plan_limits import get_organization_limits
-from .trial_service import get_trial_entitlement, refresh_trial_state
+from .trial_service import refresh_trial_state
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +109,10 @@ def get_ai_usage(
     )
 
     purchased_total, extra_remaining = _extra_credit_totals(db, organization_id)
+    if plan == "trial":
+        # Trial is intentionally capped. Purchased/legacy credits cannot
+        # extend free usage beyond the 1,000-response allowance.
+        extra_remaining = 0
     remaining_included = max(included - used, 0)
     remaining = remaining_included + extra_remaining
     usage_pct = (used / included * 100) if included > 0 else 0
@@ -249,6 +253,14 @@ def acquire_ai_capacity(
             "source": "included",
             "grant_id": None,
             "remaining_included": max(included - used, 0),
+        }
+
+    if plan == "trial":
+        return {
+            "available": False,
+            "source": None,
+            "grant_id": None,
+            "reason": "trial_ai_limit_reached",
         }
 
     grant = (
