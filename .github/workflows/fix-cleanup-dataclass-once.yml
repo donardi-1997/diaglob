@@ -1,0 +1,37 @@
+name: One-off Cleanup Dataclass Fix
+
+on:
+  push:
+    branches:
+      - refactor/knowledge-provisioning-cleanup
+    paths:
+      - .github/workflows/fix-cleanup-dataclass-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Remove orphaned decorator
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('backend/app/bedrock_knowledge_base.py')
+          text = path.read_text(encoding='utf-8')
+          needle = '\n\n@dataclass\n\n\ndef _get_s3_vectors_client():'
+          replacement = '\n\n\ndef _get_s3_vectors_client():'
+          if text.count(needle) != 1:
+              raise SystemExit(f'Expected exactly one orphaned dataclass decorator, found {text.count(needle)}')
+          path.write_text(text.replace(needle, replacement, 1), encoding='utf-8')
+          PY
+      - name: Commit fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/app/bedrock_knowledge_base.py
+          git commit -m "fix: remove orphaned cleanup dataclass decorator"
+          git push origin HEAD:${GITHUB_REF_NAME}
