@@ -4,14 +4,12 @@ import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
-from starlette.responses import Response
 
 from .db import Base, engine
 from .models import OrganizationMembership
 from .runtime.lifespan import build_lifespan
 from .runtime.rate_limit import InMemoryRateLimitBackend, RateLimitMiddleware
+from .runtime.security import SecurityHeadersMiddleware
 from .settings import get_settings
 
 logger = logging.getLogger(__name__)
@@ -33,25 +31,6 @@ app = FastAPI(
 # ============================================================
 # MIDDLEWARE
 # ============================================================
-
-
-class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    async def dispatch(
-        self,
-        request: Request,
-        call_next,
-    ) -> Response:
-        response = await call_next(request)
-
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
-        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        response.headers["Permissions-Policy"] = (
-            "camera=(), microphone=(), geolocation=()"
-        )
-
-        return response
-
 
 # Add the rate limiter first so SecurityHeaders and CORS wrap 429 responses too.
 # The backend boundary is replaceable; V1 preserves the current single-process
