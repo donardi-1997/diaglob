@@ -145,3 +145,7 @@ def test_whatsapp_schema_is_created_once_and_data_cleanup_has_no_ddl():
 
 def test_analytics_schema_is_created_once_and_data_cleanup_has_no_ddl():
     _assert_schema_once_with_cleanup(ROOT / "test_analytics.py", "setup_db")
+
+
+def test_billing_preview_schema_is_created_once_and_data_cleanup_has_no_ddl():
+    _assert_schema_once_with_cleanup(ROOT / "test_billing_preview.py", "setup_db")
