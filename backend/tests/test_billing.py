@@ -150,7 +150,7 @@ class TestLocalProrationCalculation:
         assert result["days_remaining"] == 1
 
         amount_due = Decimal(result["amount_due_now"])
-        assert amount_due > Decimal("45.00")
+        assert amount_due == Decimal("0.50")
 
     def test_same_plan_returns_zero(self):
         now = datetime(2026, 8, 15, 0, 0, 0)
@@ -310,7 +310,7 @@ class TestPlanPrices:
 
 
 
-def test_upgrade_credit_decreases_and_amount_due_increases_over_time():
+def test_upgrade_credit_charge_and_amount_due_decrease_over_time():
     period_start = datetime(2026, 8, 1, 0, 0, 0)
     period_end = datetime(2026, 8, 31, 0, 0, 0)
 
@@ -328,13 +328,11 @@ def test_upgrade_credit_decreases_and_amount_due_increases_over_time():
     )
 
     assert Decimal(early["credit"]) > Decimal(middle["credit"]) > Decimal(late["credit"])
-    assert Decimal(early["amount_due_now"]) < Decimal(middle["amount_due_now"]) < Decimal(late["amount_due_now"])
-    assert Decimal(early["charge"]) == Decimal("49.00")
-    assert Decimal(middle["charge"]) == Decimal("49.00")
-    assert Decimal(late["charge"]) == Decimal("49.00")
+    assert Decimal(early["charge"]) > Decimal(middle["charge"]) > Decimal(late["charge"])
+    assert Decimal(early["amount_due_now"]) > Decimal(middle["amount_due_now"]) > Decimal(late["amount_due_now"])
 
 
-def test_multi_month_upgrade_uses_full_discounted_target_period_price():
+def test_multi_month_upgrade_prorates_discounted_target_period_price():
     result = calculate_local_proration(
         current_plan="starter",
         target_plan="growth",
@@ -344,6 +342,8 @@ def test_multi_month_upgrade_uses_full_discounted_target_period_price():
         now=datetime(2026, 9, 15, 0, 0, 0),
     )
 
-    assert Decimal(result["charge"]) == Decimal("140.00")
+    assert Decimal(result["charge"]) == Decimal("71.52")
+    assert Decimal(result["credit"]) == Decimal("27.59")
+    assert Decimal(result["amount_due_now"]) == Decimal("43.93")
     assert Decimal(result["next_full_charge"]) == Decimal("140.00")
-    assert result["next_billed_at"].startswith("2026-12-15")
+    assert result["next_billed_at"] == "2026-11-01T00:00:00"
