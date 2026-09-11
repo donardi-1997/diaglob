@@ -89,9 +89,9 @@ def test_automations_schema_setup_is_only_requested_by_db_fixture():
     )
 
 
-def test_shopify_schema_is_created_once_and_data_cleanup_has_no_ddl():
-    functions = _fixture_functions(ROOT / "test_shopify.py")
-    schema = functions["setup_db"]
+def _assert_schema_once_with_cleanup(path: Path, schema_fixture: str) -> None:
+    functions = _fixture_functions(path)
+    schema = functions[schema_fixture]
     cleanup = functions["cleanup_db"]
 
     assert _calls_schema_ddl(schema)
@@ -100,3 +100,11 @@ def test_shopify_schema_is_created_once_and_data_cleanup_has_no_ddl():
 
     assert _is_autouse_fixture(cleanup)
     assert not _calls_schema_ddl(cleanup)
+
+
+def test_shopify_schema_is_created_once_and_data_cleanup_has_no_ddl():
+    _assert_schema_once_with_cleanup(ROOT / "test_shopify.py", "setup_db")
+
+
+def test_payments_schema_is_created_once_and_data_cleanup_has_no_ddl():
+    _assert_schema_once_with_cleanup(ROOT / "test_payments.py", "setup_db")
