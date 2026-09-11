@@ -23,11 +23,27 @@ from app.models import (
 )
 
 
-@pytest.fixture()
-def db():
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+@pytest.fixture(scope="module")
+def flow_engine():
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     Base.metadata.create_all(engine)
-    session = sessionmaker(bind=engine)()
+    yield engine
+    Base.metadata.drop_all(engine)
+
+
+def _clear_flow_db_rows(engine):
+    with engine.begin() as connection:
+        for table in reversed(Base.metadata.sorted_tables):
+            connection.execute(table.delete())
+
+
+@pytest.fixture()
+def db(flow_engine):
+    session = sessionmaker(bind=flow_engine)()
     org = Organization(name="Flow Org", slug="flow-org", plan="starter", subscription_status="active")
     session.add(org)
     session.flush()
@@ -38,7 +54,7 @@ def db():
     session.flush()
     yield session, org, store
     session.close()
-    Base.metadata.drop_all(engine)
+    _clear_flow_db_rows(flow_engine)
 
 
 def _make_graph(trigger_type="manual", wait_value=1, wait_unit="hours",
