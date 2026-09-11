@@ -11,13 +11,13 @@ from datetime import datetime, timezone
 
 from sqlalchemy import inspect
 
-from ..bedrock_knowledge_base import (
+from ..bedrock_knowledge_base import provision_diaglob_knowledge_base
+from ..db import SessionLocal
+from ..knowledge_provisioning.errors import (
     BedrockProvisioningError,
     ProvisioningErrorClassification,
     ProvisioningInProgressError,
-    provision_diaglob_knowledge_base,
 )
-from ..db import SessionLocal
 from ..models import KnowledgeBase
 
 logger = logging.getLogger(__name__)
