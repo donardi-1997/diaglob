@@ -3,8 +3,6 @@
 import logging
 from unittest.mock import MagicMock
 
-import pytest
-
 from app import bedrock_knowledge_base as facade
 from app.knowledge_provisioning.runtime import (
     AwsDiagnosticsContext,
