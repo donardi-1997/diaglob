@@ -25,8 +25,8 @@ import {
 } from "../services/operations";
 import { type Store } from "../services/stores";
 import {
-  degradedAlertMessage,
   degradedStatusLabel,
+  operationsAlertMessage,
   operationsHealthLabel,
   sortOperationsAlerts,
 } from "../utils/operationsStatus";
@@ -463,11 +463,7 @@ export default function DashboardPage({
           {alerts.map((alert, index) => (
             <div key={`${alert.type}-${index}`} className="dg-dashboard-alert-v2">
               <AlertTriangle size={16} />
-              <span>
-                {alert.type === "integration_status_degraded"
-                  ? degradedAlertMessage(language, integrations)
-                  : alert.message}
-              </span>
+              <span>{operationsAlertMessage(language, alert, integrations)}</span>
             </div>
           ))}
         </section>
