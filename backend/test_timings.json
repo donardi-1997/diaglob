@@ -67,5 +67,5 @@
   "tests/test_telegram.py": 0.370545,
   "tests/test_telegram_delivery.py": 0.147763,
   "tests/test_trial_service.py": 0.644708,
-  "tests/test_whatsapp.py": 11.468824
+  "tests/test_whatsapp.py": 2.661445
 }
