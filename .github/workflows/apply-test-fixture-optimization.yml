@@ -1,0 +1,75 @@
+name: Apply Test Fixture Optimization
+
+on:
+  push:
+    branches:
+      - perf/backend-test-fixtures
+    paths:
+      - .github/workflows/apply-test-fixture-optimization.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-measure:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: perf/backend-test-fixtures
+
+      - name: Apply fixture refactor
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          bedrock = Path("backend/tests/test_bedrock_knowledge_base.py")
+          text = bedrock.read_text(encoding="utf-8")
+          old = '''@pytest.fixture(autouse=True)\ndef setup_database():\n    Base.metadata.create_all(bind=engine)\n    yield\n    Base.metadata.drop_all(bind=engine)\n\n\n@pytest.fixture\ndef db():\n'''
+          new = '''@pytest.fixture\ndef setup_database():\n    Base.metadata.create_all(bind=engine)\n    yield\n    Base.metadata.drop_all(bind=engine)\n\n\n@pytest.fixture\ndef db(setup_database):\n'''
+          if old not in text:
+              raise SystemExit("Bedrock fixture block not found")
+          bedrock.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          sheets = Path("backend/tests/test_google_sheets.py")
+          text = sheets.read_text(encoding="utf-8")
+          old = '''@pytest.fixture(autouse=True)\ndef setup_db():\n    global _user_counter, _org_counter\n    _user_counter = 0\n    _org_counter = 0\n    _rate_limit_store.clear()\n    Base.metadata.create_all(bind=engine)\n    yield\n    _rate_limit_store.clear()\n    Base.metadata.drop_all(bind=engine)\n\n\n@pytest.fixture()\ndef db():\n'''
+          new = '''@pytest.fixture(autouse=True)\ndef reset_test_state():\n    global _user_counter, _org_counter\n    _user_counter = 0\n    _org_counter = 0\n    _rate_limit_store.clear()\n    yield\n    _rate_limit_store.clear()\n\n\n@pytest.fixture()\ndef setup_db():\n    Base.metadata.create_all(bind=engine)\n    yield\n    Base.metadata.drop_all(bind=engine)\n\n\n@pytest.fixture()\ndef db(setup_db):\n'''
+          if old not in text:
+              raise SystemExit("Google Sheets fixture block not found")
+          sheets.write_text(text.replace(old, new, 1), encoding="utf-8")
+          PY
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install pytest ruff
+
+      - name: Verify focused tests and measure
+        working-directory: backend
+        run: |
+          set -euo pipefail
+          ruff check tests/test_bedrock_knowledge_base.py tests/test_google_sheets.py tests/test_ci_db_fixture_scope.py
+          python -m pytest -q --tb=short tests/test_ci_db_fixture_scope.py
+          echo "=== BEDROCK ==="
+          python -m pytest -q --tb=short tests/test_bedrock_knowledge_base.py
+          echo "=== GOOGLE_SHEETS ==="
+          python -m pytest -q --tb=short tests/test_google_sheets.py
+
+      - name: Commit optimized fixtures
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/tests/test_bedrock_knowledge_base.py backend/tests/test_google_sheets.py
+          git commit -m "perf: scope test database setup to db fixtures"
+          git push origin HEAD:perf/backend-test-fixtures
