@@ -221,7 +221,7 @@ def configured_provisioning(monkeypatch):
     monkeypatch.setattr(provisioning, "POLL_INTERVAL_SECONDS", 0)
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def setup_database():
     Base.metadata.create_all(bind=engine)
     yield
@@ -229,7 +229,7 @@ def setup_database():
 
 
 @pytest.fixture
-def db():
+def db(setup_database):
     session = TestingSessionLocal()
     try:
         yield session
