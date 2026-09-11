@@ -6,7 +6,7 @@
   "tests/test_architecture_boundaries.py": 0.048529,
   "tests/test_automation_campaigns.py": 4.822941,
   "tests/test_automation_flows.py": 3.370207,
-  "tests/test_automations.py": 37.389852,
+  "tests/test_automations.py": 16.58,
   "tests/test_automations_hardening.py": 0.087093,
   "tests/test_bedrock_knowledge_base.py": 24.26,
   "tests/test_bedrock_resources_adapter_boundary.py": 0.006529,
