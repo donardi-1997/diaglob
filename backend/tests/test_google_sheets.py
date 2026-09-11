@@ -60,19 +60,24 @@ _org_counter = 0
 
 
 @pytest.fixture(autouse=True)
-def setup_db():
+def reset_test_state():
     global _user_counter, _org_counter
     _user_counter = 0
     _org_counter = 0
     _rate_limit_store.clear()
-    Base.metadata.create_all(bind=engine)
     yield
     _rate_limit_store.clear()
+
+
+@pytest.fixture()
+def setup_db():
+    Base.metadata.create_all(bind=engine)
+    yield
     Base.metadata.drop_all(bind=engine)
 
 
 @pytest.fixture()
-def db():
+def db(setup_db):
     session = TestingSessionLocal()
     try:
         yield session
