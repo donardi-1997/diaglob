@@ -1,3 +1,4 @@
+import CustomerRiskModerationAnalyticsGate from "../components/CustomerRiskModerationAnalyticsGate";
 import CustomerRiskModerationPanel from "../components/CustomerRiskModerationPanel";
 import CustomerValueClassifications from "../components/CustomerValueClassifications";
 import SearchCustomerDetailOverlay from "../components/SearchCustomerDetailOverlay";
@@ -19,6 +20,7 @@ export default function CustomersWorkspacePage({
   return (
     <>
       <CustomerRiskModerationPanel />
+      <CustomerRiskModerationAnalyticsGate />
       {storeId > 0 && <CustomerValueClassifications storeId={storeId} />}
       <CustomersPage canWrite={canWrite} storeId={storeId} />
       <SearchCustomerDetailOverlay
