@@ -71,3 +71,10 @@ def test_google_sheets_schema_setup_is_only_requested_by_db_fixture():
         ROOT / "test_google_sheets.py",
         "setup_db",
     )
+
+
+def test_automations_schema_setup_is_only_requested_by_db_fixture():
+    _assert_db_schema_is_opt_in(
+        ROOT / "test_automations.py",
+        "setup_db",
+    )
