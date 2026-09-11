@@ -1,0 +1,74 @@
+name: Backend Timing Recalibration
+
+on:
+  push:
+    branches:
+      - ci/recalibrate-backend-timings
+    paths:
+      - .github/workflows/backend-timing-recalibration.yml
+
+permissions:
+  contents: write
+
+jobs:
+  profile:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ci/recalibrate-backend-timings
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install pytest ruff
+
+      - name: Recalibrate complete backend timing profile
+        working-directory: backend
+        run: |
+          python -m pytest -q --tb=short \
+            -p tools.test_timings \
+            --timings-output test_timings.json
+
+      - name: Report new shard balance
+        working-directory: backend
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from tools.test_sharding import assign_shards, discover_test_files, load_timings
+
+          timings = load_timings(Path('test_timings.json'))
+          weighted = discover_test_files(timings=timings)
+          weights = dict(weighted)
+          shards = assign_shards(weighted, 2)
+
+          print(f'Historical timing coverage: {sum(1 for path, _ in weighted if path in timings)}/{len(weighted)} files')
+          for index, files in enumerate(shards):
+              total = sum(weights[path] for path in files)
+              print(f'Shard {index}: {len(files)} files, estimated {total:.3f}s')
+          print(f'Total measured backend time: {sum(timings.values()):.3f}s')
+          PY
+
+      - name: Verify profile diff
+        run: |
+          ruff check backend/tools/test_sharding.py backend/tools/test_timings.py
+          git diff --check
+          git diff -- backend/test_timings.json
+
+      - name: Commit recalibrated timings
+        run: |
+          git config user.name "Adrian Felipe Guerra"
+          git config user.email "adrianguerra9703@gmail.com"
+          git add backend/test_timings.json
+          git diff --cached --quiet && exit 0
+          git commit -m "ci: refresh backend timing profile"
+          git push origin HEAD:ci/recalibrate-backend-timings
