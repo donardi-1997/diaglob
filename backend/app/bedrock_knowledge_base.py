@@ -144,8 +144,6 @@ WAIT_ATTEMPTS = int(os.getenv("BEDROCK_WAIT_ATTEMPTS", "30"))
 POLL_INTERVAL_SECONDS = float(os.getenv("BEDROCK_POLL_INTERVAL_SECONDS", "2"))
 
 
-@dataclass
-
 
 def _get_s3_vectors_client():
     return boto3.client("s3vectors", region_name=AWS_REGION)
