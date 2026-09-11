@@ -1,21 +1,25 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { manualVendorChunk } from "../build/chunking.ts";
+import { isSentryModule } from "../build/chunking.ts";
 
 
-test("isolates Sentry into its own vendor chunk", () => {
+test("matches only @sentry modules for the dedicated vendor group", () => {
   assert.equal(
-    manualVendorChunk("/workspace/frontend/node_modules/@sentry/react/build/npm/esm/index.js"),
-    "sentry-vendor",
+    isSentryModule("/workspace/frontend/node_modules/@sentry/react/build/npm/esm/index.js"),
+    true,
+  );
+  assert.equal(
+    isSentryModule("C:\\workspace\\frontend\\node_modules\\@sentry\\core\\build\\index.js"),
+    true,
   );
 });
 
 
-test("leaves application and unrelated dependencies to Vite", () => {
-  assert.equal(manualVendorChunk("/workspace/frontend/src/main.tsx"), undefined);
+test("does not capture application or unrelated dependency modules", () => {
+  assert.equal(isSentryModule("/workspace/frontend/src/main.tsx"), false);
   assert.equal(
-    manualVendorChunk("/workspace/frontend/node_modules/react/index.js"),
-    undefined,
+    isSentryModule("/workspace/frontend/node_modules/react/index.js"),
+    false,
   );
 });
