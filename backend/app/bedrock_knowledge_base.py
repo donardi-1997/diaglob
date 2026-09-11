@@ -7,7 +7,6 @@ import logging
 import os
 import re
 import time
-from datetime import datetime, timezone
 from typing import Any
 
 import boto3
@@ -49,6 +48,11 @@ from .knowledge_provisioning.cleanup import (
 from .knowledge_provisioning.orchestrator import (
     ProvisioningOperations,
     provision_knowledge_base,
+)
+from .knowledge_provisioning.deletion import (
+    DeletionOperations,
+    cleanup_owned_resources,
+    delete_knowledge_base,
 )
 
 logger = logging.getLogger(__name__)
@@ -732,144 +736,39 @@ def provision_diaglob_knowledge_base(
         operations=_provisioning_operations(),
     )
 
+def _deletion_operations() -> DeletionOperations:
+    """Capture the facade's current deletion callables at invocation time."""
+    return DeletionOperations(
+        vector_index_arn=_vector_index_arn,
+        cleanup_remote_resources=_cleanup_remote_resources,
+        commit_state=_commit_state,
+        is_verified_legacy_parent=is_verified_legacy_parent,
+        cleanup_verified_legacy_resources=cleanup_verified_legacy_resources,
+        delete_knowledge_prefix=delete_knowledge_prefix,
+        client_error_code=_client_error_code,
+        client_error_message=_client_error_message,
+        client_error_request_id=_client_error_request_id,
+    )
 
-def cleanup_bedrock_resources(db: Session, knowledge_base: KnowledgeBase) -> None:
+
+def cleanup_bedrock_resources(
+    db: Session, knowledge_base: KnowledgeBase
+) -> None:
     """Safely clean owned resources without losing ambiguous remote IDs."""
-    try:
-        index_arn = _vector_index_arn(knowledge_base.id)
-    except BedrockProvisioningError:
-        index_arn = None
-    result = _cleanup_remote_resources(
-        knowledge_base.organization_id,
-        knowledge_base.id,
-        index_arn,
-        knowledge_base.external_id,
-        knowledge_base.external_data_source_id,
+    cleanup_owned_resources(
+        db,
+        knowledge_base,
+        operations=_deletion_operations(),
     )
-    knowledge_base.external_id = result.bedrock_kb_id
-    knowledge_base.external_data_source_id = result.bedrock_ds_id
-    knowledge_base.external_status = "failed"
-    knowledge_base.external_last_error = (
-        "resources_cleaned" if result.succeeded else "cleanup_failed"
-    )
-    _commit_state(db, "failure_state_persist_failed")
 
-def delete_diaglob_knowledge_base(db: Session, knowledge_base: KnowledgeBase) -> None:
+
+def delete_diaglob_knowledge_base(
+    db: Session, knowledge_base: KnowledgeBase
+) -> None:
     """Delete one KB and only its verified remote resources and S3 prefix."""
-    claimed = (
-        db.query(KnowledgeBase)
-        .filter(
-            KnowledgeBase.id == knowledge_base.id,
-            KnowledgeBase.organization_id == knowledge_base.organization_id,
-            KnowledgeBase.external_status != "deleting",
-        )
-        .update(
-            {
-                KnowledgeBase.external_status: "deleting",
-                KnowledgeBase.external_last_error: None,
-                KnowledgeBase.provisioning_stage: "deleting",
-                KnowledgeBase.provisioning_stage_started_at: datetime.now(timezone.utc),
-            },
-            synchronize_session=False,
-        )
+    delete_knowledge_base(
+        db,
+        knowledge_base,
+        operations=_deletion_operations(),
     )
-    _commit_state(db)
-    db.refresh(knowledge_base)
 
-    if not claimed and knowledge_base.external_status != "deleting":
-        raise BedrockProvisioningError("invalid_deletion_state", resource="knowledge_base")
-
-    org_id = knowledge_base.organization_id
-    kb_id = knowledge_base.id
-
-    if is_verified_legacy_parent(knowledge_base.external_id or ""):
-        logger.info(
-            "knowledge_base_deletion_routing organization_id=%s knowledge_base_id=%s deletion_mode=legacy",
-            org_id, kb_id,
-        )
-        try:
-            cleanup_verified_legacy_resources(db, knowledge_base)
-            return
-        except Exception as error:
-            db.rollback()
-            current = db.get(KnowledgeBase, kb_id)
-            original_error_code = (
-                error.code
-                if isinstance(error, BedrockProvisioningError)
-                else type(error).__name__
-            )
-            if current:
-                current.external_status = "deleting"
-                current.external_last_error = f"deletion_failed:{original_error_code}"
-                current.provisioning_stage = "deleting"
-                current.provisioning_stage_started_at = datetime.now(timezone.utc)
-                _commit_state(db, "deletion_state_persist_failed")
-            logger.exception(
-                "knowledge_base_deletion_failed deletion_mode=legacy "
-                "organization_id=%s knowledge_base_id=%s error_code=%s",
-                org_id, kb_id, original_error_code,
-            )
-            if isinstance(error, BedrockProvisioningError):
-                raise
-            raise BedrockProvisioningError("deletion_failed", resource="knowledge_base") from error
-
-    logger.info(
-        "knowledge_base_deletion_routing organization_id=%s knowledge_base_id=%s deletion_mode=modern",
-        org_id, kb_id,
-    )
-    index_arn: str | None = None
-    try:
-        index_arn = _vector_index_arn(kb_id)
-        cleanup = _cleanup_remote_resources(
-            org_id,
-            kb_id,
-            index_arn,
-            knowledge_base.external_id,
-            knowledge_base.external_data_source_id,
-        )
-        if not cleanup.succeeded:
-            if isinstance(cleanup.error, BedrockProvisioningError):
-                raise cleanup.error
-            raise BedrockProvisioningError(
-                "deletion_cleanup_failed", resource="knowledge_base"
-            ) from cleanup.error
-        delete_knowledge_prefix(org_id, kb_id)
-        db.query(KnowledgeSource).filter(
-            KnowledgeSource.organization_id == org_id,
-            KnowledgeSource.knowledge_base_id == kb_id,
-        ).delete(synchronize_session=False)
-        db.delete(knowledge_base)
-        _commit_state(db, "deletion_state_persist_failed")
-    except Exception as error:
-        db.rollback()
-        current = db.get(KnowledgeBase, kb_id)
-        original_error_code = (
-            error.code
-            if isinstance(error, BedrockProvisioningError)
-            else type(error).__name__
-        )
-        if current:
-            current.external_status = "deleting"
-            current.external_last_error = f"deletion_failed:{original_error_code}"
-            current.provisioning_stage = "deleting"
-            current.provisioning_stage_started_at = datetime.now(timezone.utc)
-            _commit_state(db, "deletion_state_persist_failed")
-        logger.exception(
-            "knowledge_base_deletion_failed deletion_mode=modern "
-            "organization_id=%s knowledge_base_id=%s provisioning_stage=deleting "
-            "error_code=%s aws_error_code=%s aws_error_message=%s "
-            "aws_request_id=%s vector_index_arn=%s bedrock_kb_id=%s "
-            "bedrock_data_source_id=%s",
-            org_id,
-            kb_id,
-            original_error_code,
-            _client_error_code(error),
-            _client_error_message(error),
-            _client_error_request_id(error),
-            index_arn,
-            knowledge_base.external_id,
-            knowledge_base.external_data_source_id,
-        )
-        if isinstance(error, BedrockProvisioningError):
-            raise
-        raise BedrockProvisioningError("deletion_failed", resource="knowledge_base") from error
