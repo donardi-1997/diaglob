@@ -61,6 +61,14 @@ def _calls_row_delete(function: ast.FunctionDef) -> bool:
     return False
 
 
+def _calls_named_function(function: ast.FunctionDef, function_name: str) -> bool:
+    for node in ast.walk(function):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            if node.func.id == function_name:
+                return True
+    return False
+
+
 def _assert_db_schema_is_opt_in(path: Path, schema_fixture: str) -> None:
     functions = _fixture_functions(path)
     schema = functions[schema_fixture]
@@ -110,6 +118,23 @@ def _assert_opt_in_schema_once_with_db_cleanup(path: Path, schema_fixture: str) 
             )
 
 
+def _assert_shared_module_engine_with_row_cleanup(path: Path) -> None:
+    functions = _fixture_functions(path)
+    engine_fixture = functions["campaign_engine"]
+    clear_rows = functions["_clear_db_rows"]
+
+    assert _calls_schema_ddl(engine_fixture)
+    assert _fixture_scope(engine_fixture) == "module"
+    assert not _is_autouse_fixture(engine_fixture)
+    assert _calls_row_delete(clear_rows)
+
+    for fixture_name in ("db", "endpoint_db"):
+        fixture = functions[fixture_name]
+        assert "campaign_engine" in {arg.arg for arg in fixture.args.args}
+        assert not _calls_schema_ddl(fixture)
+        assert _calls_named_function(fixture, "_clear_db_rows")
+
+
 def test_bedrock_schema_is_created_once_and_data_cleanup_has_no_ddl():
     _assert_schema_once_with_cleanup(
         ROOT / "test_bedrock_knowledge_base.py",
@@ -149,3 +174,7 @@ def test_analytics_schema_is_created_once_and_data_cleanup_has_no_ddl():
 
 def test_billing_preview_schema_is_created_once_and_data_cleanup_has_no_ddl():
     _assert_schema_once_with_cleanup(ROOT / "test_billing_preview.py", "setup_db")
+
+
+def test_automation_campaigns_share_module_engine_and_clean_rows_per_test():
+    _assert_shared_module_engine_with_row_cleanup(ROOT / "test_automation_campaigns.py")
