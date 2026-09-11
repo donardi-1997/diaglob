@@ -33,6 +33,10 @@ from .knowledge_provisioning.s3_vectors import (
     S3VectorsAdapter,
     S3VectorsConfig,
 )
+from .knowledge_provisioning.bedrock_resources import (
+    BedrockResourcesAdapter,
+    BedrockResourcesConfig,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -501,144 +505,59 @@ def delete_s3_vectors_index(index_arn: str, org_id: int, kb_id: int) -> None:
 
 
 
+def _bedrock_resources_adapter() -> BedrockResourcesAdapter:
+    """Build the modern Bedrock adapter from current facade configuration."""
+    return BedrockResourcesAdapter(
+        config=BedrockResourcesConfig(
+            vector_bucket_arn=VECTOR_BUCKET_ARN,
+            bedrock_service_role_arn=BEDROCK_SERVICE_ROLE_ARN,
+            embedding_model_arn=EMBEDDING_MODEL_ARN,
+            knowledge_bucket=KNOWLEDGE_BUCKET,
+            vector_dimension=VECTOR_DIMENSION,
+            vector_embedding_data_type=VECTOR_EMBEDDING_DATA_TYPE,
+            recovery_attempts=RECOVERY_ATTEMPTS,
+            wait_attempts=WAIT_ATTEMPTS,
+        ),
+        client_factory=_get_bedrock_agent_client,
+        make_kb_name=_make_kb_name,
+        make_ds_name=_make_ds_name,
+        make_client_token=_make_client_token,
+        make_tags=_make_tags,
+        tags_match=_tags_match,
+        get_s3_prefix=_get_s3_prefix,
+        vector_index_arn=_vector_index_arn,
+        validate_configuration=_validate_configuration,
+        sleep_between_attempts=_sleep_between_attempts,
+        log_aws_error=_log_provisioning_aws_error,
+    )
+
+
 def get_bedrock_knowledge_base(bedrock_kb_id: str) -> dict[str, Any] | None:
-    try:
-        response = _get_bedrock_agent_client().get_knowledge_base(
-            knowledgeBaseId=bedrock_kb_id
-        )
-        return response.get("knowledgeBase")
-    except ClientError as error:
-        if _client_error_code(error) == "ResourceNotFoundException":
-            return None
-        logger.exception("Failed to inspect Bedrock Knowledge Base")
-        raise _aws_provisioning_error(
-            "bedrock_kb_get_failed",
-            "knowledge_base",
-            error,
-            aws_service="bedrock-agent",
-            aws_operation="GetKnowledgeBase",
-            classification=classify_provisioning_aws_error(error),
-        ) from error
-    except BotoCoreError as error:
-        logger.exception("Failed to inspect Bedrock Knowledge Base")
-        raise _aws_provisioning_error(
-            "bedrock_kb_get_failed",
-            "knowledge_base",
-            error,
-            aws_service="bedrock-agent",
-            aws_operation="GetKnowledgeBase",
-            classification=classify_provisioning_aws_error(error),
-        ) from error
+    return _bedrock_resources_adapter().get_knowledge_base(bedrock_kb_id)
 
 
 def _get_bedrock_tags(resource_arn: str) -> dict[str, str]:
-    try:
-        return _get_bedrock_agent_client().list_tags_for_resource(
-            resourceArn=resource_arn
-        ).get("tags", {})
-    except (BotoCoreError, ClientError) as error:
-        logger.exception("Failed to inspect Bedrock Knowledge Base tags")
-        raise _aws_provisioning_error(
-            "bedrock_kb_tags_get_failed",
-            "knowledge_base",
-            error,
-            aws_service="bedrock-agent",
-            aws_operation="ListTagsForResource",
-            classification=classify_provisioning_aws_error(error),
-        ) from error
+    return _bedrock_resources_adapter().get_tags(resource_arn)
 
 
 def _validate_bedrock_knowledge_base(
-    remote: dict[str, Any],
-    org_id: int,
-    kb_id: int,
-    index_arn: str,
+    remote: dict[str, Any], org_id: int, kb_id: int, index_arn: str
 ) -> None:
-    if (
-        remote.get("name") != _make_kb_name(org_id, kb_id)
-        or remote.get("roleArn") != BEDROCK_SERVICE_ROLE_ARN
-    ):
-        raise BedrockProvisioningError(
-            "resource_ownership_mismatch", resource="knowledge_base"
-        )
-
-    storage = remote.get("storageConfiguration", {})
-    s3_vectors = storage.get("s3VectorsConfiguration", {})
-    configuration = remote.get("knowledgeBaseConfiguration", {})
-    vector_configuration = configuration.get("vectorKnowledgeBaseConfiguration", {})
-    embedding_configuration = vector_configuration.get(
-        "embeddingModelConfiguration", {}
-    ).get("bedrockEmbeddingModelConfiguration", {})
-    if (
-        storage.get("type") != "S3_VECTORS"
-        or s3_vectors.get("vectorBucketArn") != VECTOR_BUCKET_ARN
-        or s3_vectors.get("indexArn") != index_arn
-        or configuration.get("type") != "VECTOR"
-        or vector_configuration.get("embeddingModelArn") != EMBEDDING_MODEL_ARN
-        or embedding_configuration.get("dimensions") != VECTOR_DIMENSION
-        or embedding_configuration.get("embeddingDataType")
-        != VECTOR_EMBEDDING_DATA_TYPE
-    ):
-        raise BedrockProvisioningError(
-            "bedrock_kb_configuration_mismatch", resource="knowledge_base"
-        )
-
-    resource_arn = remote.get("knowledgeBaseArn")
-    if not resource_arn or not _tags_match(
-        _get_bedrock_tags(resource_arn), _make_tags(org_id, kb_id)
-    ):
-        raise BedrockProvisioningError(
-            "resource_ownership_mismatch", resource="knowledge_base"
-        )
+    _bedrock_resources_adapter().validate_knowledge_base(
+        remote, org_id, kb_id, index_arn
+    )
 
 
 def _list_knowledge_bases_by_name(name: str) -> list[dict[str, Any]]:
-    client = _get_bedrock_agent_client()
-    candidates = []
-    next_token = None
-    try:
-        while True:
-            kwargs = {"maxResults": 1000}
-            if next_token:
-                kwargs["nextToken"] = next_token
-            response = client.list_knowledge_bases(**kwargs)
-            candidates.extend(
-                item
-                for item in response.get("knowledgeBaseSummaries", [])
-                if item.get("name") == name
-            )
-            next_token = response.get("nextToken")
-            if not next_token:
-                return candidates
-    except (BotoCoreError, ClientError) as error:
-        logger.exception("Failed to discover Bedrock Knowledge Base")
-        raise _aws_provisioning_error(
-            "resource_recovery_failed",
-            "knowledge_base",
-            error,
-            aws_service="bedrock-agent",
-            aws_operation="ListKnowledgeBases",
-            classification=classify_provisioning_aws_error(error),
-        ) from error
+    return _bedrock_resources_adapter()._list_knowledge_bases_by_name(name)
 
 
 def discover_bedrock_knowledge_base(
     org_id: int, kb_id: int, index_arn: str
 ) -> dict[str, Any] | None:
-    expected_name = _make_kb_name(org_id, kb_id)
-    for attempt in range(RECOVERY_ATTEMPTS):
-        candidates = _list_knowledge_bases_by_name(expected_name)
-        if len(candidates) > 1:
-            raise BedrockProvisioningError(
-                "resource_recovery_ambiguous", resource="knowledge_base"
-            )
-        if candidates:
-            remote = get_bedrock_knowledge_base(candidates[0]["knowledgeBaseId"])
-            if remote:
-                _validate_bedrock_knowledge_base(remote, org_id, kb_id, index_arn)
-                return remote
-        _sleep_between_attempts(attempt, RECOVERY_ATTEMPTS)
-    return None
+    return _bedrock_resources_adapter().discover_knowledge_base(
+        org_id, kb_id, index_arn
+    )
 
 
 def create_bedrock_knowledge_base(
@@ -647,308 +566,56 @@ def create_bedrock_knowledge_base(
     index_arn: str,
     description: str | None = None,
 ) -> dict[str, Any]:
-    """Create a Bedrock KB using the already-created vector index."""
-    _validate_configuration()
-    create_kwargs = {
-        "name": _make_kb_name(org_id, kb_id),
-        "description": description
-        or f"Diaglob Knowledge Base for organization {org_id}, KB {kb_id}",
-        "roleArn": BEDROCK_SERVICE_ROLE_ARN,
-        "knowledgeBaseConfiguration": {
-            "type": "VECTOR",
-            "vectorKnowledgeBaseConfiguration": {
-                "embeddingModelArn": EMBEDDING_MODEL_ARN,
-                "embeddingModelConfiguration": {
-                    "bedrockEmbeddingModelConfiguration": {
-                        "dimensions": VECTOR_DIMENSION,
-                        "embeddingDataType": VECTOR_EMBEDDING_DATA_TYPE,
-                    }
-                },
-            },
-        },
-        "storageConfiguration": {
-            "type": "S3_VECTORS",
-            "s3VectorsConfiguration": {
-                "vectorBucketArn": VECTOR_BUCKET_ARN,
-                "indexArn": index_arn,
-            },
-        },
-        "clientToken": _make_client_token("kb", org_id, kb_id),
-        "tags": _make_tags(org_id, kb_id),
-    }
-    try:
-        remote = _get_bedrock_agent_client().create_knowledge_base(
-            **create_kwargs
-        ).get("knowledgeBase", {})
-        if remote.get("knowledgeBaseId"):
-            return remote
-        logger.warning("Bedrock KB create response omitted the resource ID")
-    except (BotoCoreError, ClientError) as error:
-        if not _is_uncertain_create_error(error):
-            _log_provisioning_aws_error(
-                operation="CreateKnowledgeBase",
-                aws_service="bedrock-agent",
-                stage="creating_knowledge_base",
-                org_id=org_id,
-                kb_id=kb_id,
-                error=error,
-                vector_index_arn=index_arn,
-            )
-            raise _aws_provisioning_error(
-                "bedrock_kb_create_failed",
-                "knowledge_base",
-                error,
-                aws_service="bedrock-agent",
-                aws_operation="CreateKnowledgeBase",
-                classification=classify_provisioning_aws_error(error),
-            ) from error
-        logger.warning(
-            "Bedrock KB create response was uncertain; attempting recovery",
-            exc_info=True,
-        )
-
-    recovered = discover_bedrock_knowledge_base(org_id, kb_id, index_arn)
-    if not recovered:
-        raise BedrockProvisioningError(
-            "resource_recovery_failed", resource="knowledge_base"
-        )
-    return recovered
+    return _bedrock_resources_adapter().create_knowledge_base(
+        org_id, kb_id, index_arn, description
+    )
 
 
 def wait_for_bedrock_knowledge_base(
     bedrock_kb_id: str, org_id: int, kb_id: int, index_arn: str
 ) -> dict[str, Any]:
-    for attempt in range(WAIT_ATTEMPTS):
-        remote = get_bedrock_knowledge_base(bedrock_kb_id)
-        if remote:
-            _validate_bedrock_knowledge_base(remote, org_id, kb_id, index_arn)
-            status = remote.get("status")
-            if status == "ACTIVE":
-                return remote
-            if status in {"FAILED", "DELETE_UNSUCCESSFUL"}:
-                raise BedrockProvisioningError(
-                    "bedrock_kb_not_active", resource="knowledge_base"
-                )
-        _sleep_between_attempts(attempt, WAIT_ATTEMPTS)
-    raise BedrockProvisioningError(
-        "bedrock_kb_activation_timeout", resource="knowledge_base"
+    return _bedrock_resources_adapter().wait_for_knowledge_base(
+        bedrock_kb_id, org_id, kb_id, index_arn
     )
 
 
 def get_bedrock_data_source(
     bedrock_kb_id: str, data_source_id: str
 ) -> dict[str, Any] | None:
-    try:
-        response = _get_bedrock_agent_client().get_data_source(
-            knowledgeBaseId=bedrock_kb_id,
-            dataSourceId=data_source_id,
-        )
-        return response.get("dataSource")
-    except ClientError as error:
-        if _client_error_code(error) == "ResourceNotFoundException":
-            return None
-        logger.exception("Failed to inspect Bedrock Data Source")
-        raise _aws_provisioning_error(
-            "bedrock_data_source_get_failed",
-            "data_source",
-            error,
-            aws_service="bedrock-agent",
-            aws_operation="GetDataSource",
-            classification=classify_provisioning_aws_error(error),
-        ) from error
-    except BotoCoreError as error:
-        logger.exception("Failed to inspect Bedrock Data Source")
-        raise _aws_provisioning_error(
-            "bedrock_data_source_get_failed",
-            "data_source",
-            error,
-            aws_service="bedrock-agent",
-            aws_operation="GetDataSource",
-            classification=classify_provisioning_aws_error(error),
-        ) from error
+    return _bedrock_resources_adapter().get_data_source(
+        bedrock_kb_id, data_source_id
+    )
 
 
 def _validate_bedrock_data_source(
     remote: dict[str, Any], bedrock_kb_id: str, org_id: int, kb_id: int
 ) -> None:
-    s3_configuration = remote.get("dataSourceConfiguration", {}).get(
-        "s3Configuration", {}
+    _bedrock_resources_adapter().validate_data_source(
+        remote, bedrock_kb_id, org_id, kb_id
     )
-    chunking = remote.get("vectorIngestionConfiguration", {}).get(
-        "chunkingConfiguration", {}
-    )
-    fixed_size = chunking.get("fixedSizeChunkingConfiguration", {})
-    if (
-        remote.get("knowledgeBaseId") != bedrock_kb_id
-        or remote.get("name") != _make_ds_name(kb_id)
-        or remote.get("dataSourceConfiguration", {}).get("type") != "S3"
-        or s3_configuration.get("bucketArn") != f"arn:aws:s3:::{KNOWLEDGE_BUCKET}"
-        or s3_configuration.get("inclusionPrefixes")
-        != [_get_s3_prefix(org_id, kb_id)]
-        or remote.get("dataDeletionPolicy") != "DELETE"
-        or chunking.get("chunkingStrategy") != "FIXED_SIZE"
-        or fixed_size.get("maxTokens") != 300
-        or fixed_size.get("overlapPercentage") != 20
-    ):
-        raise BedrockProvisioningError(
-            "resource_ownership_mismatch", resource="data_source"
-        )
 
 
 def discover_bedrock_data_source(
     bedrock_kb_id: str, org_id: int, kb_id: int
 ) -> dict[str, Any] | None:
-    expected_name = _make_ds_name(kb_id)
-    for attempt in range(RECOVERY_ATTEMPTS):
-        client = _get_bedrock_agent_client()
-        candidates = []
-        next_token = None
-        try:
-            while True:
-                kwargs: dict[str, Any] = {
-                    "knowledgeBaseId": bedrock_kb_id,
-                    "maxResults": 1000,
-                }
-                if next_token:
-                    kwargs["nextToken"] = next_token
-                response = client.list_data_sources(**kwargs)
-                candidates.extend(
-                    item
-                    for item in response.get("dataSourceSummaries", [])
-                    if item.get("name") == expected_name
-                )
-                next_token = response.get("nextToken")
-                if not next_token:
-                    break
-        except (BotoCoreError, ClientError) as error:
-            logger.exception("Failed to discover Bedrock Data Source")
-            raise _aws_provisioning_error(
-                "resource_recovery_failed",
-                "data_source",
-                error,
-                aws_service="bedrock-agent",
-                aws_operation="ListDataSources",
-                classification=classify_provisioning_aws_error(error),
-            ) from error
-
-        if len(candidates) > 1:
-            raise BedrockProvisioningError(
-                "resource_recovery_ambiguous", resource="data_source"
-            )
-        if candidates:
-            remote = get_bedrock_data_source(
-                bedrock_kb_id, candidates[0]["dataSourceId"]
-            )
-            if remote:
-                _validate_bedrock_data_source(
-                    remote, bedrock_kb_id, org_id, kb_id
-                )
-                return remote
-        _sleep_between_attempts(attempt, RECOVERY_ATTEMPTS)
-    return None
+    return _bedrock_resources_adapter().discover_data_source(
+        bedrock_kb_id, org_id, kb_id
+    )
 
 
 def create_bedrock_data_source(
-    bedrock_kb_id: str,
-    org_id: int,
-    kb_id: int,
+    bedrock_kb_id: str, org_id: int, kb_id: int
 ) -> dict[str, Any]:
-    """Create or safely recover the single tenant-scoped S3 data source."""
-    create_kwargs = {
-        "knowledgeBaseId": bedrock_kb_id,
-        "name": _make_ds_name(kb_id),
-        "description": f"Diaglob S3 Data Source for org {org_id}, KB {kb_id}",
-        "dataSourceConfiguration": {
-            "type": "S3",
-            "s3Configuration": {
-                "bucketArn": f"arn:aws:s3:::{KNOWLEDGE_BUCKET}",
-                "inclusionPrefixes": [_get_s3_prefix(org_id, kb_id)],
-            },
-        },
-        "vectorIngestionConfiguration": {
-            "chunkingConfiguration": {
-                "chunkingStrategy": "FIXED_SIZE",
-                "fixedSizeChunkingConfiguration": {
-                    "maxTokens": 300,
-                    "overlapPercentage": 20,
-                },
-            },
-        },
-        "dataDeletionPolicy": "DELETE",
-        "clientToken": _make_client_token("ds", org_id, kb_id),
-    }
-    try:
-        remote = _get_bedrock_agent_client().create_data_source(
-            **create_kwargs
-        ).get("dataSource", {})
-        if remote.get("dataSourceId"):
-            return remote
-        logger.warning("Bedrock Data Source create response omitted the resource ID")
-    except (BotoCoreError, ClientError) as error:
-        if not _is_uncertain_create_error(error):
-            _log_provisioning_aws_error(
-                operation="CreateDataSource",
-                aws_service="bedrock-agent",
-                stage="creating_data_source",
-                org_id=org_id,
-                kb_id=kb_id,
-                error=error,
-                vector_index_arn=_vector_index_arn(kb_id),
-                bedrock_kb_id=bedrock_kb_id,
-            )
-            raise _aws_provisioning_error(
-                "bedrock_data_source_create_failed",
-                "data_source",
-                error,
-                aws_service="bedrock-agent",
-                aws_operation="CreateDataSource",
-                classification=classify_provisioning_aws_error(error),
-            ) from error
-        logger.warning(
-            "Bedrock Data Source create response was uncertain; attempting recovery",
-            exc_info=True,
-        )
-
-    parent = get_bedrock_knowledge_base(bedrock_kb_id)
-    if not parent:
-        raise BedrockProvisioningError(
-            "resource_recovery_failed", resource="data_source"
-        )
-    _validate_bedrock_knowledge_base(
-        parent, org_id, kb_id, _vector_index_arn(kb_id)
+    return _bedrock_resources_adapter().create_data_source(
+        bedrock_kb_id, org_id, kb_id
     )
-    if parent.get("status") != "ACTIVE":
-        raise BedrockProvisioningError(
-            "resource_recovery_failed", resource="data_source"
-        )
-
-    recovered = discover_bedrock_data_source(bedrock_kb_id, org_id, kb_id)
-    if not recovered:
-        raise BedrockProvisioningError(
-            "resource_recovery_failed", resource="data_source"
-        )
-    return recovered
 
 
 def wait_for_bedrock_data_source(
     bedrock_kb_id: str, data_source_id: str, org_id: int, kb_id: int
 ) -> dict[str, Any]:
-    for attempt in range(WAIT_ATTEMPTS):
-        remote = get_bedrock_data_source(bedrock_kb_id, data_source_id)
-        if remote:
-            _validate_bedrock_data_source(
-                remote, bedrock_kb_id, org_id, kb_id
-            )
-            status = remote.get("status")
-            if status == "AVAILABLE":
-                return remote
-            if status in {"FAILED", "DELETE_UNSUCCESSFUL"}:
-                raise BedrockProvisioningError(
-                    "bedrock_data_source_not_available", resource="data_source"
-                )
-        _sleep_between_attempts(attempt, WAIT_ATTEMPTS)
-    raise BedrockProvisioningError(
-        "bedrock_data_source_activation_timeout", resource="data_source"
+    return _bedrock_resources_adapter().wait_for_data_source(
+        bedrock_kb_id, data_source_id, org_id, kb_id
     )
 
 
@@ -959,95 +626,45 @@ def delete_bedrock_data_source(
     kb_id: int,
     index_arn: str,
 ) -> None:
-    parent = get_bedrock_knowledge_base(bedrock_kb_id)
-    if not parent:
-        return
-    _validate_bedrock_knowledge_base(parent, org_id, kb_id, index_arn)
-    remote = get_bedrock_data_source(bedrock_kb_id, data_source_id)
-    if not remote:
-        return
-    _validate_bedrock_data_source(remote, bedrock_kb_id, org_id, kb_id)
-    try:
-        _get_bedrock_agent_client().delete_data_source(
-            knowledgeBaseId=bedrock_kb_id,
-            dataSourceId=data_source_id,
-        )
-    except (BotoCoreError, ClientError) as error:
-        if _client_error_code(error) == "ResourceNotFoundException":
-            return
-        _log_provisioning_aws_error(
-            operation="DeleteDataSource",
-            aws_service="bedrock-agent",
-            stage="deleting",
-            org_id=org_id,
-            kb_id=kb_id,
-            error=error,
-            vector_index_arn=index_arn,
-            bedrock_kb_id=bedrock_kb_id,
-            bedrock_data_source_id=data_source_id,
-        )
-        raise _aws_provisioning_error(
-            "bedrock_data_source_delete_failed",
-            "data_source",
-            error,
-            aws_service="bedrock-agent",
-            aws_operation="DeleteDataSource",
-        ) from error
-
-    for attempt in range(WAIT_ATTEMPTS):
-        remote = get_bedrock_data_source(bedrock_kb_id, data_source_id)
-        if remote is None:
-            return
-        if remote.get("status") == "DELETE_UNSUCCESSFUL":
-            break
-        _sleep_between_attempts(attempt, WAIT_ATTEMPTS)
-    raise BedrockProvisioningError(
-        "bedrock_data_source_delete_unconfirmed", resource="data_source"
+    _bedrock_resources_adapter().delete_data_source(
+        bedrock_kb_id, data_source_id, org_id, kb_id, index_arn
     )
 
 
 def delete_bedrock_knowledge_base(
     bedrock_kb_id: str, org_id: int, kb_id: int, index_arn: str
 ) -> None:
-    remote = get_bedrock_knowledge_base(bedrock_kb_id)
-    if not remote:
-        return
-    _validate_bedrock_knowledge_base(remote, org_id, kb_id, index_arn)
-    try:
-        _get_bedrock_agent_client().delete_knowledge_base(
-            knowledgeBaseId=bedrock_kb_id
-        )
-    except (BotoCoreError, ClientError) as error:
-        if _client_error_code(error) == "ResourceNotFoundException":
-            return
-        _log_provisioning_aws_error(
-            operation="DeleteKnowledgeBase",
-            aws_service="bedrock-agent",
-            stage="deleting",
-            org_id=org_id,
-            kb_id=kb_id,
-            error=error,
-            vector_index_arn=index_arn,
-            bedrock_kb_id=bedrock_kb_id,
-        )
-        raise _aws_provisioning_error(
-            "bedrock_kb_delete_failed",
-            "knowledge_base",
-            error,
-            aws_service="bedrock-agent",
-            aws_operation="DeleteKnowledgeBase",
-        ) from error
-
-    for attempt in range(WAIT_ATTEMPTS):
-        remote = get_bedrock_knowledge_base(bedrock_kb_id)
-        if remote is None:
-            return
-        if remote.get("status") == "DELETE_UNSUCCESSFUL":
-            break
-        _sleep_between_attempts(attempt, WAIT_ATTEMPTS)
-    raise BedrockProvisioningError(
-        "bedrock_kb_delete_unconfirmed", resource="knowledge_base"
+    _bedrock_resources_adapter().delete_knowledge_base(
+        bedrock_kb_id, org_id, kb_id, index_arn
     )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 def _commit_state(db: Session, error_code: str = "database_state_persist_failed") -> None:
