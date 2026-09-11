@@ -62,7 +62,7 @@
   "tests/test_runtime_hardening.py": 0.012408,
   "tests/test_s3_vectors_adapter_boundary.py": 0.004524,
   "tests/test_sales_attribution.py": 0.299261,
-  "tests/test_shopify.py": 34.660428,
+  "tests/test_shopify.py": 5.96,
   "tests/test_startup_migration.py": 0.787796,
   "tests/test_telegram.py": 0.238917,
   "tests/test_telegram_delivery.py": 0.095331,
