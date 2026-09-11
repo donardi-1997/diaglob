@@ -29,6 +29,10 @@ from .knowledge_provisioning.errors import (
     _is_uncertain_create_error,
     classify_provisioning_aws_error,
 )
+from .knowledge_provisioning.s3_vectors import (
+    S3VectorsAdapter,
+    S3VectorsConfig,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -428,49 +432,40 @@ def cleanup_verified_legacy_resources(
     logger.info("database_deleted organization_id=%s knowledge_base_id=%s", org_id, kb_id)
 
 
+def _s3_vectors_adapter() -> S3VectorsAdapter:
+    """Build the S3 Vectors adapter from the current facade configuration.
+
+    Construction is intentionally lazy so existing tests and operational code that
+    patch the legacy module's configuration/client factory keep working unchanged.
+    """
+    return S3VectorsAdapter(
+        config=S3VectorsConfig(
+            vector_bucket_arn=VECTOR_BUCKET_ARN,
+            environment=ENVIRONMENT,
+            vector_dimension=VECTOR_DIMENSION,
+            vector_data_type=VECTOR_DATA_TYPE,
+            vector_distance_metric=VECTOR_DISTANCE_METRIC,
+            non_filterable_metadata_keys=VECTOR_NON_FILTERABLE_METADATA_KEYS,
+            recovery_attempts=RECOVERY_ATTEMPTS,
+            wait_attempts=WAIT_ATTEMPTS,
+        ),
+        client_factory=_get_s3_vectors_client,
+        vector_index_arn=_vector_index_arn,
+        build_vector_index_name=build_vector_index_name,
+        make_tags=_make_tags,
+        tags_match=_tags_match,
+        sleep_between_attempts=_sleep_between_attempts,
+        validate_configuration=_validate_configuration,
+        log_aws_error=_log_provisioning_aws_error,
+    )
+
+
 def get_s3_vectors_index(index_arn: str) -> dict[str, Any] | None:
-    """Return an S3 Vectors index, or None when it does not exist."""
-    try:
-        return _get_s3_vectors_client().get_index(indexArn=index_arn).get("index")
-    except ClientError as error:
-        if _client_error_code(error) == "NotFoundException":
-            return None
-        logger.exception("Failed to inspect managed S3 Vectors index")
-        raise _aws_provisioning_error(
-            "vector_index_get_failed",
-            "vector_index",
-            error,
-            aws_service="s3vectors",
-            aws_operation="GetIndex",
-            classification=classify_provisioning_aws_error(error),
-        ) from error
-    except BotoCoreError as error:
-        logger.exception("Failed to inspect managed S3 Vectors index")
-        raise _aws_provisioning_error(
-            "vector_index_get_failed",
-            "vector_index",
-            error,
-            aws_service="s3vectors",
-            aws_operation="GetIndex",
-            classification=classify_provisioning_aws_error(error),
-        ) from error
+    return _s3_vectors_adapter().get_index(index_arn)
 
 
 def _get_s3_vectors_tags(index_arn: str) -> dict[str, str]:
-    try:
-        return _get_s3_vectors_client().list_tags_for_resource(
-            resourceArn=index_arn
-        ).get("tags", {})
-    except (BotoCoreError, ClientError) as error:
-        logger.exception("Failed to inspect managed S3 Vectors index tags")
-        raise _aws_provisioning_error(
-            "vector_index_tags_get_failed",
-            "vector_index",
-            error,
-            aws_service="s3vectors",
-            aws_operation="ListTagsForResource",
-            classification=classify_provisioning_aws_error(error),
-        ) from error
+    return _s3_vectors_adapter().get_tags(index_arn)
 
 
 def _validate_s3_vectors_index(
@@ -479,150 +474,31 @@ def _validate_s3_vectors_index(
     org_id: int,
     kb_id: int,
 ) -> None:
-    expected_arn = _vector_index_arn(kb_id)
-    expected_name = build_vector_index_name(ENVIRONMENT, kb_id)
-    if (
-        index.get("indexArn") != expected_arn
-        or index.get("indexName") != expected_name
-        or not _tags_match(tags, _make_tags(org_id, kb_id))
-    ):
-        raise BedrockProvisioningError(
-            "resource_ownership_mismatch", resource="vector_index"
-        )
-
-    metadata_keys = set(
-        index.get("metadataConfiguration", {}).get(
-            "nonFilterableMetadataKeys", []
-        )
-    )
-    if (
-        index.get("dataType") != VECTOR_DATA_TYPE
-        or index.get("dimension") != VECTOR_DIMENSION
-        or index.get("distanceMetric") != VECTOR_DISTANCE_METRIC
-        or not set(VECTOR_NON_FILTERABLE_METADATA_KEYS).issubset(metadata_keys)
-    ):
-        raise BedrockProvisioningError(
-            "vector_index_configuration_mismatch", resource="vector_index"
-        )
+    _s3_vectors_adapter().validate_index(index, tags, org_id, kb_id)
 
 
 def _recover_s3_vectors_index(org_id: int, kb_id: int) -> dict[str, Any] | None:
-    index_arn = _vector_index_arn(kb_id)
-    for attempt in range(RECOVERY_ATTEMPTS):
-        index = get_s3_vectors_index(index_arn)
-        if index:
-            _validate_s3_vectors_index(
-                index,
-                _get_s3_vectors_tags(index_arn),
-                org_id,
-                kb_id,
-            )
-            return index
-        _sleep_between_attempts(attempt, RECOVERY_ATTEMPTS)
-    return None
+    return _s3_vectors_adapter().recover_index(org_id, kb_id)
 
 
 def create_s3_vectors_index(org_id: int, kb_id: int) -> dict[str, Any]:
-    """Create or safely recover the deterministic S3 Vectors index."""
-    _validate_configuration()
-    index_name = build_vector_index_name(ENVIRONMENT, kb_id)
-    index_arn = _vector_index_arn(kb_id)
-    try:
-        response = _get_s3_vectors_client().create_index(
-            vectorBucketArn=VECTOR_BUCKET_ARN,
-            indexName=index_name,
-            dataType=VECTOR_DATA_TYPE,
-            dimension=VECTOR_DIMENSION,
-            distanceMetric=VECTOR_DISTANCE_METRIC,
-            metadataConfiguration={
-                "nonFilterableMetadataKeys": list(
-                    VECTOR_NON_FILTERABLE_METADATA_KEYS
-                )
-            },
-            tags=_make_tags(org_id, kb_id),
-        )
-        if response.get("indexArn") != index_arn:
-            raise BedrockProvisioningError(
-                "vector_index_create_failed", resource="vector_index"
-            )
-    except BedrockProvisioningError:
-        raise
-    except (BotoCoreError, ClientError) as error:
-        if not _is_uncertain_create_error(error):
-            _log_provisioning_aws_error(
-                operation="CreateIndex",
-                aws_service="s3vectors",
-                stage="creating_vector_index",
-                org_id=org_id,
-                kb_id=kb_id,
-                error=error,
-                vector_index_arn=index_arn,
-            )
-            raise _aws_provisioning_error(
-                "vector_index_create_failed",
-                "vector_index",
-                error,
-                aws_service="s3vectors",
-                aws_operation="CreateIndex",
-                classification=classify_provisioning_aws_error(error),
-            ) from error
-        logger.warning(
-            "S3 Vectors index create response was uncertain; attempting recovery",
-            exc_info=True,
-        )
-
-    recovered = _recover_s3_vectors_index(org_id, kb_id)
-    if not recovered:
-        raise BedrockProvisioningError(
-            "resource_recovery_failed", resource="vector_index"
-        )
-    return recovered
+    return _s3_vectors_adapter().create_index(org_id, kb_id)
 
 
 def delete_s3_vectors_index(index_arn: str, org_id: int, kb_id: int) -> None:
-    """Delete only the owned deterministic index and confirm its absence."""
-    if index_arn != _vector_index_arn(kb_id):
-        raise BedrockProvisioningError(
-            "resource_ownership_mismatch", resource="vector_index"
-        )
-    index = get_s3_vectors_index(index_arn)
-    if not index:
-        return
-    _validate_s3_vectors_index(
-        index,
-        _get_s3_vectors_tags(index_arn),
-        org_id,
-        kb_id,
-    )
-    try:
-        _get_s3_vectors_client().delete_index(indexArn=index_arn)
-    except (BotoCoreError, ClientError) as error:
-        if _client_error_code(error) == "NotFoundException":
-            return
-        _log_provisioning_aws_error(
-            operation="DeleteIndex",
-            aws_service="s3vectors",
-            stage="deleting",
-            org_id=org_id,
-            kb_id=kb_id,
-            error=error,
-            vector_index_arn=index_arn,
-        )
-        raise _aws_provisioning_error(
-            "vector_index_delete_failed",
-            "vector_index",
-            error,
-            aws_service="s3vectors",
-            aws_operation="DeleteIndex",
-        ) from error
+    _s3_vectors_adapter().delete_index(index_arn, org_id, kb_id)
 
-    for attempt in range(WAIT_ATTEMPTS):
-        if get_s3_vectors_index(index_arn) is None:
-            return
-        _sleep_between_attempts(attempt, WAIT_ATTEMPTS)
-    raise BedrockProvisioningError(
-        "vector_index_delete_unconfirmed", resource="vector_index"
-    )
+
+
+
+
+
+
+
+
+
+
+
 
 
 def get_bedrock_knowledge_base(bedrock_kb_id: str) -> dict[str, Any] | None:
