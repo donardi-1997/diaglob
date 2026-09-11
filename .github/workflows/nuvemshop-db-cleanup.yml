@@ -1,0 +1,76 @@
+name: Nuvemshop DB Cleanup
+
+on:
+  push:
+    branches:
+      - perf/nuvemshop-db-cleanup
+    paths:
+      - .github/workflows/nuvemshop-db-cleanup.yml
+
+permissions:
+  contents: write
+
+jobs:
+  green:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: perf/nuvemshop-db-cleanup
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install pytest ruff
+
+      - name: Focused GREEN and timing collection
+        working-directory: backend
+        run: |
+          python -m pytest -q --tb=short \
+            tests/test_ci_db_fixture_scope.py \
+            tests/test_nuvemshop_integration.py \
+            -p tools.test_timings \
+            --timings-output /tmp/nuvemshop-timings.json
+          cat /tmp/nuvemshop-timings.json
+
+      - name: Refresh Nuvemshop timing
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          measured = json.loads(Path('/tmp/nuvemshop-timings.json').read_text())
+          key = 'tests/test_nuvemshop_integration.py'
+          if key not in measured:
+              raise SystemExit(f'{key} missing from timing collector output')
+
+          path = Path('backend/test_timings.json')
+          timings = json.loads(path.read_text())
+          old = timings[key]
+          timings[key] = measured[key]
+          path.write_text(json.dumps(timings, indent=2, sort_keys=True) + '\n')
+          print(f'{key}: {old:.6f}s -> {timings[key]:.6f}s')
+          PY
+
+      - name: Verify focused diff
+        run: |
+          ruff check backend/tests/test_nuvemshop_integration.py backend/tests/test_ci_db_fixture_scope.py backend/tools/test_timings.py
+          git diff --check
+
+      - name: Commit measured timing
+        run: |
+          git config user.name "Adrian Felipe Guerra"
+          git config user.email "adrianguerra9703@gmail.com"
+          git add backend/test_timings.json
+          git diff --cached --quiet && exit 0
+          git commit -m "perf: refresh Nuvemshop test timing"
+          git push origin HEAD:perf/nuvemshop-db-cleanup
