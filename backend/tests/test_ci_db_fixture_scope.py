@@ -68,27 +68,6 @@ def _assert_db_schema_is_opt_in(path: Path, schema_fixture: str) -> None:
             )
 
 
-def test_bedrock_schema_setup_is_only_requested_by_db_fixture():
-    _assert_db_schema_is_opt_in(
-        ROOT / "test_bedrock_knowledge_base.py",
-        "setup_database",
-    )
-
-
-def test_google_sheets_schema_setup_is_only_requested_by_db_fixture():
-    _assert_db_schema_is_opt_in(
-        ROOT / "test_google_sheets.py",
-        "setup_db",
-    )
-
-
-def test_automations_schema_setup_is_only_requested_by_db_fixture():
-    _assert_db_schema_is_opt_in(
-        ROOT / "test_automations.py",
-        "setup_db",
-    )
-
-
 def _assert_schema_once_with_cleanup(path: Path, schema_fixture: str) -> None:
     functions = _fixture_functions(path)
     schema = functions[schema_fixture]
@@ -100,6 +79,27 @@ def _assert_schema_once_with_cleanup(path: Path, schema_fixture: str) -> None:
 
     assert _is_autouse_fixture(cleanup)
     assert not _calls_schema_ddl(cleanup)
+
+
+def test_bedrock_schema_is_created_once_and_data_cleanup_has_no_ddl():
+    _assert_schema_once_with_cleanup(
+        ROOT / "test_bedrock_knowledge_base.py",
+        "setup_database",
+    )
+
+
+def test_google_sheets_schema_is_created_once_and_data_cleanup_has_no_ddl():
+    _assert_schema_once_with_cleanup(
+        ROOT / "test_google_sheets.py",
+        "setup_db",
+    )
+
+
+def test_automations_schema_setup_is_only_requested_by_db_fixture():
+    _assert_db_schema_is_opt_in(
+        ROOT / "test_automations.py",
+        "setup_db",
+    )
 
 
 def test_shopify_schema_is_created_once_and_data_cleanup_has_no_ddl():
