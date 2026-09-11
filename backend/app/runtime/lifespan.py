@@ -1,15 +1,15 @@
 """Application lifecycle orchestration.
 
-External reconciliation is launched after the event loop starts and is not awaited
-before the API begins serving traffic. Failures are logged and isolated from process
-startup so a transient Bedrock/DB reconciliation problem cannot make the HTTP service
-unavailable.
+External reconciliation is launched in a daemon worker and is not awaited before the
+API begins serving traffic. Failures are logged and isolated from process startup or
+shutdown so a transient Bedrock/DB reconciliation problem cannot make the HTTP
+service unavailable.
 """
 from __future__ import annotations
 
-import asyncio
 import logging
-from contextlib import asynccontextmanager, suppress
+import threading
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
@@ -17,19 +17,37 @@ from ..settings import Settings
 
 logger = logging.getLogger(__name__)
 
+_reconciliation_lock = threading.Lock()
+_reconciliation_thread: threading.Thread | None = None
 
-async def run_knowledge_reconciliation() -> None:
-    """Run the synchronous reconciliation outside the event loop and isolate errors."""
+
+def run_knowledge_reconciliation() -> None:
+    """Run one reconciliation attempt and isolate provider/infrastructure errors."""
     try:
         from ..services.knowledge_provisioning import (
             reconcile_knowledge_base_provisioning,
         )
 
-        await asyncio.to_thread(reconcile_knowledge_base_provisioning)
-    except asyncio.CancelledError:
-        raise
+        reconcile_knowledge_base_provisioning()
     except Exception:
         logger.exception("knowledge.startup_reconciliation_failed")
+
+
+def start_knowledge_reconciliation() -> threading.Thread:
+    """Start reconciliation without blocking startup or duplicating active workers."""
+    global _reconciliation_thread
+
+    with _reconciliation_lock:
+        if _reconciliation_thread is not None and _reconciliation_thread.is_alive():
+            return _reconciliation_thread
+
+        _reconciliation_thread = threading.Thread(
+            target=run_knowledge_reconciliation,
+            name="knowledge-startup-reconciliation",
+            daemon=True,
+        )
+        _reconciliation_thread.start()
+        return _reconciliation_thread
 
 
 def build_lifespan(settings: Settings):
@@ -37,21 +55,13 @@ def build_lifespan(settings: Settings):
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        task: asyncio.Task[None] | None = None
-
         if settings.knowledge_reconcile_on_startup:
-            task = asyncio.create_task(
-                run_knowledge_reconciliation(),
-                name="knowledge-startup-reconciliation",
+            app.state.knowledge_reconciliation_thread = (
+                start_knowledge_reconciliation()
             )
-            app.state.knowledge_reconciliation_task = task
 
-        try:
-            yield
-        finally:
-            if task is not None and not task.done():
-                task.cancel()
-                with suppress(asyncio.CancelledError):
-                    await task
+        # Intentionally do not join the daemon worker on shutdown. API lifecycle
+        # availability must not depend on an external reconciliation attempt.
+        yield
 
     return lifespan
