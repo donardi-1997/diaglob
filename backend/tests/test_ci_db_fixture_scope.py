@@ -16,7 +16,7 @@ def _fixture_functions(path: Path) -> dict[str, ast.FunctionDef]:
     }
 
 
-def _is_autouse_fixture(function: ast.FunctionDef) -> bool:
+def _fixture_keyword(function: ast.FunctionDef, keyword_name: str):
     for decorator in function.decorator_list:
         if not isinstance(decorator, ast.Call):
             continue
@@ -29,9 +29,18 @@ def _is_autouse_fixture(function: ast.FunctionDef) -> bool:
         ):
             continue
         for keyword in decorator.keywords:
-            if keyword.arg == "autouse" and isinstance(keyword.value, ast.Constant):
-                return keyword.value.value is True
-    return False
+            if keyword.arg == keyword_name and isinstance(keyword.value, ast.Constant):
+                return keyword.value.value
+    return None
+
+
+def _is_autouse_fixture(function: ast.FunctionDef) -> bool:
+    return _fixture_keyword(function, "autouse") is True
+
+
+def _fixture_scope(function: ast.FunctionDef) -> str | None:
+    value = _fixture_keyword(function, "scope")
+    return value if isinstance(value, str) else None
 
 
 def _calls_schema_ddl(function: ast.FunctionDef) -> bool:
@@ -78,3 +87,16 @@ def test_automations_schema_setup_is_only_requested_by_db_fixture():
         ROOT / "test_automations.py",
         "setup_db",
     )
+
+
+def test_shopify_schema_is_created_once_and_data_cleanup_has_no_ddl():
+    functions = _fixture_functions(ROOT / "test_shopify.py")
+    schema = functions["setup_db"]
+    cleanup = functions["cleanup_db"]
+
+    assert _calls_schema_ddl(schema)
+    assert _fixture_scope(schema) == "module"
+    assert _is_autouse_fixture(schema)
+
+    assert _is_autouse_fixture(cleanup)
+    assert not _calls_schema_ddl(cleanup)
