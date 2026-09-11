@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,6 +15,7 @@ from app.runtime.rate_limit import (
     RateLimitRule,
 )
 from app.runtime.security import SecurityHeadersMiddleware
+from app.services import knowledge_provisioning
 from app.settings import Settings
 
 
@@ -87,18 +89,47 @@ def test_rate_limit_response_keeps_cors_and_security_headers():
     assert response.headers["x-frame-options"] == "DENY"
 
 
-def test_lifespan_schedules_knowledge_reconciliation_without_waiting(monkeypatch):
-    started = asyncio.Event()
-    release = asyncio.Event()
+def test_start_knowledge_reconciliation_uses_daemon_worker(monkeypatch):
+    started = threading.Event()
+    release = threading.Event()
 
-    async def slow_reconciliation():
+    def slow_reconciliation():
         started.set()
-        await release.wait()
+        release.wait(timeout=1)
 
     monkeypatch.setattr(
         lifespan_module,
         "run_knowledge_reconciliation",
         slow_reconciliation,
+    )
+    monkeypatch.setattr(lifespan_module, "_reconciliation_thread", None)
+
+    worker = lifespan_module.start_knowledge_reconciliation()
+
+    assert started.wait(timeout=0.5) is True
+    assert worker.daemon is True
+    assert worker.is_alive() is True
+
+    # A second startup while the first reconciliation is active reuses the worker.
+    assert lifespan_module.start_knowledge_reconciliation() is worker
+
+    release.set()
+    worker.join(timeout=0.5)
+    assert worker.is_alive() is False
+
+
+def test_lifespan_schedules_knowledge_reconciliation_without_joining(monkeypatch):
+    sentinel = object()
+    calls: list[str] = []
+
+    def fake_start():
+        calls.append("started")
+        return sentinel
+
+    monkeypatch.setattr(
+        lifespan_module,
+        "start_knowledge_reconciliation",
+        fake_start,
     )
 
     settings = Settings(
@@ -110,11 +141,8 @@ def test_lifespan_schedules_knowledge_reconciliation_without_waiting(monkeypatch
     async def scenario():
         lifespan = lifespan_module.build_lifespan(settings)
         async with lifespan(app):
-            await asyncio.wait_for(started.wait(), timeout=0.5)
-            task = app.state.knowledge_reconciliation_task
-            assert task.done() is False
-            release.set()
-            await asyncio.wait_for(task, timeout=0.5)
+            assert calls == ["started"]
+            assert app.state.knowledge_reconciliation_thread is sentinel
 
     asyncio.run(scenario())
 
@@ -129,21 +157,21 @@ def test_lifespan_can_disable_startup_reconciliation():
     async def scenario():
         lifespan = lifespan_module.build_lifespan(settings)
         async with lifespan(app):
-            assert not hasattr(app.state, "knowledge_reconciliation_task")
+            assert not hasattr(app.state, "knowledge_reconciliation_thread")
 
     asyncio.run(scenario())
 
 
 def test_reconciliation_failure_isolated_from_runtime(monkeypatch):
-    async def failing_to_thread(*args, **kwargs):
+    def failing_reconciliation():
         raise RuntimeError("provider unavailable")
 
     monkeypatch.setattr(
-        lifespan_module.asyncio,
-        "to_thread",
-        failing_to_thread,
+        knowledge_provisioning,
+        "reconcile_knowledge_base_provisioning",
+        failing_reconciliation,
     )
 
     # The startup reconciliation is best effort: provider failures are logged but
     # must not escape and fail FastAPI startup.
-    asyncio.run(lifespan_module.run_knowledge_reconciliation())
+    lifespan_module.run_knowledge_reconciliation()
