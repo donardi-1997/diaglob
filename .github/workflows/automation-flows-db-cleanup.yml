@@ -8,10 +8,14 @@ on:
       - .github/workflows/automation-flows-db-cleanup.yml
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  green:
+  backend:
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -30,110 +34,24 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r backend/requirements.txt
-          pip install pytest ruff
+          pip install ruff pytest
 
-      - name: Apply shared Automation Flows engine
-        run: |
-          python - <<'PY'
-          from pathlib import Path
+      - name: Ruff
+        if: matrix.shard == 0
+        working-directory: backend
+        run: ruff check app/ tests/ tools/
 
-          path = Path('backend/tests/test_automation_flows.py')
-          text = path.read_text(encoding='utf-8')
-          old = (
-              '@pytest.fixture()\n'
-              'def db():\n'
-              '    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)\n'
-              '    Base.metadata.create_all(engine)\n'
-              '    session = sessionmaker(bind=engine)()\n'
-              '    org = Organization(name="Flow Org", slug="flow-org", plan="starter", subscription_status="active")\n'
-              '    session.add(org)\n'
-              '    session.flush()\n'
-              '    store = Store(organization_id=org.id, name="Flow Store", slug="flow-store",\n'
-              '                  country_code="CO", currency="COP", timezone="America/Bogota",\n'
-              '                  default_language="es")\n'
-              '    session.add(store)\n'
-              '    session.flush()\n'
-              '    yield session, org, store\n'
-              '    session.close()\n'
-              '    Base.metadata.drop_all(engine)\n'
-          )
-          new = (
-              '@pytest.fixture(scope="module")\n'
-              'def flow_engine():\n'
-              '    engine = create_engine(\n'
-              '        "sqlite://",\n'
-              '        connect_args={"check_same_thread": False},\n'
-              '        poolclass=StaticPool,\n'
-              '    )\n'
-              '    Base.metadata.create_all(engine)\n'
-              '    yield engine\n'
-              '    Base.metadata.drop_all(engine)\n'
-              '\n'
-              '\n'
-              'def _clear_flow_db_rows(engine):\n'
-              '    with engine.begin() as connection:\n'
-              '        for table in reversed(Base.metadata.sorted_tables):\n'
-              '            connection.execute(table.delete())\n'
-              '\n'
-              '\n'
-              '@pytest.fixture()\n'
-              'def db(flow_engine):\n'
-              '    session = sessionmaker(bind=flow_engine)()\n'
-              '    org = Organization(name="Flow Org", slug="flow-org", plan="starter", subscription_status="active")\n'
-              '    session.add(org)\n'
-              '    session.flush()\n'
-              '    store = Store(organization_id=org.id, name="Flow Store", slug="flow-store",\n'
-              '                  country_code="CO", currency="COP", timezone="America/Bogota",\n'
-              '                  default_language="es")\n'
-              '    session.add(store)\n'
-              '    session.flush()\n'
-              '    yield session, org, store\n'
-              '    session.close()\n'
-              '    _clear_flow_db_rows(flow_engine)\n'
-          )
-          if text.count(old) != 1:
-              raise SystemExit(f'expected original db fixture once, found {text.count(old)}')
-          path.write_text(text.replace(old, new, 1), encoding='utf-8')
-          PY
-
-      - name: Focused GREEN and timing collection
+      - name: Select backend shard
         working-directory: backend
         run: |
-          python -m pytest -q --tb=short \
-            tests/test_ci_db_fixture_scope.py \
-            tests/test_automation_flows.py \
-            -p tools.test_timings \
-            --timings-output /tmp/automation-flows-timings.json
-          cat /tmp/automation-flows-timings.json
+          set -euo pipefail
+          python -m tools.test_sharding --index "${{ matrix.shard }}" --count 2 > /tmp/backend-test-files.txt
+          test -s /tmp/backend-test-files.txt
+          echo "Shard ${{ matrix.shard }} test files: $(wc -l < /tmp/backend-test-files.txt)"
 
-      - name: Refresh Automation Flows timing
+      - name: Backend tests
+        working-directory: backend
         run: |
-          python - <<'PY'
-          import json
-          from pathlib import Path
-
-          measured = json.loads(Path('/tmp/automation-flows-timings.json').read_text())
-          key = 'tests/test_automation_flows.py'
-          if key not in measured:
-              raise SystemExit(f'{key} missing from timing collector output')
-
-          path = Path('backend/test_timings.json')
-          timings = json.loads(path.read_text())
-          old = timings[key]
-          timings[key] = measured[key]
-          path.write_text(json.dumps(timings, indent=2, sort_keys=True) + '\n')
-          print(f'{key}: {old:.6f}s -> {timings[key]:.6f}s')
-          PY
-
-      - name: Verify focused diff
-        run: |
-          ruff check backend/tests/test_automation_flows.py backend/tests/test_ci_db_fixture_scope.py backend/tools/test_timings.py
-          git diff --check
-
-      - name: Commit GREEN implementation
-        run: |
-          git config user.name "Adrian Felipe Guerra"
-          git config user.email "adrianguerra9703@gmail.com"
-          git add backend/tests/test_automation_flows.py backend/test_timings.json
-          git commit -m "perf: reuse DB engine in Automation Flows tests"
-          git push origin HEAD:perf/automation-flows-db-cleanup
+          set -euo pipefail
+          mapfile -t test_files < /tmp/backend-test-files.txt
+          python -m pytest -q --tb=short "${test_files[@]}"
