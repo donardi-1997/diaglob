@@ -69,15 +69,24 @@ def reset_test_state():
     _rate_limit_store.clear()
 
 
-@pytest.fixture()
+@pytest.fixture(scope="module", autouse=True)
 def setup_db():
+    Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     yield
     Base.metadata.drop_all(bind=engine)
 
 
+@pytest.fixture(autouse=True)
+def cleanup_db(setup_db):
+    yield
+    with engine.begin() as connection:
+        for table in reversed(Base.metadata.sorted_tables):
+            connection.execute(table.delete())
+
+
 @pytest.fixture()
-def db(setup_db):
+def db():
     session = TestingSessionLocal()
     try:
         yield session
