@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import os
-import re
 import time
 from typing import Any
 
@@ -61,6 +59,25 @@ from .knowledge_provisioning.legacy import (
     legacy_vector_index_arn,
     validate_legacy_data_source_ownership as validate_legacy_ownership,
 )
+from .knowledge_provisioning.configuration import (
+    KnowledgeProvisioningConfig,
+    VECTOR_DATA_TYPE,
+    VECTOR_DIMENSION,
+    VECTOR_DISTANCE_METRIC,
+    VECTOR_EMBEDDING_DATA_TYPE,
+    VECTOR_NON_FILTERABLE_METADATA_KEYS,
+    build_vector_index_name as config_build_vector_index_name,
+    environment_slug as config_environment_slug,
+    get_s3_prefix as config_get_s3_prefix,
+    make_client_token as config_make_client_token,
+    make_ds_name as config_make_ds_name,
+    make_kb_name as config_make_kb_name,
+    make_tags as config_make_tags,
+    missing_configuration,
+    normalize_environment as config_normalize_environment,
+    validate_configuration as config_validate_configuration,
+    vector_index_arn as config_vector_index_arn,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -73,52 +90,16 @@ logger = logging.getLogger(__name__)
 
 
 
-_CANONICAL_ENVIRONMENTS = {
-    "production": "production",
-    "prod": "production",
-    "staging": "staging",
-    "stage": "staging",
-    "development": "development",
-    "dev": "development",
-    "local": "development",
-    "test": "test",
-    "testing": "test",
-}
-
-
 def normalize_environment(value: str | None) -> str:
-    """Map a DIAGLOB_ENVIRONMENT value to a canonical form.
-
-    Canonical values: production, staging, development, test.
-
-    Raises BedrockProvisioningError on None, empty, or unknown values
-    so that misconfigurations fail fast rather than silently creating
-    non-deterministic IAM tags.
-    """
-    if not value or not value.strip():
-        raise BedrockProvisioningError(
-            "invalid_environment",
-            resource="configuration",
-        )
-    key = value.strip().lower()
-    canonical = _CANONICAL_ENVIRONMENTS.get(key)
-    if canonical is None:
-        raise BedrockProvisioningError(
-            "invalid_environment",
-            resource="configuration",
-        )
-    return canonical
+    """Map a DIAGLOB_ENVIRONMENT value to a canonical form."""
+    return config_normalize_environment(value)
 
 
 _RAW_ENVIRONMENT = os.getenv("DIAGLOB_ENVIRONMENT")
 
 
 def _resolve_environment(raw: str | None) -> str:
-    """Resolve and canonicalize the environment at provisioning time.
-
-    Called lazily (not at import time) so that tests can monkeypatch
-    ENVIRONMENT before provisioning functions execute.
-    """
+    """Resolve and canonicalize the environment at provisioning time."""
     return normalize_environment(raw)
 
 
@@ -132,15 +113,6 @@ EMBEDDING_MODEL_ARN = os.getenv(
     f"arn:aws:bedrock:{AWS_REGION}::foundation-model/amazon.titan-embed-text-v2:0",
 ).strip()
 KNOWLEDGE_BUCKET = os.getenv("DIAGLOB_KNOWLEDGE_BUCKET", "").strip()
-
-VECTOR_DIMENSION = 1024
-VECTOR_DATA_TYPE = "float32"
-VECTOR_EMBEDDING_DATA_TYPE = "FLOAT32"
-VECTOR_DISTANCE_METRIC = "cosine"
-VECTOR_NON_FILTERABLE_METADATA_KEYS = (
-    "AMAZON_BEDROCK_TEXT",
-    "AMAZON_BEDROCK_METADATA",
-)
 
 
 PROVISIONING_STATES = ("pending", "provisioning", "retrying", "ready", "failed", "deleting")
@@ -159,89 +131,58 @@ def _get_s3_vectors_client():
 
 
 def _environment_slug(environment: str) -> str:
-    slug_aliases = {
-        "production": "prod",
-        "development": "dev",
-    }
-    value = slug_aliases.get(
-        environment.strip().lower(), environment.strip().lower()
-    )
-    value = re.sub(r"[^a-z0-9-]+", "-", value).strip("-")
-    if not value:
-        raise BedrockProvisioningError(
-            "invalid_environment", resource="configuration"
-        )
-    return value
+    return config_environment_slug(environment)
 
 
 def build_vector_index_name(environment: str, kb_id: int) -> str:
     """Build a deterministic, non-PII S3 Vectors index name."""
-    name = f"diaglob-{_environment_slug(environment)}-kb-{kb_id}"
-    if len(name) > 63 or not re.fullmatch(r"[a-z0-9][a-z0-9.-]+[a-z0-9]", name):
-        raise BedrockProvisioningError("invalid_vector_index_name", resource="vector_index")
-    return name
+    return config_build_vector_index_name(environment, kb_id)
 
 
 def _make_kb_name(org_id: int, kb_id: int) -> str:
-    return f"diaglob-{_environment_slug(ENVIRONMENT)}-org-{org_id}-kb-{kb_id}"
+    return config_make_kb_name(ENVIRONMENT, org_id, kb_id)
 
 
 def _make_ds_name(kb_id: int) -> str:
-    return f"diaglob-{_environment_slug(ENVIRONMENT)}-kb-{kb_id}-s3"
+    return config_make_ds_name(ENVIRONMENT, kb_id)
 
 
 def _make_client_token(prefix: str, org_id: int, kb_id: int) -> str:
-    source = f"diaglob:{ENVIRONMENT}:{prefix}:{org_id}:{kb_id}"
-    digest = hashlib.sha256(source.encode("utf-8")).hexdigest()
-    return f"diaglob-{prefix}-{digest}"
+    return config_make_client_token(ENVIRONMENT, prefix, org_id, kb_id)
 
 
 def _make_tags(org_id: int, kb_id: int) -> dict[str, str]:
-    return {
-        "diaglob:managed-by": "diaglob-backend",
-        "diaglob:environment": ENVIRONMENT,
-        "diaglob:organization_id": str(org_id),
-        "diaglob:knowledge_base_id": str(kb_id),
-    }
+    return config_make_tags(ENVIRONMENT, org_id, kb_id)
 
 
 def _get_s3_prefix(org_id: int, kb_id: int) -> str:
-    return f"organizations/{org_id}/knowledge-bases/{kb_id}/documents/"
+    return config_get_s3_prefix(org_id, kb_id)
 
 
 def _vector_index_arn(kb_id: int) -> str:
-    if not VECTOR_BUCKET_ARN:
-        raise BedrockProvisioningError(
-            "vector_bucket_not_configured", resource="configuration"
-        )
-    return f"{VECTOR_BUCKET_ARN}/index/{build_vector_index_name(ENVIRONMENT, kb_id)}"
+    return config_vector_index_arn(VECTOR_BUCKET_ARN, ENVIRONMENT, kb_id)
+
+
+def _current_provisioning_config() -> KnowledgeProvisioningConfig:
+    """Capture current facade settings so monkeypatched runtime values remain live."""
+    return KnowledgeProvisioningConfig(
+        environment=ENVIRONMENT,
+        vector_bucket_arn=VECTOR_BUCKET_ARN,
+        bedrock_service_role_arn=BEDROCK_SERVICE_ROLE_ARN,
+        embedding_model_arn=EMBEDDING_MODEL_ARN,
+        knowledge_bucket=KNOWLEDGE_BUCKET,
+    )
 
 
 def _validate_configuration() -> None:
-    missing = []
-    if not ENVIRONMENT:
-        missing.append("DIAGLOB_ENVIRONMENT")
-    if not VECTOR_BUCKET_ARN:
-        missing.append("DIAGLOB_VECTOR_BUCKET_ARN")
-    if not BEDROCK_SERVICE_ROLE_ARN:
-        missing.append("BEDROCK_SERVICE_ROLE_ARN")
-    if not KNOWLEDGE_BUCKET:
-        missing.append("DIAGLOB_KNOWLEDGE_BUCKET")
+    config = _current_provisioning_config()
+    missing = missing_configuration(config)
     if missing:
-        logger.error("Missing Bedrock provisioning configuration: %s", ", ".join(missing))
-        raise BedrockProvisioningError(
-            "provisioning_configuration_missing", resource="configuration"
+        logger.error(
+            "Missing Bedrock provisioning configuration: %s",
+            ", ".join(missing),
         )
-
-
-
-
-
-
-
-
-
-
+    config_validate_configuration(config)
 
 
 def _log_provisioning_aws_error(
