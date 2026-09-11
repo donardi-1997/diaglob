@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import os
-import time
 from typing import Any
 
 import boto3
@@ -77,6 +76,12 @@ from .knowledge_provisioning.configuration import (
     normalize_environment as config_normalize_environment,
     validate_configuration as config_validate_configuration,
     vector_index_arn as config_vector_index_arn,
+)
+from .knowledge_provisioning.runtime import (
+    AwsDiagnosticsContext,
+    log_provisioning_aws_error as runtime_log_provisioning_aws_error,
+    sleep_between_attempts as runtime_sleep_between_attempts,
+    tags_match as runtime_tags_match,
 )
 
 logger = logging.getLogger(__name__)
@@ -185,6 +190,16 @@ def _validate_configuration() -> None:
     config_validate_configuration(config)
 
 
+def _diagnostics_context() -> AwsDiagnosticsContext:
+    """Capture current facade values used in structured AWS diagnostics."""
+    return AwsDiagnosticsContext(
+        vector_bucket_arn=VECTOR_BUCKET_ARN,
+        bedrock_service_role_arn=BEDROCK_SERVICE_ROLE_ARN,
+        embedding_model_arn=EMBEDDING_MODEL_ARN,
+        knowledge_bucket=KNOWLEDGE_BUCKET,
+    )
+
+
 def _log_provisioning_aws_error(
     *,
     operation: str,
@@ -197,41 +212,34 @@ def _log_provisioning_aws_error(
     bedrock_kb_id: str | None = None,
     bedrock_data_source_id: str | None = None,
 ) -> None:
-    logger.error(
-        "knowledge_base_aws_operation_failed operation=%s aws_service=%s "
-        "organization_id=%s knowledge_base_id=%s provisioning_stage=%s "
-        "aws_error_code=%s aws_error_message=%s aws_request_id=%s "
-        "vector_bucket_arn=%s vector_index_arn=%s bedrock_kb_id=%s "
-        "bedrock_data_source_id=%s bedrock_role_arn=%s embedding_model_arn=%s "
-        "knowledge_bucket=%s",
-        operation,
-        aws_service,
-        org_id,
-        kb_id,
-        stage,
-        _client_error_code(error),
-        _client_error_message(error),
-        _client_error_request_id(error),
-        VECTOR_BUCKET_ARN,
-        vector_index_arn,
-        bedrock_kb_id,
-        bedrock_data_source_id,
-        BEDROCK_SERVICE_ROLE_ARN,
-        EMBEDDING_MODEL_ARN,
-        KNOWLEDGE_BUCKET,
-        exc_info=(type(error), error, error.__traceback__),
+    runtime_log_provisioning_aws_error(
+        logger=logger,
+        operation=operation,
+        aws_service=aws_service,
+        stage=stage,
+        org_id=org_id,
+        kb_id=kb_id,
+        error=error,
+        context=_diagnostics_context(),
+        client_error_code=_client_error_code,
+        client_error_message=_client_error_message,
+        client_error_request_id=_client_error_request_id,
+        vector_index_arn=vector_index_arn,
+        bedrock_kb_id=bedrock_kb_id,
+        bedrock_data_source_id=bedrock_data_source_id,
     )
 
 
-
-
 def _sleep_between_attempts(attempt: int, attempts: int) -> None:
-    if attempt + 1 < attempts and POLL_INTERVAL_SECONDS > 0:
-        time.sleep(POLL_INTERVAL_SECONDS)
+    runtime_sleep_between_attempts(
+        attempt,
+        attempts,
+        POLL_INTERVAL_SECONDS,
+    )
 
 
 def _tags_match(actual: dict[str, str], expected: dict[str, str]) -> bool:
-    return all(actual.get(key) == value for key, value in expected.items())
+    return runtime_tags_match(actual, expected)
 
 
 def is_verified_legacy_parent(bedrock_kb_id: str) -> bool:
