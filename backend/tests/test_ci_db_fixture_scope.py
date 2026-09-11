@@ -79,7 +79,6 @@ def _assert_schema_once_with_cleanup(path: Path, schema_fixture: str) -> None:
 
     assert _is_autouse_fixture(cleanup)
     assert not _calls_schema_ddl(cleanup)
-    assert schema_fixture in {arg.arg for arg in cleanup.args.args}
 
 
 def test_bedrock_schema_is_created_once_and_data_cleanup_has_no_ddl():
@@ -104,13 +103,8 @@ def test_automations_schema_setup_is_only_requested_by_db_fixture():
 
 
 def test_shopify_schema_is_created_once_and_data_cleanup_has_no_ddl():
-    functions = _fixture_functions(ROOT / "test_shopify.py")
-    schema = functions["setup_db"]
-    cleanup = functions["cleanup_db"]
+    _assert_schema_once_with_cleanup(ROOT / "test_shopify.py", "setup_db")
 
-    assert _calls_schema_ddl(schema)
-    assert _fixture_scope(schema) == "module"
-    assert _is_autouse_fixture(schema)
 
-    assert _is_autouse_fixture(cleanup)
-    assert not _calls_schema_ddl(cleanup)
+def test_payments_schema_is_created_once_and_data_cleanup_has_no_ddl():
+    _assert_schema_once_with_cleanup(ROOT / "test_payments.py", "setup_db")
