@@ -1,0 +1,83 @@
+name: Billing Proration Cleanup
+
+on:
+  push:
+    branches:
+      - fix/billing-upgrade-proration
+    paths:
+      - .github/workflows/billing-proration-cleanup.yml
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup-and-verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/billing-upgrade-proration
+
+      - name: Remove obsolete upgrade-cycle helper
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("backend/app/services/billing_service.py")
+          text = path.read_text()
+
+          import_line = "    add_billing_months,\n"
+          helper = '''def _build_upgrade_next_billed_at(
+              billing_period_months: int,
+              now: datetime | None = None,
+          ) -> str:
+              current = now or datetime.utcnow()
+              cycle_end = add_billing_months(current, int(billing_period_months or 1))
+              return cycle_end.replace(microsecond=0).isoformat() + "Z"
+
+
+          '''
+          remaining_anchor = (
+              "    next_billed_at = _build_upgrade_next_billed_at(\n"
+              "        organization.billing_period_months\n"
+              "    )\n"
+          )
+
+          if text.count(import_line) != 1:
+              raise SystemExit("expected one add_billing_months service import")
+          if text.count(helper) != 1:
+              raise SystemExit("expected one obsolete upgrade-cycle helper")
+          if text.count(remaining_anchor) != 1:
+              raise SystemExit("expected one obsolete preview billing-anchor calculation")
+
+          text = text.replace(import_line, "", 1)
+          text = text.replace(helper, "", 1)
+          text = text.replace(remaining_anchor, "", 1)
+          path.write_text(text)
+          PY
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install and verify
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install pytest ruff
+          cd backend
+          ruff check app/services/billing_service.py tests/test_billing_upgrade_cycle.py
+          python -m pytest -q --tb=short tests/test_billing_upgrade_cycle.py
+
+      - name: Commit cleanup
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/app/services/billing_service.py
+          git diff --cached --check
+          git commit -m "refactor: remove obsolete upgrade billing anchor helper"
+          git push origin HEAD:fix/billing-upgrade-proration
