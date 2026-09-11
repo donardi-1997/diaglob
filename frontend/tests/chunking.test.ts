@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { isSentryModule } from "../build/chunking.ts";
+import { isReactRuntimeModule, isSentryModule } from "../build/chunking.ts";
 
 
 test("matches only @sentry modules for the dedicated vendor group", () => {
@@ -22,4 +22,37 @@ test("does not capture application or unrelated dependency modules", () => {
     isSentryModule("/workspace/frontend/node_modules/react/index.js"),
     false,
   );
+});
+
+
+test("matches the React runtime family for a stable vendor boundary", () => {
+  assert.equal(
+    isReactRuntimeModule("/workspace/frontend/node_modules/react/index.js"),
+    true,
+  );
+  assert.equal(
+    isReactRuntimeModule("/workspace/frontend/node_modules/react-dom/client.js"),
+    true,
+  );
+  assert.equal(
+    isReactRuntimeModule("/workspace/frontend/node_modules/react-router-dom/dist/index.mjs"),
+    true,
+  );
+  assert.equal(
+    isReactRuntimeModule("C:\\workspace\\frontend\\node_modules\\scheduler\\index.js"),
+    true,
+  );
+});
+
+
+test("does not let the React runtime group absorb Sentry or application code", () => {
+  assert.equal(
+    isReactRuntimeModule("/workspace/frontend/node_modules/@sentry/react/build/npm/esm/index.js"),
+    false,
+  );
+  assert.equal(
+    isReactRuntimeModule("/workspace/frontend/node_modules/react-i18next/dist/es/index.js"),
+    false,
+  );
+  assert.equal(isReactRuntimeModule("/workspace/frontend/src/App.tsx"), false);
 });
