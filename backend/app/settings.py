@@ -40,6 +40,7 @@ class Settings(BaseSettings):
         env_prefix="",
         case_sensitive=False,
         extra="ignore",
+        populate_by_name=True,
     )
 
     environment: str = Field(default="development", validation_alias="ENVIRONMENT")
