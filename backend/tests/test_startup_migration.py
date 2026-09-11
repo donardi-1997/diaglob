@@ -35,13 +35,17 @@ class TestStartupSafety:
                     )
 
     def test_lifespan_defined(self):
-        """app.main must use modern FastAPI lifespan."""
-        source = Path(__file__).resolve().parent.parent / "app" / "main.py"
-        text = source.read_text(encoding="utf-8")
+        """FastAPI must use the extracted modern lifespan composition."""
+        app_dir = Path(__file__).resolve().parent.parent / "app"
+        main_text = (app_dir / "main.py").read_text(encoding="utf-8")
+        lifespan_text = (
+            app_dir / "runtime" / "lifespan.py"
+        ).read_text(encoding="utf-8")
 
-        assert "lifespan" in text
-        assert "@asynccontextmanager" in text
-        assert "on_event" not in text
+        assert "lifespan=build_lifespan(settings)" in main_text
+        assert "@asynccontextmanager" in lifespan_text
+        assert "on_event" not in main_text
+        assert "on_event" not in lifespan_text
 
 
 class TestAlembicConfiguration:

@@ -1,12 +1,6 @@
-import os
-from pathlib import Path
+"""Database configuration sourced from the central runtime settings."""
+
+from .settings import get_settings
 
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-DB_PATH = BASE_DIR / "diaglob.db"
-
-
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    f"sqlite:///{DB_PATH.as_posix()}",
-)
+DATABASE_URL = get_settings().database_url
