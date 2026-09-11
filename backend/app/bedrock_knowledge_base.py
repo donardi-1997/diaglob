@@ -7,7 +7,6 @@ import logging
 import os
 import re
 import time
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
@@ -42,6 +41,10 @@ from .knowledge_provisioning.lifecycle import (
     _claim_provisioning,
     _commit_state,
     _set_provisioning_stage,
+)
+from .knowledge_provisioning.cleanup import (
+    CleanupResult,
+    cleanup_remote_resources,
 )
 
 logger = logging.getLogger(__name__)
@@ -140,13 +143,6 @@ RECOVERY_ATTEMPTS = int(os.getenv("BEDROCK_RECOVERY_ATTEMPTS", "3"))
 WAIT_ATTEMPTS = int(os.getenv("BEDROCK_WAIT_ATTEMPTS", "30"))
 POLL_INTERVAL_SECONDS = float(os.getenv("BEDROCK_POLL_INTERVAL_SECONDS", "2"))
 
-
-@dataclass
-class CleanupResult:
-    succeeded: bool
-    bedrock_kb_id: str | None
-    bedrock_ds_id: str | None
-    error: Exception | None = None
 
 
 def _get_s3_vectors_client():
@@ -681,6 +677,8 @@ def delete_bedrock_knowledge_base(
 
 
 
+
+
 def _cleanup_remote_resources(
     org_id: int,
     kb_id: int,
@@ -688,42 +686,16 @@ def _cleanup_remote_resources(
     bedrock_kb_id: str | None,
     bedrock_ds_id: str | None,
 ) -> CleanupResult:
-    remaining_kb_id = bedrock_kb_id
-    remaining_ds_id = bedrock_ds_id
-
-    if remaining_ds_id and remaining_kb_id:
-        try:
-            delete_bedrock_data_source(
-                remaining_kb_id,
-                remaining_ds_id,
-                org_id,
-                kb_id,
-                index_arn,
-            )
-            remaining_ds_id = None
-        except Exception as error:
-            logger.exception("Unable to confirm Bedrock Data Source cleanup")
-            return CleanupResult(False, remaining_kb_id, remaining_ds_id, error)
-
-    if remaining_kb_id and index_arn:
-        try:
-            delete_bedrock_knowledge_base(
-                remaining_kb_id, org_id, kb_id, index_arn
-            )
-            remaining_kb_id = None
-            remaining_ds_id = None
-        except Exception as error:
-            logger.exception("Unable to confirm Bedrock Knowledge Base cleanup")
-            return CleanupResult(False, remaining_kb_id, remaining_ds_id, error)
-
-    if index_arn:
-        try:
-            delete_s3_vectors_index(index_arn, org_id, kb_id)
-        except Exception as error:
-            logger.exception("Unable to confirm S3 Vectors index cleanup")
-            return CleanupResult(False, remaining_kb_id, remaining_ds_id, error)
-
-    return CleanupResult(True, remaining_kb_id, remaining_ds_id)
+    return cleanup_remote_resources(
+        org_id,
+        kb_id,
+        index_arn,
+        bedrock_kb_id,
+        bedrock_ds_id,
+        delete_data_source=delete_bedrock_data_source,
+        delete_knowledge_base=delete_bedrock_knowledge_base,
+        delete_vector_index=delete_s3_vectors_index,
+    )
 
 
 def provision_diaglob_knowledge_base(
