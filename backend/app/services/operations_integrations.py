@@ -115,6 +115,45 @@ def _isolated_read(
         return _FAILED
 
 
+def _operations_health(summary: dict[str, Any]) -> dict[str, Any]:
+    alerts = summary.get("alerts", [])
+    integrations = summary.get("integrations", [])
+
+    degraded_integrations = [
+        item for item in integrations if item.get("degraded")
+    ]
+    degraded_alerts = [
+        alert
+        for alert in alerts
+        if alert.get("type") == "integration_status_degraded"
+    ]
+    warning_alerts = [
+        alert
+        for alert in alerts
+        if alert.get("severity") in {"warning", "error"}
+        and alert.get("type") != "integration_status_degraded"
+    ]
+
+    critical_issues = (
+        len(degraded_integrations)
+        if degraded_integrations
+        else len(degraded_alerts)
+    )
+
+    if critical_issues:
+        status = "degraded"
+    elif warning_alerts:
+        status = "attention"
+    else:
+        status = "operational"
+
+    return {
+        "status": status,
+        "issues": critical_issues + len(warning_alerts),
+        "critical_issues": critical_issues,
+    }
+
+
 def get_operations_integrations(
     db: Session,
     organization_id: int,
@@ -437,6 +476,12 @@ def get_dynamic_operations_summary(
         store_id=store_id,
     )
 
+    conversations = summary.get("conversations", {})
+    if "ai_resolved_pct" in conversations:
+        conversations["ai_message_share_pct"] = conversations.pop(
+            "ai_resolved_pct"
+        )
+
     integrations_available = True
     try:
         integrations = get_operations_integrations(
@@ -502,5 +547,6 @@ def get_dynamic_operations_summary(
             }
         )
     summary["alerts"] = alerts
+    summary["health"] = _operations_health(summary)
 
     return summary
