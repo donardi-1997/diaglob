@@ -1,11 +1,12 @@
-"""Billing business orchestration service.
+"""Provider-neutral billing business orchestration.
 
 Handles plan validation, upgrade/downgrade logic, store-limit enforcement,
 pending downgrade processing, auto-renew orchestration, and checkout orchestration.
-Does NOT import FastAPI or httpx.
+Concrete provider HTTP behavior lives behind ``app.billing_providers``.
 """
+from __future__ import annotations
+
 import logging
-import os
 from datetime import datetime, timedelta
 from decimal import Decimal
 
@@ -15,34 +16,19 @@ from ..billing import (
     add_billing_months,
     calculate_local_proration,
     resolve_billing_period,
-    get_paddle_price_id,
-    get_plan_from_price_id,
-    get_subscription_price_id,
-    get_billing_period_from_price_id,
+)
+from ..billing_providers import (
+    BillingProvider,
+    BillingProviderConfigurationError,
+    BillingProviderError,
+    UnsupportedBillingProviderError,
+    get_billing_provider,
+    get_billing_provider_for_organization,
 )
 from ..models import Organization, Store
 from ..plan_limits import get_limits_for_plan
-from ..paddle_client import (
-    PaddleConfigError,
-    PaddleProviderError,
-    cancel_subscription,
-    create_transaction,
-    get_subscription,
-    preview_subscription_update,
-    resume_subscription,
-    update_subscription,
-)
 
 logger = logging.getLogger(__name__)
-
-
-def _build_upgrade_next_billed_at(
-    billing_period_months: int,
-    now: datetime | None = None,
-) -> str:
-    current = now or datetime.utcnow()
-    cycle_end = add_billing_months(current, int(billing_period_months or 1))
-    return cycle_end.replace(microsecond=0).isoformat() + "Z"
 
 
 BILLING_PLAN_ORDER = {
@@ -85,10 +71,39 @@ class AutoRenewConflictError(Exception):
     pass
 
 
-def get_billing_price_id(plan_key: str, billing_period_months: int = 1) -> str:
+def _build_upgrade_next_billed_at(
+    billing_period_months: int,
+    now: datetime | None = None,
+) -> str:
+    current = now or datetime.utcnow()
+    cycle_end = add_billing_months(current, int(billing_period_months or 1))
+    return cycle_end.replace(microsecond=0).isoformat() + "Z"
+
+
+def _provider_for(organization: Organization) -> BillingProvider:
+    return get_billing_provider_for_organization(organization)
+
+
+def _legacy_provider_fields(provider: BillingProvider, data: dict) -> dict:
+    """Preserve Paddle response keys while exposing provider-neutral metadata."""
+    result = {
+        "billing_provider": provider.name,
+        "provider_status": data.get("status"),
+    }
+    if provider.name == "paddle":
+        result["paddle_status"] = data.get("status")
+    return result
+
+
+def get_billing_price_id(
+    plan_key: str,
+    billing_period_months: int = 1,
+    provider_name: str | None = None,
+) -> str:
     try:
-        return get_paddle_price_id(plan_key, billing_period_months)
-    except ValueError as exc:
+        provider = get_billing_provider(provider_name)
+        return provider.get_price_id(plan_key, billing_period_months)
+    except (ValueError, UnsupportedBillingProviderError) as exc:
         raise InvalidBillingPlanError(str(exc)) from exc
 
 
@@ -112,8 +127,7 @@ def validate_plan_upgrade(organization: Organization, target_plan: str):
             current_plan,
         )
         raise NoActiveSubscriptionError(
-            "No tienes una suscripcion activa "
-            "para actualizar. Usa el checkout normal."
+            "No tienes una suscripcion activa para actualizar. Usa el checkout normal."
         )
 
     subscription_status = (organization.subscription_status or "").strip().lower()
@@ -135,8 +149,7 @@ def validate_plan_upgrade(organization: Organization, target_plan: str):
             target_plan,
         )
         raise UpgradeNotAllowedError(
-            "Este endpoint solo permite "
-            "escalar hacia un plan superior."
+            "Este endpoint solo permite escalar hacia un plan superior."
         )
 
     return current_plan, target_plan
@@ -171,9 +184,8 @@ def validate_plan_downgrade(
 
     if period_changes:
         raise DowngradePeriodChangeError(
-            "No puedes cambiar el período de facturación "
-            "de una suscripción activa. Puedes cambiar de "
-            "plan manteniendo tu período actual."
+            "No puedes cambiar el período de facturación de una suscripción activa. "
+            "Puedes cambiar de plan manteniendo tu período actual."
         )
 
     if not plan_changes:
@@ -181,23 +193,22 @@ def validate_plan_downgrade(
 
     if target_rank > current_rank and not period_changes:
         raise UpgradeNotAllowedError(
-            "Los upgrades con el mismo período "
-            "deben realizarse con prorrata inmediata"
+            "Los upgrades con el mismo período deben realizarse con prorrata inmediata"
         )
 
     if organization.subscription_status not in {"active", "trialing"}:
         raise DowngradeBlockedError(
-            "La suscripción debe estar activa "
-            "para programar el cambio"
+            "La suscripción debe estar activa para programar el cambio"
         )
 
     if not organization.billing_subscription_id:
-        raise DowngradeBlockedError("No existe una suscripción Paddle asociada")
+        raise DowngradeBlockedError(
+            "No existe una suscripción de facturación asociada"
+        )
 
     if not organization.auto_renew_enabled:
         raise DowngradeBlockedError(
-            "Activa la renovación automática antes de "
-            "programar un cambio de plan o período"
+            "Activa la renovación automática antes de programar un cambio de plan o período"
         )
 
     return current_plan, target_plan, current_period, target_period
@@ -239,9 +250,7 @@ def configure_pending_downgrade_stores(
     )
 
     available_ids = {store.id for store in available_stores}
-
     requested_ids = list(dict.fromkeys(requested_store_ids or []))
-
     invalid_ids = [store_id for store_id in requested_ids if store_id not in available_ids]
 
     if invalid_ids:
@@ -288,12 +297,10 @@ def process_pending_downgrades(db: Session, now: datetime | None = None):
 
     for organization in organizations:
         effective_at = organization.pending_plan_effective_at
-
         if not effective_at:
             continue
 
         prepare_at = effective_at - preparation_window
-
         if now < prepare_at:
             continue
 
@@ -305,7 +312,6 @@ def process_pending_downgrades(db: Session, now: datetime | None = None):
             continue
 
         target_plan = (organization.pending_plan or "").lower()
-
         if target_plan not in BILLING_PLAN_ORDER:
             results.append({
                 "organization_id": organization.id,
@@ -318,7 +324,6 @@ def process_pending_downgrades(db: Session, now: datetime | None = None):
             or organization.billing_period_months
             or 1
         )
-
         if target_period not in {1, 3, 6, 12}:
             results.append({
                 "organization_id": organization.id,
@@ -328,8 +333,9 @@ def process_pending_downgrades(db: Session, now: datetime | None = None):
             continue
 
         try:
-            target_price_id = get_paddle_price_id(target_plan, target_period)
-        except Exception as exc:
+            provider = _provider_for(organization)
+            target_price_id = provider.get_price_id(target_plan, target_period)
+        except (ValueError, BillingProviderConfigurationError) as exc:
             results.append({
                 "organization_id": organization.id,
                 "status": "price_error",
@@ -346,43 +352,46 @@ def process_pending_downgrades(db: Session, now: datetime | None = None):
             continue
 
         subscription_id = organization.billing_subscription_id
-
-        body = {
-            "items": [{"price_id": target_price_id, "quantity": 1}],
-            "proration_billing_mode": "do_not_bill",
-            "on_payment_failure": "prevent_change",
-            "custom_data": {
-                "organization_id": str(organization.id),
-                "pending_plan": target_plan,
-                "pending_billing_period_months": target_period,
-                "diaglob_plan_change": "scheduled",
-            },
+        custom_data = {
+            "organization_id": str(organization.id),
+            "pending_plan": target_plan,
+            "pending_billing_period_months": target_period,
+            "diaglob_plan_change": "scheduled",
         }
 
         try:
-            update_subscription(
-                subscription_id,
-                items=body["items"],
+            provider.update_subscription(
+                subscription_id=subscription_id,
+                items=[{"price_id": target_price_id, "quantity": 1}],
                 proration_billing_mode="do_not_bill",
                 on_payment_failure="prevent_change",
-                custom_data=body["custom_data"],
+                custom_data=custom_data,
                 timeout=30,
             )
-        except PaddleProviderError as exc:
-            results.append({
+        except BillingProviderError as exc:
+            item = {
                 "organization_id": organization.id,
-                "status": "paddle_rejected",
-                "paddle_status": exc.status_code,
-                "paddle_response": str(exc.detail),
-            })
+                "status": "provider_rejected",
+                "billing_provider": exc.provider,
+                "provider_status": exc.status_code,
+                "provider_response": str(exc.detail),
+            }
+            if exc.provider == "paddle":
+                item.update({
+                    "paddle_status": exc.status_code,
+                    "paddle_response": str(exc.detail),
+                })
+            results.append(item)
             continue
 
+        organization.billing_provider = organization.billing_provider or provider.name
         organization.pending_plan_prepared_at = now
         db.commit()
 
         results.append({
             "organization_id": organization.id,
             "status": "prepared",
+            "billing_provider": provider.name,
             "current_plan": organization.plan,
             "pending_plan": target_plan,
             "pending_billing_period_months": target_period,
@@ -398,15 +407,15 @@ def execute_upgrade(
     target_plan: str,
     db: Session,
 ) -> dict:
-    target_price_id = get_paddle_price_id(
+    provider = _provider_for(organization)
+    target_price_id = provider.get_price_id(
         target_plan, organization.billing_period_months
     )
-
     next_billed_at = _build_upgrade_next_billed_at(
         organization.billing_period_months
     )
 
-    paddle_data = update_subscription(
+    provider_data = provider.update_subscription(
         subscription_id=organization.billing_subscription_id,
         items=[{"price_id": target_price_id, "quantity": 1}],
         proration_billing_mode="prorated_immediately",
@@ -418,19 +427,23 @@ def execute_upgrade(
         next_billed_at=next_billed_at,
     )
 
-    paddle_price_id = (
-        get_subscription_price_id(paddle_data) or target_price_id
+    confirmed_price_id = (
+        provider.get_subscription_price_id(provider_data) or target_price_id
     )
-
-    confirmed_plan = get_plan_from_price_id(paddle_price_id) if paddle_price_id else None
+    confirmed_plan = (
+        provider.get_plan_from_price_id(confirmed_price_id)
+        if confirmed_price_id
+        else None
+    )
     organization.plan = confirmed_plan or target_plan
-
-    organization.billing_price_id = paddle_price_id
+    organization.billing_provider = organization.billing_provider or provider.name
+    organization.billing_price_id = confirmed_price_id
 
     confirmed_period = (
-        get_billing_period_from_price_id(paddle_price_id) if paddle_price_id else None
+        provider.get_billing_period_from_price_id(confirmed_price_id)
+        if confirmed_price_id
+        else None
     )
-
     if confirmed_period is not None:
         organization.billing_period_months = confirmed_period
 
@@ -443,38 +456,42 @@ def execute_upgrade(
         {Store.keep_on_pending_downgrade: False},
         synchronize_session=False,
     )
-
     db.commit()
     db.refresh(organization)
 
-    return {
+    result = {
         "ok": True,
         "current_plan": target_plan,
         "target_plan": target_plan,
         "subscription_id": organization.billing_subscription_id,
-        "paddle_status": paddle_data.get("status"),
-        "next_billed_at": paddle_data.get("next_billed_at"),
-        "message": "Upgrade enviado a Paddle",
+        "next_billed_at": provider_data.get("next_billed_at"),
+        "message": f"Upgrade enviado a {provider.name}",
     }
+    result.update(_legacy_provider_fields(provider, provider_data))
+    return result
 
 
-def preview_upgrade_paddle(
+def preview_upgrade_provider(
     organization: Organization,
     target_plan: str,
 ) -> dict | None:
-    paddle_api_key = os.getenv("PADDLE_API_KEY")
+    try:
+        provider = _provider_for(organization)
+    except BillingProviderConfigurationError:
+        return None
 
-    if not paddle_api_key or not organization.billing_subscription_id:
+    if not provider.is_configured() or not organization.billing_subscription_id:
         return None
 
     try:
-        target_price_id = get_paddle_price_id(
+        target_price_id = provider.get_price_id(
             target_plan, organization.billing_period_months
         )
     except ValueError:
         logger.warning(
-            "billing.preview paddle_price_unavailable org=%s plan=%s period=%s",
+            "billing.preview provider_price_unavailable org=%s provider=%s plan=%s period=%s",
             organization.id,
+            provider.name,
             target_plan,
             organization.billing_period_months,
         )
@@ -483,28 +500,25 @@ def preview_upgrade_paddle(
     if not target_price_id:
         return None
 
-    items = [{"price_id": target_price_id, "quantity": 1}]
     next_billed_at = _build_upgrade_next_billed_at(
         organization.billing_period_months
     )
-
-    paddle_data = preview_subscription_update(
+    provider_data = provider.preview_subscription_update(
         subscription_id=organization.billing_subscription_id,
-        items=items,
+        items=[{"price_id": target_price_id, "quantity": 1}],
         proration_billing_mode="prorated_immediately",
         on_payment_failure="prevent_change",
         next_billed_at=next_billed_at,
     )
-
-    if not paddle_data:
+    if not provider_data:
         return None
 
-    immediate_transaction = paddle_data.get("immediate_transaction") or {}
+    immediate_transaction = provider_data.get("immediate_transaction") or {}
     details = immediate_transaction.get("details") or {}
     totals = details.get("totals") or {}
     line_items = details.get("line_items") or []
 
-    provider_summary = paddle_data.get("update_summary") or {}
+    provider_summary = provider_data.get("update_summary") or {}
     provider_credit = provider_summary.get("credit") or {}
     provider_charge = provider_summary.get("charge") or {}
     provider_result = provider_summary.get("result") or {}
@@ -530,14 +544,12 @@ def preview_upgrade_paddle(
     else:
         charge_amount = 0
         credit_amount = 0
-
         for line_item in line_items:
             line_totals = line_item.get("totals") or {}
             try:
                 line_total = int(line_totals.get("total") or 0)
             except (TypeError, ValueError):
                 line_total = 0
-
             if line_total > 0:
                 charge_amount += line_total
             elif line_total < 0:
@@ -573,25 +585,32 @@ def preview_upgrade_paddle(
             "currency_code": currency_code,
         },
     }
-
     amount_due = result_amount if result_action == "charge" else 0
-
-    next_transaction = paddle_data.get("next_transaction") or {}
+    next_transaction = provider_data.get("next_transaction") or {}
     next_billing_period = next_transaction.get("billing_period") or {}
 
     return {
         "current_plan": None,
         "target_plan": None,
         "subscription_id": organization.billing_subscription_id,
-        "next_billed_at": paddle_data.get("next_billed_at") or next_billing_period.get("starts_at"),
+        "next_billed_at": (
+            provider_data.get("next_billed_at")
+            or next_billing_period.get("starts_at")
+        ),
         "currency_code": currency_code,
         "amount_due": str(amount_due),
         "subtotal": totals.get("subtotal"),
         "tax": totals.get("tax"),
         "update_summary": normalized_update_summary,
         "immediate_transaction": immediate_transaction,
-        "next_transaction": paddle_data.get("next_transaction"),
+        "next_transaction": provider_data.get("next_transaction"),
+        "billing_provider": provider.name,
+        "_source": "provider",
     }
+
+
+# Transitional import compatibility. New code should use preview_upgrade_provider.
+preview_upgrade_paddle = preview_upgrade_provider
 
 
 def preview_upgrade_local(
@@ -630,8 +649,14 @@ def preview_upgrade_local(
         "subtotal": None,
         "tax": None,
         "update_summary": {
-            "charge": {"amount": str(charge_cents), "currency_code": local_preview["currency"]},
-            "credit": {"amount": str(credit_cents), "currency_code": local_preview["currency"]},
+            "charge": {
+                "amount": str(charge_cents),
+                "currency_code": local_preview["currency"],
+            },
+            "credit": {
+                "amount": str(credit_cents),
+                "currency_code": local_preview["currency"],
+            },
             "result": {
                 "action": "charge" if amount_cents > 0 else "none",
                 "amount": str(abs(amount_cents)),
@@ -654,6 +679,7 @@ def apply_downgrade(
     db: Session,
 ) -> dict:
     subscription_id = organization.billing_subscription_id
+    provider = _provider_for(organization)
 
     is_plan_downgrade = (
         BILLING_PLAN_ORDER.get(target_plan, 0)
@@ -674,35 +700,31 @@ def apply_downgrade(
             "selected_store_ids": [],
         }
 
-    paddle_data = get_subscription(subscription_id)
-
-    next_billed_at_raw = paddle_data.get("next_billed_at")
-
+    provider_data = provider.get_subscription(subscription_id)
+    next_billed_at_raw = provider_data.get("next_billed_at")
     if not next_billed_at_raw:
         raise DowngradeBlockedError(
-            "Paddle no informó la próxima fecha de renovación"
+            "El proveedor de facturación no informó la próxima fecha de renovación"
         )
 
     try:
-        effective_at = (
-            datetime.fromisoformat(
-                next_billed_at_raw.replace("Z", "+00:00")
-            ).replace(tzinfo=None)
-        )
-    except ValueError:
+        effective_at = datetime.fromisoformat(
+            next_billed_at_raw.replace("Z", "+00:00")
+        ).replace(tzinfo=None)
+    except ValueError as exc:
         raise DowngradeBlockedError(
-            "Paddle devolvió una fecha de renovación inválida"
-        )
+            "El proveedor de facturación devolvió una fecha de renovación inválida"
+        ) from exc
 
+    organization.billing_provider = organization.billing_provider or provider.name
     organization.pending_plan = target_plan
     organization.pending_billing_period_months = target_period
     organization.pending_plan_effective_at = effective_at
     organization.pending_plan_prepared_at = None
-
     db.commit()
     db.refresh(organization)
 
-    return {
+    result = {
         "ok": True,
         "current_plan": current_plan,
         "pending_plan": target_plan,
@@ -711,13 +733,13 @@ def apply_downgrade(
         "subscription_id": subscription_id,
         "selected_store_ids": selection.get("selected_store_ids", []),
         "target_store_limit": selection.get("target_store_limit"),
-        "paddle_status": paddle_data.get("status"),
         "message": (
-            "Downgrade programado. "
-            "Paddle conservará el plan actual "
+            "Downgrade programado. El proveedor conservará el plan actual "
             "hasta el procesamiento de la renovación."
         ),
     }
+    result.update(_legacy_provider_fields(provider, provider_data))
+    return result
 
 
 def cancel_downgrade(organization: Organization, db: Session):
@@ -733,10 +755,13 @@ def cancel_downgrade(organization: Organization, db: Session):
         {Store.keep_on_pending_downgrade: False},
         synchronize_session=False,
     )
-
     db.commit()
 
-    return {"ok": True, "pending_plan": None, "message": "Cambio de plan programado cancelado"}
+    return {
+        "ok": True,
+        "pending_plan": None,
+        "message": "Cambio de plan programado cancelado",
+    }
 
 
 def toggle_auto_renew_enable(
@@ -744,10 +769,10 @@ def toggle_auto_renew_enable(
     db: Session,
 ) -> dict:
     subscription_id = organization.billing_subscription_id
+    provider = _provider_for(organization)
+    provider_data = provider.get_subscription(subscription_id)
 
-    paddle_data = get_subscription(subscription_id)
-
-    scheduled_change = paddle_data.get("scheduled_change")
+    scheduled_change = provider_data.get("scheduled_change")
     scheduled_action = (
         scheduled_change.get("action")
         if isinstance(scheduled_change, dict)
@@ -755,24 +780,25 @@ def toggle_auto_renew_enable(
     )
 
     if scheduled_action is None:
+        organization.billing_provider = organization.billing_provider or provider.name
         organization.auto_renew_enabled = True
         db.commit()
         return {
             "ok": True,
             "auto_renew_enabled": True,
             "scheduled_change": None,
+            "billing_provider": provider.name,
             "message": "La renovación automática ya está activa.",
         }
 
     if scheduled_action != "cancel":
         raise AutoRenewConflictError(
-            "La suscripción tiene otro cambio "
-            "programado en Paddle y no puede "
-            "reactivarse automáticamente."
+            "La suscripción tiene otro cambio programado en el proveedor "
+            "y no puede reactivarse automáticamente."
         )
 
-    resume_data = resume_subscription(subscription_id)
-
+    resume_data = provider.resume_subscription(subscription_id)
+    organization.billing_provider = organization.billing_provider or provider.name
     organization.auto_renew_enabled = True
     db.commit()
 
@@ -781,6 +807,7 @@ def toggle_auto_renew_enable(
         "auto_renew_enabled": True,
         "scheduled_change": resume_data.get("scheduled_change"),
         "next_billed_at": resume_data.get("next_billed_at"),
+        "billing_provider": provider.name,
         "message": "Renovación automática activada.",
     }
 
@@ -790,10 +817,10 @@ def toggle_auto_renew_disable(
     db: Session,
 ) -> dict:
     subscription_id = organization.billing_subscription_id
+    provider = _provider_for(organization)
+    provider_data = provider.get_subscription(subscription_id)
 
-    paddle_data = get_subscription(subscription_id)
-
-    scheduled_change = paddle_data.get("scheduled_change")
+    scheduled_change = provider_data.get("scheduled_change")
     scheduled_action = (
         scheduled_change.get("action")
         if isinstance(scheduled_change, dict)
@@ -801,6 +828,7 @@ def toggle_auto_renew_disable(
     )
 
     if scheduled_action == "cancel":
+        organization.billing_provider = organization.billing_provider or provider.name
         organization.auto_renew_enabled = False
         db.commit()
         return {
@@ -808,19 +836,17 @@ def toggle_auto_renew_disable(
             "auto_renew_enabled": False,
             "scheduled_change": scheduled_change,
             "effective_at": scheduled_change.get("effective_at"),
+            "billing_provider": provider.name,
             "message": "La renovación ya estaba desactivada.",
         }
 
     if scheduled_action is not None:
         raise AutoRenewConflictError(
-            "La suscripción ya tiene otro cambio programado en Paddle."
+            "La suscripción ya tiene otro cambio programado en el proveedor."
         )
 
-    cancel_data = cancel_subscription(subscription_id)
-
-    paddle_data_inner = cancel_data
-
-    scheduled_change_inner = paddle_data_inner.get("scheduled_change") or {}
+    cancel_data = provider.cancel_subscription(subscription_id)
+    scheduled_change_inner = cancel_data.get("scheduled_change") or {}
 
     organization.pending_plan = None
     organization.pending_billing_period_months = None
@@ -832,15 +858,17 @@ def toggle_auto_renew_disable(
         synchronize_session=False,
     )
 
+    organization.billing_provider = organization.billing_provider or provider.name
     organization.auto_renew_enabled = False
     db.commit()
 
     return {
         "ok": True,
         "auto_renew_enabled": False,
-        "scheduled_change": paddle_data_inner.get("scheduled_change"),
+        "scheduled_change": cancel_data.get("scheduled_change"),
         "effective_at": scheduled_change_inner.get("effective_at"),
-        "next_billed_at": paddle_data_inner.get("next_billed_at"),
+        "next_billed_at": cancel_data.get("next_billed_at"),
+        "billing_provider": provider.name,
         "message": "Renovación automática desactivada.",
     }
 
@@ -850,9 +878,14 @@ def create_checkout(
     plan_key: str,
     billing_period_months: int,
 ) -> dict:
-    price_id = get_paddle_price_id(plan_key, billing_period_months)
+    provider = _provider_for(organization)
+    if not provider.is_configured():
+        raise BillingProviderConfigurationError(
+            f"Billing provider is not configured: {provider.name}"
+        )
 
-    data = create_transaction(
+    price_id = provider.get_price_id(plan_key, billing_period_months)
+    data = provider.create_transaction(
         price_id=price_id,
         organization_id=organization.id,
         plan_key=plan_key,
@@ -861,17 +894,17 @@ def create_checkout(
 
     checkout = data.get("checkout") or {}
     checkout_url = checkout.get("url")
-
     if not checkout_url:
-        raise PaddleProviderError(
+        raise BillingProviderError(
+            provider=provider.name,
             status_code=502,
-            detail={"message": "Paddle no devolvió una URL de checkout"},
+            detail={"message": "Billing provider did not return a checkout URL"},
         )
 
-    # Analytics: checkout started
     from .product_analytics import track_checkout_started
+
     track_checkout_started(
-        user_id=0,  # No user context in service
+        user_id=0,
         organization_id=organization.id,
         plan=plan_key,
     )
@@ -880,6 +913,7 @@ def create_checkout(
         "plan": plan_key,
         "transaction_id": data.get("id"),
         "checkout_url": checkout_url,
+        "billing_provider": provider.name,
     }
 
 
@@ -891,38 +925,47 @@ def get_downgrade_preview_data(
     current_period: int,
     db: Session,
 ) -> dict:
+    provider = _provider_for(organization)
     is_period_change = target_period != current_period
 
     if is_period_change:
-        subscription_data = get_subscription(organization.billing_subscription_id)
-        current_billing_period = subscription_data.get("current_billing_period") or {}
+        subscription_data = provider.get_subscription(
+            organization.billing_subscription_id
+        )
+        current_billing_period = (
+            subscription_data.get("current_billing_period") or {}
+        )
         effective_at = current_billing_period.get("ends_at")
         if not effective_at:
             effective_at = subscription_data.get("next_billed_at")
 
         if not effective_at:
             raise DowngradeBlockedError(
-                "Paddle no devolvió la fecha de fin del período actual"
+                "El proveedor no devolvió la fecha de fin del período actual"
             )
 
-        paddle_data = {
+        provider_data = {
             "next_billed_at": effective_at,
             "immediate_transaction": None,
             "next_transaction": None,
         }
     else:
-        items = [{"price_id": get_paddle_price_id(target_plan, target_period), "quantity": 1}]
-        paddle_data = preview_subscription_update(
+        items = [{
+            "price_id": provider.get_price_id(target_plan, target_period),
+            "quantity": 1,
+        }]
+        provider_data = provider.preview_subscription_update(
             subscription_id=organization.billing_subscription_id,
             items=items,
             proration_billing_mode="do_not_bill",
             on_payment_failure="prevent_change",
         )
 
-        if not paddle_data:
-            raise PaddleProviderError(
+        if not provider_data:
+            raise BillingProviderError(
+                provider=provider.name,
                 status_code=502,
-                detail={"message": "No fue posible consultar Paddle"},
+                detail={"message": "No fue posible consultar el proveedor de facturación"},
             )
 
     available_stores = (
@@ -939,7 +982,6 @@ def get_downgrade_preview_data(
         )
         .all()
     )
-
     target_store_limit = int(get_limits_for_plan(target_plan).active_stores)
 
     return {
@@ -947,10 +989,8 @@ def get_downgrade_preview_data(
         "target_store_limit": target_store_limit,
         "requires_store_selection": bool(
             available_stores
-            and (
-                BILLING_PLAN_ORDER.get(target_plan, 0)
-                < BILLING_PLAN_ORDER.get(current_plan, 0)
-            )
+            and BILLING_PLAN_ORDER.get(target_plan, 0)
+            < BILLING_PLAN_ORDER.get(current_plan, 0)
         ),
         "available_stores": [
             {
@@ -970,8 +1010,9 @@ def get_downgrade_preview_data(
         "current_billing_period_months": current_period,
         "target_billing_period_months": target_period,
         "subscription_id": organization.billing_subscription_id,
-        "effective_at": paddle_data.get("next_billed_at"),
-        "next_billed_at": paddle_data.get("next_billed_at"),
-        "immediate_transaction": paddle_data.get("immediate_transaction"),
-        "next_transaction": paddle_data.get("next_transaction"),
+        "effective_at": provider_data.get("next_billed_at"),
+        "next_billed_at": provider_data.get("next_billed_at"),
+        "immediate_transaction": provider_data.get("immediate_transaction"),
+        "next_transaction": provider_data.get("next_transaction"),
+        "billing_provider": provider.name,
     }
