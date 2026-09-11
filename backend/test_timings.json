@@ -55,7 +55,7 @@
   "tests/test_order_route_store_scope.py": 0.00135,
   "tests/test_organization.py": 2.655483,
   "tests/test_organization_entitlements.py": 0.001699,
-  "tests/test_payments.py": 12.000988,
+  "tests/test_payments.py": 1.980319,
   "tests/test_product_analytics_v2.py": 1.218241,
   "tests/test_repair_migration.py": 0.272855,
   "tests/test_route_contract.py": 0.001984,
