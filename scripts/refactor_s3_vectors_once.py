@@ -46,8 +46,6 @@ def main() -> None:
     for start, end, _ in sorted(spans, reverse=True):
         del lines[start - 1 : end]
 
-    # Insert wrappers at the first former S3 Vectors function location. Account for
-    # lines removed before that location (none of the target spans overlap it).
     removed_before = sum(
         end - start + 1 for start, end, _ in spans if end < first_line
     )
@@ -56,11 +54,14 @@ def main() -> None:
     updated = "".join(lines)
     updated = updated.replace(ERROR_IMPORT, ERROR_IMPORT + ADAPTER_IMPORT, 1)
 
-    # Verify orchestration no longer contains provider calls for S3 Vectors.
-    if '.create_index(' in updated or '.delete_index(indexArn=' in updated:
+    direct_provider_markers = (
+        "_get_s3_vectors_client().create_index(",
+        "_get_s3_vectors_client().get_index(",
+        "_get_s3_vectors_client().delete_index(",
+        "_get_s3_vectors_client().list_tags_for_resource(",
+    )
+    if any(marker in updated for marker in direct_provider_markers):
         raise SystemExit("Direct S3 Vectors provider operation unexpectedly remains")
-    if 'list_tags_for_resource(\n            resourceArn=index_arn' in updated:
-        raise SystemExit("Direct S3 Vectors tag provider operation unexpectedly remains")
 
     ast.parse(updated)
     SOURCE.write_text(updated, encoding="utf-8")
