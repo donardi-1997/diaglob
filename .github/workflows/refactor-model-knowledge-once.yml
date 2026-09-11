@@ -1,0 +1,39 @@
+name: One-off Model Knowledge Extraction
+
+on:
+  push:
+    branches:
+      - refactor/model-knowledge-domain
+    paths:
+      - scripts/refactor_model_knowledge_once.py
+      - .github/workflows/refactor-model-knowledge-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  refactor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/model-knowledge-domain
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Apply Knowledge extraction
+        run: python scripts/refactor_model_knowledge_once.py
+      - name: Commit rewrite
+        run: |
+          if git diff --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/app/models.py
+          git commit -m "refactor: route knowledge models through domain boundary"
+          git fetch origin refactor/model-knowledge-domain
+          git rebase origin/refactor/model-knowledge-domain
+          git push origin HEAD:refactor/model-knowledge-domain
