@@ -14,6 +14,7 @@ from app.models import (
     Organization,
     Store,
 )
+from app.operations import get_operations_summary
 from app.services.operations_integrations import get_dynamic_operations_summary
 
 
@@ -46,6 +47,20 @@ def _seed_store(db) -> None:
         )
     )
     db.commit()
+
+
+def test_base_summary_uses_honest_ai_message_share_name():
+    engine, db = _database()
+    try:
+        _seed_store(db)
+
+        summary = get_operations_summary(db, 1, 1)
+
+        assert "ai_message_share_pct" in summary["conversations"]
+        assert "ai_resolved_pct" not in summary["conversations"]
+    finally:
+        db.close()
+        engine.dispose()
 
 
 def test_summary_exposes_operational_health_and_honest_ai_message_share():
