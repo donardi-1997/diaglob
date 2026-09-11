@@ -4,9 +4,16 @@ from __future__ import annotations
 import asyncio
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.testclient import TestClient
 
 from app.runtime import lifespan as lifespan_module
-from app.runtime.rate_limit import InMemoryRateLimitBackend, RateLimitRule
+from app.runtime.rate_limit import (
+    InMemoryRateLimitBackend,
+    RateLimitMiddleware,
+    RateLimitRule,
+)
+from app.runtime.security import SecurityHeadersMiddleware
 from app.settings import Settings
 
 
@@ -37,8 +44,47 @@ def test_in_memory_rate_limit_backend_enforces_rule_per_key():
         assert await backend.allow("login:1.1.1.1", rule) is True
         assert await backend.allow("login:1.1.1.1", rule) is False
         assert await backend.allow("login:2.2.2.2", rule) is True
+        assert backend.bucket_count == 2
+        backend.clear()
+        assert backend.bucket_count == 0
 
     asyncio.run(scenario())
+
+
+def test_rate_limit_response_keeps_cors_and_security_headers():
+    origin = "https://app.diaglob.tech"
+    backend = InMemoryRateLimitBackend()
+    app = FastAPI()
+
+    @app.get("/limited")
+    def limited():
+        return {"ok": True}
+
+    app.add_middleware(
+        RateLimitMiddleware,
+        backend=backend,
+        rules={"/limited": RateLimitRule(1, 60)},
+    )
+    app.add_middleware(SecurityHeadersMiddleware)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[origin],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    client = TestClient(app)
+    headers = {"Origin": origin}
+
+    assert client.get("/limited", headers=headers).status_code == 200
+    response = client.get("/limited", headers=headers)
+
+    assert response.status_code == 429
+    assert response.json() == {"detail": "Rate limit exceeded"}
+    assert response.headers["access-control-allow-origin"] == origin
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
 
 
 def test_lifespan_schedules_knowledge_reconciliation_without_waiting(monkeypatch):
