@@ -1,7 +1,7 @@
 """Store Unit Economics configuration endpoints."""
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ..api.deps import get_db, require_permission
@@ -28,7 +28,7 @@ class UnitEconomicsConfigPayload(BaseModel):
     default_payment_fee_percent: float | None = None
     default_payment_fee_fixed: float | None = None
     default_cod_fee_percent: float | None = None
-    payment_methods: list[PaymentMethodCostRulePayload] = []
+    payment_methods: list[PaymentMethodCostRulePayload] = Field(default_factory=list)
 
 
 def _raise_service_error(exc: ValueError) -> None:
