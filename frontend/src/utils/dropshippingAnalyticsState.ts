@@ -4,6 +4,7 @@ export const DROPSHIPPING_ANALYTICS_SECTIONS = [
   "products",
   "orders",
   "insights",
+  "unitEconomics",
 ] as const;
 
 export type DropshippingAnalyticsSection =
