@@ -106,8 +106,15 @@ def _resolve_cogs(
         .all()
     )
     if not items:
-        return _not_applicable(
-            {"cost_completeness_pct": 100.0, "item_count": 0}
+        return _missing(
+            "cogs_incomplete",
+            amount=ZERO,
+            metadata={
+                "cost_completeness_pct": 0.0,
+                "item_count": 0,
+                "items_with_cost": 0,
+                "delivered_orders": len(delivered_orders),
+            },
         )
 
     known = ZERO
