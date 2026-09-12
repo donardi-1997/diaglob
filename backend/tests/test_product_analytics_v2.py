@@ -302,3 +302,31 @@ def test_product_detail_is_strictly_scoped_to_store(db, org_store):
     assert own_detail is not None
     assert own_detail["metrics"]["total_orders"] == 0
     assert foreign_detail is None
+
+
+def test_product_profitability_supports_unbounded_internal_evaluation(db, org_store):
+    org, store = org_store
+    for index in range(3):
+        product = _product(db, org, store, f"Product {index}")
+        _order_item(
+            db,
+            org,
+            store,
+            product,
+            number=f"ORDER-{index}",
+            status="delivered",
+            created_at=datetime(2026, 9, 9, 9 + index),
+            price=100,
+            cost=40,
+        )
+    db.commit()
+
+    limited = get_product_profitability(
+        db, org.id, store.id, None, None, limit=2
+    )
+    unbounded = get_product_profitability(
+        db, org.id, store.id, None, None, limit=None
+    )
+
+    assert len(limited) == 2
+    assert len(unbounded) == 3

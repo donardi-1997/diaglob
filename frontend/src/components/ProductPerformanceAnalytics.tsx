@@ -35,6 +35,8 @@ interface Props {
   storeId: number;
   currency: string;
   products: DropshippingProduct[] | null;
+  selectedProductId: number | null;
+  onSelectedProductChange: (productId: number | null) => void;
   dateFrom?: string;
   dateTo?: string;
 }
@@ -189,6 +191,8 @@ export default function ProductPerformanceAnalytics({
   storeId,
   currency,
   products,
+  selectedProductId,
+  onSelectedProductChange,
   dateFrom,
   dateTo,
 }: Props) {
@@ -198,7 +202,6 @@ export default function ProductPerformanceAnalytics({
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("gross_profit");
   const [descending, setDescending] = useState(true);
-  const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
   const [detail, setDetail] = useState<DropshippingProductDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
@@ -353,7 +356,7 @@ export default function ProductPerformanceAnalytics({
                       <button
                         type="button"
                         className="product-analytics-product-button"
-                        onClick={() => setSelectedProductId(selected ? null : product.product_id)}
+                        onClick={() => onSelectedProductChange(selected ? null : product.product_id)}
                       >
                         <span className="product-analytics-product-icon"><Boxes size={15} /></span>
                         <span>
@@ -397,7 +400,7 @@ export default function ProductPerformanceAnalytics({
               copy={copy}
               formatCurrency={formatCurrency}
               formatRate={formatRate}
-              onClose={() => setSelectedProductId(null)}
+              onClose={() => onSelectedProductChange(null)}
             />
           ) : null}
         </div>
