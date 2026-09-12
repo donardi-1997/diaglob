@@ -181,7 +181,10 @@ def test_replace_upserts_defaults_and_replaces_stale_methods(db, store):
     )
 
     assert first["outbound_shipping_cost"] == 15000.0
-    assert first["payment_methods"][0]["payment_method"] == "cash on delivery"
+    assert {rule["payment_method"] for rule in first["payment_methods"]} == {
+        "card",
+        "cash on delivery",
+    }
     assert db.query(StoreUnitEconomicsConfig).count() == 1
     assert db.query(PaymentMethodCostRule).count() == 2
 
