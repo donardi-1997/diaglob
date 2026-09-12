@@ -6,6 +6,7 @@ import type {
 } from "../services/analytics";
 import {
   getUnitEconomicsContributionValues,
+  getUnitEconomicsGrossProfitValue,
   isMetaUnitEconomicsReason,
   unitEconomicsReasonCopy,
   unitEconomicsSourceLabel,
@@ -173,6 +174,7 @@ export default function DropshippingUnitEconomics({
   if (!data) return null;
 
   const contribution = getUnitEconomicsContributionValues(data);
+  const grossProfit = getUnitEconomicsGrossProfitValue(data);
   const missingReasons = Object.values(data.data_quality.missing_reasons).filter(
     (reason): reason is string => Boolean(reason),
   );
@@ -210,7 +212,7 @@ export default function DropshippingUnitEconomics({
         </div>
         <div>
           <span>{copy.grossProfit}</span>
-          <strong>{formatCurrency(data.gross_profit)}</strong>
+          <strong>{formatCurrency(grossProfit)}</strong>
         </div>
         <div className="is-known-costs">
           <span>{copy.knownCosts}</span>
