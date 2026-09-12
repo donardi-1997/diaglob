@@ -98,10 +98,10 @@ The endpoint returns:
       "action_key": "replenish_stock",
       "reason_key": "stock_runway_below_threshold",
       "evidence": {
-        "inventory_quantity": 12,
+        "inventory_quantity": 6,
         "units_delivered": 21,
         "units_per_day": 3.0,
-        "stock_runway_days": 4.0
+        "stock_runway_days": 2.0
       }
     }
   ]
