@@ -7,7 +7,8 @@ import type {
 import {
   getUnitEconomicsContributionValues,
   getUnitEconomicsGrossProfitValue,
-  isMetaUnitEconomicsReason,
+  isConfigurableUnitEconomicsReason,
+  isMetaIntegrationActionReason,
   unitEconomicsReasonCopy,
   unitEconomicsSourceLabel,
 } from "../utils/unitEconomics";
@@ -178,10 +179,8 @@ export default function DropshippingUnitEconomics({
   const missingReasons = Object.values(data.data_quality.missing_reasons).filter(
     (reason): reason is string => Boolean(reason),
   );
-  const hasMetaMissing = missingReasons.some(isMetaUnitEconomicsReason);
-  const hasConfigurableMissing = missingReasons.some(
-    (reason) => !isMetaUnitEconomicsReason(reason) && reason !== "cogs_incomplete",
-  );
+  const hasMetaMissing = missingReasons.some(isMetaIntegrationActionReason);
+  const hasConfigurableMissing = missingReasons.some(isConfigurableUnitEconomicsReason);
 
   return (
     <section className="unit-economics-analytics">
