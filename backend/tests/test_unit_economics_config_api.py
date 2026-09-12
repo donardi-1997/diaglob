@@ -221,6 +221,41 @@ def test_foreign_store_returns_404(client, db, account):
     assert response.status_code == 404
 
 
+def test_store_restricted_membership_cannot_read_or_write_unassigned_store(
+    client, db, account
+):
+    org, _, membership, assigned_store = account
+    unassigned_store = Store(
+        organization_id=org.id,
+        name="Unassigned Unit Config Store",
+        slug="unassigned-unit-config-store",
+        country_code="CO",
+        currency="COP",
+        timezone="America/Bogota",
+        default_language="es",
+    )
+    db.add(unassigned_store)
+    db.flush()
+    membership.all_stores = False
+    membership.stores.append(assigned_store)
+    db.commit()
+
+    allowed = client.get(f"/api/stores/{assigned_store.id}/unit-economics/config")
+    denied_read = client.get(
+        f"/api/stores/{unassigned_store.id}/unit-economics/config"
+    )
+    denied_write = client.put(
+        f"/api/stores/{unassigned_store.id}/unit-economics/config",
+        json={"outbound_shipping_cost": 12000, "payment_methods": []},
+    )
+
+    assert allowed.status_code == 200
+    assert denied_read.status_code == 403
+    assert denied_read.json()["detail"] == "Store access denied"
+    assert denied_write.status_code == 403
+    assert denied_write.json()["detail"] == "Store access denied"
+
+
 def test_deleted_store_returns_404(client, db, account):
     _, _, _, store = account
     store.deleted = True
@@ -254,3 +289,30 @@ def test_invalid_cost_returns_validation_error(client, account):
     )
 
     assert response.status_code in {400, 422}
+
+
+def test_non_boolean_cod_flag_is_rejected(client, account):
+    _, _, _, store = account
+    response = client.put(
+        f"/api/stores/{store.id}/unit-economics/config",
+        json={
+            "payment_methods": [
+                {
+                    "payment_method": "cash_on_delivery",
+                    "is_cod": "false",
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_payment_method_over_schema_length_is_rejected(client, account):
+    _, _, _, store = account
+    response = client.put(
+        f"/api/stores/{store.id}/unit-economics/config",
+        json={"payment_methods": [{"payment_method": "x" * 51}]},
+    )
+
+    assert response.status_code == 422
