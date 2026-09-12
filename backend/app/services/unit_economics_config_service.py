@@ -17,6 +17,8 @@ DEFAULT_PERCENT_FIELDS = (
     "default_payment_fee_percent",
     "default_cod_fee_percent",
 )
+MAX_PAYMENT_METHOD_LENGTH = 50
+MAX_MONEY_VALUE = Decimal("99999999999999.9999")
 
 
 def normalize_payment_method(value: str | None) -> str:
@@ -57,7 +59,7 @@ def _as_decimal(value: Any) -> Decimal | None:
 
 def _validate_money(value: Any) -> Decimal | None:
     result = _as_decimal(value)
-    if result is not None and result < 0:
+    if result is not None and (result < 0 or result > MAX_MONEY_VALUE):
         raise ValueError("invalid_unit_economics_value")
     return result
 
@@ -199,6 +201,8 @@ def _validated_payload(payload: dict[str, Any]) -> dict[str, Any]:
         payment_method = normalize_payment_method(raw_rule.get("payment_method"))
         if not payment_method:
             raise ValueError("payment_method_required")
+        if len(payment_method) > MAX_PAYMENT_METHOD_LENGTH:
+            raise ValueError("payment_method_too_long")
         if payment_method in seen:
             raise ValueError("duplicate_payment_method")
         seen.add(payment_method)
