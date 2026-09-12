@@ -23,6 +23,8 @@ CONTRACT_PATH = (
 # missing route or any other unexpected route still fails the contract test.
 INTENTIONAL_ADDITIVE_ROUTES = {
     ("GET", "/api/stores/{store_id}/analytics/dropshipping/insights"),
+    ("GET", "/api/stores/{store_id}/unit-economics/config"),
+    ("PUT", "/api/stores/{store_id}/unit-economics/config"),
 }
 
 
