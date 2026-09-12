@@ -202,6 +202,71 @@ export async function getDropshippingProfitability(storeId: number, dateFrom?: s
   return response.data;
 }
 
+export type DropshippingInsightSeverity =
+  | "critical"
+  | "warning"
+  | "opportunity"
+  | "positive";
+
+export type DropshippingInsightType =
+  | "negative_margin"
+  | "low_margin"
+  | "cost_incomplete"
+  | "delivery_risk"
+  | "cancellation_risk"
+  | "return_risk"
+  | "stockout"
+  | "stock_runway"
+  | "revenue_concentration"
+  | "profit_concentration"
+  | "winner"
+  | "opportunity";
+
+export interface DropshippingInsight {
+  id: string;
+  type: DropshippingInsightType;
+  severity: DropshippingInsightSeverity;
+  product_id: number | null;
+  product_title: string | null;
+  title_key: string;
+  reason_key: string;
+  action_key: string;
+  evidence: Record<string, number | string | null>;
+}
+
+export interface DropshippingDecisionInsightsSummary {
+  critical: number;
+  warning: number;
+  opportunity: number;
+  positive: number;
+  products_evaluated: number;
+}
+
+export interface DropshippingDecisionInsightsResponse {
+  generated_at: string;
+  date_from: string | null;
+  date_to: string | null;
+  currency: string;
+  summary: DropshippingDecisionInsightsSummary;
+  insights: DropshippingInsight[];
+}
+
+export async function getDropshippingDecisionInsights(
+  storeId: number,
+  dateFrom?: string,
+  dateTo?: string,
+  limit = 20,
+) {
+  const params = new URLSearchParams();
+  if (dateFrom) params.set("date_from", dateFrom);
+  if (dateTo) params.set("date_to", dateTo);
+  params.set("limit", String(limit));
+  const response = await api.get<DropshippingDecisionInsightsResponse>(
+    `/api/stores/${storeId}/analytics/dropshipping/insights?${params.toString()}`,
+  );
+  return response.data;
+}
+
 export interface DropshippingProduct {
   product_id: number;
   title: string;
