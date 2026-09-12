@@ -84,6 +84,25 @@ test("duplicate normalized payment methods are rejected before submit", () => {
 });
 
 
+test("payment method labels longer than backend schema are rejected before submit", () => {
+  const result = validateUnitEconomicsConfig({
+    ...baseConfig,
+    payment_methods: [
+      {
+        payment_method: "x".repeat(51),
+        fee_percent: null,
+        fee_fixed: null,
+        is_cod: false,
+        cod_fee_percent: null,
+      },
+    ],
+  });
+
+  assert.equal(result.valid, false);
+  assert.equal(result.error, "payment_method_too_long");
+});
+
+
 test("fixed amount labels always expose the store currency", () => {
   assert.equal(
     formatUnitEconomicsMoneyLabel("Outbound shipping", "COP"),
