@@ -10,6 +10,11 @@ import {
   validateUnitEconomicsConfig,
   type UnitEconomicsConfig,
 } from "../src/services/unitEconomics.ts";
+import {
+  getUnitEconomicsContributionValues,
+  unitEconomicsReasonCopy,
+  unitEconomicsSourceLabel,
+} from "../src/utils/unitEconomics.ts";
 
 
 const baseConfig: UnitEconomicsConfig = {
@@ -102,4 +107,52 @@ test("serialization normalizes methods and strips COD percent when is_cod is fal
 
   assert.equal(payload.payment_methods[0].payment_method, "card");
   assert.equal(payload.payment_methods[0].cod_fee_percent, null);
+});
+
+
+test("complete contribution exposes final profit and margin", () => {
+  assert.deepEqual(
+    getUnitEconomicsContributionValues({
+      data_quality: { status: "complete" },
+      contribution_profit: 271000,
+      contribution_margin: 10.84,
+      known_cost_subtotal: 2229000,
+    }),
+    { profit: 271000, margin: 10.84, complete: true },
+  );
+});
+
+
+test("incomplete contribution never substitutes known cost subtotal for final profit", () => {
+  assert.deepEqual(
+    getUnitEconomicsContributionValues({
+      data_quality: { status: "incomplete" },
+      contribution_profit: null,
+      contribution_margin: null,
+      known_cost_subtotal: 2229000,
+    }),
+    { profit: null, margin: null, complete: false },
+  );
+});
+
+
+test("source labels localize actual estimated missing and not applicable", () => {
+  assert.equal(unitEconomicsSourceLabel("actual", "es"), "Real");
+  assert.equal(unitEconomicsSourceLabel("estimated", "en"), "Estimated");
+  assert.equal(unitEconomicsSourceLabel("missing", "pt-BR"), "Ausente");
+  assert.equal(unitEconomicsSourceLabel("not_applicable", "es"), "No aplica");
+});
+
+
+test("known missing reasons map to safe localized copy", () => {
+  assert.match(unitEconomicsReasonCopy("currency_mismatch", "es"), /moneda/i);
+  assert.match(unitEconomicsReasonCopy("payment_fee_rule_missing", "en"), /payment/i);
+});
+
+
+test("unknown machine reason keys never leak raw to the UI", () => {
+  const unknown = "provider_secret_internal_key";
+  const copy = unitEconomicsReasonCopy(unknown, "es");
+  assert.notEqual(copy, unknown);
+  assert.equal(copy, "Falta información para completar este costo.");
 });
