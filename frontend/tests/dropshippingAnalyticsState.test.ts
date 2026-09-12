@@ -2,10 +2,23 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  DROPSHIPPING_ANALYTICS_SECTIONS,
   allDropshippingSectionsFailed,
   getFailedDropshippingSections,
   settledValue,
 } from "../src/utils/dropshippingAnalyticsState.ts";
+
+
+test("dropshipping analytics exposes six isolated sections", () => {
+  assert.deepEqual(DROPSHIPPING_ANALYTICS_SECTIONS, [
+    "overview",
+    "profitability",
+    "products",
+    "orders",
+    "insights",
+    "unitEconomics",
+  ]);
+});
 
 
 test("settledValue returns fulfilled data and hides rejected reasons", () => {
@@ -23,19 +36,20 @@ test("settledValue returns fulfilled data and hides rejected reasons", () => {
 });
 
 
-test("partial failures identify only unavailable sections including insights", () => {
+test("partial failures identify only unavailable sections including unit economics", () => {
   const results: PromiseSettledResult<unknown>[] = [
     { status: "fulfilled", value: { total_orders: 10 } },
     { status: "rejected", reason: new Error("profitability failed") },
     { status: "fulfilled", value: [] },
     { status: "rejected", reason: new Error("orders failed") },
-    { status: "rejected", reason: new Error("insights failed") },
+    { status: "fulfilled", value: { insights: [] } },
+    { status: "rejected", reason: new Error("unit economics failed") },
   ];
 
   assert.deepEqual(getFailedDropshippingSections(results), [
     "profitability",
     "orders",
-    "insights",
+    "unitEconomics",
   ]);
   assert.equal(
     allDropshippingSectionsFailed(getFailedDropshippingSections(results)),
@@ -44,13 +58,30 @@ test("partial failures identify only unavailable sections including insights", (
 });
 
 
-test("insights can fail without hiding the four established analytics sections", () => {
+test("unit economics can fail without hiding established analytics sections", () => {
+  const results: PromiseSettledResult<unknown>[] = [
+    { status: "fulfilled", value: {} },
+    { status: "fulfilled", value: {} },
+    { status: "fulfilled", value: [] },
+    { status: "fulfilled", value: {} },
+    { status: "fulfilled", value: { insights: [] } },
+    { status: "rejected", reason: new Error("unit economics failed") },
+  ];
+
+  const failed = getFailedDropshippingSections(results);
+  assert.deepEqual(failed, ["unitEconomics"]);
+  assert.equal(allDropshippingSectionsFailed(failed), false);
+});
+
+
+test("insights can fail without hiding the other five analytics sections", () => {
   const results: PromiseSettledResult<unknown>[] = [
     { status: "fulfilled", value: {} },
     { status: "fulfilled", value: {} },
     { status: "fulfilled", value: [] },
     { status: "fulfilled", value: {} },
     { status: "rejected", reason: new Error("decision intelligence failed") },
+    { status: "fulfilled", value: {} },
   ];
 
   const failed = getFailedDropshippingSections(results);
@@ -66,6 +97,7 @@ test("healthy results report no failed sections", () => {
     { status: "fulfilled", value: [] },
     { status: "fulfilled", value: {} },
     { status: "fulfilled", value: { insights: [] } },
+    { status: "fulfilled", value: {} },
   ];
 
   assert.deepEqual(getFailedDropshippingSections(results), []);
@@ -73,13 +105,14 @@ test("healthy results report no failed sections", () => {
 });
 
 
-test("all five rejected results are recognized as a global failure", () => {
+test("all six rejected results are recognized as a global failure", () => {
   const results: PromiseSettledResult<unknown>[] = [
     { status: "rejected", reason: "overview" },
     { status: "rejected", reason: "profitability" },
     { status: "rejected", reason: "products" },
     { status: "rejected", reason: "orders" },
     { status: "rejected", reason: "insights" },
+    { status: "rejected", reason: "unitEconomics" },
   ];
   const failed = getFailedDropshippingSections(results);
 
@@ -89,6 +122,7 @@ test("all five rejected results are recognized as a global failure", () => {
     "products",
     "orders",
     "insights",
+    "unitEconomics",
   ]);
   assert.equal(allDropshippingSectionsFailed(failed), true);
 });
