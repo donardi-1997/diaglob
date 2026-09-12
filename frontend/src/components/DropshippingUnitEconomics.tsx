@@ -33,6 +33,7 @@ const COPY: Record<LocaleKey, {
   contributionProfit: string;
   contributionMargin: string;
   recognizedRevenue: string;
+  grossProfit: string;
   knownCosts: string;
   knownCostsHelp: string;
   complete: string;
@@ -50,6 +51,7 @@ const COPY: Record<LocaleKey, {
     contributionProfit: "Utilidad de contribución",
     contributionMargin: "Margen de contribución",
     recognizedRevenue: "Ingresos reconocidos",
+    grossProfit: "Utilidad bruta",
     knownCosts: "Costos conocidos",
     knownCostsHelp: "Subtotal informativo; no es utilidad cuando faltan costos.",
     complete: "Completo",
@@ -74,6 +76,7 @@ const COPY: Record<LocaleKey, {
     contributionProfit: "Contribution profit",
     contributionMargin: "Contribution margin",
     recognizedRevenue: "Recognized revenue",
+    grossProfit: "Gross profit",
     knownCosts: "Known costs",
     knownCostsHelp: "Informational subtotal; it is not profit when costs are missing.",
     complete: "Complete",
@@ -98,6 +101,7 @@ const COPY: Record<LocaleKey, {
     contributionProfit: "Lucro de contribuição",
     contributionMargin: "Margem de contribuição",
     recognizedRevenue: "Receita reconhecida",
+    grossProfit: "Lucro bruto",
     knownCosts: "Custos conhecidos",
     knownCostsHelp: "Subtotal informativo; não é lucro quando faltam custos.",
     complete: "Completo",
@@ -203,6 +207,10 @@ export default function DropshippingUnitEconomics({
         <div>
           <span>{copy.recognizedRevenue}</span>
           <strong>{formatCurrency(data.recognized_revenue)}</strong>
+        </div>
+        <div>
+          <span>{copy.grossProfit}</span>
+          <strong>{formatCurrency(data.gross_profit)}</strong>
         </div>
         <div className="is-known-costs">
           <span>{copy.knownCosts}</span>
