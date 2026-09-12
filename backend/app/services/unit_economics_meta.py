@@ -7,7 +7,7 @@ Meta Ads client. Missing or unavailable provider data is never coerced to zero.
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -52,6 +52,23 @@ def _meta_time_range(
     }
 
 
+def _validated_spend(row: dict[str, Any]) -> Decimal | None:
+    """Return provider spend only when the raw value is present and finite.
+
+    The generic Meta parser intentionally defaults malformed metrics to zero for
+    resilient dashboards. Unit Economics must be stricter because a fabricated
+    zero would overstate contribution profit.
+    """
+    raw_spend = row.get("spend")
+    if raw_spend is None:
+        return None
+    try:
+        spend = Decimal(str(raw_spend))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+    return spend if spend.is_finite() else None
+
+
 def resolve_meta_ad_spend(
     db: Session,
     organization_id: int,
@@ -63,7 +80,7 @@ def resolve_meta_ad_spend(
 
     ``date_to`` follows the analytics half-open convention and is exclusive.
     A provider-confirmed empty response is an actual zero; connection, currency,
-    credential, or provider failures remain explicitly missing.
+    credential, malformed-data, or provider failures remain explicitly missing.
     """
     connection = (
         db.query(MetaAdsConnection)
@@ -122,8 +139,19 @@ def resolve_meta_ad_spend(
         )
 
     spend = ZERO
-    for row in insights or []:
-        spend += parse_insights_row(row)["spend"]
+    for index, row in enumerate(insights or []):
+        raw_spend = _validated_spend(row)
+        if raw_spend is None:
+            return _missing(
+                "provider_error",
+                {
+                    **metadata,
+                    "invalid_spend_row": index,
+                },
+            )
+        # Preserve the existing provider parser as the canonical conversion path
+        # after validating that Unit Economics is not inheriting its zero fallback.
+        spend += parse_insights_row({**row, "spend": str(raw_spend)})["spend"]
 
     return _result(
         amount=spend,
