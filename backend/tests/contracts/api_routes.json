@@ -257,6 +257,10 @@
   ],
   [
     "GET",
+    "/api/stores/{store_id}/analytics/dropshipping/insights"
+  ],
+  [
+    "GET",
     "/api/stores/{store_id}/analytics/dropshipping/orders"
   ],
   [
@@ -274,6 +278,10 @@
   [
     "GET",
     "/api/stores/{store_id}/analytics/dropshipping/profitability"
+  ],
+  [
+    "GET",
+    "/api/stores/{store_id}/analytics/dropshipping/unit-economics"
   ],
   [
     "GET",
@@ -422,6 +430,10 @@
   [
     "GET",
     "/api/stores/{store_id}/telegram"
+  ],
+  [
+    "GET",
+    "/api/stores/{store_id}/unit-economics/config"
   ],
   [
     "GET",
@@ -794,5 +806,9 @@
   [
     "PUT",
     "/api/stores/{store_id}/automations/{automation_id}"
+  ],
+  [
+    "PUT",
+    "/api/stores/{store_id}/unit-economics/config"
   ]
 ]
