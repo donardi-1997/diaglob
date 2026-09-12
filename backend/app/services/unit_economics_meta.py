@@ -49,11 +49,21 @@ def _meta_time_range(
     date_from: datetime,
     date_to_exclusive: datetime,
 ) -> dict[str, str]:
-    """Convert Diaglob's half-open window to Meta's inclusive date window."""
+    """Convert Diaglob's half-open calendar window to Meta's inclusive dates."""
     return {
         "since": date_from.date().isoformat(),
         "until": (date_to_exclusive.date() - timedelta(days=1)).isoformat(),
     }
+
+
+def _is_calendar_boundary(value: datetime) -> bool:
+    """Meta daily Insights cannot exactly represent partial-day analytics windows."""
+    return (
+        value.hour == 0
+        and value.minute == 0
+        and value.second == 0
+        and value.microsecond == 0
+    )
 
 
 def _validated_spend(row: dict[str, Any]) -> Decimal | None:
@@ -101,6 +111,16 @@ def resolve_meta_ad_spend(
     if date_from is None or date_to is None or date_to <= date_from:
         return _missing("bounded_date_range_required")
 
+    if not _is_calendar_boundary(date_from) or not _is_calendar_boundary(date_to):
+        return _missing(
+            "bounded_date_range_required",
+            {
+                "calendar_aligned": False,
+                "date_from": date_from.isoformat(),
+                "date_to": date_to.isoformat(),
+            },
+        )
+
     provider_currency = (connection.account_currency or "").strip().upper()
     store_currency = (store.currency or "").strip().upper()
     currency_metadata = {
@@ -117,6 +137,7 @@ def resolve_meta_ad_spend(
     time_range = _meta_time_range(date_from, date_to)
     metadata = {
         **currency_metadata,
+        "calendar_aligned": True,
         "account_id": connection.external_account_id,
         "time_range": time_range,
     }
