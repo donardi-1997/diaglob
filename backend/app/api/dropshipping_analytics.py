@@ -18,6 +18,7 @@ from ..services.dropshipping_decision_intelligence import (
 )
 from ..services.dropshipping_unit_economics import get_store_unit_economics
 from ..services.sales_attribution import get_sales_attribution_analytics
+from .store_access import ensure_membership_store_access
 
 router = APIRouter()
 
@@ -173,6 +174,7 @@ def dropshipping_unit_economics(
 ):
     """Store-level contribution economics with explicit cost provenance."""
     store = _validate_store(store_id, membership, db)
+    ensure_membership_store_access(membership, store)
     parsed_from, parsed_to = _parse_range(date_from, date_to)
 
     return get_store_unit_economics(
