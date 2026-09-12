@@ -33,6 +33,12 @@ def upgrade():
         ),
         sa.ForeignKeyConstraint(["store_id"], ["stores.id"], ondelete="CASCADE"),
         sa.UniqueConstraint("store_id", name="uq_store_unit_economics_store_id"),
+        sa.UniqueConstraint(
+            "id",
+            "organization_id",
+            "store_id",
+            name="uq_unit_economics_config_identity_scope",
+        ),
     )
     op.create_index(
         "ix_store_unit_economics_configs_organization_id",
@@ -65,8 +71,13 @@ def upgrade():
         ),
         sa.ForeignKeyConstraint(["store_id"], ["stores.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(
-            ["unit_economics_config_id"],
-            ["store_unit_economics_configs.id"],
+            ["unit_economics_config_id", "organization_id", "store_id"],
+            [
+                "store_unit_economics_configs.id",
+                "store_unit_economics_configs.organization_id",
+                "store_unit_economics_configs.store_id",
+            ],
+            name="fk_unit_economics_rule_parent_scope",
             ondelete="CASCADE",
         ),
         sa.UniqueConstraint(
