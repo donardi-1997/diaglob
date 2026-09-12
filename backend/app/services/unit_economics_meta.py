@@ -12,7 +12,11 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from ..integrations.meta_ads.client import MetaAdsError, get_insights, parse_insights_row
+from ..integrations.meta_ads.client import (
+    MetaAdsError,
+    get_insights,
+    parse_insights_row,
+)
 from ..meta_ads_security import decrypt_secret
 from ..models import MetaAdsConnection, Store
 
