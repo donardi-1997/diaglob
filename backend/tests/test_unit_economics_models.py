@@ -83,6 +83,26 @@ def test_unit_economics_tables_registered():
     assert "payment_method_cost_rules" in Base.metadata.tables
 
 
+def test_payment_method_rule_has_composite_parent_scope_foreign_key():
+    constraints = PaymentMethodCostRule.__table__.foreign_key_constraints
+    scoped = [
+        constraint
+        for constraint in constraints
+        if {column.name for column in constraint.columns}
+        == {"unit_economics_config_id", "organization_id", "store_id"}
+    ]
+
+    assert len(scoped) == 1
+    assert scoped[0].name == "fk_unit_economics_rule_parent_scope"
+    assert {
+        element.target_fullname for element in scoped[0].elements
+    } == {
+        "store_unit_economics_configs.id",
+        "store_unit_economics_configs.organization_id",
+        "store_unit_economics_configs.store_id",
+    }
+
+
 def test_store_config_is_unique_per_store(db, store):
     db.add(
         StoreUnitEconomicsConfig(
