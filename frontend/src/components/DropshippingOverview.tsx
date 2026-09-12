@@ -10,10 +10,12 @@ import {
   Truck,
 } from "lucide-react";
 import {
+  getDropshippingDecisionInsights,
   getDropshippingOrders,
   getDropshippingOverview,
   getDropshippingProducts,
   getDropshippingProfitability,
+  type DropshippingDecisionInsightsResponse,
   type DropshippingOrders,
   type DropshippingOverview,
   type DropshippingProduct,
@@ -25,6 +27,7 @@ import {
   settledValue,
   type DropshippingAnalyticsSection,
 } from "../utils/dropshippingAnalyticsState";
+import DropshippingDecisionInsights from "./DropshippingDecisionInsights";
 import ProductPerformanceAnalytics from "./ProductPerformanceAnalytics";
 import SalesAttributionAnalytics from "./SalesAttributionAnalytics";
 
@@ -40,6 +43,7 @@ interface DashboardData {
   profitability: DropshippingProfitability | null;
   products: DropshippingProduct[] | null;
   orders: DropshippingOrders | null;
+  insights: DropshippingDecisionInsightsResponse | null;
 }
 
 const SECTION_LABELS: Record<DropshippingAnalyticsSection, string> = {
@@ -47,6 +51,7 @@ const SECTION_LABELS: Record<DropshippingAnalyticsSection, string> = {
   profitability: "rentabilidad",
   products: "productos",
   orders: "embudo de pedidos",
+  insights: "decision intelligence",
 };
 
 function SectionUnavailable() {
@@ -63,10 +68,11 @@ export default function DropshippingOverview({
   dateFrom,
   dateTo,
 }: Props) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
   const [unavailableSections, setUnavailableSections] = useState<
     DropshippingAnalyticsSection[]
   >([]);
@@ -83,6 +89,7 @@ export default function DropshippingOverview({
       getDropshippingProfitability(storeId, dateFrom, dateTo),
       getDropshippingProducts(storeId, dateFrom, dateTo),
       getDropshippingOrders(storeId, dateFrom, dateTo),
+      getDropshippingDecisionInsights(storeId, dateFrom, dateTo),
     ])
       .then((results) => {
         if (cancelled) return;
@@ -95,11 +102,13 @@ export default function DropshippingOverview({
           return;
         }
 
+        setSelectedProductId(null);
         setData({
           overview: settledValue(results[0]),
           profitability: settledValue(results[1]),
           products: settledValue(results[2]),
           orders: settledValue(results[3]),
+          insights: settledValue(results[4]),
         });
       })
       .finally(() => {
@@ -127,8 +136,8 @@ export default function DropshippingOverview({
     return <div className="commerce-empty">{t("analyticsNoData")}</div>;
   }
 
-  const { overview, profitability, products, orders } = data;
-  const effectiveCurrency = overview?.currency || currency;
+  const { overview, profitability, products, orders, insights } = data;
+  const effectiveCurrency = overview?.currency || insights?.currency || currency;
   const unavailableLabels = unavailableSections.map(
     (section) => SECTION_LABELS[section],
   );
@@ -175,6 +184,14 @@ export default function DropshippingOverview({
           </span>
         </div>
       )}
+
+      <DropshippingDecisionInsights
+        data={insights}
+        unavailable={unavailableSections.includes("insights")}
+        language={i18n.resolvedLanguage || i18n.language || "es"}
+        currency={effectiveCurrency}
+        onSelectProduct={setSelectedProductId}
+      />
 
       {(overview || profitability) && (
         <div className="analytics-stats-grid">
@@ -385,6 +402,8 @@ export default function DropshippingOverview({
         storeId={storeId}
         currency={effectiveCurrency}
         products={products}
+        selectedProductId={selectedProductId}
+        onSelectedProductChange={setSelectedProductId}
         dateFrom={dateFrom}
         dateTo={dateTo}
       />
