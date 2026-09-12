@@ -13,6 +13,9 @@ from ..services.dropshipping_analytics import (
     get_product_profitability,
     get_profitability,
 )
+from ..services.dropshipping_decision_intelligence import (
+    get_dropshipping_decision_insights,
+)
 from ..services.sales_attribution import get_sales_attribution_analytics
 
 router = APIRouter()
@@ -128,6 +131,32 @@ def dropshipping_profitability(
         store_id,
         parsed_from,
         parsed_to,
+    )
+
+
+@router.get(
+    "/api/stores/{store_id}/analytics/dropshipping/insights",
+)
+def dropshipping_insights(
+    store_id: int,
+    membership=Depends(require_permission("analytics.read")),
+    db: Session = Depends(get_db),
+    date_from: str | None = Query(None),
+    date_to: str | None = Query(None),
+    limit: int = Query(20, ge=1, le=50),
+):
+    """Deterministic decision insights for the selected store and period."""
+    store = _validate_store(store_id, membership, db)
+    parsed_from, parsed_to = _parse_range(date_from, date_to)
+
+    return get_dropshipping_decision_insights(
+        db,
+        membership.organization_id,
+        store_id,
+        store.currency,
+        parsed_from,
+        parsed_to,
+        limit,
     )
 
 
