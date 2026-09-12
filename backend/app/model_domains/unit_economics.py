@@ -2,7 +2,16 @@
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Integer,
+    Numeric,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..db import Base
@@ -12,6 +21,14 @@ class StoreUnitEconomicsConfig(Base):
     """One set of Unit Economics assumptions per store."""
 
     __tablename__ = "store_unit_economics_configs"
+    __table_args__ = (
+        UniqueConstraint(
+            "id",
+            "organization_id",
+            "store_id",
+            name="uq_unit_economics_config_identity_scope",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     organization_id: Mapped[int] = mapped_column(
@@ -65,6 +82,16 @@ class PaymentMethodCostRule(Base):
             "payment_method",
             name="uq_unit_economics_store_payment_method",
         ),
+        ForeignKeyConstraint(
+            ["unit_economics_config_id", "organization_id", "store_id"],
+            [
+                "store_unit_economics_configs.id",
+                "store_unit_economics_configs.organization_id",
+                "store_unit_economics_configs.store_id",
+            ],
+            name="fk_unit_economics_rule_parent_scope",
+            ondelete="CASCADE",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -79,7 +106,7 @@ class PaymentMethodCostRule(Base):
         index=True,
     )
     unit_economics_config_id: Mapped[int] = mapped_column(
-        ForeignKey("store_unit_economics_configs.id", ondelete="CASCADE"),
+        Integer,
         nullable=False,
         index=True,
     )
