@@ -4,7 +4,7 @@
 
 **Goal:** Add deterministic, evidence-backed decision insights to Dropshipping Analytics without weakening existing analytics resilience or tenant/store isolation.
 
-**Architecture:** Add a focused backend decision-intelligence service that consumes existing product analytics metrics and emits structured insight objects under a new `/insights` endpoint. Add a typed frontend client, a pure presentation/selection helper, and a dedicated insight component near the top of the existing dropshipping dashboard; keep Product Analytics V2 as the drill-down surface through an explicit controlled product-selection contract.
+**Architecture:** A new backend decision-intelligence service consumes the existing product analytics metrics, evaluates deterministic rules, and exposes them through a new additive `/insights` endpoint. The frontend adds a typed client, a pure copy/presentation helper, a dedicated insights section, and an explicit controlled selection contract into Product Analytics V2.
 
 **Tech Stack:** FastAPI, SQLAlchemy, pytest, React 19, TypeScript 6, Vite 8, node:test, react-i18next, existing Diaglob analytics services and CSS conventions.
 
@@ -15,46 +15,121 @@
 - No database migration.
 - No new background job.
 - No LLM-generated diagnosis or recommendation.
-- Preserve existing dropshipping endpoints and response fields.
+- Preserve all existing dropshipping endpoints and response fields.
 - Require `analytics.read` and strict `membership.organization_id` + `store_id` isolation.
 - Reuse existing date parsing semantics; date-only `date_to` remains inclusive at the API boundary and exclusive internally.
 - Suppress margin-dependent insights whenever `profitability_complete` is false.
 - Stock runway exists only when both date bounds are present and define a positive range.
-- New insight failure must not make existing overview, profitability, products, or funnel unavailable.
-- Frontend copy must be complete in ES, EN and PT-BR; raw backend keys must never be shown to users.
+- Decision Intelligence failure must not make overview, profitability, products, or funnel unavailable.
+- Frontend copy must be complete in ES, EN and PT-BR; raw backend keys must never be visible.
 - No automatic price, stock, campaign, or fulfillment mutations.
+- Evaluate all products with activity before applying the insight `limit`; do not reuse the existing API's 200-product cap as an evaluation cap.
 
 ---
 
 ## File Structure
 
 ### Backend
-- Create `backend/app/services/dropshipping_decision_intelligence.py`: rule engine, runway calculation, conflict suppression, deterministic ordering, summary construction.
-- Modify `backend/app/api/dropshipping_analytics.py`: expose `GET /api/stores/{store_id}/analytics/dropshipping/insights` using existing `_validate_store` and `_parse_range`.
-- Create `backend/tests/test_dropshipping_decision_intelligence.py`: rule-engine and API regression coverage.
+- Create `backend/app/services/dropshipping_decision_intelligence.py`: rule evaluation, runway, conflict suppression, deterministic ordering, summary.
+- Modify `backend/app/services/dropshipping_analytics.py`: allow internal callers to request all product metrics with `limit=None` while preserving current API behavior.
+- Modify `backend/app/api/dropshipping_analytics.py`: expose `GET /api/stores/{store_id}/analytics/dropshipping/insights` using existing guards.
+- Create `backend/tests/test_dropshipping_decision_intelligence.py`: rule-engine and endpoint regressions.
+- Modify `backend/tests/test_product_analytics_v2.py`: characterize `limit=None` as unbounded internal product evaluation.
 
 ### Frontend
-- Modify `frontend/src/services/analytics.ts`: typed insight contract and `getDropshippingDecisionInsights()` client.
-- Create `frontend/src/utils/dropshippingDecisionInsights.ts`: locale normalization, copy maps, evidence formatting metadata, severity metadata, product-selection helper.
-- Create `frontend/tests/dropshippingDecisionInsights.test.ts`: pure frontend contract tests runnable with existing `node --test` setup.
-- Create `frontend/src/components/DropshippingDecisionInsights.tsx`: section UI only; no rule logic.
-- Modify `frontend/src/components/DropshippingOverview.tsx`: load insights independently and preserve partial-failure behavior.
-- Modify `frontend/src/components/ProductPerformanceAnalytics.tsx`: accept controlled product selection from the parent.
-- Create `frontend/src/dropshipping-decision-insights.css`: focused responsive styles for insight cards and severity states.
-- Modify the existing frontend style import entry point that already imports analytics styles, only if needed to include the new stylesheet.
+- Modify `frontend/src/services/analytics.ts`: typed insight contract and API client.
+- Create `frontend/src/utils/dropshippingDecisionInsights.ts`: locale/copy/evidence/severity/selection helpers.
+- Create `frontend/tests/dropshippingDecisionInsights.test.ts`: pure presentation and selection tests.
+- Create `frontend/src/components/DropshippingDecisionInsights.tsx`: insight section UI.
+- Modify `frontend/src/components/DropshippingOverview.tsx`: independent insights load + parent-owned selected product state.
+- Modify `frontend/src/components/ProductPerformanceAnalytics.tsx`: controlled product selection.
+- Modify `frontend/src/utils/dropshippingAnalyticsState.ts`: add `insights` to partial-failure model.
+- Modify `frontend/tests/dropshippingAnalyticsState.test.ts`: five-section resilience contract.
+- Create `frontend/src/dropshipping-decision-insights.css`: responsive styles; import it directly from the new component.
 
 ---
 
-### Task 1: Backend Decision Rule Engine
+### Task 1: Remove the Product Evaluation Cap for Internal Analytics
+
+**Files:**
+- Modify: `backend/app/services/dropshipping_analytics.py`
+- Modify: `backend/tests/test_product_analytics_v2.py`
+
+**Interfaces:**
+- Change only the internal Python signature:
+  ```python
+  def get_product_profitability(
+      db: Session,
+      organization_id: int,
+      store_id: int | None,
+      date_from: Any,
+      date_to: Any,
+      limit: int | None = 50,
+  ) -> list[dict[str, Any]]
+  ```
+- `limit=None` returns every evaluated product; integer limits preserve current slicing behavior.
+- Existing API continues passing its validated integer limit and therefore keeps its public behavior unchanged.
+
+- [ ] **Step 1: Write the failing characterization test**
+
+Add a test that creates three products with delivered orders, then asserts:
+
+```python
+limited = get_product_profitability(db, org.id, store.id, None, None, limit=2)
+unbounded = get_product_profitability(db, org.id, store.id, None, None, limit=None)
+
+assert len(limited) == 2
+assert len(unbounded) == 3
+```
+
+- [ ] **Step 2: Run the test and verify RED**
+
+```bash
+cd backend
+pytest -q tests/test_product_analytics_v2.py -k unbounded
+```
+
+Expected: FAIL because the current implementation slices with `products[:limit]` and does not accept `None`.
+
+- [ ] **Step 3: Implement the compatible internal behavior**
+
+Replace the final return with:
+
+```python
+if limit is None:
+    return products
+return products[:limit]
+```
+
+Do not change sorting, SQL aggregation, endpoint defaults, or public response fields.
+
+- [ ] **Step 4: Verify GREEN**
+
+```bash
+cd backend
+pytest -q tests/test_product_analytics_v2.py
+```
+
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add backend/app/services/dropshipping_analytics.py backend/tests/test_product_analytics_v2.py
+git commit -m "refactor: allow unbounded internal product analytics"
+```
+
+---
+
+### Task 2: Backend Decision Rule Engine
 
 **Files:**
 - Create: `backend/app/services/dropshipping_decision_intelligence.py`
 - Create: `backend/tests/test_dropshipping_decision_intelligence.py`
-- Read/consume: `backend/app/services/dropshipping_analytics.py`
 
 **Interfaces:**
-- Consumes: `get_product_profitability(db, organization_id, store_id, date_from, date_to, limit=200) -> list[dict[str, Any]]`.
-- Produces:
+- Consumes `get_product_profitability(..., limit=None)` from Task 1.
+- Produces this exact public service function:
   ```python
   def get_dropshipping_decision_insights(
       db: Session,
@@ -64,80 +139,66 @@
       date_from: datetime | None,
       date_to: datetime | None,
       limit: int = 20,
-  ) -> dict[str, Any]:
-      ...
+  ) -> dict[str, Any]
   ```
-- Returned keys: `generated_at`, `date_from`, `date_to`, `currency`, `summary`, `insights`.
+- Top-level keys: `generated_at`, `date_from`, `date_to`, `currency`, `summary`, `insights`.
 
-- [ ] **Step 1: Write the failing rule-engine tests**
+- [ ] **Step 1: Build deterministic test fixtures**
 
-Create fixtures analogous to `backend/tests/test_product_analytics_v2.py`, then add focused tests that assert structured keys/evidence rather than prose. Include at minimum these exact behavioral cases:
+In the new test file, define local helpers named `add_product`, `add_variant`, and `add_order_item`. They must insert `Product`, `ProductVariant`, `Order`, and `OrderItem` rows with explicit lifecycle status, price, cost, quantity, timestamp, inventory, organization, and store. Use the same model fields already exercised by `test_product_analytics_v2.py`; keep every scenario in one store unless the test explicitly validates isolation.
 
-```python
-def test_incomplete_cost_suppresses_margin_dependent_insights(db, org_store):
-    # Delivered product with one cost and one missing cost.
-    result = get_dropshipping_decision_insights(...)
-    types = {item["type"] for item in result["insights"]}
-    assert "cost_incomplete" in types
-    assert "negative_margin" not in types
-    assert "low_margin" not in types
-    assert "winner" not in types
-    assert "opportunity" not in types
+- [ ] **Step 2: Write RED tests for every approved rule**
 
+Create separate tests with these exact inputs and expected outcomes:
 
-def test_negative_margin_is_critical(db, org_store):
-    result = get_dropshipping_decision_insights(...)
-    insight = next(item for item in result["insights"] if item["type"] == "negative_margin")
-    assert insight["severity"] == "critical"
-    assert insight["action_key"] == "review_price_and_cost"
-    assert insight["evidence"]["gross_profit"] < 0
+| Case | Fixture | Expected |
+| --- | --- | --- |
+| empty store | no orders | `summary.products_evaluated == 0`, `insights == []` |
+| incomplete costs | delivered product with at least one `unit_cost=None` | `cost_incomplete`; no `negative_margin`, `low_margin`, `winner`, `opportunity` |
+| negative margin | complete costs; delivered revenue below COGS | `negative_margin`, `critical`, action `review_price_and_cost` |
+| low margin | 3+ delivered; complete costs; margin 0–19.9% | `low_margin`, `warning` |
+| delivery sample guard | 4 shipped-equivalent orders at <60% delivery | no `delivery_risk` |
+| delivery threshold | 5 shipped-equivalent orders at <60% delivery | `delivery_risk` |
+| cancellation threshold | 5 total orders and cancellation rate >25% | `cancellation_risk` |
+| return threshold | 5 shipped-equivalent orders and return rate >15% | `return_risk` |
+| stockout | inventory 0 and delivered units >0 | `stockout`; no `stock_runway` |
+| runway critical | bounded 10-day range; 10 delivered units; inventory 2 | runway 2.0 days, `critical` |
+| runway warning | bounded 10-day range; 10 delivered units; inventory 5 | runway 5.0 days, `warning` |
+| runway no alert | bounded 10-day range; 10 delivered units; inventory 7 | no `stock_runway` |
+| runway sample guard | bounded range; only 2 delivered units | no `stock_runway` |
+| unbounded range | same profitable product with no dates | other rules still evaluate; no `stock_runway` |
+| revenue concentration | at least 2 revenue-producing products; one >=50% share | `revenue_concentration` |
+| profit concentration | at least 2 positive-profit products; one >=50% share | `profit_concentration` |
+| winner | complete costs; total>=5; delivered>=3; margin>=30%; delivery>=70%; cancel<=20%; returns null or <=10%; positive profit | `winner`, `positive` |
+| opportunity | complete costs; total>=5; delivered>=2; same quality gates; revenue share<15%; positive profit; not winner | `opportunity`, severity `opportunity` |
+| suppression | product qualifies for winner conditions | no `opportunity` for that product |
+| ordering | at least one critical, warning, opportunity, positive | order is critical → warning → opportunity → positive |
+| limit | create >2 insights | evaluate all first, then return exactly first 2 sorted insights |
+| serialization | all evidence numeric values finite | no `NaN` or `Infinity` |
 
+For stable identifiers assert a product-specific insight ID equals `f"{type}:{product_id}"`.
 
-def test_rate_thresholds_are_sample_guarded(db, org_store):
-    # Four orders with bad rates must not alert; the fifth qualifying observation may alert.
-    ...
+- [ ] **Step 3: Run RED**
 
-
-def test_stock_runway_boundaries(db, org_store):
-    # Bounded range with >= 3 delivered units.
-    # <3 days => critical; 3<=days<7 => warning; >=7 => no runway alert.
-    ...
-
-
-def test_unbounded_range_omits_runway_but_keeps_other_rules(db, org_store):
-    result = get_dropshipping_decision_insights(..., date_from=None, date_to=None)
-    assert all(item["type"] != "stock_runway" for item in result["insights"])
-
-
-def test_winner_suppresses_opportunity(db, org_store):
-    types = [item["type"] for item in get_dropshipping_decision_insights(...)["insights"]]
-    assert "winner" in types
-    assert "opportunity" not in types
-
-
-def test_insights_are_sorted_then_limited(db, org_store):
-    result = get_dropshipping_decision_insights(..., limit=2)
-    assert len(result["insights"]) == 2
-    assert [item["severity"] for item in result["insights"]] == ["critical", "warning"]
-```
-
-Also cover empty store, low margin, delivery risk, cancellation risk, return risk, stockout, revenue concentration, profit concentration, opportunity, stable IDs, summary counts, and no `NaN`/`Infinity` values.
-
-- [ ] **Step 2: Run the new backend test file and verify RED**
-
-Run:
 ```bash
 cd backend
 pytest -q tests/test_dropshipping_decision_intelligence.py
 ```
-Expected: FAIL because `app.services.dropshipping_decision_intelligence` and `get_dropshipping_decision_insights` do not yet exist.
 
-- [ ] **Step 3: Implement minimal deterministic rule engine**
+Expected: collection/import failure because the service module does not exist.
 
-Create constants matching the approved spec:
+- [ ] **Step 4: Implement the rule engine**
+
+Create exact ordering constants:
 
 ```python
-SEVERITY_RANK = {"critical": 0, "warning": 1, "opportunity": 2, "positive": 3}
+SEVERITY_RANK = {
+    "critical": 0,
+    "warning": 1,
+    "opportunity": 2,
+    "positive": 3,
+}
+
 TYPE_PRIORITY = {
     "negative_margin": 0,
     "stockout": 1,
@@ -154,56 +215,44 @@ TYPE_PRIORITY = {
 }
 ```
 
-Use one helper to construct insight payloads with stable IDs:
+Use `datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")` for `generated_at`.
+
+Build every product insight with:
 
 ```python
-def _insight(*, type_: str, severity: str, product: dict[str, Any], title_key: str,
-             reason_key: str, action_key: str, evidence: dict[str, Any]) -> dict[str, Any]:
-    product_id = int(product["product_id"])
-    return {
-        "id": f"{type_}:{product_id}",
-        "type": type_,
-        "severity": severity,
-        "product_id": product_id,
-        "product_title": product["title"],
-        "title_key": title_key,
-        "reason_key": reason_key,
-        "action_key": action_key,
-        "evidence": evidence,
-    }
+{
+    "id": f"{type_}:{product_id}",
+    "type": type_,
+    "severity": severity,
+    "product_id": product_id,
+    "product_title": product_title,
+    "title_key": title_key,
+    "reason_key": reason_key,
+    "action_key": action_key,
+    "evidence": evidence,
+}
 ```
 
-Calculate bounded period days as:
+Calculate bounded range velocity only when both dates are present and `(date_to - date_from).total_seconds() > 0`:
 
 ```python
-period_days = None
-if date_from is not None and date_to is not None:
-    seconds = (date_to - date_from).total_seconds()
-    if seconds > 0:
-        period_days = seconds / 86400
-```
-
-Implement exactly the approved thresholds and suppressions. For runway use:
-
-```python
+period_days = (date_to - date_from).total_seconds() / 86400
 units_per_day = units_delivered / period_days
 stock_runway_days = inventory_quantity / units_per_day
 ```
 
-Round `units_per_day` and `stock_runway_days` to one decimal in evidence. Do not emit runway when `units_delivered < 3`, when no bounded range exists, or when inventory is zero (emit `stockout` instead).
+Round `units_per_day` and `stock_runway_days` to one decimal in evidence. Implement the thresholds and suppressions exactly as written in the approved spec. Sort all insights before slicing `insights[:limit]`. Summary counts are calculated from the limited response list, while `products_evaluated` is the full evaluated product count.
 
-For concentration, first compute store-level counts of products with positive delivered revenue / positive gross profit so a single-product store cannot trigger concentration.
+- [ ] **Step 5: Verify GREEN**
 
-- [ ] **Step 4: Run the rule-engine tests and verify GREEN**
-
-Run:
 ```bash
 cd backend
-pytest -q tests/test_dropshipping_decision_intelligence.py
+pytest -q tests/test_dropshipping_decision_intelligence.py tests/test_product_analytics_v2.py tests/test_dropshipping_analytics.py
 ```
-Expected: all tests in the file PASS.
 
-- [ ] **Step 5: Commit the backend rule engine**
+Expected: PASS.
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add backend/app/services/dropshipping_decision_intelligence.py backend/tests/test_dropshipping_decision_intelligence.py
@@ -212,53 +261,44 @@ git commit -m "feat: add dropshipping decision intelligence rules"
 
 ---
 
-### Task 2: Insights API Contract and Isolation
+### Task 3: Insights API Contract and Isolation
 
 **Files:**
 - Modify: `backend/app/api/dropshipping_analytics.py`
 - Modify: `backend/tests/test_dropshipping_decision_intelligence.py`
 
 **Interfaces:**
-- Consumes: `get_dropshipping_decision_insights(...)` from Task 1.
-- Produces: `GET /api/stores/{store_id}/analytics/dropshipping/insights?date_from=...&date_to=...&limit=...`.
+- Produces `GET /api/stores/{store_id}/analytics/dropshipping/insights`.
+- Query: `date_from`, `date_to`, `limit=20`, with `1 <= limit <= 50`.
 
-- [ ] **Step 1: Add failing API/scoping tests**
+- [ ] **Step 1: Add RED endpoint tests**
 
-Cover these contracts using the repository's existing API test patterns:
+Cover these exact contracts:
 
 ```python
-def test_insights_endpoint_requires_analytics_read(...):
-    ...
-
-
-def test_insights_endpoint_rejects_foreign_store(...):
-    response = client.get(f"/api/stores/{foreign_store.id}/analytics/dropshipping/insights")
-    assert response.status_code == 404
-
-
-def test_insights_endpoint_passes_inclusive_date_range_and_limit(...):
-    response = client.get(
-        f"/api/stores/{store.id}/analytics/dropshipping/insights"
-        "?date_from=2026-09-01&date_to=2026-09-11&limit=7"
-    )
-    assert response.status_code == 200
-    assert response.json()["date_to"] == "2026-09-12T00:00:00"
+assert _parse_date("2026-09-11", inclusive_end=True) == datetime(2026, 9, 12)
 ```
 
-Assert `limit` accepts 1–50 and returns 422 outside that range.
+Add endpoint tests using the repository's existing authenticated client/dependency override pattern and assert:
+- authorized member with `analytics.read` receives 200;
+- foreign or inactive store returns 404;
+- missing permission returns the existing authorization failure used elsewhere in the app;
+- `date_from=2026-09-01&date_to=2026-09-11` produces response `date_to == "2026-09-12T00:00:00"`;
+- `limit=1` and `limit=50` are accepted;
+- `limit=0` and `limit=51` return 422.
 
-- [ ] **Step 2: Run endpoint tests and verify RED**
+- [ ] **Step 2: Run RED**
 
-Run:
 ```bash
 cd backend
 pytest -q tests/test_dropshipping_decision_intelligence.py -k endpoint
 ```
-Expected: FAIL/404 because the endpoint does not exist.
 
-- [ ] **Step 3: Add the API endpoint with existing guards**
+Expected: FAIL with 404/no route until the endpoint exists.
 
-In `backend/app/api/dropshipping_analytics.py`, import the service and add:
+- [ ] **Step 3: Add the endpoint using existing guards**
+
+Add exactly this handler shape in `backend/app/api/dropshipping_analytics.py`:
 
 ```python
 @router.get("/api/stores/{store_id}/analytics/dropshipping/insights")
@@ -283,18 +323,18 @@ def dropshipping_insights(
     )
 ```
 
-Do not create a new permission, router, store lookup, or date parser.
+Import only the new service function. Do not add a router, permission, store query, or date parser.
 
-- [ ] **Step 4: Run endpoint + existing dropshipping regressions**
+- [ ] **Step 4: Verify endpoint + analytics regressions**
 
-Run:
 ```bash
 cd backend
 pytest -q tests/test_dropshipping_decision_intelligence.py tests/test_dropshipping_analytics.py tests/test_product_analytics_v2.py
 ```
+
 Expected: PASS.
 
-- [ ] **Step 5: Commit the endpoint**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add backend/app/api/dropshipping_analytics.py backend/tests/test_dropshipping_decision_intelligence.py
@@ -303,7 +343,7 @@ git commit -m "feat: expose dropshipping decision insights api"
 
 ---
 
-### Task 3: Frontend Insight Contract and Pure Presentation Model
+### Task 4: Frontend Contract, Localization, and Presentation Model
 
 **Files:**
 - Modify: `frontend/src/services/analytics.ts`
@@ -311,54 +351,51 @@ git commit -m "feat: expose dropshipping decision insights api"
 - Create: `frontend/tests/dropshippingDecisionInsights.test.ts`
 
 **Interfaces:**
-- Produces `DropshippingInsightSeverity`, `DropshippingInsightType`, `DropshippingInsight`, `DropshippingDecisionInsightsResponse`.
-- Produces `getDropshippingDecisionInsights(storeId, dateFrom?, dateTo?, limit=20)`.
-- Produces pure helpers:
+- Add unions for all approved insight `severity` and `type` values.
+- Add `DropshippingInsight`, `DropshippingDecisionInsightsSummary`, `DropshippingDecisionInsightsResponse`.
+- Add `getDropshippingDecisionInsights(storeId, dateFrom?, dateTo?, limit=20)`.
+- Add pure functions:
   ```ts
   normalizeDecisionInsightLocale(language: string): "es" | "en" | "pt-BR"
-  getDecisionInsightCopy(language: string): DecisionInsightCopy
   getDecisionInsightPresentation(insight: DropshippingInsight, language: string): DecisionInsightPresentation
   selectedProductIdFromInsight(insight: DropshippingInsight): number | null
+  nextSelectedProductId(currentProductId: number | null, requestedProductId: number): number | null
   ```
 
-- [ ] **Step 1: Write failing node:test contracts**
+- [ ] **Step 1: Write RED node:test coverage**
 
-Create `frontend/tests/dropshippingDecisionInsights.test.ts` with direct imports from the new utility. Cover ES, EN, PT-BR, every stable backend type/action/reason key used by the spec, evidence rendering metadata, severity tone, and product selection:
+Create sample insight objects with complete required fields. Test:
 
 ```ts
-import assert from "node:assert/strict";
-import test from "node:test";
-import {
-  getDecisionInsightPresentation,
-  selectedProductIdFromInsight,
-} from "../src/utils/dropshippingDecisionInsights.ts";
-
-test("maps known keys without leaking raw backend keys", () => {
-  const presentation = getDecisionInsightPresentation(sampleStockInsight, "es");
-  assert.equal(presentation.title, "Stock crítico");
-  assert.equal(presentation.action, "Reponer inventario");
-  assert.equal(presentation.title.includes("stock_runway"), false);
-});
-
-test("returns product id for product drill-down", () => {
-  assert.equal(selectedProductIdFromInsight(sampleStockInsight), 123);
-});
+assert.equal(normalizeDecisionInsightLocale("es-CO"), "es");
+assert.equal(normalizeDecisionInsightLocale("en-US"), "en");
+assert.equal(normalizeDecisionInsightLocale("pt-BR"), "pt-BR");
+assert.equal(normalizeDecisionInsightLocale("fr-FR"), "es");
 ```
 
-Include a test that unknown language falls back to Spanish. Do not silently accept unknown backend keys: utility tests should make missing copy entries obvious during development.
+For each approved `title_key`, `reason_key`, and `action_key`, call `getDecisionInsightPresentation()` in ES, EN, and PT-BR and assert the returned strings are non-empty and do not equal the raw key. Include explicit assertions for stock runway:
 
-- [ ] **Step 2: Run frontend test and verify RED**
+```ts
+const presentation = getDecisionInsightPresentation(stockInsight, "es");
+assert.equal(presentation.title, "Stock crítico");
+assert.equal(presentation.action, "Reponer inventario");
+assert.equal(selectedProductIdFromInsight(stockInsight), 123);
+assert.equal(nextSelectedProductId(null, 123), 123);
+assert.equal(nextSelectedProductId(123, 123), null);
+```
 
-Run:
+- [ ] **Step 2: Run RED**
+
 ```bash
 cd frontend
-npm test -- tests/dropshippingDecisionInsights.test.ts
+node --test tests/dropshippingDecisionInsights.test.ts
 ```
-Expected: FAIL because the utility does not exist.
 
-- [ ] **Step 3: Add exact TypeScript API types and client**
+Expected: FAIL because the utility module does not exist.
 
-In `frontend/src/services/analytics.ts`, define unions for the approved enums and the evidence payload as `Record<string, number | string | null>`. Add:
+- [ ] **Step 3: Add typed API contract/client**
+
+In `frontend/src/services/analytics.ts`, type `evidence` as `Record<string, number | string | null>` and add:
 
 ```ts
 export async function getDropshippingDecisionInsights(
@@ -378,24 +415,22 @@ export async function getDropshippingDecisionInsights(
 }
 ```
 
-Keep the existing private `buildParams` unchanged so existing callers do not change behavior.
+Do not change the existing private `buildParams()` or any existing client contract.
 
-- [ ] **Step 4: Implement the pure presentation model**
+- [ ] **Step 4: Implement pure copy/presentation helper**
 
-In `frontend/src/utils/dropshippingDecisionInsights.ts`, keep all human copy and formatting labels outside React. Define complete copy maps for ES/EN/PT-BR keyed by all approved `title_key`, `reason_key`, `action_key` values. Return a presentation object containing `title`, `reason`, `action`, `severityLabel`, and evidence label/value pairs.
+Define exhaustive ES/EN/PT-BR maps for every approved backend title/reason/action key. `getDecisionInsightPresentation()` returns localized `title`, `reason`, `action`, `severityLabel`, and evidence display items. Unknown language falls back to Spanish. Unknown backend keys throw a descriptive error in development/test instead of leaking raw keys to the UI.
 
-`selectedProductIdFromInsight()` must return `insight.product_id` when it is a number and `null` otherwise; it must contain no DOM logic.
+- [ ] **Step 5: Verify GREEN**
 
-- [ ] **Step 5: Run focused frontend tests and verify GREEN**
-
-Run:
 ```bash
 cd frontend
-npm test -- tests/dropshippingDecisionInsights.test.ts
+node --test tests/dropshippingDecisionInsights.test.ts
 ```
+
 Expected: PASS.
 
-- [ ] **Step 6: Commit frontend contract/model**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add frontend/src/services/analytics.ts frontend/src/utils/dropshippingDecisionInsights.ts frontend/tests/dropshippingDecisionInsights.test.ts
@@ -404,18 +439,19 @@ git commit -m "feat: add decision insight frontend contract"
 
 ---
 
-### Task 4: Decision Insights UI and Partial-Failure Isolation
+### Task 5: Decision Insights UI, Failure Isolation, and Product Drill-Down
 
 **Files:**
 - Create: `frontend/src/components/DropshippingDecisionInsights.tsx`
 - Create: `frontend/src/dropshipping-decision-insights.css`
 - Modify: `frontend/src/components/DropshippingOverview.tsx`
+- Modify: `frontend/src/components/ProductPerformanceAnalytics.tsx`
 - Modify: `frontend/src/utils/dropshippingAnalyticsState.ts`
 - Modify: `frontend/tests/dropshippingAnalyticsState.test.ts`
-- Modify the analytics style import entry point only if the component stylesheet is not imported directly.
+- Modify: `frontend/tests/dropshippingDecisionInsights.test.ts`
 
 **Interfaces:**
-- `DropshippingDecisionInsights` props:
+- New component props:
   ```ts
   interface Props {
     response: DropshippingDecisionInsightsResponse | null;
@@ -425,187 +461,122 @@ git commit -m "feat: add decision insight frontend contract"
     onSelectProduct: (productId: number) => void;
   }
   ```
-- `DropshippingOverview` owns `selectedProductId: number | null` and passes selection to Product Analytics V2 in Task 5.
+- Change `ProductPerformanceAnalytics` props to add:
+  ```ts
+  selectedProductId: number | null;
+  onSelectedProductChange: (productId: number | null) => void;
+  ```
+- `DropshippingOverview` becomes the single owner of selected product state.
 
-- [ ] **Step 1: Extend partial-state tests RED-first**
+- [ ] **Step 1: Extend partial-failure tests RED-first**
 
-Extend `DropshippingAnalyticsSection` to include `"insights"` only after first writing tests that expect five settled sections. Assert that failure of only insights does **not** make `allDropshippingSectionsFailed()` true, while failure of all five does.
-
-Run:
-```bash
-cd frontend
-npm test -- tests/dropshippingAnalyticsState.test.ts
-```
-Expected: FAIL until the section model includes insights.
-
-- [ ] **Step 2: Update partial-state helper minimally**
-
-Update the ordered section tuple to:
+Update tests to expect this exact ordered section tuple:
 
 ```ts
-export const DROPSHIPPING_ANALYTICS_SECTIONS = [
+[
   "overview",
   "profitability",
   "products",
   "orders",
   "insights",
-] as const;
+]
 ```
 
-Keep `settledValue()` generic and preserve existing behavior for the original four sections.
+Assert an insights-only rejection returns `failedSections === ["insights"]` and `allDropshippingSectionsFailed(failedSections) === false`. Assert five rejections return `true`.
 
-- [ ] **Step 3: Add insights to the independent loader**
+- [ ] **Step 2: Run RED**
 
-In `DropshippingOverview.tsx`, add `getDropshippingDecisionInsights(...)` as the fifth promise in `Promise.allSettled`. Extend `DashboardData` with `insights: DropshippingDecisionInsightsResponse | null` and map result index 4 with `settledValue(results[4])`.
-
-Important behavior:
-- If insights alone fail, existing dashboard data renders normally.
-- `DropshippingDecisionInsights` receives `unavailable={unavailableSections.includes("insights")}`.
-- A failed insights request must not set the page-level `error` unless every analytics section failed.
-
-- [ ] **Step 4: Implement the dedicated insight component**
-
-Render the section before the KPI grid. Use `getDecisionInsightPresentation()` for all user-facing copy. Each product-specific card gets a real button:
-
-```tsx
-<button type="button" onClick={() => onSelectProduct(insight.product_id!)}>
-  {copy.viewProduct}
-</button>
-```
-
-Do not inspect the DOM, query rows, or synthesize clicks. Empty response renders a localized healthy/empty state; unavailable response renders a localized temporary-unavailable state.
-
-- [ ] **Step 5: Add responsive styles**
-
-Create CSS classes prefixed `decision-insights-` with distinct severity treatment using existing design tokens/CSS variables where available. Provide a one-column mobile layout and multi-column desktop card grid. Do not change unrelated analytics styles.
-
-- [ ] **Step 6: Run frontend tests, lint and build**
-
-Run:
 ```bash
 cd frontend
-npm test
-npm run lint
-npm run build
-```
-Expected: all tests PASS, lint 0 errors, TypeScript/Vite build succeeds.
-
-- [ ] **Step 7: Commit the insight UI**
-
-```bash
-git add frontend/src/components/DropshippingDecisionInsights.tsx frontend/src/dropshipping-decision-insights.css frontend/src/components/DropshippingOverview.tsx frontend/src/utils/dropshippingAnalyticsState.ts frontend/tests/dropshippingAnalyticsState.test.ts
-git commit -m "feat: surface dropshipping decision insights"
+node --test tests/dropshippingAnalyticsState.test.ts
 ```
 
----
+Expected: FAIL because the state model currently knows four sections.
 
-### Task 5: Explicit Product Analytics V2 Drill-Down Contract
+- [ ] **Step 3: Add `insights` to the state model and dashboard loader**
 
-**Files:**
-- Modify: `frontend/src/components/ProductPerformanceAnalytics.tsx`
-- Modify: `frontend/src/components/DropshippingOverview.tsx`
-- Modify: `frontend/src/utils/dropshippingDecisionInsights.ts`
-- Modify: `frontend/tests/dropshippingDecisionInsights.test.ts`
+Add insights as the fifth `Promise.allSettled` request in `DropshippingOverview`. Extend `DashboardData` with `insights: DropshippingDecisionInsightsResponse | null`. Page-level error remains reserved for failure of all five sections. An insights-only failure renders existing analytics plus an unavailable insights section.
 
-**Interfaces:**
-- Change Product Analytics props to include:
-  ```ts
-  selectedProductId: number | null;
-  onSelectedProductChange: (productId: number | null) => void;
-  ```
-- `DropshippingOverview` is the single owner of selection state.
-- `DropshippingDecisionInsights.onSelectProduct(id)` calls the parent setter.
+- [ ] **Step 4: Make Product Analytics V2 controlled**
 
-- [ ] **Step 1: Add a RED test for deterministic selection behavior**
-
-Add a pure helper if needed:
-
-```ts
-export function nextSelectedProductId(
-  currentProductId: number | null,
-  requestedProductId: number,
-): number | null {
-  return currentProductId === requestedProductId ? null : requestedProductId;
-}
-```
-
-Test insight selection always resolves to the requested product, while table toggle can close an already selected row. Keep this state logic outside React so it is covered by `node:test`.
-
-- [ ] **Step 2: Run the focused frontend test and verify RED**
-
-Run:
-```bash
-cd frontend
-npm test -- tests/dropshippingDecisionInsights.test.ts
-```
-Expected: FAIL until the new selection helper/contract exists.
-
-- [ ] **Step 3: Make ProductPerformanceAnalytics controlled**
-
-Remove its internal `useState<number | null>` for `selectedProductId`. Keep detail fetching keyed from the controlled prop. Replace row toggle with:
-
-```ts
-onSelectedProductChange(
-  selectedProductId === product.product_id ? null : product.product_id,
-)
-```
-
-Close button calls `onSelectedProductChange(null)`.
-
-- [ ] **Step 4: Wire insight selection through DropshippingOverview**
-
-Add:
+In `DropshippingOverview` create:
 
 ```ts
 const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
 ```
 
-Pass `onSelectProduct={setSelectedProductId}` to `DropshippingDecisionInsights` and pass both controlled props to `ProductPerformanceAnalytics`.
+Reset it to `null` whenever `storeId`, `dateFrom`, or `dateTo` changes.
 
-When store/date range changes, reset selection to `null` before loading new analytics so an old product detail cannot remain open under a different cohort/store.
+Remove the internal selected-product state from `ProductPerformanceAnalytics`. Row toggle must call:
 
-- [ ] **Step 5: Run full frontend verification**
+```ts
+onSelectedProductChange(
+  selectedProductId === product.product_id ? null : product.product_id,
+);
+```
 
-Run:
+The detail close button calls `onSelectedProductChange(null)`. Detail fetching remains keyed by `selectedProductId`, store, and date range.
+
+- [ ] **Step 5: Implement `DropshippingDecisionInsights`**
+
+Import `../dropshipping-decision-insights.css` directly from the new component. Render the section before the KPI grid. Use only `getDecisionInsightPresentation()` for human copy. Product cards render a real button that calls `onSelectProduct(productId)`. Do not query the DOM or synthesize clicks.
+
+Behavior:
+- `unavailable=true` → localized temporary-unavailable state;
+- available + `insights.length === 0` → localized healthy/empty state;
+- otherwise render cards in backend-provided order;
+- each card shows localized title, reason, 1–3 evidence items, action, product title, severity label;
+- product-specific cards expose localized `View product` action.
+
+- [ ] **Step 6: Add focused responsive CSS**
+
+Use only classes prefixed `decision-insights-`. Reuse existing CSS variables/tokens. Desktop may use a multi-column card grid; mobile collapses to one column. Do not edit unrelated analytics selectors.
+
+- [ ] **Step 7: Verify frontend**
+
 ```bash
 cd frontend
 npm test
 npm run lint
 npm run build
 ```
-Expected: PASS / 0 lint errors / successful production build.
 
-- [ ] **Step 6: Commit controlled drill-down**
+Expected: all tests PASS, lint 0 errors, production build succeeds.
+
+- [ ] **Step 8: Commit**
 
 ```bash
-git add frontend/src/components/ProductPerformanceAnalytics.tsx frontend/src/components/DropshippingOverview.tsx frontend/src/utils/dropshippingDecisionInsights.ts frontend/tests/dropshippingDecisionInsights.test.ts
-git commit -m "feat: connect insights to product analytics drilldown"
+git add frontend/src/components/DropshippingDecisionInsights.tsx frontend/src/dropshipping-decision-insights.css frontend/src/components/DropshippingOverview.tsx frontend/src/components/ProductPerformanceAnalytics.tsx frontend/src/utils/dropshippingAnalyticsState.ts frontend/tests/dropshippingAnalyticsState.test.ts frontend/tests/dropshippingDecisionInsights.test.ts
+git commit -m "feat: surface dropshipping decision intelligence"
 ```
 
 ---
 
-### Task 6: Final Backend/Frontend Regression and PR Validation
+### Task 6: Final Verification, PR, and Merge Gate
 
 **Files:**
-- Review all files changed by Tasks 1–5.
-- No new behavior should be added in this task.
-
-**Interfaces:**
-- Produces a reviewable PR with final evidence; does not change public contracts beyond the approved additive `/insights` endpoint and frontend types.
+- Review only the files changed in Tasks 1–5.
+- Add no new feature behavior in this task.
 
 - [ ] **Step 1: Run focused backend regression**
 
 ```bash
 cd backend
-pytest -q tests/test_dropshipping_decision_intelligence.py tests/test_dropshipping_analytics.py tests/test_product_analytics_v2.py tests/test_sales_attribution.py
+pytest -q tests/test_dropshipping_decision_intelligence.py tests/test_dropshipping_analytics.py tests/test_product_analytics_v2.py
 ```
+
 Expected: PASS.
 
-- [ ] **Step 2: Run Ruff on backend**
+- [ ] **Step 2: Run the exact repository Ruff command**
 
-Use the repository's normal Ruff command (the same command used by `Validate Pull Request`) against the backend. Expected: 0 errors.
+```bash
+cd backend
+ruff check app/ tests/ tools/
+```
 
-- [ ] **Step 3: Run full frontend regression**
+Expected: 0 errors.
+
+- [ ] **Step 3: Run full frontend validation**
 
 ```bash
 cd frontend
@@ -613,40 +584,45 @@ npm test
 npm run lint
 npm run build
 ```
-Expected: all tests PASS, lint 0 errors, production build succeeds.
 
-- [ ] **Step 4: Review final diff for scope**
+Expected: tests PASS, lint 0 errors, build succeeds.
 
-Confirm:
-- no migration/model change;
-- no existing analytics response field removed/renamed;
-- no raw localized prose generated by backend;
+- [ ] **Step 4: Review final diff against approved scope**
+
+Confirm all of these are true:
+- no migration or model change;
+- no existing analytics endpoint/field removed or renamed;
 - no LLM/provider call;
-- no mutation endpoint/action;
-- endpoint uses existing store validation and `analytics.read`;
-- frontend insights failure remains isolated;
-- selection is explicit state, not DOM coupling.
+- no mutation endpoint or automated operational action;
+- backend returns machine keys/evidence, not localized prose;
+- endpoint uses `_validate_store`, `_parse_range`, and `analytics.read`;
+- all products are evaluated before the insight result limit is applied;
+- incomplete costs suppress margin-dependent claims;
+- insights failure remains isolated;
+- product drill-down uses explicit React state, not DOM coupling.
 
-- [ ] **Step 5: Open/update the PR and run normal repository CI**
+- [ ] **Step 5: Open a draft PR**
 
-PR title:
+Use title:
+
 ```text
 feat: add dropshipping decision intelligence
 ```
 
-PR body must include RED/GREEN evidence, focused test results, frontend test/lint/build results, final head SHA, and a link/path to the approved spec and this plan.
+PR body must record the approved spec path, this plan path, RED/GREEN evidence, focused backend results, frontend test/lint/build results, and final head SHA.
 
-- [ ] **Step 6: Verify final CI on the exact PR head**
+- [ ] **Step 6: Run and verify normal repository CI on the exact final head**
 
-Wait for the repository `Validate Pull Request` workflow on the final head. Require:
-- backend shard 0 success;
-- backend shard 1 success;
-- Ruff success;
-- frontend validation success;
-- combined validation gate success.
+Require `Validate Pull Request` to finish with:
+- Detect changed scopes: success;
+- Backend validation shard 0: success;
+- Backend validation shard 1: success;
+- Ruff step on shard 0: success;
+- Frontend validation: success;
+- Backend + Frontend validation gate: success.
 
-Do not mark ready or merge if any required job is pending, skipped unexpectedly, cancelled, or failed.
+A pending, failed, cancelled, or unexpectedly skipped required job blocks readiness and merge.
 
-- [ ] **Step 7: Mark PR ready and merge only after green**
+- [ ] **Step 7: Mark ready and squash merge with head protection**
 
-Use squash merge with `expected_head_sha` equal to the final verified PR head. Refetch `main` afterwards and record the resulting commit SHA.
+After CI is green, mark the PR ready. Squash merge using `expected_head_sha` equal to the exact verified PR head. Refetch `main` after merge and record the resulting commit SHA.
