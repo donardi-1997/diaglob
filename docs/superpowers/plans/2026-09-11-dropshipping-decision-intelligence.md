@@ -174,6 +174,7 @@ Create separate tests with these exact inputs and expected outcomes:
 | suppression | product qualifies for winner conditions | no `opportunity` for that product |
 | ordering | at least one critical, warning, opportunity, positive | order is critical → warning → opportunity → positive |
 | limit | create >2 insights | evaluate all first, then return exactly first 2 sorted insights |
+| summary before limit | create 3 warning insights and request `limit=1` | `len(insights) == 1` but `summary.warning == 3` |
 | serialization | all evidence numeric values finite | no `NaN` or `Infinity` |
 
 For stable identifiers assert a product-specific insight ID equals `f"{type}:{product_id}"`.
@@ -241,7 +242,16 @@ units_per_day = units_delivered / period_days
 stock_runway_days = inventory_quantity / units_per_day
 ```
 
-Round `units_per_day` and `stock_runway_days` to one decimal in evidence. Implement the thresholds and suppressions exactly as written in the approved spec. Sort all insights before slicing `insights[:limit]`. Summary counts are calculated from the limited response list, while `products_evaluated` is the full evaluated product count.
+Round `units_per_day` and `stock_runway_days` to one decimal in evidence. Implement the thresholds and suppressions exactly as written in the approved spec.
+
+The deterministic sort key is:
+1. `SEVERITY_RANK[severity]` ascending;
+2. `TYPE_PRIORITY[type]` ascending;
+3. magnitude key: more negative `gross_profit` first for `negative_margin`; lower `stock_runway_days` first for runway; higher risk percentage first for delivery/cancellation/return risk; higher concentration share first for concentration; higher `gross_profit` first for winner/opportunity; `0` for types without a meaningful magnitude;
+4. `product_title.casefold()`;
+5. `product_id`.
+
+Evaluate and sort the complete insight list first. Build `summary.critical`, `summary.warning`, `summary.opportunity`, and `summary.positive` from that complete list; `summary.products_evaluated` is the full product count. Only then return `insights[:limit]`.
 
 - [ ] **Step 5: Verify GREEN**
 
@@ -273,7 +283,7 @@ git commit -m "feat: add dropshipping decision intelligence rules"
 
 - [ ] **Step 1: Add RED endpoint tests**
 
-Cover these exact contracts:
+Cover this date contract:
 
 ```python
 assert _parse_date("2026-09-11", inclusive_end=True) == datetime(2026, 9, 12)
@@ -282,7 +292,7 @@ assert _parse_date("2026-09-11", inclusive_end=True) == datetime(2026, 9, 12)
 Add endpoint tests using the repository's existing authenticated client/dependency override pattern and assert:
 - authorized member with `analytics.read` receives 200;
 - foreign or inactive store returns 404;
-- missing permission returns the existing authorization failure used elsewhere in the app;
+- a membership without `analytics.read` receives 403 `Permission denied`;
 - `date_from=2026-09-01&date_to=2026-09-11` produces response `date_to == "2026-09-12T00:00:00"`;
 - `limit=1` and `limit=50` are accepted;
 - `limit=0` and `limit=51` return 422.
@@ -524,7 +534,7 @@ Import `../dropshipping-decision-insights.css` directly from the new component. 
 Behavior:
 - `unavailable=true` → localized temporary-unavailable state;
 - available + `insights.length === 0` → localized healthy/empty state;
-- otherwise render cards in backend-provided order;
+- otherwise render cards in backend-provided order without frontend re-sorting;
 - each card shows localized title, reason, 1–3 evidence items, action, product title, severity label;
 - product-specific cards expose localized `View product` action.
 
@@ -597,6 +607,8 @@ Confirm all of these are true:
 - backend returns machine keys/evidence, not localized prose;
 - endpoint uses `_validate_store`, `_parse_range`, and `analytics.read`;
 - all products are evaluated before the insight result limit is applied;
+- summary counts are computed before truncating the insight list;
+- deterministic sorting includes severity, type priority, magnitude, title, and product ID;
 - incomplete costs suppress margin-dependent claims;
 - insights failure remains isolated;
 - product drill-down uses explicit React state, not DOM coupling.
