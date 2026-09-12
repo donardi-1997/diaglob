@@ -1,7 +1,6 @@
 """API contract for Dropshipping Unit Economics V2.2."""
 
 from datetime import datetime
-from decimal import Decimal
 
 import pytest
 from fastapi.testclient import TestClient
@@ -166,6 +165,37 @@ def test_foreign_store_returns_404(client, db):
         f"/api/stores/{foreign_store.id}/analytics/dropshipping/unit-economics"
     )
     assert response.status_code == 404
+
+
+def test_store_restricted_membership_cannot_read_unassigned_store(
+    client, db, account
+):
+    org, _, membership, assigned_store = account
+    unassigned_store = Store(
+        organization_id=org.id,
+        name="Unassigned Unit Economics Store",
+        slug="unassigned-unit-economics-store",
+        country_code="CO",
+        currency="COP",
+        timezone="America/Bogota",
+        default_language="es",
+    )
+    db.add(unassigned_store)
+    db.flush()
+    membership.all_stores = False
+    membership.stores.append(assigned_store)
+    db.commit()
+
+    allowed = client.get(
+        f"/api/stores/{assigned_store.id}/analytics/dropshipping/unit-economics"
+    )
+    denied = client.get(
+        f"/api/stores/{unassigned_store.id}/analytics/dropshipping/unit-economics"
+    )
+
+    assert allowed.status_code == 200
+    assert denied.status_code == 403
+    assert denied.json()["detail"] == "Store access denied"
 
 
 def test_inactive_store_returns_404(client, db, account):
