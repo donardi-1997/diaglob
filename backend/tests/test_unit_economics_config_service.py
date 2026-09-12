@@ -107,6 +107,7 @@ def test_replace_rejects_duplicate_normalized_methods(db, store):
         ("outbound_shipping_cost", -1),
         ("return_logistics_cost", -1),
         ("default_payment_fee_fixed", -1),
+        ("outbound_shipping_cost", Decimal("100000000000000")),
         ("default_payment_fee_percent", -0.1),
         ("default_payment_fee_percent", 100.1),
         ("default_cod_fee_percent", -0.1),
@@ -130,6 +131,16 @@ def test_replace_rejects_empty_payment_method(db, store):
             store.organization_id,
             store.id,
             {"payment_methods": [{"payment_method": "   "}]},
+        )
+
+
+def test_replace_rejects_payment_method_longer_than_schema(db, store):
+    with pytest.raises(ValueError, match="payment_method_too_long"):
+        replace_unit_economics_config(
+            db,
+            store.organization_id,
+            store.id,
+            {"payment_methods": [{"payment_method": "x" * 51}]},
         )
 
 
