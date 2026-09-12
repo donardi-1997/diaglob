@@ -87,6 +87,23 @@ const FALLBACK_REASON: Record<LocaleKey, string> = {
 };
 
 
+const META_INTEGRATION_ACTION_REASONS = new Set([
+  "meta_not_connected",
+  "currency_unknown",
+  "currency_mismatch",
+  "provider_error",
+  "credentials_unavailable",
+]);
+
+
+const CONFIGURABLE_COST_REASONS = new Set([
+  "shipping_estimate_missing",
+  "payment_fee_rule_missing",
+  "cod_fee_rule_missing",
+  "return_cost_missing",
+]);
+
+
 export function unitEconomicsSourceLabel(
   source: UnitEconomicsSource,
   language: string,
@@ -142,13 +159,11 @@ export function getUnitEconomicsGrossProfitValue(
 }
 
 
-export function isMetaUnitEconomicsReason(reason: string | null): boolean {
-  return [
-    "meta_not_connected",
-    "bounded_date_range_required",
-    "currency_unknown",
-    "currency_mismatch",
-    "provider_error",
-    "credentials_unavailable",
-  ].includes(reason || "");
+export function isMetaIntegrationActionReason(reason: string | null): boolean {
+  return META_INTEGRATION_ACTION_REASONS.has(reason || "");
+}
+
+
+export function isConfigurableUnitEconomicsReason(reason: string | null): boolean {
+  return CONFIGURABLE_COST_REASONS.has(reason || "");
 }
