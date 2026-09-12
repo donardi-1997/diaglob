@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import {
   formatUnitEconomicsMoneyLabel,
   getUnitEconomicsConfig,
+  MAX_UNIT_ECONOMICS_PAYMENT_METHOD_LENGTH,
   replaceUnitEconomicsConfig,
   serializeUnitEconomicsConfig,
   validateUnitEconomicsConfig,
@@ -52,6 +53,7 @@ const COPY: Record<LocaleKey, {
   readOnly: string;
   duplicateMethod: string;
   requiredMethod: string;
+  methodTooLong: string;
   invalidMoney: string;
   invalidPercentage: string;
   placeholderMethod: string;
@@ -84,6 +86,7 @@ const COPY: Record<LocaleKey, {
     readOnly: "Guarda primero los cambios de moneda de la tienda antes de editar estos costos.",
     duplicateMethod: "Hay métodos de pago duplicados después de normalizar espacios y mayúsculas.",
     requiredMethod: "Cada regla debe tener un método de pago.",
+    methodTooLong: "El método de pago no puede superar 50 caracteres.",
     invalidMoney: "Los costos monetarios deben ser números mayores o iguales a cero.",
     invalidPercentage: "Los porcentajes deben estar entre 0 y 100.",
     placeholderMethod: "ej. cash_on_delivery",
@@ -116,6 +119,7 @@ const COPY: Record<LocaleKey, {
     readOnly: "Save the store currency change before editing these costs.",
     duplicateMethod: "Payment methods are duplicated after normalizing spaces and casing.",
     requiredMethod: "Every rule must include a payment method.",
+    methodTooLong: "Payment methods cannot exceed 50 characters.",
     invalidMoney: "Monetary costs must be numbers greater than or equal to zero.",
     invalidPercentage: "Percentages must be between 0 and 100.",
     placeholderMethod: "e.g. cash_on_delivery",
@@ -148,6 +152,7 @@ const COPY: Record<LocaleKey, {
     readOnly: "Salve primeiro a mudança de moeda da loja antes de editar estes custos.",
     duplicateMethod: "Há métodos de pagamento duplicados após normalizar espaços e maiúsculas/minúsculas.",
     requiredMethod: "Cada regra deve ter um método de pagamento.",
+    methodTooLong: "O método de pagamento não pode exceder 50 caracteres.",
     invalidMoney: "Custos monetários devem ser números maiores ou iguais a zero.",
     invalidPercentage: "Percentuais devem estar entre 0 e 100.",
     placeholderMethod: "ex. cash_on_delivery",
@@ -187,6 +192,7 @@ function validationMessage(
 ): string {
   if (code === "duplicate_payment_method") return copy.duplicateMethod;
   if (code === "payment_method_required") return copy.requiredMethod;
+  if (code === "payment_method_too_long") return copy.methodTooLong;
   if (code === "invalid_percentage") return copy.invalidPercentage;
   return copy.invalidMoney;
 }
@@ -450,6 +456,7 @@ export default function UnitEconomicsSettingsPanel({
               <span>{copy.method}</span>
               <input
                 value={rule.payment_method}
+                maxLength={MAX_UNIT_ECONOMICS_PAYMENT_METHOD_LENGTH}
                 placeholder={copy.placeholderMethod}
                 onChange={(event) => updateRule(index, { payment_method: event.target.value })}
                 disabled={!editable || saving}
