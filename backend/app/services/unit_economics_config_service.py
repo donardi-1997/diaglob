@@ -17,8 +17,6 @@ DEFAULT_PERCENT_FIELDS = (
     "default_payment_fee_percent",
     "default_cod_fee_percent",
 )
-METHOD_MONEY_FIELDS = ("fee_fixed",)
-METHOD_PERCENT_FIELDS = ("fee_percent", "cod_fee_percent")
 
 
 def normalize_payment_method(value: str | None) -> str:
@@ -137,6 +135,43 @@ def get_unit_economics_config(
         .first()
     )
     return _serialize_config(store, config)
+
+
+def clear_fixed_unit_economics_costs(
+    db: Session,
+    organization_id: int,
+    store_id: int,
+) -> bool:
+    """Clear currency-denominated assumptions without committing the transaction."""
+    config = (
+        db.query(StoreUnitEconomicsConfig)
+        .filter(
+            StoreUnitEconomicsConfig.organization_id == organization_id,
+            StoreUnitEconomicsConfig.store_id == store_id,
+        )
+        .first()
+    )
+    if config is None:
+        return False
+
+    config.outbound_shipping_cost = None
+    config.return_logistics_cost = None
+    config.default_payment_fee_fixed = None
+
+    (
+        db.query(PaymentMethodCostRule)
+        .filter(
+            PaymentMethodCostRule.organization_id == organization_id,
+            PaymentMethodCostRule.store_id == store_id,
+            PaymentMethodCostRule.unit_economics_config_id == config.id,
+        )
+        .update(
+            {PaymentMethodCostRule.fee_fixed: None},
+            synchronize_session=False,
+        )
+    )
+    db.flush()
+    return True
 
 
 def _validated_payload(payload: dict[str, Any]) -> dict[str, Any]:
