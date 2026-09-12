@@ -69,6 +69,12 @@ def _validate_percent(value: Any) -> Decimal | None:
     return result
 
 
+def _validate_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    raise ValueError("invalid_unit_economics_value")
+
+
 def _number(value: Any) -> float | None:
     return None if value is None else float(value)
 
@@ -197,12 +203,17 @@ def _validated_payload(payload: dict[str, Any]) -> dict[str, Any]:
             raise ValueError("duplicate_payment_method")
         seen.add(payment_method)
 
+        is_cod = _validate_bool(raw_rule.get("is_cod", False))
         rule = {
             "payment_method": payment_method,
             "fee_percent": _validate_percent(raw_rule.get("fee_percent")),
             "fee_fixed": _validate_money(raw_rule.get("fee_fixed")),
-            "is_cod": bool(raw_rule.get("is_cod", False)),
-            "cod_fee_percent": _validate_percent(raw_rule.get("cod_fee_percent")),
+            "is_cod": is_cod,
+            "cod_fee_percent": (
+                _validate_percent(raw_rule.get("cod_fee_percent"))
+                if is_cod
+                else None
+            ),
         }
         methods.append(rule)
 
