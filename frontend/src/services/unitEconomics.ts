@@ -34,6 +34,9 @@ export interface UnitEconomicsValidationResult {
 }
 
 
+export const MAX_UNIT_ECONOMICS_PAYMENT_METHOD_LENGTH = 50;
+
+
 const globalHeaders = {
   "X-Diaglob-Global-Scope": "1",
 };
@@ -84,6 +87,9 @@ export function validateUnitEconomicsConfig(
     const method = normalizeUnitEconomicsPaymentMethod(rule.payment_method);
     if (!method) {
       return { valid: false, error: "payment_method_required" };
+    }
+    if (method.length > MAX_UNIT_ECONOMICS_PAYMENT_METHOD_LENGTH) {
+      return { valid: false, error: "payment_method_too_long" };
     }
     if (methods.has(method)) {
       return { valid: false, error: "duplicate_payment_method" };
