@@ -151,6 +151,23 @@ def test_replace_rejects_invalid_method_values(db, store):
         )
 
 
+def test_replace_rejects_non_boolean_is_cod(db, store):
+    with pytest.raises(ValueError, match="invalid_unit_economics_value"):
+        replace_unit_economics_config(
+            db,
+            store.organization_id,
+            store.id,
+            {
+                "payment_methods": [
+                    {
+                        "payment_method": "cash_on_delivery",
+                        "is_cod": "false",
+                    }
+                ]
+            },
+        )
+
+
 def test_replace_upserts_defaults_and_replaces_stale_methods(db, store):
     first = replace_unit_economics_config(
         db,
