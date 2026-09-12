@@ -12,6 +12,7 @@ import {
 } from "../src/services/unitEconomics.ts";
 import {
   getUnitEconomicsContributionValues,
+  getUnitEconomicsGrossProfitValue,
   unitEconomicsReasonCopy,
   unitEconomicsSourceLabel,
 } from "../src/utils/unitEconomics.ts";
@@ -132,6 +133,24 @@ test("incomplete contribution never substitutes known cost subtotal for final pr
       known_cost_subtotal: 2229000,
     }),
     { profit: null, margin: null, complete: false },
+  );
+});
+
+
+test("gross profit is withheld when COGS is incomplete", () => {
+  assert.equal(
+    getUnitEconomicsGrossProfitValue({
+      gross_profit: 900000,
+      components: { cogs: { status: "missing" } },
+    }),
+    null,
+  );
+  assert.equal(
+    getUnitEconomicsGrossProfitValue({
+      gross_profit: 900000,
+      components: { cogs: { status: "available" } },
+    }),
+    900000,
   );
 });
 
