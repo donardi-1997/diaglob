@@ -13,6 +13,8 @@ import {
 import {
   getUnitEconomicsContributionValues,
   getUnitEconomicsGrossProfitValue,
+  isConfigurableUnitEconomicsReason,
+  isMetaIntegrationActionReason,
   unitEconomicsReasonCopy,
   unitEconomicsSourceLabel,
 } from "../src/utils/unitEconomics.ts";
@@ -185,6 +187,17 @@ test("source labels localize actual estimated missing and not applicable", () =>
 test("known missing reasons map to safe localized copy", () => {
   assert.match(unitEconomicsReasonCopy("currency_mismatch", "es"), /moneda/i);
   assert.match(unitEconomicsReasonCopy("payment_fee_rule_missing", "en"), /payment/i);
+});
+
+
+test("missing reason shortcuts point only to the remediation that can solve them", () => {
+  assert.equal(isMetaIntegrationActionReason("meta_not_connected"), true);
+  assert.equal(isMetaIntegrationActionReason("credentials_unavailable"), true);
+  assert.equal(isMetaIntegrationActionReason("bounded_date_range_required"), false);
+  assert.equal(isConfigurableUnitEconomicsReason("shipping_estimate_missing"), true);
+  assert.equal(isConfigurableUnitEconomicsReason("return_cost_missing"), true);
+  assert.equal(isConfigurableUnitEconomicsReason("cogs_incomplete"), false);
+  assert.equal(isConfigurableUnitEconomicsReason("bounded_date_range_required"), false);
 });
 
 
