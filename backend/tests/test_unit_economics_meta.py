@@ -222,3 +222,23 @@ def test_successful_spend_uses_exact_period_and_maps_exclusive_end(
         "until": "2026-09-11",
     }
     assert captured.get("date_preset") is None
+
+
+def test_malformed_provider_spend_is_missing_not_actual_zero(db, store, monkeypatch):
+    _connect_meta(db, store)
+    date_from, date_to = _bounded_range()
+    monkeypatch.setattr(meta_service, "decrypt_secret", lambda _value: "token")
+    monkeypatch.setattr(
+        meta_service,
+        "get_insights",
+        lambda *_args, **_kwargs: [{"spend": "not-a-number"}],
+    )
+
+    result = resolve_meta_ad_spend(
+        db, store.organization_id, store, date_from, date_to
+    )
+
+    assert result["status"] == "missing"
+    assert result["reason"] == "provider_error"
+    assert result["amount"] is None
+    assert result["metadata"]["invalid_spend_row"] == 0
