@@ -104,11 +104,16 @@ export function unitEconomicsReasonCopy(
 }
 
 
+type ContributionPresentationInput = {
+  data_quality: Pick<DropshippingUnitEconomicsResponse["data_quality"], "status">;
+  contribution_profit: number | null;
+  contribution_margin: number | null;
+  known_cost_subtotal: number;
+};
+
+
 export function getUnitEconomicsContributionValues(
-  data: Pick<
-    DropshippingUnitEconomicsResponse,
-    "data_quality" | "contribution_profit" | "contribution_margin" | "known_cost_subtotal"
-  >,
+  data: ContributionPresentationInput,
 ): { profit: number | null; margin: number | null; complete: boolean } {
   const complete = data.data_quality.status === "complete";
   return {
