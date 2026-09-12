@@ -1,6 +1,7 @@
 import type {
   DropshippingUnitEconomicsResponse,
   UnitEconomicsSource,
+  UnitEconomicsStatus,
 } from "../services/analytics";
 
 
@@ -121,6 +122,23 @@ export function getUnitEconomicsContributionValues(
     margin: complete ? data.contribution_margin : null,
     complete,
   };
+}
+
+
+type GrossProfitPresentationInput = {
+  gross_profit: number;
+  components: {
+    cogs: {
+      status: UnitEconomicsStatus;
+    };
+  };
+};
+
+
+export function getUnitEconomicsGrossProfitValue(
+  data: GrossProfitPresentationInput,
+): number | null {
+  return data.components.cogs.status === "missing" ? null : data.gross_profit;
 }
 
 
