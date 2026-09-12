@@ -114,6 +114,28 @@ def test_unbounded_range_is_missing(db, store):
     assert result["amount"] is None
 
 
+@pytest.mark.parametrize(
+    "date_from,date_to",
+    [
+        (datetime(2026, 9, 1, 12), datetime(2026, 9, 12)),
+        (datetime(2026, 9, 1), datetime(2026, 9, 12, 12)),
+    ],
+)
+def test_partial_day_range_is_missing_instead_of_rounding_meta_spend(
+    db, store, date_from, date_to
+):
+    _connect_meta(db, store)
+
+    result = resolve_meta_ad_spend(
+        db, store.organization_id, store, date_from, date_to
+    )
+
+    assert result["status"] == "missing"
+    assert result["reason"] == "bounded_date_range_required"
+    assert result["amount"] is None
+    assert result["metadata"]["calendar_aligned"] is False
+
+
 def test_unknown_provider_currency_is_missing(db, store):
     _connect_meta(db, store, currency=None)
     date_from, date_to = _bounded_range()
