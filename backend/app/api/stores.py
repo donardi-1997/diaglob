@@ -14,6 +14,7 @@ from ..models import (
     Store,
 )
 from ..plan_limits import get_organization_limits
+from ..services.unit_economics_config_service import clear_fixed_unit_economics_costs
 from .deps import require_permission
 
 router = APIRouter()
@@ -529,6 +530,13 @@ def update_store(
                         "for this market"
                     ),
                 )
+
+        if currency != store.currency:
+            clear_fixed_unit_economics_costs(
+                db,
+                membership.organization_id,
+                store.id,
+            )
 
         store.currency = currency
 

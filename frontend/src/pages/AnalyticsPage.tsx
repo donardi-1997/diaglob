@@ -32,6 +32,8 @@ interface AnalyticsPageProps {
   canWrite: boolean;
   storeId: number;
   currency: string;
+  onNavigateToStores?: () => void;
+  onNavigateToIntegrations?: () => void;
 }
 
 type AnalyticsTab =
@@ -200,6 +202,8 @@ export default function AnalyticsPage({
   canWrite: _canWrite,
   storeId,
   currency,
+  onNavigateToStores,
+  onNavigateToIntegrations,
 }: AnalyticsPageProps) {
   const { t, i18n } = useTranslation();
   const [activeTab, setActiveTab] = useState<AnalyticsTab>("overview");
@@ -404,6 +408,8 @@ export default function AnalyticsPage({
             currency={currency}
             dateFrom={effectiveFrom}
             dateTo={effectiveTo}
+            onNavigateToStores={onNavigateToStores}
+            onNavigateToIntegrations={onNavigateToIntegrations}
           />
         )}
 

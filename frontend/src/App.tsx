@@ -368,6 +368,8 @@ function App() {
           canWrite={can("analytics.write")}
           storeId={Number(selectedStoreId) || 0}
           currency={selectedStore?.currency || "COP"}
+          onNavigateToStores={() => handleNavigate("settings")}
+          onNavigateToIntegrations={() => handleNavigate("integrations")}
         />
       )}
     </Suspense>

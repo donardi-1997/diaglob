@@ -202,6 +202,63 @@ export async function getDropshippingProfitability(storeId: number, dateFrom?: s
   return response.data;
 }
 
+export type UnitEconomicsSource = "actual" | "estimated" | "missing" | "not_applicable";
+export type UnitEconomicsStatus = "available" | "missing" | "not_applicable";
+
+export interface UnitEconomicsCostComponent {
+  amount: number | null;
+  source: UnitEconomicsSource;
+  status: UnitEconomicsStatus;
+  reason: string | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface DropshippingUnitEconomicsResponse {
+  store_id: number;
+  currency: string;
+  date_from: string | null;
+  date_to: string | null;
+  recognized_revenue: number;
+  gross_profit: number;
+  gross_margin: number | null;
+  known_cost_subtotal: number;
+  contribution_profit: number | null;
+  contribution_margin: number | null;
+  components: {
+    cogs: UnitEconomicsCostComponent;
+    outbound_shipping: UnitEconomicsCostComponent;
+    payment_fees: UnitEconomicsCostComponent;
+    cod_fees: UnitEconomicsCostComponent;
+    reverse_logistics: UnitEconomicsCostComponent;
+    ad_spend: UnitEconomicsCostComponent;
+  };
+  data_quality: {
+    status: "complete" | "incomplete";
+    missing_components: string[];
+    missing_reasons: Record<string, string | null>;
+    estimated_components: string[];
+    actual_components: string[];
+  };
+  order_counts: {
+    total: number;
+    delivered: number;
+    returned: number;
+    cancelled: number;
+    fulfilled_outcomes: number;
+  };
+}
+
+export async function getDropshippingUnitEconomics(
+  storeId: number,
+  dateFrom?: string,
+  dateTo?: string,
+) {
+  const response = await api.get<DropshippingUnitEconomicsResponse>(
+    `/api/stores/${storeId}/analytics/dropshipping/unit-economics${buildParams(dateFrom, dateTo)}`,
+  );
+  return response.data;
+}
+
 export type DropshippingInsightSeverity =
   | "critical"
   | "warning"

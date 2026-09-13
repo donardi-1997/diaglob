@@ -18,13 +18,6 @@ CONTRACT_PATH = (
     Path(__file__).resolve().parent / "contracts" / "api_routes.json"
 )
 
-# Exact additive routes introduced in branches where the generated snapshot cannot
-# be regenerated in-place. Keeping them explicit preserves the same guard: a
-# missing route or any other unexpected route still fails the contract test.
-INTENTIONAL_ADDITIVE_ROUTES = {
-    ("GET", "/api/stores/{store_id}/analytics/dropshipping/insights"),
-}
-
 
 def _collect_routes_from_container(container) -> list[tuple[str, str]]:
     """Recursively collect (method, path) from a route container.
@@ -69,12 +62,12 @@ def _save_snapshot(routes: list[tuple[str, str]]):
 
 class TestRouteContract:
     def test_route_set_matches_snapshot(self):
-        """Runtime routes must match the committed snapshot plus exact additions."""
+        """Runtime routes must exactly match the committed snapshot."""
         actual = _get_runtime_routes()
         expected = _load_snapshot()
 
         actual_set = set(actual)
-        expected_set = set(expected) | INTENTIONAL_ADDITIVE_ROUTES
+        expected_set = set(expected)
 
         missing = expected_set - actual_set
         unexpected = actual_set - expected_set

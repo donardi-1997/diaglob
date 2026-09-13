@@ -15,11 +15,13 @@ import {
   getDropshippingOverview,
   getDropshippingProducts,
   getDropshippingProfitability,
+  getDropshippingUnitEconomics,
   type DropshippingDecisionInsightsResponse,
   type DropshippingOrders,
   type DropshippingOverview,
   type DropshippingProduct,
   type DropshippingProfitability,
+  type DropshippingUnitEconomicsResponse,
 } from "../services/analytics";
 import {
   allDropshippingSectionsFailed,
@@ -28,6 +30,7 @@ import {
   type DropshippingAnalyticsSection,
 } from "../utils/dropshippingAnalyticsState";
 import DropshippingDecisionInsights from "./DropshippingDecisionInsights";
+import DropshippingUnitEconomics from "./DropshippingUnitEconomics";
 import ProductPerformanceAnalytics from "./ProductPerformanceAnalytics";
 import SalesAttributionAnalytics from "./SalesAttributionAnalytics";
 
@@ -36,6 +39,8 @@ interface Props {
   currency: string;
   dateFrom?: string;
   dateTo?: string;
+  onNavigateToStores?: () => void;
+  onNavigateToIntegrations?: () => void;
 }
 
 interface DashboardData {
@@ -44,6 +49,7 @@ interface DashboardData {
   products: DropshippingProduct[] | null;
   orders: DropshippingOrders | null;
   insights: DropshippingDecisionInsightsResponse | null;
+  unitEconomics: DropshippingUnitEconomicsResponse | null;
 }
 
 const SECTION_LABELS: Record<DropshippingAnalyticsSection, string> = {
@@ -52,6 +58,7 @@ const SECTION_LABELS: Record<DropshippingAnalyticsSection, string> = {
   products: "productos",
   orders: "embudo de pedidos",
   insights: "decision intelligence",
+  unitEconomics: "unit economics",
 };
 
 function SectionUnavailable() {
@@ -67,6 +74,8 @@ export default function DropshippingOverview({
   currency,
   dateFrom,
   dateTo,
+  onNavigateToStores,
+  onNavigateToIntegrations,
 }: Props) {
   const { t, i18n } = useTranslation();
   const [data, setData] = useState<DashboardData | null>(null);
@@ -90,6 +99,7 @@ export default function DropshippingOverview({
       getDropshippingProducts(storeId, dateFrom, dateTo),
       getDropshippingOrders(storeId, dateFrom, dateTo),
       getDropshippingDecisionInsights(storeId, dateFrom, dateTo),
+      getDropshippingUnitEconomics(storeId, dateFrom, dateTo),
     ])
       .then((results) => {
         if (cancelled) return;
@@ -109,6 +119,7 @@ export default function DropshippingOverview({
           products: settledValue(results[2]),
           orders: settledValue(results[3]),
           insights: settledValue(results[4]),
+          unitEconomics: settledValue(results[5]),
         });
       })
       .finally(() => {
@@ -136,8 +147,9 @@ export default function DropshippingOverview({
     return <div className="commerce-empty">{t("analyticsNoData")}</div>;
   }
 
-  const { overview, profitability, products, orders, insights } = data;
-  const effectiveCurrency = overview?.currency || insights?.currency || currency;
+  const { overview, profitability, products, orders, insights, unitEconomics } = data;
+  const effectiveCurrency =
+    overview?.currency || unitEconomics?.currency || insights?.currency || currency;
   const unavailableLabels = unavailableSections.map(
     (section) => SECTION_LABELS[section],
   );
@@ -191,6 +203,15 @@ export default function DropshippingOverview({
         language={i18n.resolvedLanguage || i18n.language || "es"}
         currency={effectiveCurrency}
         onSelectProduct={setSelectedProductId}
+      />
+
+      <DropshippingUnitEconomics
+        data={unitEconomics}
+        unavailable={unavailableSections.includes("unitEconomics")}
+        language={i18n.resolvedLanguage || i18n.language || "es"}
+        currency={effectiveCurrency}
+        onConfigureCosts={onNavigateToStores}
+        onOpenIntegrations={onNavigateToIntegrations}
       />
 
       {(overview || profitability) && (

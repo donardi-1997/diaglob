@@ -15,6 +15,7 @@ import {
   X,
 } from "lucide-react";
 
+import UnitEconomicsSettingsPanel from "../components/UnitEconomicsSettingsPanel";
 import {
   createStore,
   deleteStore,
@@ -56,6 +57,12 @@ const EMPTY_FORM: StoreForm = {
   default_language: "",
   shopify_domain: "",
   active: true,
+};
+
+const CURRENCY_CHANGE_NOTICE: Record<LocaleKey, string> = {
+  es: "Moneda actualizada. Los costos fijos de Unit Economics se limpiaron; vuelve a configurarlos con la nueva moneda.",
+  en: "Currency updated. Fixed Unit Economics costs were cleared; configure them again in the new currency.",
+  "pt-BR": "Moeda atualizada. Os custos fixos de Unit Economics foram limpos; configure-os novamente na nova moeda.",
 };
 
 const COPY: Record<
@@ -453,6 +460,8 @@ export default function StoresPage({
       setSuccess("");
 
       if (editingStore) {
+        const currencyChanged =
+          editingStore.currency.trim().toUpperCase() !== form.currency.trim().toUpperCase();
         await updateStore(editingStore.id, {
           name,
           currency: form.currency,
@@ -461,7 +470,11 @@ export default function StoresPage({
           shopify_domain: form.shopify_domain.trim() || null,
           active: form.active,
         });
-        setSuccess(t("storesI18nUpdatedSuccess"));
+        setSuccess(
+          currencyChanged
+            ? CURRENCY_CHANGE_NOTICE[locale]
+            : t("storesI18nUpdatedSuccess"),
+        );
       } else {
         await createStore({
           name,
@@ -898,6 +911,14 @@ export default function StoresPage({
                   </span>
                 </div>
               </div>
+
+              {editingStore && (
+                <UnitEconomicsSettingsPanel
+                  storeId={editingStore.id}
+                  currency={form.currency}
+                  canWrite={canWrite}
+                />
+              )}
 
               {!editingStore && (
                 <div className="stores-v2-form-note">

@@ -1378,3 +1378,8 @@ from .model_domains.payments import PaymentConnection, PaymentTransaction
 
 # AI usage package credits are physically defined in app.model_domains.ai_usage.
 from .model_domains.ai_usage import AiUsageCreditGrant
+
+
+# Unit Economics models are physically defined in app.model_domains.unit_economics.
+# These imports preserve the historical app.models import surface.
+from .model_domains.unit_economics import PaymentMethodCostRule, StoreUnitEconomicsConfig
