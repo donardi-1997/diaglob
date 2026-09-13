@@ -9,7 +9,7 @@ import {
   serializeUnitEconomicsConfig,
   validateUnitEconomicsConfig,
   type UnitEconomicsConfig,
-} from "../src/services/unitEconomics.ts";
+} from "../src/utils/unitEconomicsConfig.ts";
 import {
   getUnitEconomicsContributionValues,
   getUnitEconomicsGrossProfitValue,
