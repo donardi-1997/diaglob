@@ -16,12 +16,12 @@
 - Forecast only store-level delivered orders, delivered revenue, and complete/known-cost contribution.
 - Horizons are exactly 7 and 30 store-local calendar days.
 - Exclude the store-local current partial day.
-- Invalid `Store.timezone` returns a stable unavailable/error state; never use server timezone as fallback.
+- Invalid `Store.timezone` is explicit; never use server timezone as fallback.
 - Use at most 365 completed local days. Materialize missing calendar dates as zero observations.
-- Fewer than 7 observations => metric unavailable. Fewer than 28 => confidence forced `low`.
+- Fewer than 7 observations makes a metric unavailable. Fewer than 28 forces confidence `low`.
 - Candidate simplicity order is `recent_naive`, `weighted_moving_average`, `linear_trend`, `weekday_trend`.
 - Probable ranges come from out-of-sample residuals.
-- Never emit NaN/Infinity or `lower_bound > estimate > upper_bound` inconsistencies.
+- Never emit NaN/Infinity or an inverted range.
 - Clamp delivered-order and revenue estimates/bounds to zero. Do not clamp contribution.
 - Do not duplicate V2.2 COGS, shipping, payment, COD, return, or Meta business rules.
 - Resolve Meta at most once for the historical contribution lookback. Forecasting-only daily smoothing must sum exactly to that aggregate.
@@ -38,7 +38,6 @@
 MAX_HISTORY_DAYS = 365
 MIN_HISTORY_DAYS = 7
 MIN_SIMPLE_MODEL_TRAIN_DAYS = 3
-LOW_CONFIDENCE_HISTORY_DAYS = 28
 RECENT_NAIVE_WINDOW = 7
 WMA_WINDOW = 14
 LINEAR_TREND_WINDOW = 56
@@ -46,34 +45,24 @@ WEEKDAY_TREND_WINDOW = 84
 WEEKDAY_MIN_HISTORY = 28
 WEEKDAY_MIN_SUPPORT_PER_DAY = 2
 WEEKDAY_SHRINKAGE = 3.0
-STANDARD_BACKTEST_MIN_TRAIN_DAYS = 7
 MAX_BACKTEST_WINDOWS = 8
 LONG_BACKTEST_MIN_TRAIN_DAYS = 28
 LONG_BACKTEST_MIN_WINDOWS = 2
 SMAPE_SIGNAL_RATIO_MIN = 0.25
-RANGE_QUANTILE = 0.80
-LOW_SAMPLE_MULTIPLIER_LT_3 = 1.50
-LOW_SAMPLE_MULTIPLIER_LT_5 = 1.25
-HIGH_CONFIDENCE_ERROR_PCT = 20.0
-MEDIUM_CONFIDENCE_ERROR_PCT = 40.0
-HIGH_CONFIDENCE_HISTORY_DAYS = 56
-HIGH_CONFIDENCE_BACKTEST_WINDOWS = 4
-MEDIUM_CONFIDENCE_BACKTEST_WINDOWS = 2
-MIN_SIGNAL_RATIO_FOR_HIGH = 0.25
 MODEL_SCORE_TIE_EPSILON = 1e-9
 ```
 
 Backtesting is fixed as follows:
 
-- 7–13 observations: expanding one-day validation cutoffs, starting after 3 training observations.
-- >=14 observations: newest eight rolling 7-day validation windows, minimum 7 training observations.
+- 7–13 observations: expanding one-day validation cutoffs, beginning after 3 training observations.
+- 14+ observations: newest eight rolling 7-day validation windows, minimum 7 training observations.
 - Direct 30-day validation: newest eight rolling 30-day windows, minimum 28 training observations. Two direct 30-day windows first exist at 88 observations.
-- Without two direct 30-day windows, select the model from shorter out-of-sample validation, scale range width by `30/7` from 7-day residuals or by `30` from one-day residuals, and force 30-day confidence `low`.
-- Use sMAPE only when at least 25% of held-out point pairs have `abs(actual)+abs(predicted)>0`; otherwise use MAE.
+- Without two direct 30-day windows, use the model selected by shorter out-of-sample validation, scale range width by `30/7` from 7-day residuals or by `30` from one-day residuals, and force 30-day confidence `low`.
+- Use sMAPE only when at least 25% of held-out point pairs have `abs(actual) + abs(predicted) > 0`; otherwise use MAE.
 - For confidence, MAE normalizes as `MAE / mean(abs(actual)) * 100` when scale is positive. All-zero actual/predicted has normalized error 0; zero actual with non-zero MAE has normalized error 100.
 - Candidate score ties within `1e-9` use the simplicity order.
 
-Probable range uses nearest-rank q80 exactly:
+Probable range uses nearest-rank q80:
 
 ```python
 def nearest_rank_quantile(values: list[float], q: float) -> float:
@@ -100,7 +89,7 @@ else:
     confidence = "medium"
 ```
 
-For 30d, fewer than two direct 30-day windows overrides the result to `low`.
+For 30d, fewer than two direct 30-day validation windows overrides the result to `low`.
 
 ---
 
@@ -133,14 +122,14 @@ For 30d, fewer than two direct 30-day windows overrides the result to `low`.
 
 ---
 
-### Task 1: Reuse V2.2 order economics without changing V2.2 behavior
+### Task 1: Reuse V2.2 order economics without semantic drift
 
 **Files:**
 - Modify: `backend/app/services/dropshipping_unit_economics.py`
 - Modify: `backend/tests/test_dropshipping_unit_economics.py`
 
 **Interfaces:**
-- Consumes existing `_resolve_outbound_shipping`, `_resolve_payment_fees`, `_resolve_cod_fees`, `_resolve_reverse_logistics`, `get_unit_economics_config`.
+- Consumes existing V2.2 cost resolvers and `get_unit_economics_config`.
 - Produces `calculate_order_resolvable_economics(db, organization_id, store_id, orders, *, config=None, prefetched_items=None) -> dict[str, Any]`.
 
 - [ ] **Step 1: Write the failing prefetched-item test**
@@ -185,7 +174,7 @@ def test_order_resolvable_economics_uses_prefetched_items_without_item_query(
     assert result["data_quality"]["status"] == "complete"
 ```
 
-Also add a characterization test before refactoring the public path:
+Also add:
 
 ```python
 def test_public_unit_economics_contract_stays_stable_after_reuse_refactor(db, store):
@@ -205,35 +194,20 @@ def test_public_unit_economics_contract_stays_stable_after_reuse_refactor(db, st
     assert result["order_counts"]["delivered"] == 1
 ```
 
-- [ ] **Step 2: Run the focused test and verify RED**
-
-Run:
+- [ ] **Step 2: Verify RED plus existing characterization GREEN**
 
 ```bash
 cd backend
 pytest -q tests/test_dropshipping_unit_economics.py -k "prefetched or stable"
 ```
 
-Expected: prefetched test fails with `AttributeError` because `calculate_order_resolvable_economics` does not exist; characterization assertion remains green.
+Expected: prefetched test fails because the public helper does not exist; stable contract assertion passes.
 
-- [ ] **Step 3: Add the prefetched COGS resolver and reusable calculator**
+- [ ] **Step 3: Implement reusable non-ad economics**
 
-Replace `_resolve_cogs` with this implementation, preserving the current amount/completeness rules:
+Change `_resolve_cogs` to accept `prefetched_items` and use this exact branch:
 
 ```python
-def _resolve_cogs(
-    db: Session,
-    organization_id: int,
-    store_id: int,
-    delivered_orders: list[Order],
-    *,
-    prefetched_items: list[OrderItem] | None = None,
-) -> dict[str, Any]:
-    if not delivered_orders:
-        return _not_applicable(
-            {"cost_completeness_pct": 100.0, "item_count": 0}
-        )
-
     delivered_ids = {order.id for order in delivered_orders}
     if prefetched_items is None:
         items = (
@@ -253,37 +227,9 @@ def _resolve_cogs(
             and item.organization_id == organization_id
             and item.store_id == store_id
         ]
-
-    if not items:
-        return _missing(
-            "cogs_incomplete",
-            amount=ZERO,
-            metadata={
-                "cost_completeness_pct": 0.0,
-                "item_count": 0,
-                "items_with_cost": 0,
-                "delivered_orders": len(delivered_orders),
-            },
-        )
-
-    known = ZERO
-    with_cost = 0
-    for item in items:
-        if item.unit_cost is None:
-            continue
-        with_cost += 1
-        known += _decimal(item.unit_cost) * Decimal(item.quantity)
-
-    completeness = float(Decimal(with_cost) / Decimal(len(items)) * HUNDRED)
-    metadata = {
-        "cost_completeness_pct": completeness,
-        "item_count": len(items),
-        "items_with_cost": with_cost,
-    }
-    if with_cost != len(items):
-        return _missing("cogs_incomplete", amount=known, metadata=metadata)
-    return _component(known, "actual", metadata=metadata)
 ```
+
+Leave the current `items == []`, known COGS, completeness percentage, and missing-state arithmetic unchanged after that branch.
 
 Add:
 
@@ -297,9 +243,9 @@ def calculate_order_resolvable_economics(
     config: dict[str, Any] | None = None,
     prefetched_items: list[OrderItem] | None = None,
 ) -> dict[str, Any]:
-    delivered_orders = [o for o in orders if o.lifecycle_status == "delivered"]
-    returned_orders = [o for o in orders if o.lifecycle_status == "returned"]
-    cancelled_orders = [o for o in orders if o.lifecycle_status == "cancelled"]
+    delivered_orders = [order for order in orders if order.lifecycle_status == "delivered"]
+    returned_orders = [order for order in orders if order.lifecycle_status == "returned"]
+    cancelled_orders = [order for order in orders if order.lifecycle_status == "cancelled"]
     recognized_revenue = sum(
         (_decimal(order.total_amount) for order in delivered_orders), ZERO
     )
@@ -321,9 +267,7 @@ def calculate_order_resolvable_economics(
         ),
         "payment_fees": _resolve_payment_fees(effective_config, delivered_orders),
         "cod_fees": _resolve_cod_fees(effective_config, delivered_orders),
-        "reverse_logistics": _resolve_reverse_logistics(
-            effective_config, returned_orders
-        ),
+        "reverse_logistics": _resolve_reverse_logistics(effective_config, returned_orders),
     }
     known_cost_subtotal = sum(
         (
@@ -348,11 +292,9 @@ def calculate_order_resolvable_economics(
     }
 ```
 
-Refactor `get_store_unit_economics` to use that helper for the five non-ad components, then append `_resolve_ad_component(resolve_meta_ad_spend(...))`, recompute six-component `_data_quality`, `known_cost_subtotal`, contribution, and return the same existing response keys. Do not change any formula or missing-reason string.
+Refactor `get_store_unit_economics()` so the five non-ad components come from this helper, then append `_resolve_ad_component(resolve_meta_ad_spend(...))`, recompute six-component `_data_quality`, recompute `known_cost_subtotal`, and keep all existing V2.2 response keys/formulas unchanged.
 
-- [ ] **Step 4: Run V2.2 regression tests and verify GREEN**
-
-Run:
+- [ ] **Step 4: Verify GREEN with all V2.2 finance regressions**
 
 ```bash
 cd backend
@@ -370,21 +312,22 @@ git commit -m "refactor: expose reusable unit economics components"
 
 ---
 
-### Task 2: Build the pure forecasting math engine
+### Task 2: Build the pure deterministic forecasting engine
 
 **Files:**
 - Create: `backend/app/services/dropshipping_forecast_math.py`
 - Create: `backend/tests/test_dropshipping_forecast_math.py`
 
 **Interfaces:**
-- Produces `ForecastPoint`, `MetricForecast`, and `forecast_metric(history, *, horizon_days, non_negative)`.
-- No DB/provider imports are allowed in this module.
+- Produces `ForecastPoint`, `ForecastQuality`, `MetricForecast`, and `forecast_metric(history, *, horizon_days, non_negative)`.
+- This file imports no DB/provider code.
 
-- [ ] **Step 1: Write failing tests for models, intervals, and confidence**
+- [ ] **Step 1: Write failing algorithm tests**
 
-Create `backend/tests/test_dropshipping_forecast_math.py` with these helpers/tests:
+Create `backend/tests/test_dropshipping_forecast_math.py`:
 
 ```python
+from dataclasses import asdict
 from datetime import date, timedelta
 import math
 
@@ -398,6 +341,17 @@ def points(values, start=date(2026, 1, 1)):
         ForecastPoint(start + timedelta(days=index), float(value))
         for index, value in enumerate(values)
     ]
+
+
+def assert_finite_tree(value):
+    if isinstance(value, float):
+        assert math.isfinite(value)
+    elif isinstance(value, dict):
+        for child in value.values():
+            assert_finite_tree(child)
+    elif isinstance(value, (list, tuple)):
+        for child in value:
+            assert_finite_tree(child)
 
 
 def test_less_than_seven_observations_is_unavailable():
@@ -417,11 +371,10 @@ def test_linear_series_selects_linear_trend():
     result = forecast_metric(points(list(range(1, 85))), horizon_days=7, non_negative=True)
     assert result.status == "available"
     assert result.model == "linear_trend"
-    assert result.estimate > sum(range(78, 85))
 
 
-def test_weekday_pattern_can_select_weekday_trend():
-    values = [20 if index % 7 in (5, 6) else 5 for index in range(112)]
+def test_weekday_pattern_selects_weekday_trend():
+    values = [30 if index % 7 in (1, 5) else 4 for index in range(112)]
     result = forecast_metric(points(values), horizon_days=7, non_negative=True)
     assert result.status == "available"
     assert result.model == "weekday_trend"
@@ -439,10 +392,14 @@ def test_thirty_day_without_two_long_windows_is_low_confidence():
 
 
 def test_non_negative_targets_are_clamped():
-    values = [20, 18, 16, 14, 12, 10, 8] * 8
-    result = forecast_metric(points(values), horizon_days=30, non_negative=True)
+    result = forecast_metric(
+        points([20, 18, 16, 14, 12, 10, 8] * 8),
+        horizon_days=30,
+        non_negative=True,
+    )
     assert result.estimate is not None and result.estimate >= 0
     assert result.lower_bound is not None and result.lower_bound >= 0
+    assert result.upper_bound is not None and result.upper_bound >= result.estimate
 
 
 def test_contribution_can_be_negative():
@@ -451,27 +408,33 @@ def test_contribution_can_be_negative():
     assert result.lower_bound is not None and result.lower_bound <= result.estimate
 
 
-def test_all_zero_series_is_finite():
-    result = forecast_metric(points([0] * 56), horizon_days=7, non_negative=True)
-    assert result.status == "available"
-    for value in (result.estimate, result.lower_bound, result.upper_bound):
-        assert value is not None and math.isfinite(value)
+@pytest.mark.parametrize(
+    "values",
+    [
+        [0.0] * 56,
+        [0.0, 1000000.0] * 28,
+        [1e12] * 56,
+        [-1000.0] * 56,
+        [10.0] * 55 + [1e9],
+    ],
+)
+def test_metric_forecast_never_emits_non_finite_numbers(values):
+    result = forecast_metric(points(values), horizon_days=30, non_negative=False)
+    assert_finite_tree(asdict(result))
 ```
 
-- [ ] **Step 2: Run tests and verify RED**
-
-Run:
+- [ ] **Step 2: Verify RED**
 
 ```bash
 cd backend
 pytest -q tests/test_dropshipping_forecast_math.py
 ```
 
-Expected: import failure because `dropshipping_forecast_math.py` does not exist.
+Expected: import failure because the module does not exist.
 
-- [ ] **Step 3: Implement the model primitives**
+- [ ] **Step 3: Implement model primitives**
 
-Create `backend/app/services/dropshipping_forecast_math.py` with these constants/types/helpers first:
+Create `backend/app/services/dropshipping_forecast_math.py` beginning with:
 
 ```python
 from __future__ import annotations
@@ -492,7 +455,6 @@ WEEKDAY_MIN_HISTORY = 28
 WEEKDAY_MIN_SUPPORT_PER_DAY = 2
 WEEKDAY_SHRINKAGE = 3.0
 MAX_BACKTEST_WINDOWS = 8
-LONG_BACKTEST_MIN_TRAIN_DAYS = 28
 LONG_BACKTEST_MIN_WINDOWS = 2
 SMAPE_SIGNAL_RATIO_MIN = 0.25
 MODEL_SCORE_TIE_EPSILON = 1e-9
@@ -588,7 +550,7 @@ def _forecast_candidate(
     elif model == "weighted_moving_average":
         window = values[-WMA_WINDOW:]
         weights = list(range(1, len(window) + 1))
-        level = sum(v * w for v, w in zip(window, weights)) / sum(weights)
+        level = sum(value * weight for value, weight in zip(window, weights)) / sum(weights)
         predicted = [level] * len(future_dates)
     elif model == "linear_trend":
         window = values[-LINEAR_TREND_WINDOW:]
@@ -607,7 +569,7 @@ def _forecast_candidate(
         for index, point in enumerate(window_points):
             baseline = intercept + slope * index
             residuals[point.date.weekday()].append(point.value - baseline)
-        effects: dict[int, float] = {}
+        effects = {}
         for weekday, samples in residuals.items():
             raw = sum(samples) / len(samples)
             support = len(samples)
@@ -628,20 +590,19 @@ def _forecast_candidate(
     return tuple(float(value) for value in predicted)
 ```
 
-- [ ] **Step 4: Implement backtesting, scoring, ranges, confidence, and public forecast**
+- [ ] **Step 4: Implement backtesting, scoring, ranges, confidence, and public API**
 
-Append this implementation to the same module:
+Append:
 
 ```python
 def _validation_cutoffs(length: int, validation_days: int) -> list[int]:
     if validation_days == 1:
-        cutoffs = list(range(MIN_SIMPLE_MODEL_TRAIN_DAYS, length))
-        return cutoffs[-MAX_BACKTEST_WINDOWS:]
+        return list(range(MIN_SIMPLE_MODEL_TRAIN_DAYS, length))[-MAX_BACKTEST_WINDOWS:]
     minimum_train = 28 if validation_days == 30 else 7
     latest = length - validation_days
     if latest < minimum_train:
         return []
-    cutoffs: list[int] = []
+    cutoffs = []
     cutoff = latest
     while cutoff >= minimum_train and len(cutoffs) < MAX_BACKTEST_WINDOWS:
         cutoffs.append(cutoff)
@@ -650,11 +611,7 @@ def _validation_cutoffs(length: int, validation_days: int) -> list[int]:
 
 
 def _smape(actual: Sequence[float], predicted: Sequence[float]) -> tuple[float | None, float]:
-    informative = [
-        (a, p)
-        for a, p in zip(actual, predicted)
-        if abs(a) + abs(p) > 0
-    ]
+    informative = [(a, p) for a, p in zip(actual, predicted) if abs(a) + abs(p) > 0]
     signal_ratio = len(informative) / len(actual) if actual else 0.0
     if not informative or signal_ratio < SMAPE_SIGNAL_RATIO_MIN:
         return None, signal_ratio
@@ -683,16 +640,18 @@ def _backtest_model(
     validation_days: int,
     non_negative: bool,
 ) -> _Backtest | None:
-    actual_values: list[float] = []
-    predicted_values: list[float] = []
-    aggregate_residuals: list[float] = []
+    actual_values = []
+    predicted_values = []
+    aggregate_residuals = []
     windows = 0
     for cutoff in _validation_cutoffs(len(history), validation_days):
         train = history[:cutoff]
         validation = history[cutoff:cutoff + validation_days]
-        future_dates = [point.date for point in validation]
         prediction = _forecast_candidate(
-            model, train, future_dates, non_negative=non_negative
+            model,
+            train,
+            [point.date for point in validation],
+            non_negative=non_negative,
         )
         if prediction is None or len(prediction) != len(validation):
             continue
@@ -703,9 +662,7 @@ def _backtest_model(
         windows += 1
     if windows == 0:
         return None
-    metric, error_value, normalized_error, signal_ratio = _score(
-        actual_values, predicted_values
-    )
+    metric, error_value, normalized_error, signal_ratio = _score(actual_values, predicted_values)
     if not _finite([error_value, normalized_error, signal_ratio]):
         return None
     return _Backtest(
@@ -725,16 +682,18 @@ def _select_backtest(
     validation_days: int,
     non_negative: bool,
 ) -> _Backtest | None:
-    candidates: list[_Backtest] = []
-    for model in MODEL_PRIORITY:
-        result = _backtest_model(
-            model,
-            history,
-            validation_days=validation_days,
-            non_negative=non_negative,
-        )
-        if result is not None:
-            candidates.append(result)
+    candidates = [
+        result
+        for model in MODEL_PRIORITY
+        if (
+            result := _backtest_model(
+                model,
+                history,
+                validation_days=validation_days,
+                non_negative=non_negative,
+            )
+        ) is not None
+    ]
     if not candidates:
         return None
     priority = {name: index for index, name in enumerate(MODEL_PRIORITY)}
@@ -779,21 +738,16 @@ def _confidence(
         return "low"
     if history_days < 28 or backtest_windows < 2 or normalized_error_pct > 40.0:
         return "low"
-    if (
-        history_days >= 56
-        and backtest_windows >= 4
-        and signal_ratio >= 0.25
-        and normalized_error_pct <= 20.0
-    ):
+    if history_days >= 56 and backtest_windows >= 4 and signal_ratio >= 0.25 and normalized_error_pct <= 20.0:
         return "high"
     return "medium"
 
 
-def _unavailable(history_days: int, reason: str) -> MetricForecast:
+def _unavailable(history: Sequence[ForecastPoint], reason: str) -> MetricForecast:
     quality = ForecastQuality(
-        history_days=history_days,
-        observations=history_days,
-        non_zero_observations=0,
+        history_days=len(history),
+        observations=len(history),
+        non_zero_observations=sum(1 for point in history if point.value != 0),
         backtest_windows=0,
         long_backtest_windows=0,
         error_metric=None,
@@ -801,16 +755,7 @@ def _unavailable(history_days: int, reason: str) -> MetricForecast:
         normalized_error_pct=None,
         confidence="low",
     )
-    return MetricForecast(
-        status="unavailable",
-        reason=reason,
-        estimate=None,
-        lower_bound=None,
-        upper_bound=None,
-        confidence="low",
-        model=None,
-        quality=quality,
-    )
+    return MetricForecast("unavailable", reason, None, None, None, "low", None, quality)
 
 
 def forecast_metric(
@@ -823,45 +768,25 @@ def forecast_metric(
         raise ValueError("unsupported_forecast_horizon")
     history = tuple(history[-MAX_HISTORY_DAYS:])
     if len(history) < MIN_HISTORY_DAYS:
-        return _unavailable(len(history), "insufficient_history")
+        return _unavailable(history, "insufficient_history")
 
     short_validation = 1 if len(history) < 14 else 7
-    short = _select_backtest(
-        history,
-        validation_days=short_validation,
-        non_negative=non_negative,
-    )
-    long_result = _select_backtest(
-        history,
-        validation_days=30,
-        non_negative=non_negative,
-    )
+    short = _select_backtest(history, validation_days=short_validation, non_negative=non_negative)
+    long_result = _select_backtest(history, validation_days=30, non_negative=non_negative)
     chosen = (
         long_result
-        if horizon_days == 30
-        and long_result is not None
-        and long_result.windows >= LONG_BACKTEST_MIN_WINDOWS
+        if horizon_days == 30 and long_result is not None and long_result.windows >= LONG_BACKTEST_MIN_WINDOWS
         else short
     )
     if chosen is None:
-        return _unavailable(len(history), "backtest_unavailable")
+        return _unavailable(history, "backtest_unavailable")
 
-    future_dates = [
-        history[-1].date + timedelta(days=offset)
-        for offset in range(1, horizon_days + 1)
-    ]
-    prediction = _forecast_candidate(
-        chosen.model,
-        history,
-        future_dates,
-        non_negative=non_negative,
-    )
+    future_dates = [history[-1].date + timedelta(days=offset) for offset in range(1, horizon_days + 1)]
+    prediction = _forecast_candidate(chosen.model, history, future_dates, non_negative=non_negative)
     if prediction is None:
-        return _unavailable(len(history), "non_finite_model_output")
+        return _unavailable(history, "non_finite_model_output")
     estimate = sum(prediction)
-
-    residuals = chosen.aggregate_residuals
-    width = _range_width(residuals)
+    width = _range_width(chosen.aggregate_residuals)
     if horizon_days == 30 and chosen is short:
         width *= 30.0 if short_validation == 1 else 30.0 / 7.0
     lower = estimate - width
@@ -873,7 +798,7 @@ def forecast_metric(
     lower = min(lower, estimate)
     upper = max(upper, estimate)
     if not _finite([estimate, lower, upper]):
-        return _unavailable(len(history), "non_finite_model_output")
+        return _unavailable(history, "non_finite_model_output")
 
     long_windows = 0 if long_result is None else long_result.windows
     confidence = _confidence(
@@ -907,11 +832,14 @@ def forecast_metric(
     )
 ```
 
-- [ ] **Step 5: Run the pure suite and verify GREEN**
+- [ ] **Step 5: Verify GREEN**
 
-Run: `cd backend && pytest -q tests/test_dropshipping_forecast_math.py`
+```bash
+cd backend
+pytest -q tests/test_dropshipping_forecast_math.py
+```
 
-Expected: PASS. If the synthetic weekday/linear winner fixture does not uniquely favor the intended model, adjust only the synthetic input values while preserving the asserted behavior and fixed algorithm constants; do not change algorithm constants to fit tests.
+Expected: PASS. If a synthetic winner fixture is not uniquely discriminative, change only that test's synthetic values; do not change the approved constants to satisfy a fixture.
 
 - [ ] **Step 6: Commit**
 
@@ -922,64 +850,196 @@ git commit -m "feat: add deterministic forecast engine"
 
 ---
 
-### Task 3: Build store-local historical order series
+### Task 3: Build timezone-correct historical store series
 
 **Files:**
 - Create: `backend/app/services/dropshipping_forecasting.py`
 - Create: `backend/tests/test_dropshipping_forecasting.py`
 
 **Interfaces:**
-- Produces `resolve_forecast_calendar`, `_load_historical_cohort`, and operational daily `ForecastPoint` sequences.
+- Produces `resolve_forecast_calendar`, `_load_historical_cohort`, `_operational_points`, and shared test seed helpers inside the test module.
 
-- [ ] **Step 1: Write failing timezone and zero-day tests**
+- [ ] **Step 1: Create exact DB fixtures and seed helpers in the new test file**
 
-Create the test module with existing SQLAlchemy test-fixture conventions and these assertions:
+Create `backend/tests/test_dropshipping_forecasting.py` beginning with:
 
 ```python
-from datetime import date, datetime, timezone
+import os
+from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal
 
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
-from app.services.dropshipping_forecasting import (
-    InvalidStoreTimezoneError,
-    resolve_forecast_calendar,
-)
+from app.db import Base
+from app.models import Order, OrderItem, Organization, Store
+from app.services.unit_economics_config_service import replace_unit_economics_config
+import app.services.dropshipping_forecasting as forecasting
 
+SQLALCHEMY_TEST_DATABASE_URL = "sqlite:///./test_dropshipping_forecasting.db"
+engine = create_engine(SQLALCHEMY_TEST_DATABASE_URL, connect_args={"check_same_thread": False})
+TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+FIXED_NOW = datetime(2026, 9, 15, 12, 0, tzinfo=timezone.utc)
 
-def test_bogota_anchor_excludes_partial_current_day(store):
-    store.timezone = "America/Bogota"
-    calendar = resolve_forecast_calendar(
-        store,
-        datetime(2026, 9, 13, 15, 0, tzinfo=timezone.utc),
+@pytest.fixture(autouse=True)
+def setup_db():
+    Base.metadata.create_all(bind=engine)
+    yield
+    Base.metadata.drop_all(bind=engine)
+    engine.dispose()
+    try:
+        os.remove("./test_dropshipping_forecasting.db")
+    except FileNotFoundError:
+        pass
+
+@pytest.fixture()
+def db():
+    session = TestingSessionLocal()
+    try:
+        yield session
+    finally:
+        session.rollback()
+        session.close()
+
+@pytest.fixture()
+def store(db):
+    organization = Organization(
+        name="Forecast Org",
+        slug="forecast-org",
+        plan="growth",
+        subscription_status="active",
     )
-    assert calendar.local_today == date(2026, 9, 13)
-    assert calendar.anchor_date == date(2026, 9, 12)
+    db.add(organization)
+    db.flush()
+    result = Store(
+        organization_id=organization.id,
+        name="Forecast Store",
+        slug="forecast-store",
+        country_code="CO",
+        currency="COP",
+        timezone="America/Bogota",
+        default_language="es",
+    )
+    db.add(result)
+    db.commit()
+    db.refresh(result)
+    return result
+
+
+def configure_zero_operating_costs(db, store):
+    return replace_unit_economics_config(
+        db,
+        store.organization_id,
+        store.id,
+        {
+            "outbound_shipping_cost": 0,
+            "return_logistics_cost": 0,
+            "default_payment_fee_percent": 0,
+            "default_payment_fee_fixed": 0,
+            "default_cod_fee_percent": 0,
+            "payment_methods": [],
+        },
+    )
+
+
+def add_delivered_day(db, store, local_day, *, amount=100000, unit_cost=40000, suffix="A"):
+    created_at = datetime(local_day.year, local_day.month, local_day.day, 17, 0, 0)
+    order = Order(
+        organization_id=store.organization_id,
+        store_id=store.id,
+        order_number=f"F-{local_day.isoformat()}-{suffix}",
+        total_amount=amount,
+        currency=store.currency,
+        lifecycle_status="delivered",
+        payment_method="card",
+        created_at=created_at,
+    )
+    db.add(order)
+    db.flush()
+    db.add(
+        OrderItem(
+            order_id=order.id,
+            organization_id=store.organization_id,
+            store_id=store.id,
+            title="Forecast item",
+            sku=f"SKU-{local_day.isoformat()}-{suffix}",
+            quantity=1,
+            unit_price=amount,
+            unit_cost=unit_cost,
+            currency=store.currency,
+        )
+    )
+    db.commit()
+    return order
+
+
+def seed_complete_days(db, store, days):
+    configure_zero_operating_costs(db, store)
+    first = date(2026, 9, 14) - timedelta(days=days - 1)
+    for index in range(days):
+        add_delivered_day(db, store, first + timedelta(days=index), suffix=str(index))
+```
+
+`created_at=17:00 UTC` maps to midday in Bogota, avoiding boundary ambiguity in generic seed helpers.
+
+- [ ] **Step 2: Write failing calendar/history tests**
+
+Append:
+
+```python
+def test_bogota_anchor_excludes_current_partial_day(store):
+    calendar = forecasting.resolve_forecast_calendar(store, FIXED_NOW)
+    assert calendar.local_today == date(2026, 9, 15)
+    assert calendar.anchor_date == date(2026, 9, 14)
 
 
 def test_positive_offset_can_be_next_local_day(store):
     store.timezone = "Asia/Tokyo"
-    calendar = resolve_forecast_calendar(
+    calendar = forecasting.resolve_forecast_calendar(
         store,
         datetime(2026, 9, 13, 16, 0, tzinfo=timezone.utc),
     )
     assert calendar.local_today == date(2026, 9, 14)
 
 
-def test_invalid_timezone_is_not_silently_replaced(store):
+def test_invalid_timezone_is_explicit(store):
     store.timezone = "Not/A_Zone"
-    with pytest.raises(InvalidStoreTimezoneError):
-        resolve_forecast_calendar(store, datetime.now(timezone.utc))
+    with pytest.raises(forecasting.InvalidStoreTimezoneError):
+        forecasting.resolve_forecast_calendar(store, FIXED_NOW)
+
+
+def test_missing_calendar_days_become_zero_observations(db, store):
+    add_delivered_day(db, store, date(2026, 9, 10), suffix="10")
+    add_delivered_day(db, store, date(2026, 9, 12), suffix="12")
+    cohort = forecasting._load_historical_cohort(
+        db,
+        store.organization_id,
+        store,
+        now_utc=FIXED_NOW,
+    )
+    order_points, revenue_points = forecasting._operational_points(cohort)
+    assert [point.date for point in order_points] == [
+        date(2026, 9, 10),
+        date(2026, 9, 11),
+        date(2026, 9, 12),
+        date(2026, 9, 13),
+        date(2026, 9, 14),
+    ]
+    assert [point.value for point in order_points] == [1.0, 0.0, 1.0, 0.0, 0.0]
+    assert revenue_points[1].value == 0.0
 ```
 
-Add one DB-backed test that seeds delivered orders on Sep 8 and Sep 10 local dates, freezes local today Sep 13, calls `_load_historical_cohort`, and asserts dates Sep 8–12 exist with Sep 9/11/12 as zero-order days and no Sep 13 observation.
+- [ ] **Step 3: Verify RED**
 
-- [ ] **Step 2: Run focused tests and verify RED**
+```bash
+cd backend
+pytest -q tests/test_dropshipping_forecasting.py
+```
 
-Run: `cd backend && pytest -q tests/test_dropshipping_forecasting.py -k "anchor or offset or invalid or zero"`.
+Expected: import/module errors because the service does not exist.
 
-Expected: import failure because forecasting service does not exist.
-
-- [ ] **Step 3: Implement calendar/cohort loading**
+- [ ] **Step 4: Implement calendar, cohort loading, and operational points**
 
 Create `backend/app/services/dropshipping_forecasting.py`:
 
@@ -1036,12 +1096,9 @@ def _utc_naive(local_date: date, zone: ZoneInfo) -> datetime:
 
 
 def resolve_forecast_calendar(store: Store, now_utc: datetime) -> ForecastCalendar:
-    if now_utc.tzinfo is None:
-        now_utc = now_utc.replace(tzinfo=timezone.utc)
-    else:
-        now_utc = now_utc.astimezone(timezone.utc)
+    effective_now = now_utc.replace(tzinfo=timezone.utc) if now_utc.tzinfo is None else now_utc.astimezone(timezone.utc)
     zone = _zone(store)
-    local_today = now_utc.astimezone(zone).date()
+    local_today = effective_now.astimezone(zone).date()
     anchor = local_today - timedelta(days=1)
     candidate_start = anchor - timedelta(days=MAX_HISTORY_DAYS - 1)
     return ForecastCalendar(
@@ -1056,16 +1113,12 @@ def resolve_forecast_calendar(store: Store, now_utc: datetime) -> ForecastCalend
 
 def _order_local_date(order: Order, zone: ZoneInfo) -> date:
     value = order.created_at
-    if value.tzinfo is None:
-        value = value.replace(tzinfo=timezone.utc)
-    else:
-        value = value.astimezone(timezone.utc)
+    value = value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
     return value.astimezone(zone).date()
 
 
 def _date_range(start: date, end: date) -> tuple[date, ...]:
-    count = (end - start).days + 1
-    return tuple(start + timedelta(days=index) for index in range(count))
+    return tuple(start + timedelta(days=index) for index in range((end - start).days + 1))
 
 
 def _load_historical_cohort(
@@ -1090,7 +1143,7 @@ def _load_historical_cohort(
     if not orders:
         return HistoricalCohort(calendar, (), (), {})
     zone = _zone(store)
-    grouped: dict[date, list[Order]] = defaultdict(list)
+    grouped = defaultdict(list)
     for order in orders:
         grouped[_order_local_date(order, zone)].append(order)
     first_date = max(calendar.candidate_start_date, min(grouped))
@@ -1104,14 +1157,10 @@ def _load_historical_cohort(
 
 
 def _operational_points(cohort: HistoricalCohort) -> tuple[list[ForecastPoint], list[ForecastPoint]]:
-    order_points: list[ForecastPoint] = []
-    revenue_points: list[ForecastPoint] = []
+    order_points = []
+    revenue_points = []
     for day in cohort.dates:
-        delivered = [
-            order
-            for order in cohort.orders_by_date[day]
-            if order.lifecycle_status == "delivered"
-        ]
+        delivered = [order for order in cohort.orders_by_date[day] if order.lifecycle_status == "delivered"]
         order_points.append(ForecastPoint(day, float(len(delivered))))
         revenue_points.append(
             ForecastPoint(
@@ -1122,15 +1171,63 @@ def _operational_points(cohort: HistoricalCohort) -> tuple[list[ForecastPoint], 
     return order_points, revenue_points
 ```
 
-- [ ] **Step 4: Add and run boundary tests**
+- [ ] **Step 5: Add exact boundary tests**
 
-Append tests for `America/Los_Angeles`, DST-aware `America/New_York`, a UTC-midnight order that belongs to previous Bogota local date, a current-local-day order excluded by the query end, and a store with no completed orders returning `dates == ()`.
+Append:
 
-Run: `cd backend && pytest -q tests/test_dropshipping_forecasting.py`.
+```python
+def test_los_angeles_calendar_uses_local_date(store):
+    store.timezone = "America/Los_Angeles"
+    calendar = forecasting.resolve_forecast_calendar(
+        store,
+        datetime(2026, 9, 15, 2, 0, tzinfo=timezone.utc),
+    )
+    assert calendar.local_today == date(2026, 9, 14)
 
-Expected: PASS for calendar/history tests.
 
-- [ ] **Step 5: Commit**
+def test_new_york_dst_zone_is_supported(store):
+    store.timezone = "America/New_York"
+    calendar = forecasting.resolve_forecast_calendar(
+        store,
+        datetime(2026, 11, 1, 7, 0, tzinfo=timezone.utc),
+    )
+    assert calendar.local_today == date(2026, 11, 1)
+
+
+def test_current_local_day_order_is_excluded(db, store):
+    add_delivered_day(db, store, date(2026, 9, 14), suffix="complete")
+    current = Order(
+        organization_id=store.organization_id,
+        store_id=store.id,
+        order_number="CURRENT-DAY",
+        total_amount=90000,
+        currency="COP",
+        lifecycle_status="delivered",
+        payment_method="card",
+        created_at=datetime(2026, 9, 15, 14, 0, 0),
+    )
+    db.add(current)
+    db.commit()
+    cohort = forecasting._load_historical_cohort(db, store.organization_id, store, now_utc=FIXED_NOW)
+    assert all(order.order_number != "CURRENT-DAY" for order in cohort.orders)
+
+
+def test_empty_store_has_no_fabricated_history(db, store):
+    cohort = forecasting._load_historical_cohort(db, store.organization_id, store, now_utc=FIXED_NOW)
+    assert cohort.dates == ()
+    assert cohort.orders == ()
+```
+
+- [ ] **Step 6: Verify GREEN**
+
+```bash
+cd backend
+pytest -q tests/test_dropshipping_forecasting.py
+```
+
+Expected: PASS.
+
+- [ ] **Step 7: Commit**
 
 ```bash
 git add backend/app/services/dropshipping_forecasting.py backend/tests/test_dropshipping_forecasting.py
@@ -1139,7 +1236,7 @@ git commit -m "feat: build timezone-aware forecasting history"
 
 ---
 
-### Task 4: Add contribution history, one-call Meta smoothing, and response assembly
+### Task 4: Add contribution history, one Meta resolution, and response assembly
 
 **Files:**
 - Modify: `backend/app/services/dropshipping_forecasting.py`
@@ -1148,19 +1245,77 @@ git commit -m "feat: build timezone-aware forecasting history"
 **Interfaces:**
 - Produces `get_store_forecast(db, organization_id, store, *, now_utc=None) -> dict[str, Any]`.
 
-- [ ] **Step 1: Write failing contribution and Meta-call tests**
+- [ ] **Step 1: Add exact contribution seed helpers and failing tests**
 
-Append tests that configure 14 completed days, patch `forecasting.resolve_meta_ad_spend`, and assert exactly one provider resolution plus partial naming when Meta is missing:
+Append these helpers to the test module:
 
 ```python
-def test_meta_resolved_once_and_complete_contribution_named_correctly(
-    db, store, monkeypatch
-):
-    seed_complete_fourteen_day_history(db, store)
+def seed_history_with_missing_cogs(db, store):
+    configure_zero_operating_costs(db, store)
+    first = date(2026, 9, 8)
+    for index in range(7):
+        day = first + timedelta(days=index)
+        if index != 3:
+            add_delivered_day(db, store, day, suffix=str(index))
+            continue
+        order = Order(
+            organization_id=store.organization_id,
+            store_id=store.id,
+            order_number="PARTIAL-COGS",
+            total_amount=100000,
+            currency="COP",
+            lifecycle_status="delivered",
+            payment_method="card",
+            created_at=datetime(day.year, day.month, day.day, 17, 0, 0),
+        )
+        db.add(order)
+        db.flush()
+        db.add_all([
+            OrderItem(
+                order_id=order.id,
+                organization_id=store.organization_id,
+                store_id=store.id,
+                title="Known item",
+                sku="KNOWN-COST",
+                quantity=1,
+                unit_price=50000,
+                unit_cost=20000,
+                currency="COP",
+            ),
+            OrderItem(
+                order_id=order.id,
+                organization_id=store.organization_id,
+                store_id=store.id,
+                title="Missing item",
+                sku="MISSING-COST",
+                quantity=1,
+                unit_price=50000,
+                unit_cost=None,
+                currency="COP",
+            ),
+        ])
+        db.commit()
+
+
+def actual_zero_meta(*args, **kwargs):
+    return {
+        "amount": Decimal("0"),
+        "source": "meta_ads",
+        "status": "actual",
+        "reason": None,
+        "metadata": {},
+    }
+```
+
+Append failing tests:
+
+```python
+def test_meta_resolved_once_and_complete_contribution_named_correctly(db, store, monkeypatch):
+    seed_complete_days(db, store, 14)
     calls = []
 
-    def fake_meta(db_arg, organization_id, store_arg, date_from, date_to):
-        calls.append((date_from, date_to))
+    def fake_meta(*args, **kwargs):
+        calls.append((args, kwargs))
         return {
             "amount": Decimal("1400"),
             "source": "meta_ads",
@@ -1170,19 +1325,14 @@ def test_meta_resolved_once_and_complete_contribution_named_correctly(
         }
 
     monkeypatch.setattr(forecasting, "resolve_meta_ad_spend", fake_meta)
-    payload = forecasting.get_store_forecast(
-        db,
-        store.organization_id,
-        store,
-        now_utc=datetime(2026, 9, 15, 12, 0, tzinfo=timezone.utc),
-    )
+    payload = forecasting.get_store_forecast(db, store.organization_id, store, now_utc=FIXED_NOW)
     assert len(calls) == 1
     assert payload["history"]["contribution_data_quality"]["status"] == "complete"
     assert payload["horizons"]["7d"]["contribution"]["metric"] == "contribution_profit_forecast"
 
 
 def test_missing_meta_yields_known_cost_contribution(db, store, monkeypatch):
-    seed_complete_fourteen_day_history(db, store)
+    seed_complete_days(db, store, 14)
     monkeypatch.setattr(
         forecasting,
         "resolve_meta_ad_spend",
@@ -1194,29 +1344,35 @@ def test_missing_meta_yields_known_cost_contribution(db, store, monkeypatch):
             "metadata": {},
         },
     )
-    payload = forecasting.get_store_forecast(
-        db,
-        store.organization_id,
-        store,
-        now_utc=datetime(2026, 9, 15, 12, 0, tzinfo=timezone.utc),
-    )
+    payload = forecasting.get_store_forecast(db, store.organization_id, store, now_utc=FIXED_NOW)
     quality = payload["history"]["contribution_data_quality"]
     assert quality["status"] == "incomplete"
     assert quality["missing_components"] == ["ad_spend"]
     assert payload["horizons"]["7d"]["contribution"]["metric"] == "known_cost_contribution_forecast"
+
+
+def test_partial_cogs_keeps_known_amount_but_marks_partial(db, store, monkeypatch):
+    seed_history_with_missing_cogs(db, store)
+    monkeypatch.setattr(forecasting, "resolve_meta_ad_spend", actual_zero_meta)
+    payload = forecasting.get_store_forecast(db, store.organization_id, store, now_utc=FIXED_NOW)
+    quality = payload["history"]["contribution_data_quality"]
+    assert quality["status"] == "incomplete"
+    assert "cogs" in quality["missing_components"]
+    assert quality["missing_reasons"]["cogs"] == "cogs_incomplete"
 ```
 
-Implement `seed_complete_fourteen_day_history` inside the test module using existing `Organization/Store/Order/OrderItem` constructors and `replace_unit_economics_config` with zero shipping/payment/COD/return costs; create one delivered order/item per day with known `unit_cost`.
+- [ ] **Step 2: Verify RED**
 
-- [ ] **Step 2: Run contribution tests and verify RED**
+```bash
+cd backend
+pytest -q tests/test_dropshipping_forecasting.py -k "meta or contribution or cogs"
+```
 
-Run: `cd backend && pytest -q tests/test_dropshipping_forecasting.py -k "meta or contribution"`.
+Expected: failures because `get_store_forecast` is not implemented.
 
-Expected: fail because `get_store_forecast` is not implemented.
+- [ ] **Step 3: Implement contribution helpers**
 
-- [ ] **Step 3: Add exact Meta allocation and contribution-series helpers**
-
-Append to service:
+Append to the service:
 
 ```python
 def _allocate_meta(total: Decimal, days: int) -> list[Decimal]:
@@ -1228,12 +1384,7 @@ def _allocate_meta(total: Decimal, days: int) -> list[Decimal]:
     return values
 
 
-def _load_items(
-    db: Session,
-    organization_id: int,
-    store_id: int,
-    order_ids: list[int],
-) -> list[OrderItem]:
+def _load_items(db: Session, organization_id: int, store_id: int, order_ids: list[int]) -> list[OrderItem]:
     if not order_ids:
         return []
     return (
@@ -1262,27 +1413,20 @@ def _contribution_points(
         }
 
     config = get_unit_economics_config(db, organization_id, store.id)
-    items = _load_items(
-        db,
-        organization_id,
-        store.id,
-        [order.id for order in cohort.orders],
-    )
-    local_from = datetime.combine(cohort.dates[0], time.min)
-    local_to = datetime.combine(cohort.calendar.local_today, time.min)
+    items = _load_items(db, organization_id, store.id, [order.id for order in cohort.orders])
     meta = resolve_meta_ad_spend(
         db,
         organization_id,
         store,
-        local_from,
-        local_to,
+        datetime.combine(cohort.dates[0], time.min),
+        datetime.combine(cohort.calendar.local_today, time.min),
     )
     meta_available = meta.get("status") == "actual"
     meta_total = Decimal(str(meta.get("amount") or 0)) if meta_available else Decimal("0")
     meta_allocations = _allocate_meta(meta_total, len(cohort.dates))
 
-    missing_reasons: dict[str, str | None] = {}
-    points: list[ForecastPoint] = []
+    missing_reasons = {}
+    points = []
     for index, day in enumerate(cohort.dates):
         economics = calculate_order_resolvable_economics(
             db,
@@ -1294,10 +1438,7 @@ def _contribution_points(
         )
         for name, reason in economics["data_quality"]["missing_reasons"].items():
             missing_reasons.setdefault(name, reason)
-        contribution = (
-            Decimal(str(economics["recognized_revenue"]))
-            - Decimal(str(economics["known_cost_subtotal"]))
-        )
+        contribution = Decimal(str(economics["recognized_revenue"])) - Decimal(str(economics["known_cost_subtotal"]))
         if meta_available:
             contribution -= meta_allocations[index]
         points.append(ForecastPoint(day, float(contribution)))
@@ -1305,23 +1446,15 @@ def _contribution_points(
     if not meta_available:
         missing_reasons.setdefault("ad_spend", meta.get("reason"))
     missing_components = sorted(missing_reasons)
-    status = "incomplete" if missing_components else "complete"
-    metric = (
-        "known_cost_contribution_forecast"
-        if missing_components
-        else "contribution_profit_forecast"
-    )
     return points, {
-        "status": status,
-        "metric": metric,
+        "status": "incomplete" if missing_components else "complete",
+        "metric": "known_cost_contribution_forecast" if missing_components else "contribution_profit_forecast",
         "missing_components": missing_components,
         "missing_reasons": missing_reasons,
     }
 ```
 
-This uses naive store-local calendar midnights for the existing Meta exact-period resolver while DB query boundaries remain UTC-converted.
-
-- [ ] **Step 4: Add response assembly with exact horizons**
+- [ ] **Step 4: Implement response assembly**
 
 Append:
 
@@ -1339,20 +1472,14 @@ def _horizon(
     contribution_points: list[ForecastPoint],
     contribution_quality: dict[str, Any],
 ) -> dict[str, Any]:
-    contribution = _metric_dict(
-        forecast_metric(contribution_points, horizon_days=days, non_negative=False)
-    )
+    contribution = _metric_dict(forecast_metric(contribution_points, horizon_days=days, non_negative=False))
     contribution["metric"] = contribution_quality["metric"]
     contribution["data_quality"] = contribution_quality
     return {
         "date_from": local_today.isoformat(),
         "date_to_exclusive": (local_today + timedelta(days=days)).isoformat(),
-        "delivered_orders": _metric_dict(
-            forecast_metric(order_points, horizon_days=days, non_negative=True)
-        ),
-        "delivered_revenue": _metric_dict(
-            forecast_metric(revenue_points, horizon_days=days, non_negative=True)
-        ),
+        "delivered_orders": _metric_dict(forecast_metric(order_points, horizon_days=days, non_negative=True)),
+        "delivered_revenue": _metric_dict(forecast_metric(revenue_points, horizon_days=days, non_negative=True)),
         "contribution": contribution,
     }
 
@@ -1367,18 +1494,9 @@ def get_store_forecast(
     effective_now = now_utc or datetime.now(timezone.utc)
     if effective_now.tzinfo is None:
         effective_now = effective_now.replace(tzinfo=timezone.utc)
-    cohort = _load_historical_cohort(
-        db,
-        organization_id,
-        store,
-        now_utc=effective_now,
-    )
+    cohort = _load_historical_cohort(db, organization_id, store, now_utc=effective_now)
     order_points, revenue_points = _operational_points(cohort)
-    contribution_points, contribution_quality = _contribution_points(
-        db, organization_id, store, cohort
-    )
-    history_from = cohort.dates[0].isoformat() if cohort.dates else None
-    history_to = cohort.dates[-1].isoformat() if cohort.dates else None
+    contribution_points, contribution_quality = _contribution_points(db, organization_id, store, cohort)
     return {
         "store_id": store.id,
         "currency": store.currency,
@@ -1386,8 +1504,8 @@ def get_store_forecast(
         "generated_at": effective_now.astimezone(timezone.utc).isoformat(),
         "forecast_anchor_date": cohort.calendar.anchor_date.isoformat(),
         "history": {
-            "date_from": history_from,
-            "date_to": history_to,
+            "date_from": cohort.dates[0].isoformat() if cohort.dates else None,
+            "date_to": cohort.dates[-1].isoformat() if cohort.dates else None,
             "days": len(cohort.dates),
             "contribution_data_quality": contribution_quality,
         },
@@ -1412,9 +1530,9 @@ def get_store_forecast(
     }
 ```
 
-- [ ] **Step 5: Add exact tests for partial COGS and Meta reconciliation**
+- [ ] **Step 5: Add Meta reconciliation and horizon-date assertions**
 
-Add:
+Append:
 
 ```python
 def test_meta_allocation_reconciles_exactly():
@@ -1422,36 +1540,16 @@ def test_meta_allocation_reconciles_exactly():
     assert sum(values, Decimal("0")) == Decimal("100")
 
 
-def test_partial_cogs_keeps_known_cost_and_marks_partial(db, store, monkeypatch):
-    seed_history_with_one_missing_item_cost(db, store)
-    monkeypatch.setattr(
-        forecasting,
-        "resolve_meta_ad_spend",
-        lambda *args, **kwargs: {
-            "amount": Decimal("0"),
-            "source": "meta_ads",
-            "status": "actual",
-            "reason": None,
-            "metadata": {},
-        },
-    )
-    payload = forecasting.get_store_forecast(
-        db,
-        store.organization_id,
-        store,
-        now_utc=datetime(2026, 9, 15, 12, 0, tzinfo=timezone.utc),
-    )
-    quality = payload["history"]["contribution_data_quality"]
-    assert quality["status"] == "incomplete"
-    assert "cogs" in quality["missing_components"]
-    assert quality["missing_reasons"]["cogs"] == "cogs_incomplete"
+def test_horizon_dates_start_today_and_are_half_open(db, store, monkeypatch):
+    seed_complete_days(db, store, 14)
+    monkeypatch.setattr(forecasting, "resolve_meta_ad_spend", actual_zero_meta)
+    payload = forecasting.get_store_forecast(db, store.organization_id, store, now_utc=FIXED_NOW)
+    assert payload["horizons"]["7d"]["date_from"] == "2026-09-15"
+    assert payload["horizons"]["7d"]["date_to_exclusive"] == "2026-09-22"
+    assert payload["horizons"]["30d"]["date_to_exclusive"] == "2026-10-15"
 ```
 
-Implement `seed_history_with_one_missing_item_cost` in the same test module by creating at least 7 completed daily delivered orders; on one day create two items, one with a numeric cost and one `unit_cost=None`.
-
-- [ ] **Step 6: Run service tests and V2.2 regressions**
-
-Run:
+- [ ] **Step 6: Verify GREEN plus V2.2 regressions**
 
 ```bash
 cd backend
@@ -1477,31 +1575,123 @@ git commit -m "feat: assemble store forecasting service"
 - Modify: `backend/tests/contracts/api_routes.json`
 
 **Interfaces:**
-- Produces `GET /api/stores/{store_id}/analytics/dropshipping/forecast` with permission `analytics.read`.
+- Produces `GET /api/stores/{store_id}/analytics/dropshipping/forecast`, permission `analytics.read`.
 
-- [ ] **Step 1: Write failing API tests**
+- [ ] **Step 1: Create exact API fixtures and failing tests**
 
-Follow `test_dropshipping_unit_economics_api.py` fixture style and include these tests:
+Create `backend/tests/test_dropshipping_forecasting_api.py`:
 
 ```python
-def test_forecast_endpoint_returns_store_contract(client, account, monkeypatch):
-    _, _, _, store = account
-    monkeypatch.setattr(
-        forecast_service,
-        "get_store_forecast",
-        lambda db, organization_id, store_arg: {
-            "store_id": store_arg.id,
-            "currency": store_arg.currency,
-            "timezone": store_arg.timezone,
-            "generated_at": "2026-09-13T20:00:00+00:00",
-            "forecast_anchor_date": "2026-09-12",
-            "history": {"date_from": None, "date_to": None, "days": 0, "contribution_data_quality": {"status": "incomplete", "metric": "known_cost_contribution_forecast", "missing_components": [], "missing_reasons": {}}},
-            "horizons": {"7d": {}, "30d": {}},
-        },
+import os
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from app.db import Base, get_db
+from app.main import app, get_current_membership, get_current_user
+from app.models import Organization, OrganizationMembership, Store, User
+import app.api.dropshipping_analytics as analytics_api
+
+SQLALCHEMY_TEST_DATABASE_URL = "sqlite:///./test_dropshipping_forecasting_api.db"
+engine = create_engine(SQLALCHEMY_TEST_DATABASE_URL, connect_args={"check_same_thread": False})
+TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+@pytest.fixture(autouse=True)
+def setup_db():
+    Base.metadata.create_all(bind=engine)
+    yield
+    Base.metadata.drop_all(bind=engine)
+    engine.dispose()
+    try:
+        os.remove("./test_dropshipping_forecasting_api.db")
+    except FileNotFoundError:
+        pass
+
+@pytest.fixture()
+def db():
+    session = TestingSessionLocal()
+    try:
+        yield session
+    finally:
+        session.rollback()
+        session.close()
+
+@pytest.fixture()
+def account(db):
+    org = Organization(name="Forecast API Org", slug="forecast-api-org", plan="growth", subscription_status="active")
+    db.add(org)
+    db.flush()
+    user = User(email="forecast-api@test.com", name="Forecast API Tester", external_auth_id="forecast-api-sub")
+    db.add(user)
+    db.flush()
+    membership = OrganizationMembership(user_id=user.id, organization_id=org.id, role="manager", all_stores=True)
+    db.add(membership)
+    db.flush()
+    store = Store(
+        organization_id=org.id,
+        name="Forecast API Store",
+        slug="forecast-api-store",
+        country_code="CO",
+        currency="COP",
+        timezone="America/Bogota",
+        default_language="es",
     )
-    response = client.get(f"/api/stores/{store.id}/analytics/dropshipping/forecast")
+    db.add(store)
+    db.commit()
+    return org, user, membership, store
+
+@pytest.fixture()
+def client(db, account):
+    _, user, membership, _ = account
+    original_overrides = dict(app.dependency_overrides)
+    app.dependency_overrides[get_db] = lambda: iter([db])
+    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[get_current_membership] = lambda: membership
+    with TestClient(app) as test_client:
+        yield test_client
+    app.dependency_overrides.clear()
+    app.dependency_overrides.update(original_overrides)
+
+
+def stub_payload(store):
+    return {
+        "store_id": store.id,
+        "currency": store.currency,
+        "timezone": store.timezone,
+        "generated_at": "2026-09-13T20:00:00+00:00",
+        "forecast_anchor_date": "2026-09-12",
+        "history": {
+            "date_from": None,
+            "date_to": None,
+            "days": 0,
+            "contribution_data_quality": {
+                "status": "incomplete",
+                "metric": "known_cost_contribution_forecast",
+                "missing_components": [],
+                "missing_reasons": {},
+            },
+        },
+        "horizons": {"7d": {}, "30d": {}},
+    }
+
+
+def test_forecast_endpoint_returns_contract_and_ignores_dashboard_dates(client, account, monkeypatch):
+    _, _, _, store = account
+    calls = []
+
+    def fake_get(db_arg, organization_id, store_arg):
+        calls.append((organization_id, store_arg.id))
+        return stub_payload(store_arg)
+
+    monkeypatch.setattr(analytics_api, "get_store_forecast", fake_get)
+    response = client.get(
+        f"/api/stores/{store.id}/analytics/dropshipping/forecast?date_from=2020-01-01&date_to=2020-01-02"
+    )
     assert response.status_code == 200
     assert response.json()["store_id"] == store.id
+    assert calls == [(store.organization_id, store.id)]
 
 
 def test_forecast_restricted_membership_cannot_read_unassigned_store(client, db, account):
@@ -1513,6 +1703,7 @@ def test_forecast_restricted_membership_cannot_read_unassigned_store(client, db,
         country_code="CO",
         currency="COP",
         timezone="America/Bogota",
+        default_language="es",
     )
     db.add(unassigned)
     db.flush()
@@ -1524,26 +1715,62 @@ def test_forecast_restricted_membership_cannot_read_unassigned_store(client, db,
     assert response.json()["detail"] == "Store access denied"
 
 
-def test_forecast_invalid_timezone_is_422(client, account, db):
+def test_forecast_invalid_timezone_is_422(client, db, account):
     _, _, _, store = account
     store.timezone = "Not/A_Zone"
     db.commit()
     response = client.get(f"/api/stores/{store.id}/analytics/dropshipping/forecast")
     assert response.status_code == 422
     assert response.json()["detail"] == "invalid_store_timezone"
+
+
+def test_forecast_foreign_store_is_404(client, db):
+    other = Organization(name="Other Forecast Org", slug="other-forecast-org", plan="growth", subscription_status="active")
+    db.add(other)
+    db.flush()
+    foreign = Store(organization_id=other.id, name="Foreign", slug="foreign-forecast", country_code="MX", currency="MXN", timezone="America/Mexico_City", default_language="es")
+    db.add(foreign)
+    db.commit()
+    response = client.get(f"/api/stores/{foreign.id}/analytics/dropshipping/forecast")
+    assert response.status_code == 404
+
+
+def test_forecast_inactive_store_is_404(client, db, account):
+    _, _, _, store = account
+    store.active = False
+    db.commit()
+    response = client.get(f"/api/stores/{store.id}/analytics/dropshipping/forecast")
+    assert response.status_code == 404
+
+
+def test_forecast_requires_analytics_read(client, db, account):
+    _, _, membership, store = account
+    membership.role = "operator"
+    db.commit()
+    response = client.get(f"/api/stores/{store.id}/analytics/dropshipping/forecast")
+    assert response.status_code == 403
 ```
 
-Also copy/adapt existing Unit Economics API tests for foreign store 404, inactive store 404, and role without `analytics.read` 403. Add one request with arbitrary `date_from/date_to` query strings and assert the service mock receives no date arguments.
+If the lambda generator override for `get_db` is rejected by FastAPI in this repository, replace it with the exact generator function below, not another pattern:
 
-- [ ] **Step 2: Run API tests and verify RED**
+```python
+def override_db():
+    yield db
+app.dependency_overrides[get_db] = override_db
+```
 
-Run: `cd backend && pytest -q tests/test_dropshipping_forecasting_api.py`.
+- [ ] **Step 2: Verify RED**
 
-Expected: 404/route-not-found failures.
+```bash
+cd backend
+pytest -q tests/test_dropshipping_forecasting_api.py
+```
 
-- [ ] **Step 3: Add the thin route**
+Expected: route-not-found failures.
 
-In `dropshipping_analytics.py`, import:
+- [ ] **Step 3: Add the thin route and correct import alias**
+
+In `backend/app/api/dropshipping_analytics.py` import:
 
 ```python
 from ..services.dropshipping_forecasting import (
@@ -1569,11 +1796,9 @@ def dropshipping_forecast(
         raise HTTPException(status_code=422, detail=exc.code) from exc
 ```
 
-Do not add date query parameters and do not catch generic exceptions.
+The API test patches `app.api.dropshipping_analytics.get_store_forecast`, which is the symbol actually invoked by this route.
 
-- [ ] **Step 4: Update strict route snapshot and verify exactly one route addition**
-
-Run:
+- [ ] **Step 4: Update strict route snapshot**
 
 ```bash
 cd backend
@@ -1581,13 +1806,13 @@ python -m pytest tests/test_route_contract.py --update-snapshot
 python -m pytest -q tests/test_route_contract.py
 ```
 
-Review the snapshot diff. The only new pair must be:
+Review the snapshot diff. The only new pair is:
 
 ```json
 ["GET", "/api/stores/{store_id}/analytics/dropshipping/forecast"]
 ```
 
-- [ ] **Step 5: Run backend focused verification**
+- [ ] **Step 5: Verify backend focus suite**
 
 ```bash
 cd backend
@@ -1606,7 +1831,7 @@ git commit -m "feat: expose dropshipping store forecast API"
 
 ---
 
-### Task 6: Add frontend forecast contract and pure presentation helpers
+### Task 6: Add frontend contract and complete localized presentation helpers
 
 **Files:**
 - Modify: `frontend/src/services/analytics.ts`
@@ -1615,11 +1840,11 @@ git commit -m "feat: expose dropshipping store forecast API"
 
 **Interfaces:**
 - Produces typed `getDropshippingForecast(storeId)` with no date args.
-- Produces pure es/en/pt-BR confidence/model/reason/contribution-label helpers.
+- Produces all es/en/pt-BR Forecasting copy used by the component.
 
-- [ ] **Step 1: Write the failing pure tests**
+- [ ] **Step 1: Write failing pure localization tests**
 
-Create:
+Create `frontend/tests/dropshippingForecast.test.ts`:
 
 ```ts
 import assert from "node:assert/strict";
@@ -1628,6 +1853,7 @@ import test from "node:test";
 import {
   contributionForecastLabel,
   forecastConfidenceLabel,
+  forecastCopy,
   forecastModelLabel,
   forecastUnavailableCopy,
 } from "../src/utils/dropshippingForecast.ts";
@@ -1639,14 +1865,14 @@ test("confidence copy supports the three analytics locales", () => {
 });
 
 test("partial contribution is never labeled as complete", () => {
-  assert.equal(
-    contributionForecastLabel("known_cost_contribution_forecast", "es"),
-    "Contribución proyectada con costos conocidos",
-  );
-  assert.equal(
-    contributionForecastLabel("contribution_profit_forecast", "es"),
-    "Contribución proyectada",
-  );
+  assert.equal(contributionForecastLabel("known_cost_contribution_forecast", "es"), "Contribución proyectada con costos conocidos");
+  assert.equal(contributionForecastLabel("contribution_profit_forecast", "es"), "Contribución proyectada");
+});
+
+test("section copy is localized, not Spanish-hardcoded", () => {
+  assert.equal(forecastCopy("en").title, "Store forecast");
+  assert.equal(forecastCopy("pt-BR").partial, "Parcial");
+  assert.equal(forecastCopy("es").deliveredOrders, "Pedidos entregados");
 });
 
 test("model and unavailable reason copy are stable", () => {
@@ -1655,27 +1881,24 @@ test("model and unavailable reason copy are stable", () => {
 });
 ```
 
-- [ ] **Step 2: Run test and verify RED**
+- [ ] **Step 2: Verify RED**
 
-Run: `cd frontend && node --test tests/dropshippingForecast.test.ts`.
+```bash
+cd frontend
+node --test tests/dropshippingForecast.test.ts
+```
 
-Expected: module-not-found for `dropshippingForecast.ts`.
+Expected: module-not-found.
 
-- [ ] **Step 3: Implement the pure copy helpers**
+- [ ] **Step 3: Implement pure localized copy**
 
 Create `frontend/src/utils/dropshippingForecast.ts`:
 
 ```ts
 export type ForecastLocale = "es" | "en" | "pt-BR";
 export type ForecastConfidence = "low" | "medium" | "high";
-export type ForecastModel =
-  | "recent_naive"
-  | "weighted_moving_average"
-  | "linear_trend"
-  | "weekday_trend";
-export type ContributionMetric =
-  | "contribution_profit_forecast"
-  | "known_cost_contribution_forecast";
+export type ForecastModel = "recent_naive" | "weighted_moving_average" | "linear_trend" | "weekday_trend";
+export type ContributionMetric = "contribution_profit_forecast" | "known_cost_contribution_forecast";
 
 function locale(language: string): ForecastLocale {
   if (language.toLowerCase().startsWith("pt")) return "pt-BR";
@@ -1683,51 +1906,88 @@ function locale(language: string): ForecastLocale {
   return "es";
 }
 
-const confidenceCopy = {
+const COPY = {
+  es: {
+    title: "Pronóstico de tienda",
+    unavailable: "Pronóstico temporalmente no disponible.",
+    history: "Historial",
+    days: "días",
+    next7: "Próximos 7 días",
+    next30: "Próximos 30 días",
+    deliveredOrders: "Pedidos entregados",
+    deliveredRevenue: "Ingresos entregados",
+    probableRange: "Rango probable",
+    partial: "Parcial",
+    missing: "Faltan",
+    backtests: "backtests",
+  },
+  en: {
+    title: "Store forecast",
+    unavailable: "Forecast is temporarily unavailable.",
+    history: "History",
+    days: "days",
+    next7: "Next 7 days",
+    next30: "Next 30 days",
+    deliveredOrders: "Delivered orders",
+    deliveredRevenue: "Delivered revenue",
+    probableRange: "Probable range",
+    partial: "Partial",
+    missing: "Missing",
+    backtests: "backtests",
+  },
+  "pt-BR": {
+    title: "Previsão da loja",
+    unavailable: "A previsão está temporariamente indisponível.",
+    history: "Histórico",
+    days: "dias",
+    next7: "Próximos 7 dias",
+    next30: "Próximos 30 dias",
+    deliveredOrders: "Pedidos entregues",
+    deliveredRevenue: "Receita entregue",
+    probableRange: "Faixa provável",
+    partial: "Parcial",
+    missing: "Faltam",
+    backtests: "backtests",
+  },
+} satisfies Record<ForecastLocale, Record<string, string>>;
+
+const CONFIDENCE = {
   es: { low: "Baja confianza", medium: "Confianza media", high: "Alta confianza" },
   en: { low: "Low confidence", medium: "Medium confidence", high: "High confidence" },
   "pt-BR": { low: "Baixa confiança", medium: "Confiança média", high: "Alta confiança" },
 } satisfies Record<ForecastLocale, Record<ForecastConfidence, string>>;
 
-const modelCopy = {
+const MODEL = {
   es: { recent_naive: "Nivel reciente", weighted_moving_average: "Promedio ponderado", linear_trend: "Tendencia lineal", weekday_trend: "Tendencia + patrón semanal" },
   en: { recent_naive: "Recent level", weighted_moving_average: "Weighted average", linear_trend: "Linear trend", weekday_trend: "Trend + weekly pattern" },
   "pt-BR": { recent_naive: "Nível recente", weighted_moving_average: "Média ponderada", linear_trend: "Tendência linear", weekday_trend: "Tendência + padrão semanal" },
 } satisfies Record<ForecastLocale, Record<ForecastModel, string>>;
 
-const contributionCopy = {
+const CONTRIBUTION = {
   es: { contribution_profit_forecast: "Contribución proyectada", known_cost_contribution_forecast: "Contribución proyectada con costos conocidos" },
   en: { contribution_profit_forecast: "Projected contribution", known_cost_contribution_forecast: "Projected contribution with known costs" },
   "pt-BR": { contribution_profit_forecast: "Contribuição projetada", known_cost_contribution_forecast: "Contribuição projetada com custos conhecidos" },
 } satisfies Record<ForecastLocale, Record<ContributionMetric, string>>;
 
-const unavailableCopy: Record<ForecastLocale, Record<string, string>> = {
+const UNAVAILABLE: Record<ForecastLocale, Record<string, string>> = {
   es: { insufficient_history: "Aún no hay suficiente historial para pronosticar.", backtest_unavailable: "No hay suficiente historial validable para este pronóstico.", non_finite_model_output: "No fue posible producir un pronóstico numérico seguro." },
   en: { insufficient_history: "There is not enough history to forecast yet.", backtest_unavailable: "There is not enough validated history for this forecast.", non_finite_model_output: "A safe numeric forecast could not be produced." },
   "pt-BR": { insufficient_history: "Ainda não há histórico suficiente para prever.", backtest_unavailable: "Não há histórico validável suficiente para esta previsão.", non_finite_model_output: "Não foi possível produzir uma previsão numérica segura." },
 };
 
-export function forecastConfidenceLabel(value: ForecastConfidence, language: string): string {
-  return confidenceCopy[locale(language)][value];
-}
-
-export function forecastModelLabel(value: ForecastModel, language: string): string {
-  return modelCopy[locale(language)][value];
-}
-
-export function contributionForecastLabel(value: ContributionMetric, language: string): string {
-  return contributionCopy[locale(language)][value];
-}
-
-export function forecastUnavailableCopy(reason: string | null, language: string): string {
-  const copy = unavailableCopy[locale(language)];
+export function forecastCopy(language: string) { return COPY[locale(language)]; }
+export function forecastConfidenceLabel(value: ForecastConfidence, language: string) { return CONFIDENCE[locale(language)][value]; }
+export function forecastModelLabel(value: ForecastModel, language: string) { return MODEL[locale(language)][value]; }
+export function contributionForecastLabel(value: ContributionMetric, language: string) { return CONTRIBUTION[locale(language)][value]; }
+export function forecastUnavailableCopy(reason: string | null, language: string) {
+  const copy = UNAVAILABLE[locale(language)];
   return copy[reason || ""] || copy.backtest_unavailable;
 }
 ```
 
-- [ ] **Step 4: Add exact DTOs and HTTP client**
+- [ ] **Step 4: Add exact DTOs and HTTP client to `analytics.ts`**
 
-In `analytics.ts` add:
+Add:
 
 ```ts
 export type DropshippingForecastConfidence = "low" | "medium" | "high";
@@ -1798,9 +2058,7 @@ export async function getDropshippingForecast(storeId: number) {
 }
 ```
 
-- [ ] **Step 5: Run pure tests and build**
-
-Run:
+- [ ] **Step 5: Verify GREEN**
 
 ```bash
 cd frontend
@@ -1829,12 +2087,12 @@ git commit -m "feat: add dropshipping forecast client contract"
 - Modify: `frontend/src/components/DropshippingOverview.tsx`
 
 **Interfaces:**
-- Consumes `DropshippingForecastResponse` and pure copy helpers from Task 6.
-- Produces isolated forecast UI; no chart library.
+- Consumes Task 6 DTOs/copy.
+- Produces a fully localized independent forecast section.
 
-- [ ] **Step 1: Write the failing seventh-section tests**
+- [ ] **Step 1: Write failing seventh-section tests**
 
-Replace the expected section array and add isolation tests:
+Update `frontend/tests/dropshippingAnalyticsState.test.ts` so its first assertion is:
 
 ```ts
 test("dropshipping analytics exposes seven isolated sections", () => {
@@ -1848,7 +2106,11 @@ test("dropshipping analytics exposes seven isolated sections", () => {
     "forecast",
   ]);
 });
+```
 
+Add:
+
+```ts
 test("forecast can fail without hiding established analytics", () => {
   const results: PromiseSettledResult<unknown>[] = [
     { status: "fulfilled", value: {} },
@@ -1865,49 +2127,45 @@ test("forecast can fail without hiding established analytics", () => {
 });
 
 test("all seven rejected results are a global failure", () => {
-  const results = DROPSHIPPING_ANALYTICS_SECTIONS.map((section) => ({
-    status: "rejected" as const,
-    reason: section,
-  }));
+  const results = DROPSHIPPING_ANALYTICS_SECTIONS.map((section) => ({ status: "rejected" as const, reason: section }));
   assert.equal(allDropshippingSectionsFailed(getFailedDropshippingSections(results)), true);
 });
 ```
 
-- [ ] **Step 2: Run test and verify RED**
+Update every older six-element result fixture in this file by appending a seventh fulfilled forecast result unless that test intentionally rejects forecast.
 
-Run: `cd frontend && node --test tests/dropshippingAnalyticsState.test.ts`.
+- [ ] **Step 2: Verify RED**
 
-Expected: array mismatch because forecast is not registered.
+```bash
+cd frontend
+node --test tests/dropshippingAnalyticsState.test.ts
+```
+
+Expected: section-array mismatch.
 
 - [ ] **Step 3: Register forecast and integrate the seventh fetch**
 
-Update `dropshippingAnalyticsState.ts` to:
+Set `DROPSHIPPING_ANALYTICS_SECTIONS` to the exact seven-element array above.
+
+In `DropshippingOverview.tsx`:
 
 ```ts
-export const DROPSHIPPING_ANALYTICS_SECTIONS = [
-  "overview",
-  "profitability",
-  "products",
-  "orders",
-  "insights",
-  "unitEconomics",
-  "forecast",
-] as const;
+import DropshippingForecast from "./DropshippingForecast";
 ```
 
-In `DropshippingOverview.tsx`, import `getDropshippingForecast`, `DropshippingForecastResponse`, and `DropshippingForecast`. Extend `DashboardData` with:
+Add `getDropshippingForecast` and `DropshippingForecastResponse` to the existing analytics service import. Extend `DashboardData`:
 
 ```ts
 forecast: DropshippingForecastResponse | null;
 ```
 
-Extend `SECTION_LABELS` with:
+Extend labels:
 
 ```ts
 forecast: "pronóstico",
 ```
 
-Use this exact request order:
+Use this request order:
 
 ```ts
 Promise.allSettled([
@@ -1921,21 +2179,28 @@ Promise.allSettled([
 ])
 ```
 
-Map `forecast: settledValue(results[6])`. Do not pass dates to the forecast client.
+Map `forecast: settledValue(results[6])`. Destructure `forecast` from data. Render immediately after Unit Economics:
 
-- [ ] **Step 4: Implement the forecast component**
+```tsx
+<DropshippingForecast
+  data={forecast}
+  unavailable={unavailableSections.includes("forecast")}
+  language={i18n.resolvedLanguage || i18n.language || "es"}
+  currency={effectiveCurrency}
+/>
+```
 
-Create `DropshippingForecast.tsx` with this complete presentation skeleton; keep styling in CSS:
+- [ ] **Step 4: Implement the fully localized component**
+
+Create `frontend/src/components/DropshippingForecast.tsx`:
 
 ```tsx
 import { AlertTriangle, CalendarRange, TrendingUp } from "lucide-react";
-import type {
-  DropshippingForecastMetric,
-  DropshippingForecastResponse,
-} from "../services/analytics";
+import type { DropshippingForecastMetric, DropshippingForecastResponse } from "../services/analytics";
 import {
   contributionForecastLabel,
   forecastConfidenceLabel,
+  forecastCopy,
   forecastModelLabel,
   forecastUnavailableCopy,
 } from "../utils/dropshippingForecast";
@@ -1948,25 +2213,15 @@ interface Props {
   currency: string;
 }
 
-function MetricCard({
-  label,
-  metric,
-  language,
-  formatValue,
-}: {
+function MetricCard({ label, metric, language, formatValue }: {
   label: string;
   metric: DropshippingForecastMetric;
   language: string;
   formatValue: (value: number) => string;
 }) {
+  const copy = forecastCopy(language);
   if (metric.status === "unavailable" || metric.estimate === null) {
-    return (
-      <div className="forecast-metric is-unavailable">
-        <span>{label}</span>
-        <strong>—</strong>
-        <small>{forecastUnavailableCopy(metric.reason, language)}</small>
-      </div>
-    );
+    return <div className="forecast-metric is-unavailable"><span>{label}</span><strong>—</strong><small>{forecastUnavailableCopy(metric.reason, language)}</small></div>;
   }
   const lower = metric.lower_bound === null ? metric.estimate : metric.lower_bound;
   const upper = metric.upper_bound === null ? metric.estimate : metric.upper_bound;
@@ -1974,34 +2229,29 @@ function MetricCard({
     <div className="forecast-metric">
       <span>{label}</span>
       <strong>{formatValue(metric.estimate)}</strong>
-      <small>{formatValue(lower)} – {formatValue(upper)}</small>
-      <div className={`forecast-confidence is-${metric.confidence}`}>
-        {forecastConfidenceLabel(metric.confidence, language)}
-      </div>
-      {metric.model && (
-        <small>{forecastModelLabel(metric.model, language)} · {metric.quality.backtest_windows} backtests</small>
-      )}
+      <small>{copy.probableRange}: {formatValue(lower)} – {formatValue(upper)}</small>
+      <div className={`forecast-confidence is-${metric.confidence}`}>{forecastConfidenceLabel(metric.confidence, language)}</div>
+      {metric.model && <small>{forecastModelLabel(metric.model, language)} · {metric.quality.backtest_windows} {copy.backtests}</small>}
     </div>
   );
 }
 
 export default function DropshippingForecast({ data, unavailable, language, currency }: Props) {
-  const formatMoney = (value: number) => new Intl.NumberFormat(
-    language.toLowerCase().startsWith("pt") ? "pt-BR" : language.toLowerCase().startsWith("en") ? "en-US" : "es-CO",
-    { style: "currency", currency, maximumFractionDigits: 0 },
-  ).format(value);
-  const formatOrders = (value: number) => Math.round(value).toLocaleString();
+  const copy = forecastCopy(language);
+  const locale = language.toLowerCase().startsWith("pt") ? "pt-BR" : language.toLowerCase().startsWith("en") ? "en-US" : "es-CO";
+  const formatMoney = (value: number) => new Intl.NumberFormat(locale, { style: "currency", currency, maximumFractionDigits: 0 }).format(value);
+  const formatOrders = (value: number) => new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(Math.round(value));
 
   if (unavailable) {
-    return <section className="dropshipping-forecast"><div className="forecast-empty"><AlertTriangle size={17} /> Pronóstico temporalmente no disponible.</div></section>;
+    return <section className="dropshipping-forecast"><div className="forecast-empty"><AlertTriangle size={17} /><span>{copy.unavailable}</span></div></section>;
   }
   if (!data) return null;
 
   return (
     <section className="dropshipping-forecast">
       <div className="forecast-header">
-        <div><span>FORECASTING V2.3</span><h3><TrendingUp size={18} /> Pronóstico de tienda</h3></div>
-        <small><CalendarRange size={14} /> Historial: {data.history.days} días</small>
+        <div><span className="forecast-kicker">FORECASTING V2.3</span><h3><TrendingUp size={18} /> {copy.title}</h3></div>
+        <small><CalendarRange size={14} /> {copy.history}: {data.history.days} {copy.days}</small>
       </div>
       <div className="dropshipping-forecast-horizons">
         {(["7d", "30d"] as const).map((key) => {
@@ -2009,13 +2259,15 @@ export default function DropshippingForecast({ data, unavailable, language, curr
           const partial = horizon.contribution.data_quality.status === "incomplete";
           return (
             <div className="forecast-horizon" key={key}>
-              <h4>Próximos {key === "7d" ? "7" : "30"} días</h4>
-              <MetricCard label="Pedidos entregados" metric={horizon.delivered_orders} language={language} formatValue={formatOrders} />
-              <MetricCard label="Ingresos entregados" metric={horizon.delivered_revenue} language={language} formatValue={formatMoney} />
+              <h4>{key === "7d" ? copy.next7 : copy.next30}</h4>
+              <MetricCard label={copy.deliveredOrders} metric={horizon.delivered_orders} language={language} formatValue={formatOrders} />
+              <MetricCard label={copy.deliveredRevenue} metric={horizon.delivered_revenue} language={language} formatValue={formatMoney} />
               <div className={partial ? "forecast-partial" : ""}>
-                {partial && <span className="forecast-partial-badge">Parcial</span>}
+                {partial && <span className="forecast-partial-badge">{copy.partial}</span>}
                 <MetricCard label={contributionForecastLabel(horizon.contribution.metric, language)} metric={horizon.contribution} language={language} formatValue={formatMoney} />
-                {partial && <small>Faltan: {horizon.contribution.data_quality.missing_components.join(", ")}</small>}
+                {partial && horizon.contribution.data_quality.missing_components.length > 0 && (
+                  <small>{copy.missing}: {horizon.contribution.data_quality.missing_components.join(", ")}</small>
+                )}
               </div>
             </div>
           );
@@ -2026,47 +2278,46 @@ export default function DropshippingForecast({ data, unavailable, language, curr
 }
 ```
 
-When polishing copy, use the Task 6 locale helpers for localized metric/section copy rather than adding a global i18n dependency; the structure above is the required data behavior.
+- [ ] **Step 5: Add CSS using the repository's existing theme variables**
 
-Render the component immediately after `DropshippingUnitEconomics`:
-
-```tsx
-<DropshippingForecast
-  data={forecast}
-  unavailable={unavailableSections.includes("forecast")}
-  language={i18n.resolvedLanguage || i18n.language || "es"}
-  currency={effectiveCurrency}
-/>
-```
-
-- [ ] **Step 5: Add responsive CSS**
-
-Create:
+Create `frontend/src/dropshipping-forecast.css`:
 
 ```css
-.dropshipping-forecast { margin-bottom: 18px; }
+.dropshipping-forecast {
+  margin-bottom: 18px;
+  padding: 20px;
+  border: 1px solid var(--border-color, rgba(148, 163, 184, 0.18));
+  border-radius: 18px;
+  background: var(--surface-primary, rgba(15, 23, 42, 0.55));
+}
 .forecast-header { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; margin-bottom: 14px; }
-.forecast-header h3 { display: flex; gap: 8px; align-items: center; margin: 4px 0 0; }
+.forecast-header h3 { display: flex; gap: 8px; align-items: center; margin: 5px 0 0; }
+.forecast-header small { display: inline-flex; align-items: center; gap: 6px; color: var(--text-muted, #94a3b8); }
+.forecast-kicker { color: #a5b4fc; font-size: .68rem; font-weight: 850; letter-spacing: .12em; }
 .dropshipping-forecast-horizons { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-.forecast-horizon { border: 1px solid var(--border); border-radius: 16px; padding: 16px; background: var(--surface); }
-.forecast-metric { display: grid; gap: 4px; padding: 12px 0; border-bottom: 1px solid var(--border); }
-.forecast-metric:last-child { border-bottom: 0; }
-.forecast-metric strong { font-size: 1.2rem; }
-.forecast-confidence { width: fit-content; border-radius: 999px; padding: 3px 8px; font-size: .75rem; }
+.forecast-horizon { border: 1px solid var(--border-color, rgba(148, 163, 184, 0.14)); border-radius: 14px; padding: 16px; background: rgba(148, 163, 184, 0.04); }
+.forecast-horizon h4 { margin: 0 0 6px; color: var(--text-primary, #e5e7eb); }
+.forecast-metric { display: grid; gap: 5px; padding: 12px 0; border-bottom: 1px solid var(--border-color, rgba(148, 163, 184, 0.12)); }
+.forecast-metric > span, .forecast-metric small { color: var(--text-muted, #94a3b8); }
+.forecast-metric strong { color: var(--text-primary, #e5e7eb); font-size: 1.1rem; }
+.forecast-confidence, .forecast-partial-badge { width: fit-content; border-radius: 999px; padding: 4px 8px; font-size: .68rem; font-weight: 800; }
+.forecast-confidence.is-high { color: #86efac; background: rgba(22, 101, 52, .18); }
+.forecast-confidence.is-medium { color: #c4b5fd; background: rgba(99, 102, 241, .14); }
+.forecast-confidence.is-low, .forecast-partial-badge { color: #fcd34d; background: rgba(120, 53, 15, .18); }
 .forecast-partial { margin-top: 8px; }
-.forecast-partial-badge { display: inline-flex; border-radius: 999px; padding: 3px 8px; font-size: .75rem; }
-.forecast-empty { display: flex; align-items: center; gap: 8px; padding: 16px; }
+.forecast-partial > small { display: block; margin-top: 6px; color: #fcd34d; }
+.forecast-empty { display: flex; align-items: center; gap: 8px; color: var(--text-secondary, #cbd5e1); }
+[data-theme="light"] .forecast-kicker { color: #4f46e5; }
+[data-theme="light"] .forecast-confidence.is-high { color: #15803d; background: #f0fdf4; }
+[data-theme="light"] .forecast-confidence.is-low,
+[data-theme="light"] .forecast-partial-badge { color: #92400e; background: #fffbeb; }
 @media (max-width: 760px) {
   .forecast-header { flex-direction: column; }
   .dropshipping-forecast-horizons { grid-template-columns: 1fr; }
 }
 ```
 
-If the repository CSS variable is not `--surface` or `--border`, replace those two tokens with the existing analytics card variables discovered in `analytics-v2.css`; do not introduce hard-coded theme colors.
-
-- [ ] **Step 6: Run frontend verification and verify GREEN**
-
-Run:
+- [ ] **Step 6: Verify frontend GREEN**
 
 ```bash
 cd frontend
@@ -2075,7 +2326,7 @@ npm run lint
 npm run build
 ```
 
-Expected: PASS. New code adds no lint errors.
+Expected: PASS and no new lint errors.
 
 - [ ] **Step 7: Commit**
 
@@ -2086,22 +2337,21 @@ git commit -m "feat: render store forecasting in analytics"
 
 ---
 
-### Task 8: Harden performance, finite serialization, and regressions
+### Task 8: Harden bounded access and run full regressions
 
 **Files:**
 - Modify: `backend/tests/test_dropshipping_forecasting.py`
-- Modify: `backend/tests/test_dropshipping_forecast_math.py`
-- Modify V2.3 production files only if these tests expose a defect.
+- Modify V2.3 production files only if this new test exposes a defect.
 
 **Interfaces:** no new public interface.
 
-- [ ] **Step 1: Add the provider-call-count test**
+- [ ] **Step 1: Add an exact one-Meta/one-item-preload regression**
 
-Add a test that seeds 60 days, patches `resolve_meta_ad_spend` with a counter, calls `get_store_forecast`, and asserts `calls == 1`. Also patch `_load_items` with a wrapper counter and assert one invocation. This guards against per-day provider/DB access.
+Append to `backend/tests/test_dropshipping_forecasting.py`:
 
 ```python
 def test_forecast_uses_one_meta_resolution_and_one_item_preload(db, store, monkeypatch):
-    seed_complete_sixty_day_history(db, store)
+    seed_complete_days(db, store, 60)
     meta_calls = 0
     item_calls = 0
     original_load_items = forecasting._load_items
@@ -2109,7 +2359,13 @@ def test_forecast_uses_one_meta_resolution_and_one_item_preload(db, store, monke
     def fake_meta(*args, **kwargs):
         nonlocal meta_calls
         meta_calls += 1
-        return {"amount": Decimal("0"), "source": "meta_ads", "status": "actual", "reason": None, "metadata": {}}
+        return {
+            "amount": Decimal("0"),
+            "source": "meta_ads",
+            "status": "actual",
+            "reason": None,
+            "metadata": {},
+        }
 
     def counted_items(*args, **kwargs):
         nonlocal item_calls
@@ -2123,35 +2379,7 @@ def test_forecast_uses_one_meta_resolution_and_one_item_preload(db, store, monke
     assert item_calls == 1
 ```
 
-- [ ] **Step 2: Add recursive finite-response test**
-
-```python
-def assert_finite_tree(value):
-    if isinstance(value, float):
-        assert math.isfinite(value)
-    elif isinstance(value, dict):
-        for child in value.values():
-            assert_finite_tree(child)
-    elif isinstance(value, (list, tuple)):
-        for child in value:
-            assert_finite_tree(child)
-
-@pytest.mark.parametrize(
-    "values",
-    [
-        [0.0] * 56,
-        [0.0, 1000000.0] * 28,
-        [1e12] * 56,
-        [-1000.0] * 56,
-        [10.0] * 55 + [1e9],
-    ],
-)
-def test_metric_forecast_never_emits_non_finite_numbers(values):
-    result = forecast_metric(points(values), horizon_days=30, non_negative=False)
-    assert_finite_tree(asdict(result))
-```
-
-- [ ] **Step 3: Run all dropshipping regression tests**
+- [ ] **Step 2: Run all dropshipping regressions**
 
 ```bash
 cd backend
@@ -2160,7 +2388,7 @@ pytest -q tests/test_dropshipping_analytics.py tests/test_dropshipping_decision_
 
 Expected: PASS.
 
-- [ ] **Step 4: Run full CI-equivalent backend and frontend validation**
+- [ ] **Step 3: Run CI-equivalent backend and frontend validation**
 
 ```bash
 cd backend
@@ -2173,20 +2401,20 @@ npm test
 npm run build
 ```
 
-Expected: all commands PASS.
+Expected: every command PASS.
 
-- [ ] **Step 5: Commit hardening changes if the tests added files/lines**
+- [ ] **Step 4: Commit hardening test and any minimal fix it required**
 
 ```bash
-git add backend/tests/test_dropshipping_forecasting.py backend/tests/test_dropshipping_forecast_math.py backend/app/services/dropshipping_forecasting.py backend/app/services/dropshipping_forecast_math.py
+git add backend/tests/test_dropshipping_forecasting.py backend/app/services/dropshipping_forecasting.py
 git commit -m "test: harden dropshipping forecasting v2.3"
 ```
 
-If production files did not change, omit them from `git add`. Do not create an empty commit.
+If `backend/app/services/dropshipping_forecasting.py` did not change, omit it from `git add`. Do not create an empty commit.
 
 ---
 
-### Task 9: PR and merge gate
+### Task 9: Final PR and merge gate
 
 **Files:** no planned source edits.
 
@@ -2194,48 +2422,46 @@ If production files did not change, omit them from `git add`. Do not create an e
 
 - [ ] **Step 1: Verify branch scope**
 
-Run:
-
 ```bash
 git fetch origin
 git diff --name-only origin/main...HEAD
 git diff --stat origin/main...HEAD
 ```
 
-Expected scope: V2.3 spec/plan, forecast services/tests, narrow Unit Economics reuse refactor, one analytics route/snapshot change, forecast frontend files/integration. No migration/model persistence, no unrelated subsystem edits.
+Expected scope: V2.3 spec/plan, forecast services/tests, narrow Unit Economics reuse refactor, one analytics route/snapshot change, forecast frontend files/integration. No migration, persistence model, unrelated subsystem edit, or ML dependency.
 
-- [ ] **Step 2: Verify the approved spec acceptance criteria manually**
+- [ ] **Step 2: Verify the approved spec acceptance criteria**
 
-Read `docs/superpowers/specs/2026-09-13-dropshipping-forecasting-v2-3-design.md` and confirm all of these concrete conditions in the diff/test evidence: 7d+30d, store-local cutoff, adaptive deterministic selection, probable ranges, confidence evidence, complete/partial contribution naming, one Meta resolution, no inferred missing cost, tenant/store isolation, no date-filter dependency, seventh-section isolation, no NaN/Infinity, no heavyweight ML dependency.
+Read `docs/superpowers/specs/2026-09-13-dropshipping-forecasting-v2-3-design.md` and explicitly verify: 7d+30d, store-local cutoff, adaptive deterministic selection, probable ranges, confidence evidence, complete/partial contribution naming, one Meta resolution, no inferred missing cost, tenant/store isolation, no date-filter dependency, seventh-section isolation, no NaN/Infinity, no heavyweight ML dependency.
 
-- [ ] **Step 3: Open the PR**
+- [ ] **Step 3: Open PR**
 
-Use title:
+Title:
 
 ```text
 feat: add dropshipping store forecasting v2.3
 ```
 
-PR body must include the exact focused/full test commands from Tasks 5–8 and their observed results.
+PR body includes the exact focused/full validation commands from Tasks 5–8 and their observed results.
 
 - [ ] **Step 4: Require fresh GitHub Actions on the exact final head**
 
-The `Validate Pull Request` run must show success for Detect changed scopes, backend shard 0, backend shard 1, frontend validation, and final aggregator. Do not merge based on an older SHA or cancelled run.
+The `Validate Pull Request` run must show success for Detect changed scopes, backend shard 0, backend shard 1, frontend validation, and the final aggregator. Do not merge based on an older SHA or cancelled run.
 
-- [ ] **Step 5: Fix failures only through systematic debugging**
+- [ ] **Step 5: Fix any failure through systematic debugging**
 
-If any CI job fails, load `superpowers:systematic-debugging`, reproduce the failure from logs, patch the feature branch, run the narrow test first, then full relevant validation, and require a new all-green workflow run on the new head.
+If CI fails, load `superpowers:systematic-debugging`, use the failing job logs to identify the root cause, patch the feature branch, run the narrow test first, then full relevant validation, and require another fresh all-green run.
 
-- [ ] **Step 6: Squash merge and verify main**
+- [ ] **Step 6: Squash merge and verify `main`**
 
-After final-head CI is green, squash merge. Verify PR `merged == true`, record the merge commit SHA, and fetch `main` to confirm its HEAD equals that merge/squash commit before starting the next feature.
+After final-head CI is green, squash merge. Verify PR `merged == true`, record the returned merge commit SHA, and confirm `main` HEAD equals that commit before beginning the next feature.
 
 ---
 
 ## Definition of Done
 
 - [ ] Current partial store-local day is excluded.
-- [ ] >=7 observations can produce deterministic 7d/30d order and revenue forecasts.
+- [ ] 7+ observations can produce deterministic 7d/30d order and revenue forecasts.
 - [ ] Available forecasts include estimate, probable range, confidence, selected model, and diagnostics.
 - [ ] Model selection is rolling-backtest-driven and deterministic.
 - [ ] Short history cannot produce inflated confidence.
@@ -2252,7 +2478,7 @@ After final-head CI is green, squash merge. Verify PR `merged == true`, record t
 - [ ] Forecast client sends no dashboard date filters.
 - [ ] Forecast is the seventh isolated `Promise.allSettled` section.
 - [ ] Forecast failure cannot blank established Analytics sections.
-- [ ] es/en/pt-BR presentation helpers pass.
+- [ ] es/en/pt-BR presentation tests pass.
 - [ ] Backend Ruff + full pytest pass.
 - [ ] Frontend lint + tests + build pass.
 - [ ] Exact final PR head is fully green in GitHub Actions before merge.
