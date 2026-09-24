@@ -92,7 +92,7 @@ from .api.nuvemshop import router as nuvemshop_router  # noqa: E402
 from .api.payments import router as payments_router  # noqa: E402
 from .api.shopify import router as shopify_router  # noqa: E402
 from .api.dropshipping_analytics import router as dropshipping_analytics_router  # noqa: E402
-from .api.stores import router as stores_router  # noqa: E402
+from .api.stores import router as stores_router  # noqa: E402\nfrom .api.suppliers import router as suppliers_router  # noqa: E402
 from .api.telegram import router as telegram_router  # noqa: E402
 from .api.unit_economics import router as unit_economics_router  # noqa: E402
 from .api.whatsapp import router as whatsapp_router  # noqa: E402
@@ -100,7 +100,7 @@ from .api.whatsapp import router as whatsapp_router  # noqa: E402
 app.include_router(health_router)
 app.include_router(auth_router)
 app.include_router(organizations_router)
-app.include_router(stores_router)
+app.include_router(stores_router)\napp.include_router(suppliers_router)
 app.include_router(unit_economics_router)
 app.include_router(customers_router)
 app.include_router(customer_risk_router)

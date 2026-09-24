@@ -16,7 +16,7 @@ from app.db_config import DATABASE_URL
 from app import models  # noqa: F401
 from app import telegram_models  # noqa: F401
 from app.model_domains import customer_risk  # noqa: F401
-from app.model_domains import sales_attribution  # noqa: F401
+from app.model_domains import sales_attribution  # noqa: F401\nfrom app.model_domains import supplier_integrations  # noqa: F401
 
 config = context.config
 
