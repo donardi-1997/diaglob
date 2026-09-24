@@ -292,3 +292,56 @@ def calculate_freight(
         json_body=body,
     )
     return payload.get("data") or []
+
+
+def create_order_v3(
+    access_token: str,
+    order_payload: dict[str, Any],
+) -> dict[str, Any]:
+    payload = _request(
+        "POST",
+        "/shopping/order/createOrderV3",
+        access_token=access_token,
+        json_body=order_payload,
+    )
+    return payload.get("data") or {}
+
+
+def get_order(
+    access_token: str,
+    order_id: str,
+    *,
+    features: list[str] | None = None,
+) -> dict[str, Any]:
+    order_id = (order_id or "").strip()
+    if not order_id:
+        raise ValueError("CJ order id is required")
+
+    params: dict[str, Any] = {"orderId": order_id}
+    if features:
+        params["features"] = features
+
+    payload = _request(
+        "GET",
+        "/shopping/order/getOrderDetail",
+        access_token=access_token,
+        params=params,
+    )
+    return payload.get("data") or {}
+
+
+def delete_order(
+    access_token: str,
+    order_id: str,
+) -> bool:
+    order_id = (order_id or "").strip()
+    if not order_id:
+        raise ValueError("CJ order id is required")
+
+    payload = _request(
+        "DELETE",
+        "/shopping/order/deleteOrder",
+        access_token=access_token,
+        params={"orderId": order_id},
+    )
+    return bool(payload.get("data"))

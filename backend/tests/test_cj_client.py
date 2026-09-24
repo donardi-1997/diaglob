@@ -157,3 +157,56 @@ def test_calculate_freight_maps_variant_ids(monkeypatch):
         "zip": "10001",
         "products": [{"vid": "vid-1", "quantity": 2}],
     }
+
+
+def test_create_order_v3_uses_explicit_payload(monkeypatch):
+    calls = install_fake_client(
+        monkeypatch,
+        FakeResponse(
+            200,
+            {
+                "code": 200,
+                "data": {
+                    "orderId": "cj-1",
+                    "orderNumber": "DG-1-1",
+                    "orderStatus": "CREATED",
+                },
+            },
+        ),
+    )
+    body = {
+        "orderNumber": "DG-1-1",
+        "payType": 3,
+        "isSandbox": 1,
+        "products": [{"vid": "vid-1", "quantity": 1}],
+    }
+
+    result = cj.create_order_v3("token", body)
+
+    assert result["orderId"] == "cj-1"
+    assert calls[0][1].endswith("/shopping/order/createOrderV3")
+    assert calls[0][2]["json"] == body
+
+
+def test_get_order_accepts_custom_order_number(monkeypatch):
+    calls = install_fake_client(
+        monkeypatch,
+        FakeResponse(
+            200,
+            {
+                "code": 200,
+                "data": {
+                    "orderId": "cj-1",
+                    "orderNum": "DG-1-1",
+                    "orderStatus": "CREATED",
+                },
+            },
+        ),
+    )
+
+    cj.get_order("token", "DG-1-1", features=["LOGISTICS_TIMELINESS"])
+
+    assert calls[0][2]["params"] == {
+        "orderId": "DG-1-1",
+        "features": ["LOGISTICS_TIMELINESS"],
+    }
