@@ -337,16 +337,6 @@ def generate_auto_reply(
             number_of_results=5,
         )
 
-        commerce_results = search_products(
-            db=db,
-            organization_id=
-                conversation.organization_id,
-            store_id=
-                conversation.store_id,
-            query=last_message.text,
-            limit=5,
-        )
-
         order_context = build_customer_order_context(
             db,
             organization_id=conversation.organization_id,
@@ -354,6 +344,19 @@ def generate_auto_reply(
             customer_id=conversation.customer_id,
             question=last_message.text,
         )
+
+        if order_context is None:
+            commerce_results = search_products(
+                db=db,
+                organization_id=
+                    conversation.organization_id,
+                store_id=
+                    conversation.store_id,
+                query=last_message.text,
+                limit=5,
+            )
+        else:
+            commerce_results = []
 
         ai_result = generate_grounded_answer(
             question=last_message.text,
