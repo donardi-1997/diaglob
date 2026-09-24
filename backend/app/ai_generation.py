@@ -34,8 +34,9 @@ def generate_grounded_answer(
     language: str | None = None,
     commerce_results: list[dict] | None = None,
     conversation_history: str | None = None,
+    order_context: dict | None = None,
 ):
-    if not evidence and not commerce_results:
+    if not evidence and not commerce_results and not order_context:
         if language == "en":
             return (
                 "I couldn't find enough information "
@@ -113,6 +114,59 @@ def generate_grounded_answer(
         "No hay resultados comerciales relevantes."
     )
 
+    order_blocks = []
+    if order_context and order_context.get("requested"):
+        orders = order_context.get("orders") or []
+        if not orders:
+            order_blocks.append(
+                "No se encontraron pedidos del cliente en esta tienda."
+            )
+        else:
+            for order in orders:
+                order_blocks.append(
+                    (
+                        f"Pedido: {order.get('order_number', '')} | "
+                        f"Estado financiero: {order.get('financial_status')} | "
+                        f"Pago: {order.get('payment_status')} | "
+                        f"Fulfillment: {order.get('fulfillment_status')} | "
+                        f"Estado operativo: {order.get('lifecycle_status')} | "
+                        f"Estado proveedor: {order.get('supplier_status')} | "
+                        f"Subestado proveedor: {order.get('supplier_substatus')}"
+                    )
+                )
+                shipment = order.get("shipment")
+                if shipment:
+                    order_blocks.append(
+                        (
+                            f"- Envío: {shipment.get('status')} | "
+                            f"Tracking: {shipment.get('tracking_number')} | "
+                            f"Carrier: {shipment.get('carrier')} | "
+                            f"Entrega estimada/registrada: {shipment.get('delivery_time')} | "
+                            f"Entregado: {shipment.get('delivered_at')} | "
+                            f"Último evento: {shipment.get('last_event_at')}"
+                        )
+                    )
+                    for event in shipment.get("events") or []:
+                        order_blocks.append(
+                            (
+                                f"  - {event.get('event_at')} | "
+                                f"{event.get('status')} | "
+                                f"{event.get('description')} | "
+                                f"{event.get('location')}"
+                            )
+                        )
+                else:
+                    order_blocks.append(
+                        "- Envío: todavía no hay tracking disponible."
+                    )
+
+    order_data_context = (
+        "\n".join(order_blocks)
+        if order_blocks
+        else
+        "La pregunta actual no requiere datos de pedidos."
+    )
+
     market_lines = []
 
     if store_name:
@@ -168,6 +222,9 @@ Reglas obligatorias:
 - Las reglas, precios o condiciones de otro país no deben aplicarse automáticamente al mercado actual.
 - Sé breve, útil y natural.
 - No menciones detalles internos de AWS, Bedrock, vectores, RAG, data sources ni bases de conocimiento.
+- Los datos de pedido y tracking proporcionados pertenecen únicamente al cliente y tienda actuales.
+- Nunca inventes números de tracking, carriers, fechas de entrega, estados ni eventos.
+- Nunca reveles costos del proveedor, IDs internos o datos técnicos de integración.
 """.strip()
 
     history_section = ""
@@ -194,6 +251,19 @@ EVIDENCIA DE CONOCIMIENTO:
 DATOS COMERCIALES ACTUALES:
 
 {commerce_context}
+
+DATOS REALES DE PEDIDOS Y TRACKING DEL CLIENTE:
+
+{order_data_context}
+
+Reglas sobre pedidos y tracking:
+- DATOS REALES DE PEDIDOS Y TRACKING DEL CLIENTE tienen prioridad para preguntas de pedidos, envíos y entregas.
+- Si no se encontró ningún pedido, dilo claramente; no inventes uno.
+- Si existe un pedido pero aún no hay tracking, explica que todavía no hay tracking disponible.
+- Si el cliente menciona un pedido concreto, responde solo sobre el pedido que aparece en este contexto.
+- Nunca adivines una fecha de entrega. Solo menciona una fecha si aparece explícitamente.
+- Puedes compartir con el propio cliente su número de pedido, tracking, carrier y estado de entrega.
+- No muestres IDs internos, IDs del proveedor, costos del proveedor ni datos de otros clientes.
 
 Reglas sobre datos comerciales:
 - Los precios, disponibilidad y stock de DATOS COMERCIALES ACTUALES tienen prioridad sobre documentos.
