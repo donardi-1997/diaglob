@@ -81,6 +81,53 @@ jobs:
             "$PROD_USER@$PROD_HOST" \
             "echo GITHUB_ACTIONS_SSH_OK"
 
+      - name: Prepare production schema before restart
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+        run: |
+          ssh \
+            -i ~/.ssh/diaglob_actions_prod \
+            "$PROD_USER@$PROD_HOST" \
+            'bash -s' <<'REMOTE'
+          set -euo pipefail
+
+          cd /opt/diaglob/app
+          git fetch origin main
+          git checkout main
+          git reset --hard origin/main
+
+          cd backend
+          .venv/bin/pip install -r requirements.txt
+          REMOTE
+
+          ssh \
+            -i ~/.ssh/diaglob_actions_prod \
+            "$PROD_USER@$PROD_HOST" \
+            'sudo bash -s' <<'REMOTE'
+          set -euo pipefail
+
+          ENV_FILE=/etc/diaglob/diaglob.env
+
+          if ! grep -q '^SUPPLIER_TOKEN_ENCRYPTION_KEY=' "$ENV_FILE"; then
+            SUPPLIER_KEY="$(
+              /opt/diaglob/app/backend/.venv/bin/python - <<'PY'
+          from cryptography.fernet import Fernet
+          print(Fernet.generate_key().decode("utf-8"))
+          PY
+            )"
+            printf '\nSUPPLIER_TOKEN_ENCRYPTION_KEY=%s\n' "$SUPPLIER_KEY" >> "$ENV_FILE"
+          fi
+
+          set -a
+          . "$ENV_FILE"
+          set +a
+
+          cd /opt/diaglob/app/backend
+          .venv/bin/alembic upgrade heads
+          .venv/bin/alembic current
+          REMOTE
+
       - name: Deploy DIAGLOB
         env:
           PROD_HOST: ${{ secrets.PROD_HOST }}
