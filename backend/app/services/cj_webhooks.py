@@ -72,9 +72,13 @@ def _decode_tracking_events(value: Any) -> list[dict[str, Any]]:
 
 def _find_supplier_order(
     db: Session,
-    connection: SupplierConnection,
+    connections: list[SupplierConnection],
     params: dict[str, Any],
 ) -> SupplierOrder | None:
+    connection_ids = [connection.id for connection in connections]
+    if not connection_ids:
+        return None
+
     remote_order_id = str(params.get("orderId") or "").strip()
     store_order_numbers = [
         str(value).strip()
@@ -95,14 +99,12 @@ def _find_supplier_order(
     return (
         db.query(SupplierOrder)
         .filter(
-            SupplierOrder.organization_id == connection.organization_id,
-            SupplierOrder.store_id == connection.store_id,
+            SupplierOrder.supplier_connection_id.in_(connection_ids),
             SupplierOrder.provider == "cj",
             or_(*predicates),
         )
         .first()
     )
-
 
 def _insert_events(
     db: Session,
@@ -182,16 +184,16 @@ def process_cj_webhook(
     if not open_id:
         raise CJWebhookAuthError("CJ_WEBHOOK_OPEN_ID_REQUIRED")
 
-    connection = (
+    connections = (
         db.query(SupplierConnection)
         .filter(
             SupplierConnection.provider == "cj",
             SupplierConnection.external_account_id == open_id,
             SupplierConnection.status == "connected",
         )
-        .first()
+        .all()
     )
-    if connection is None:
+    if not connections:
         raise CJWebhookAuthError("CJ_WEBHOOK_ACCOUNT_UNKNOWN")
 
     expected = compute_cj_webhook_signature(open_id, raw_body)
@@ -202,10 +204,14 @@ def process_cj_webhook(
     if not message_id:
         raise CJWebhookError("CJ_WEBHOOK_MESSAGE_ID_REQUIRED")
 
+    account_key_hash = hashlib.sha256(
+        open_id.encode("utf-8")
+    ).hexdigest()
+
     existing = (
         db.query(CJWebhookReceipt)
         .filter(
-            CJWebhookReceipt.supplier_connection_id == connection.id,
+            CJWebhookReceipt.account_key_hash == account_key_hash,
             CJWebhookReceipt.message_id == message_id,
         )
         .first()
@@ -218,10 +224,24 @@ def process_cj_webhook(
         }
 
     now = datetime.utcnow()
+    topic = str(payload.get("type") or "UNKNOWN").upper()
+    params = payload.get("params") or {}
+    supplier_order = (
+        _find_supplier_order(db, connections, params)
+        if topic == "LOGISTIC" and isinstance(params, dict)
+        else None
+    )
+    resolved_connection_id = (
+        supplier_order.supplier_connection_id
+        if supplier_order is not None
+        else None
+    )
+
     receipt = CJWebhookReceipt(
-        supplier_connection_id=connection.id,
+        supplier_connection_id=resolved_connection_id,
+        account_key_hash=account_key_hash,
         message_id=message_id,
-        topic=str(payload.get("type") or "UNKNOWN")[:50],
+        topic=topic[:50],
         message_type=(
             str(payload.get("messageType"))[:30]
             if payload.get("messageType") is not None
@@ -241,7 +261,7 @@ def process_cj_webhook(
             "message_id": message_id,
         }
 
-    if str(payload.get("type") or "").upper() != "LOGISTIC":
+    if topic != "LOGISTIC":
         receipt.processing_status = "ignored"
         receipt.error_code = "UNSUPPORTED_TOPIC"
         receipt.processed_at = now
@@ -253,7 +273,6 @@ def process_cj_webhook(
             "message_id": message_id,
         }
 
-    params = payload.get("params") or {}
     if not isinstance(params, dict):
         receipt.processing_status = "ignored"
         receipt.error_code = "INVALID_PARAMS"
@@ -261,7 +280,6 @@ def process_cj_webhook(
         db.commit()
         return {"ok": True, "ignored": True, "message_id": message_id}
 
-    supplier_order = _find_supplier_order(db, connection, params)
     if supplier_order is None:
         receipt.processing_status = "ignored"
         receipt.error_code = "SUPPLIER_ORDER_NOT_FOUND"
