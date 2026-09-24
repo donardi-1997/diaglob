@@ -69,6 +69,14 @@ _ORDER_REFERENCE_RE = re.compile(
     re.IGNORECASE,
 )
 
+_MULTI_ORDER_KEYWORDS = (
+    "my orders",
+    "mis pedidos",
+    "mis órdenes",
+    "mis ordenes",
+    "meus pedidos",
+)
+
 
 def is_order_intent(question: str) -> bool:
     normalized = (question or "").strip().lower()
@@ -119,7 +127,14 @@ def _select_orders(
     if explicit:
         return explicit[:1]
 
-    return orders[:3]
+    normalized_question = (question or "").lower()
+    if any(
+        keyword in normalized_question
+        for keyword in _MULTI_ORDER_KEYWORDS
+    ):
+        return orders[:3]
+
+    return orders[:1]
 
 
 def _serialize_event(event) -> dict[str, Any]:
