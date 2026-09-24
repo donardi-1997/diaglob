@@ -80,6 +80,7 @@ from .api.commerce import router as commerce_router  # noqa: E402
 from .api.conversations import router as conversations_router  # noqa: E402
 from .api.customer_risk import router as customer_risk_router  # noqa: E402
 from .api.customers import router as customers_router  # noqa: E402
+from .api.cj_webhooks import router as cj_webhooks_router  # noqa: E402
 from .api.dropi import router as dropi_router  # noqa: E402
 from .api.google import router as google_router  # noqa: E402
 from .api.health import router as health_router  # noqa: E402
@@ -105,6 +106,7 @@ app.include_router(stores_router)
 app.include_router(suppliers_router)
 app.include_router(unit_economics_router)
 app.include_router(customers_router)
+app.include_router(cj_webhooks_router)
 app.include_router(customer_risk_router)
 app.include_router(products_router)
 app.include_router(orders_router)
