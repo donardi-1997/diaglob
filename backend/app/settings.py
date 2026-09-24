@@ -60,6 +60,10 @@ class Settings(BaseSettings):
         default=True,
         validation_alias="RATE_LIMIT_ENABLED",
     )
+    public_api_base_url: str = Field(
+        default="https://api.diaglob.tech",
+        validation_alias="DIAGLOB_PUBLIC_API_BASE_URL",
+    )
     sentry_dsn: str | None = Field(default=None, validation_alias="SENTRY_DSN")
     sentry_environment: str = Field(
         default="development",
@@ -85,6 +89,14 @@ class Settings(BaseSettings):
             "prod": "production",
         }
         return aliases.get(normalized, normalized)
+
+    @field_validator("public_api_base_url")
+    @classmethod
+    def normalize_public_api_base_url(cls, value: str) -> str:
+        normalized = (value or "").strip().rstrip("/")
+        if not normalized.startswith("https://"):
+            raise ValueError("DIAGLOB_PUBLIC_API_BASE_URL must use HTTPS")
+        return normalized
 
     @property
     def allowed_origins(self) -> list[str]:
