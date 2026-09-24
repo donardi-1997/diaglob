@@ -12,6 +12,13 @@ from ..integrations.cj.client import (
     CJTemporaryError,
 )
 from ..models import OrganizationMembership
+from ..services.shipment_tracking import (
+    ShipmentNotFound,
+    ShipmentTrackingError,
+    configure_cj_logistics_webhook,
+    get_supplier_order_shipment,
+    sync_cj_shipment,
+)
 from ..services.supplier_catalog import (
     get_cj_product,
     get_cj_stock,
@@ -458,4 +465,82 @@ def cj_cancel_supplier_order(
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         if isinstance(exc, SupplierOrderError):
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        _map_error(exc)
+
+
+@router.post(
+    "/api/stores/{store_id}/suppliers/cj/orders/{supplier_order_id}/tracking/sync"
+)
+def cj_sync_tracking(
+    store_id: int,
+    supplier_order_id: int,
+    membership: OrganizationMembership = Depends(
+        require_permission("commerce.write")
+    ),
+    db: Session = Depends(get_db),
+):
+    try:
+        return sync_cj_shipment(
+            db,
+            membership.organization_id,
+            store_id,
+            supplier_order_id,
+        )
+    except ShipmentNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ShipmentTrackingError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except (
+        SupplierConnectionNotFound,
+        SupplierConnectionError,
+        CJError,
+    ) as exc:
+        _map_error(exc)
+
+
+@router.get(
+    "/api/stores/{store_id}/suppliers/cj/orders/{supplier_order_id}/shipment"
+)
+def cj_get_shipment(
+    store_id: int,
+    supplier_order_id: int,
+    membership: OrganizationMembership = Depends(
+        require_permission("commerce.read")
+    ),
+    db: Session = Depends(get_db),
+):
+    try:
+        return get_supplier_order_shipment(
+            db,
+            membership.organization_id,
+            store_id,
+            supplier_order_id,
+        )
+    except ShipmentNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post(
+    "/api/stores/{store_id}/suppliers/cj/webhooks/logistics/enable"
+)
+def cj_enable_logistics_webhook(
+    store_id: int,
+    membership: OrganizationMembership = Depends(
+        require_permission("stores.write")
+    ),
+    db: Session = Depends(get_db),
+):
+    try:
+        return configure_cj_logistics_webhook(
+            db,
+            membership.organization_id,
+            store_id,
+        )
+    except ShipmentTrackingError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except (
+        SupplierConnectionNotFound,
+        SupplierConnectionError,
+        CJError,
+    ) as exc:
         _map_error(exc)
