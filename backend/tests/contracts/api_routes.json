@@ -441,6 +441,10 @@
   ],
   [
     "GET",
+    "/api/stores/{store_id}/suppliers/cj/orders/{supplier_order_id}/shipment"
+  ],
+  [
+    "GET",
     "/api/stores/{store_id}/suppliers/cj/products"
   ],
   [
@@ -797,7 +801,15 @@
   ],
   [
     "POST",
+    "/api/stores/{store_id}/suppliers/cj/orders/{supplier_order_id}/tracking/sync"
+  ],
+  [
+    "POST",
     "/api/stores/{store_id}/suppliers/cj/test"
+  ],
+  [
+    "POST",
+    "/api/stores/{store_id}/suppliers/cj/webhooks/logistics/enable"
   ],
   [
     "POST",
@@ -818,6 +830,10 @@
   [
     "POST",
     "/api/team/invitations"
+  ],
+  [
+    "POST",
+    "/api/webhooks/cj"
   ],
   [
     "POST",
