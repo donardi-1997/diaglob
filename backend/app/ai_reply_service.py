@@ -15,6 +15,7 @@ from .models import (
 )
 from .rag import retrieve_agent_knowledge
 from .services.ai_usage_service import acquire_ai_capacity, refund_ai_capacity
+from .services.order_intelligence import build_customer_order_context
 from .telegram_models import TelegramConnection
 from .telegram_security import decrypt_telegram_secret
 from .whatsapp_client import (
@@ -336,15 +337,26 @@ def generate_auto_reply(
             number_of_results=5,
         )
 
-        commerce_results = search_products(
-            db=db,
-            organization_id=
-                conversation.organization_id,
-            store_id=
-                conversation.store_id,
-            query=last_message.text,
-            limit=5,
+        order_context = build_customer_order_context(
+            db,
+            organization_id=conversation.organization_id,
+            store_id=conversation.store_id,
+            customer_id=conversation.customer_id,
+            question=last_message.text,
         )
+
+        if order_context is None:
+            commerce_results = search_products(
+                db=db,
+                organization_id=
+                    conversation.organization_id,
+                store_id=
+                    conversation.store_id,
+                query=last_message.text,
+                limit=5,
+            )
+        else:
+            commerce_results = []
 
         ai_result = generate_grounded_answer(
             question=last_message.text,
@@ -380,6 +392,8 @@ def generate_auto_reply(
                 commerce_results,
             conversation_history=
                 history_text,
+            order_context=
+                order_context,
         )
 
         if isinstance(ai_result, dict):
