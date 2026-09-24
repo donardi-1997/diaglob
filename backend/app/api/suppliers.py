@@ -19,6 +19,13 @@ from ..services.supplier_catalog import (
     list_cj_variants,
     quote_cj_freight,
 )
+from ..services.supplier_orders import (
+    SupplierOrderError,
+    SupplierOrderNotFound,
+    cancel_cj_supplier_order,
+    create_cj_supplier_order,
+    sync_cj_supplier_order,
+)
 from ..services.supplier_connections import (
     SupplierConnectionError,
     SupplierConnectionNotFound,
@@ -39,6 +46,39 @@ class CJConnectRequest(BaseModel):
 class CJFreightItemRequest(BaseModel):
     variant_id: str = Field(min_length=1, max_length=200)
     quantity: int = Field(ge=1, le=1000)
+
+
+class CJSupplierOrderItemRequest(BaseModel):
+    order_item_id: int = Field(ge=1)
+    external_variant_id: str = Field(min_length=1, max_length=255)
+    quantity: int = Field(ge=1, le=1000)
+
+
+class CJSupplierShippingRequest(BaseModel):
+    customer_name: str = Field(min_length=1, max_length=50)
+    country_code: str = Field(min_length=2, max_length=2)
+    country: str = Field(min_length=1, max_length=50)
+    province: str = Field(min_length=1, max_length=50)
+    city: str = Field(min_length=1, max_length=50)
+    address1: str = Field(min_length=1, max_length=500)
+    address2: str | None = Field(default=None, max_length=500)
+    county: str | None = Field(default=None, max_length=50)
+    house_number: str | None = Field(default=None, max_length=20)
+    zip: str | None = Field(default=None, max_length=20)
+    phone: str | None = Field(default=None, max_length=20)
+    email: str | None = Field(default=None, max_length=50)
+    tax_id: str | None = Field(default=None, max_length=20)
+
+
+class CJSupplierOrderCreateRequest(BaseModel):
+    order_id: int = Field(ge=1)
+    idempotency_key: str = Field(min_length=1, max_length=100)
+    from_country_code: str = Field(min_length=2, max_length=2)
+    logistic_name: str = Field(min_length=1, max_length=50)
+    shipping: CJSupplierShippingRequest
+    items: list[CJSupplierOrderItemRequest] = Field(min_length=1, max_length=20)
+    remark: str | None = Field(default=None, max_length=500)
+    is_sandbox: bool = False
 
 
 class CJFreightQuoteRequest(BaseModel):
@@ -311,4 +351,111 @@ def cj_freight_quote(
     ) as exc:
         if isinstance(exc, ValueError):
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        _map_error(exc)
+
+
+@router.post("/api/stores/{store_id}/suppliers/cj/orders")
+def cj_create_supplier_order(
+    store_id: int,
+    payload: CJSupplierOrderCreateRequest,
+    membership: OrganizationMembership = Depends(
+        require_permission("commerce.write")
+    ),
+    db: Session = Depends(get_db),
+):
+    try:
+        return create_cj_supplier_order(
+            db,
+            membership.organization_id,
+            store_id,
+            order_id=payload.order_id,
+            idempotency_key=payload.idempotency_key,
+            items=[item.model_dump() for item in payload.items],
+            shipping=payload.shipping.model_dump(),
+            from_country_code=payload.from_country_code,
+            logistic_name=payload.logistic_name,
+            remark=payload.remark,
+            is_sandbox=payload.is_sandbox,
+        )
+    except (
+        SupplierConnectionNotFound,
+        SupplierConnectionError,
+        SupplierOrderNotFound,
+        SupplierOrderError,
+        CJError,
+    ) as exc:
+        if isinstance(exc, SupplierOrderNotFound):
+            raise HTTPException(
+                status_code=404,
+                detail={"code": str(exc), "message": str(exc)},
+            ) from exc
+        if isinstance(exc, SupplierOrderError):
+            raise HTTPException(
+                status_code=409,
+                detail={"code": str(exc), "message": str(exc)},
+            ) from exc
+        _map_error(exc)
+
+
+@router.post(
+    "/api/stores/{store_id}/suppliers/cj/orders/{supplier_order_id}/sync"
+)
+def cj_sync_supplier_order(
+    store_id: int,
+    supplier_order_id: int,
+    membership: OrganizationMembership = Depends(
+        require_permission("commerce.write")
+    ),
+    db: Session = Depends(get_db),
+):
+    try:
+        return sync_cj_supplier_order(
+            db,
+            membership.organization_id,
+            store_id,
+            supplier_order_id,
+        )
+    except (
+        SupplierConnectionNotFound,
+        SupplierConnectionError,
+        SupplierOrderNotFound,
+        SupplierOrderError,
+        CJError,
+    ) as exc:
+        if isinstance(exc, SupplierOrderNotFound):
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        if isinstance(exc, SupplierOrderError):
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        _map_error(exc)
+
+
+@router.delete(
+    "/api/stores/{store_id}/suppliers/cj/orders/{supplier_order_id}"
+)
+def cj_cancel_supplier_order(
+    store_id: int,
+    supplier_order_id: int,
+    membership: OrganizationMembership = Depends(
+        require_permission("commerce.write")
+    ),
+    db: Session = Depends(get_db),
+):
+    try:
+        return cancel_cj_supplier_order(
+            db,
+            membership.organization_id,
+            store_id,
+            supplier_order_id,
+        )
+    except (
+        SupplierConnectionNotFound,
+        SupplierConnectionError,
+        SupplierOrderNotFound,
+        SupplierOrderError,
+        CJError,
+    ) as exc:
+        if isinstance(exc, SupplierOrderNotFound):
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        if isinstance(exc, SupplierOrderError):
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         _map_error(exc)

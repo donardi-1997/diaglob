@@ -61,6 +61,10 @@
   ],
   [
     "DELETE",
+    "/api/stores/{store_id}/suppliers/cj/orders/{supplier_order_id}"
+  ],
+  [
+    "DELETE",
     "/api/stores/{store_id}/telegram/disconnect"
   ],
   [
@@ -782,6 +786,14 @@
   [
     "POST",
     "/api/stores/{store_id}/suppliers/cj/freight/quote"
+  ],
+  [
+    "POST",
+    "/api/stores/{store_id}/suppliers/cj/orders"
+  ],
+  [
+    "POST",
+    "/api/stores/{store_id}/suppliers/cj/orders/{supplier_order_id}/sync"
   ],
   [
     "POST",
