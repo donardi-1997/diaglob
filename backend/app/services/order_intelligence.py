@@ -65,7 +65,7 @@ _ORDER_INTENT_KEYWORDS = (
 )
 
 _ORDER_REFERENCE_RE = re.compile(
-    r"(?:order|pedido|orden)\s*#?\s*[a-z0-9][a-z0-9-]{1,}",
+    r"(?:order|pedido|orden)\s*#?\s*([a-z0-9-]*\d[a-z0-9-]*)",
     re.IGNORECASE,
 )
 
@@ -96,6 +96,16 @@ def _select_orders(
     Matching happens only inside the already tenant/store/customer-scoped set.
     """
     compact_question = _normalize_reference(question)
+
+    explicit_reference = _ORDER_REFERENCE_RE.search(question or "")
+    if explicit_reference:
+        reference = _normalize_reference(explicit_reference.group(1))
+        explicit = [
+            order
+            for order in orders
+            if _normalize_reference(order.order_number) == reference
+        ]
+        return explicit[:1]
 
     explicit = [
         order
