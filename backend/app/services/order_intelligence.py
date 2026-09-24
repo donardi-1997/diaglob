@@ -18,43 +18,65 @@ from ..models import Order
 
 
 _ORDER_INTENT_KEYWORDS = (
-    "order",
-    "orders",
-    "tracking",
+    "my order",
+    "my orders",
+    "order status",
+    "order #",
     "track my",
-    "shipment",
-    "shipping",
-    "package",
-    "delivery",
-    "delivered",
+    "tracking",
+    "tracking number",
+    "my shipment",
+    "shipment status",
+    "my package",
+    "package status",
+    "delivery status",
+    "was it delivered",
+    "has it shipped",
     "where is my",
-    "pedido",
-    "pedidos",
-    "orden",
-    "órdenes",
-    "ordenes",
+    "mi pedido",
+    "mis pedidos",
+    "estado del pedido",
+    "pedido #",
+    "mi orden",
+    "estado de mi orden",
     "rastreo",
-    "rastrear",
+    "rastrear mi",
+    "número de guía",
+    "numero de guia",
     "seguimiento",
-    "envío",
-    "envio",
-    "paquete",
-    "entrega",
-    "entregado",
-    "onde está meu",
-    "pedido",
+    "mi envío",
+    "mi envio",
+    "mi paquete",
+    "estado de entrega",
+    "ya llegó",
+    "ya llego",
+    "dónde está mi",
+    "donde esta mi",
+    "meu pedido",
+    "meus pedidos",
+    "status do pedido",
     "rastreio",
-    "encomenda",
-    "entrega",
+    "rastrear meu",
+    "minha encomenda",
+    "meu pacote",
+    "status da entrega",
+    "onde está meu",
+    "onde esta meu",
+)
+
+_ORDER_REFERENCE_RE = re.compile(
+    r"(?:order|pedido|orden)\s*#?\s*[a-z0-9][a-z0-9-]{1,}",
+    re.IGNORECASE,
 )
 
 
 def is_order_intent(question: str) -> bool:
     normalized = (question or "").strip().lower()
-    return bool(normalized) and any(
-        keyword in normalized
-        for keyword in _ORDER_INTENT_KEYWORDS
-    )
+    if not normalized:
+        return False
+    if any(keyword in normalized for keyword in _ORDER_INTENT_KEYWORDS):
+        return True
+    return bool(_ORDER_REFERENCE_RE.search(normalized))
 
 
 def _normalize_reference(value: str | None) -> str:
