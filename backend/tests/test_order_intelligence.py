@@ -198,6 +198,7 @@ def test_latest_customer_order_includes_real_tracking_only(db, data):
     )
 
     assert context["requested"] is True
+    assert len(context["orders"]) == 1
     assert context["orders"][0]["order_number"] == "#1002"
     shipment = context["orders"][0]["shipment"]
     assert shipment["status"] == "OUT_FOR_DELIVERY"
