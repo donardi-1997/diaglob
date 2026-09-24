@@ -286,7 +286,9 @@ def test_ai_is_unavailable_before_trial_activation(db):
 
 
 def test_trial_ai_limit_is_hard_cap_even_if_extra_credit_exists(db, monkeypatch):
-    now = datetime(2026, 9, 10, 12, 0, 0)
+    # This test exercises the active-trial hard cap. Use the current clock so
+    # the trial cannot silently expire as the calendar moves past a fixture date.
+    now = datetime.utcnow().replace(microsecond=0)
     organization, _ = make_pending_trial(db, "ai-cap", now)
     activate_trial_for_verified_store(
         db,
