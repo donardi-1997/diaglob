@@ -81,7 +81,7 @@ def _request(
     *,
     access_token: str | None = None,
     json_body: dict[str, Any] | None = None,
-    params: dict[str, Any] | None = None,
+    params: dict[str, Any] | list[tuple[str, str]] | None = None,
     timeout: int = CJ_TIMEOUT,
 ) -> dict[str, Any]:
     url = f"{CJ_BASE_URL}{path}"
@@ -343,5 +343,67 @@ def delete_order(
         "/shopping/order/deleteOrder",
         access_token=access_token,
         params={"orderId": order_id},
+    )
+    return bool(payload.get("data"))
+
+
+def get_tracking_info(
+    access_token: str,
+    tracking_numbers: list[str],
+) -> list[dict[str, Any]]:
+    normalized = [
+        str(value).strip()
+        for value in tracking_numbers
+        if str(value).strip()
+    ]
+    if not normalized:
+        raise ValueError("At least one tracking number is required")
+    if any(len(value) > 200 for value in normalized):
+        raise ValueError("CJ tracking number exceeds 200 characters")
+
+    payload = _request(
+        "GET",
+        "/logistic/trackInfo",
+        access_token=access_token,
+        params=[
+            ("trackNumber", value)
+            for value in normalized
+        ],
+    )
+    return payload.get("data") or []
+
+
+def set_webhook_configuration(
+    access_token: str,
+    callback_url: str,
+) -> bool:
+    callback_url = (callback_url or "").strip()
+    if not callback_url.startswith("https://"):
+        raise ValueError("CJ webhook callback must use HTTPS")
+
+    callback = [callback_url]
+    body = {
+        "product": {
+            "type": "CANCEL",
+            "callbackUrls": callback,
+        },
+        "stock": {
+            "type": "CANCEL",
+            "callbackUrls": callback,
+        },
+        "order": {
+            "type": "CANCEL",
+            "callbackUrls": callback,
+        },
+        "logistics": {
+            "type": "ENABLE",
+            "callbackUrls": callback,
+        },
+    }
+    payload = _request(
+        "POST",
+        "/webhook/set",
+        access_token=access_token,
+        json_body=body,
     )
     return bool(payload.get("data"))
