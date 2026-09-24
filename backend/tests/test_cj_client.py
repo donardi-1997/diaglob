@@ -210,3 +210,64 @@ def test_get_order_accepts_custom_order_number(monkeypatch):
         "orderId": "DG-1-1",
         "features": ["LOGISTICS_TIMELINESS"],
     }
+
+
+def test_get_tracking_info_uses_current_endpoint_with_repeated_params(monkeypatch):
+    calls = install_fake_client(
+        monkeypatch,
+        FakeResponse(
+            200,
+            {
+                "code": 200,
+                "data": [
+                    {
+                        "trackingNumber": "TRACK-1",
+                        "trackingStatus": "Delivered",
+                    }
+                ],
+            },
+        ),
+    )
+
+    result = cj.get_tracking_info(
+        "token",
+        ["TRACK-1", "TRACK-2"],
+    )
+
+    assert result[0]["trackingNumber"] == "TRACK-1"
+    assert calls[0][1].endswith("/logistic/trackInfo")
+    assert calls[0][2]["params"] == [
+        ("trackNumber", "TRACK-1"),
+        ("trackNumber", "TRACK-2"),
+    ]
+
+
+def test_set_webhook_configuration_enables_only_logistics(monkeypatch):
+    calls = install_fake_client(
+        monkeypatch,
+        FakeResponse(
+            200,
+            {
+                "code": 200,
+                "data": True,
+            },
+        ),
+    )
+
+    result = cj.set_webhook_configuration(
+        "token",
+        "https://api.diaglob.tech/api/webhooks/cj",
+    )
+
+    assert result is True
+    assert calls[0][1].endswith("/webhook/set")
+    body = calls[0][2]["json"]
+    assert body["logistics"] == {
+        "type": "ENABLE",
+        "callbackUrls": [
+            "https://api.diaglob.tech/api/webhooks/cj",
+        ],
+    }
+    assert body["product"]["type"] == "CANCEL"
+    assert body["stock"]["type"] == "CANCEL"
+    assert body["order"]["type"] == "CANCEL"
