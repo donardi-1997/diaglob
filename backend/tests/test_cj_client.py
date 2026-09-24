@@ -102,3 +102,58 @@ def test_parse_cj_datetime_normalizes_to_naive_utc():
     parsed = cj.parse_cj_datetime("2026-09-24T20:00:00+08:00")
 
     assert parsed == datetime(2026, 9, 24, 12, 0, 0)
+
+
+def test_list_products_uses_v2_search_endpoint(monkeypatch):
+    calls = install_fake_client(
+        monkeypatch,
+        FakeResponse(
+            200,
+            {"code": 200, "data": {"content": [], "totalRecords": 0}},
+        ),
+    )
+
+    cj.list_products("token", query="hoodie", limit=25, page=2)
+
+    assert calls[0][1].endswith("/product/listV2")
+    assert calls[0][2]["params"] == {
+        "page": 2,
+        "size": 25,
+        "keyWord": "hoodie",
+    }
+
+
+def test_calculate_freight_maps_variant_ids(monkeypatch):
+    calls = install_fake_client(
+        monkeypatch,
+        FakeResponse(
+            200,
+            {
+                "code": 200,
+                "data": [
+                    {
+                        "logisticName": "USPS+",
+                        "logisticPrice": 4.71,
+                        "logisticAging": "2-5",
+                    }
+                ],
+            },
+        ),
+    )
+
+    result = cj.calculate_freight(
+        "token",
+        start_country_code="CN",
+        end_country_code="US",
+        zip_code="10001",
+        products=[{"variant_id": "vid-1", "quantity": 2}],
+    )
+
+    assert result[0]["logisticName"] == "USPS+"
+    assert calls[0][1].endswith("/logistic/freightCalculate")
+    assert calls[0][2]["json"] == {
+        "startCountryCode": "CN",
+        "endCountryCode": "US",
+        "zip": "10001",
+        "products": [{"vid": "vid-1", "quantity": 2}],
+    }

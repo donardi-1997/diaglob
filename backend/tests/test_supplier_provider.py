@@ -6,6 +6,7 @@ from app.suppliers import (
     SupplierCapabilityNotSupportedError,
     SupplierProvider,
     SupplierProviderNotRegisteredError,
+    SupplierRuntimeContext,
     clear_supplier_registry,
     get_supplier_provider,
     register_supplier_provider,
@@ -36,8 +37,25 @@ def reset_registry():
     clear_supplier_registry()
 
 
+@pytest.fixture()
+def context():
+    return SupplierRuntimeContext(
+        organization_id=10,
+        store_id=20,
+        credentials={"access_token": "secret"},
+    )
+
+
 def test_provider_exposes_normalized_key():
     assert FakeSupplier().key() == "fake"
+
+
+def test_runtime_context_is_tenant_scoped(context):
+    provider = FakeSupplier(context)
+
+    assert provider.require_context().organization_id == 10
+    assert provider.require_context().store_id == 20
+    assert provider.require_context().credentials["access_token"] == "secret"
 
 
 def test_optional_capability_fails_explicitly():
@@ -51,12 +69,13 @@ def test_optional_capability_fails_explicitly():
     assert exc.value.status_code == 501
 
 
-def test_registry_resolves_provider():
+def test_registry_resolves_provider_with_context(context):
     register_supplier_provider("FAKE", FakeSupplier)
 
-    provider = get_supplier_provider(" fake ")
+    provider = get_supplier_provider(" fake ", context)
 
     assert isinstance(provider, FakeSupplier)
+    assert provider.context is context
     assert registered_supplier_providers() == ("fake",)
 
 
@@ -67,13 +86,13 @@ def test_registry_rejects_duplicate_registration():
         register_supplier_provider("fake", FakeSupplier)
 
 
-def test_registry_can_replace_registration():
+def test_registry_can_replace_registration(context):
     register_supplier_provider("fake", FakeSupplier)
     register_supplier_provider("fake", FakeSupplier, replace=True)
 
-    assert isinstance(get_supplier_provider("fake"), FakeSupplier)
+    assert isinstance(get_supplier_provider("fake", context), FakeSupplier)
 
 
-def test_registry_rejects_unknown_provider():
+def test_registry_rejects_unknown_provider(context):
     with pytest.raises(SupplierProviderNotRegisteredError):
-        get_supplier_provider("cj")
+        get_supplier_provider("cj", context)

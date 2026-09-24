@@ -9,13 +9,14 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from .base import SupplierProvider
+from .context import SupplierRuntimeContext
 
 
 class SupplierProviderNotRegisteredError(LookupError):
     """Raised when a provider key has no registered factory."""
 
 
-SupplierFactory = Callable[[], SupplierProvider]
+SupplierFactory = Callable[[SupplierRuntimeContext], SupplierProvider]
 
 _provider_factories: dict[str, SupplierFactory] = {}
 
@@ -42,8 +43,11 @@ def register_supplier_provider(
     _provider_factories[key] = factory
 
 
-def get_supplier_provider(provider_key: str) -> SupplierProvider:
-    """Resolve a provider instance from its registered factory."""
+def get_supplier_provider(
+    provider_key: str,
+    context: SupplierRuntimeContext,
+) -> SupplierProvider:
+    """Resolve a tenant-scoped provider instance from its registered factory."""
     key = _normalize_key(provider_key)
 
     factory = _provider_factories.get(key)
@@ -52,7 +56,7 @@ def get_supplier_provider(provider_key: str) -> SupplierProvider:
             f"Supplier provider is not registered: {key}"
         )
 
-    provider = factory()
+    provider = factory(context)
     if not isinstance(provider, SupplierProvider):
         raise TypeError(
             f"Supplier factory for {key} returned an invalid provider"

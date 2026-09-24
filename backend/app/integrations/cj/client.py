@@ -160,3 +160,135 @@ def get_settings(access_token: str) -> dict[str, Any]:
         access_token=access_token,
     )
     return payload.get("data") or {}
+
+
+def list_products(
+    access_token: str,
+    *,
+    query: str | None = None,
+    limit: int = 20,
+    page: int = 1,
+) -> dict[str, Any]:
+    if limit < 1 or limit > 100:
+        raise ValueError("CJ product list limit must be between 1 and 100")
+    if page < 1 or page > 1000:
+        raise ValueError("CJ product list page must be between 1 and 1000")
+
+    params: dict[str, Any] = {
+        "page": page,
+        "size": limit,
+    }
+    if query and query.strip():
+        params["keyWord"] = query.strip()
+
+    payload = _request(
+        "GET",
+        "/product/listV2",
+        access_token=access_token,
+        params=params,
+    )
+    return payload.get("data") or {}
+
+
+def get_product(
+    access_token: str,
+    product_id: str,
+) -> dict[str, Any]:
+    product_id = (product_id or "").strip()
+    if not product_id:
+        raise ValueError("CJ product id is required")
+
+    payload = _request(
+        "GET",
+        "/product/query",
+        access_token=access_token,
+        params={"pid": product_id},
+    )
+    return payload.get("data") or {}
+
+
+def get_variants(
+    access_token: str,
+    product_id: str,
+    *,
+    country_code: str | None = None,
+) -> list[dict[str, Any]]:
+    product_id = (product_id or "").strip()
+    if not product_id:
+        raise ValueError("CJ product id is required")
+
+    params: dict[str, Any] = {"pid": product_id}
+    if country_code:
+        normalized_country = country_code.strip().upper()
+        if len(normalized_country) != 2 or not normalized_country.isalpha():
+            raise ValueError("country_code must be ISO-3166 alpha-2")
+        params["countryCode"] = normalized_country
+
+    payload = _request(
+        "GET",
+        "/product/variant/query",
+        access_token=access_token,
+        params=params,
+    )
+    return payload.get("data") or []
+
+
+def get_stock(
+    access_token: str,
+    variant_id: str,
+) -> list[dict[str, Any]]:
+    variant_id = (variant_id or "").strip()
+    if not variant_id:
+        raise ValueError("CJ variant id is required")
+
+    payload = _request(
+        "GET",
+        "/product/stock/queryByVid",
+        access_token=access_token,
+        params={"vid": variant_id},
+    )
+    return payload.get("data") or []
+
+
+def calculate_freight(
+    access_token: str,
+    *,
+    start_country_code: str,
+    end_country_code: str,
+    products: list[dict[str, Any]],
+    zip_code: str | None = None,
+) -> list[dict[str, Any]]:
+    start = (start_country_code or "").strip().upper()
+    end = (end_country_code or "").strip().upper()
+    if len(start) != 2 or not start.isalpha():
+        raise ValueError("start_country_code must be ISO-3166 alpha-2")
+    if len(end) != 2 or not end.isalpha():
+        raise ValueError("end_country_code must be ISO-3166 alpha-2")
+    if not products:
+        raise ValueError("At least one product is required for freight calculation")
+
+    normalized_products = []
+    for item in products:
+        variant_id = str(item.get("variant_id") or item.get("vid") or "").strip()
+        quantity = int(item.get("quantity") or 0)
+        if not variant_id:
+            raise ValueError("Every freight item requires a variant id")
+        if quantity <= 0:
+            raise ValueError("Every freight item quantity must be greater than zero")
+        normalized_products.append({"vid": variant_id, "quantity": quantity})
+
+    body: dict[str, Any] = {
+        "startCountryCode": start,
+        "endCountryCode": end,
+        "products": normalized_products,
+    }
+    if zip_code and zip_code.strip():
+        body["zip"] = zip_code.strip()
+
+    payload = _request(
+        "POST",
+        "/logistic/freightCalculate",
+        access_token=access_token,
+        json_body=body,
+    )
+    return payload.get("data") or []

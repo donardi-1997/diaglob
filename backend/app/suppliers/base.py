@@ -10,6 +10,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any, ClassVar
 
+from .context import SupplierRuntimeContext
+
 
 class SupplierProviderError(Exception):
     """Base error raised by supplier integrations."""
@@ -50,6 +52,17 @@ class SupplierProvider(ABC):
     """
 
     provider_key: ClassVar[str] = ""
+
+    def __init__(
+        self,
+        context: SupplierRuntimeContext | None = None,
+    ):
+        self.context = context
+
+    def require_context(self) -> SupplierRuntimeContext:
+        if self.context is None:
+            raise SupplierNotConfiguredError(self.key())
+        return self.context
 
     def key(self) -> str:
         key = (self.provider_key or "").strip().lower()

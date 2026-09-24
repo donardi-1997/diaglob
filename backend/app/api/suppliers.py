@@ -1,6 +1,6 @@
 """Supplier integration HTTP endpoints."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -12,6 +12,13 @@ from ..integrations.cj.client import (
     CJTemporaryError,
 )
 from ..models import OrganizationMembership
+from ..services.supplier_catalog import (
+    get_cj_product,
+    get_cj_stock,
+    list_cj_products,
+    list_cj_variants,
+    quote_cj_freight,
+)
 from ..services.supplier_connections import (
     SupplierConnectionError,
     SupplierConnectionNotFound,
@@ -27,6 +34,18 @@ router = APIRouter()
 
 class CJConnectRequest(BaseModel):
     api_key: str = Field(min_length=1, max_length=200)
+
+
+class CJFreightItemRequest(BaseModel):
+    variant_id: str = Field(min_length=1, max_length=200)
+    quantity: int = Field(ge=1, le=1000)
+
+
+class CJFreightQuoteRequest(BaseModel):
+    start_country_code: str = Field(min_length=2, max_length=2)
+    end_country_code: str = Field(min_length=2, max_length=2)
+    zip_code: str | None = Field(default=None, max_length=50)
+    items: list[CJFreightItemRequest] = Field(min_length=1, max_length=100)
 
 
 def _map_error(exc: Exception):
@@ -149,4 +168,147 @@ def cj_disconnect(
         SupplierConnectionNotFound,
         SupplierConnectionError,
     ) as exc:
+        _map_error(exc)
+
+
+@router.get("/api/stores/{store_id}/suppliers/cj/products")
+def cj_products(
+    store_id: int,
+    query: str | None = Query(default=None, max_length=200),
+    limit: int = Query(default=20, ge=1, le=100),
+    page: int = Query(default=1, ge=1, le=1000),
+    membership: OrganizationMembership = Depends(
+        require_permission("commerce.read")
+    ),
+    db: Session = Depends(get_db),
+):
+    try:
+        return list_cj_products(
+            db,
+            membership.organization_id,
+            store_id,
+            query=query,
+            limit=limit,
+            page=page,
+        )
+    except (
+        SupplierConnectionNotFound,
+        SupplierConnectionError,
+        CJError,
+    ) as exc:
+        _map_error(exc)
+
+
+@router.get("/api/stores/{store_id}/suppliers/cj/products/{product_id}")
+def cj_product_detail(
+    store_id: int,
+    product_id: str,
+    membership: OrganizationMembership = Depends(
+        require_permission("commerce.read")
+    ),
+    db: Session = Depends(get_db),
+):
+    try:
+        return get_cj_product(
+            db,
+            membership.organization_id,
+            store_id,
+            product_id,
+        )
+    except (
+        SupplierConnectionNotFound,
+        SupplierConnectionError,
+        CJError,
+    ) as exc:
+        _map_error(exc)
+
+
+@router.get(
+    "/api/stores/{store_id}/suppliers/cj/products/{product_id}/variants"
+)
+def cj_product_variants(
+    store_id: int,
+    product_id: str,
+    country_code: str | None = Query(default=None, min_length=2, max_length=2),
+    membership: OrganizationMembership = Depends(
+        require_permission("commerce.read")
+    ),
+    db: Session = Depends(get_db),
+):
+    try:
+        return {
+            "provider": "cj",
+            "items": list_cj_variants(
+                db,
+                membership.organization_id,
+                store_id,
+                product_id,
+                country_code=country_code,
+            ),
+        }
+    except (
+        SupplierConnectionNotFound,
+        SupplierConnectionError,
+        CJError,
+        ValueError,
+    ) as exc:
+        if isinstance(exc, ValueError):
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        _map_error(exc)
+
+
+@router.get("/api/stores/{store_id}/suppliers/cj/variants/{variant_id}/stock")
+def cj_variant_stock(
+    store_id: int,
+    variant_id: str,
+    membership: OrganizationMembership = Depends(
+        require_permission("commerce.read")
+    ),
+    db: Session = Depends(get_db),
+):
+    try:
+        return get_cj_stock(
+            db,
+            membership.organization_id,
+            store_id,
+            variant_id,
+        )
+    except (
+        SupplierConnectionNotFound,
+        SupplierConnectionError,
+        CJError,
+    ) as exc:
+        _map_error(exc)
+
+
+@router.post("/api/stores/{store_id}/suppliers/cj/freight/quote")
+def cj_freight_quote(
+    store_id: int,
+    payload: CJFreightQuoteRequest,
+    membership: OrganizationMembership = Depends(
+        require_permission("commerce.read")
+    ),
+    db: Session = Depends(get_db),
+):
+    try:
+        return quote_cj_freight(
+            db,
+            membership.organization_id,
+            store_id,
+            start_country_code=payload.start_country_code,
+            end_country_code=payload.end_country_code,
+            zip_code=payload.zip_code,
+            items=[
+                item.model_dump()
+                for item in payload.items
+            ],
+        )
+    except (
+        SupplierConnectionNotFound,
+        SupplierConnectionError,
+        CJError,
+        ValueError,
+    ) as exc:
+        if isinstance(exc, ValueError):
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         _map_error(exc)

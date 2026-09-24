@@ -6,6 +6,7 @@ from .base import (
     SupplierProvider,
     SupplierProviderError,
 )
+from .context import SupplierRuntimeContext
 from .registry import (
     SupplierProviderNotRegisteredError,
     clear_supplier_registry,
@@ -19,6 +20,7 @@ __all__ = [
     "SupplierNotConfiguredError",
     "SupplierProvider",
     "SupplierProviderError",
+    "SupplierRuntimeContext",
     "SupplierProviderNotRegisteredError",
     "clear_supplier_registry",
     "get_supplier_provider",
