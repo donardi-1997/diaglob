@@ -237,8 +237,7 @@ def test_customer_scope_never_exposes_another_customers_order(db, data):
         question="Where is order #2001?",
     )
 
-    numbers = [item["order_number"] for item in context["orders"]]
-    assert "#2001" not in numbers
+    assert context["orders"] == []
 
 
 def test_non_order_question_has_no_order_context(db, data):
