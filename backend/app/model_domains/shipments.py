@@ -160,15 +160,20 @@ class CJWebhookReceipt(Base):
 
     __table_args__ = (
         UniqueConstraint(
-            "supplier_connection_id",
+            "account_key_hash",
             "message_id",
-            name="uq_cj_webhook_connection_message",
+            name="uq_cj_webhook_account_message",
         ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    supplier_connection_id: Mapped[int] = mapped_column(
-        ForeignKey("supplier_connections.id", ondelete="CASCADE"),
+    supplier_connection_id: Mapped[int | None] = mapped_column(
+        ForeignKey("supplier_connections.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    account_key_hash: Mapped[str] = mapped_column(
+        String(64),
         nullable=False,
         index=True,
     )
