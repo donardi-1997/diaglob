@@ -117,7 +117,8 @@ def upgrade():
     op.create_table(
         "cj_webhook_receipts",
         sa.Column("id", sa.Integer(), primary_key=True),
-        sa.Column("supplier_connection_id", sa.Integer(), nullable=False),
+        sa.Column("supplier_connection_id", sa.Integer(), nullable=True),
+        sa.Column("account_key_hash", sa.String(length=64), nullable=False),
         sa.Column("message_id", sa.String(length=200), nullable=False),
         sa.Column("topic", sa.String(length=50), nullable=False),
         sa.Column("message_type", sa.String(length=30), nullable=True),
@@ -128,18 +129,24 @@ def upgrade():
         sa.ForeignKeyConstraint(
             ["supplier_connection_id"],
             ["supplier_connections.id"],
-            ondelete="CASCADE",
+            ondelete="SET NULL",
         ),
         sa.UniqueConstraint(
-            "supplier_connection_id",
+            "account_key_hash",
             "message_id",
-            name="uq_cj_webhook_connection_message",
+            name="uq_cj_webhook_account_message",
         ),
     )
     op.create_index(
         "ix_cj_webhook_receipts_supplier_connection_id",
         "cj_webhook_receipts",
         ["supplier_connection_id"],
+        unique=False,
+    )
+    op.create_index(
+        "ix_cj_webhook_receipts_account_key_hash",
+        "cj_webhook_receipts",
+        ["account_key_hash"],
         unique=False,
     )
     op.create_index(
@@ -163,6 +170,10 @@ def downgrade():
     )
     op.drop_index(
         "ix_cj_webhook_receipts_topic",
+        table_name="cj_webhook_receipts",
+    )
+    op.drop_index(
+        "ix_cj_webhook_receipts_account_key_hash",
         table_name="cj_webhook_receipts",
     )
     op.drop_index(
