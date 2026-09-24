@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from ..integrations.cj import client as cj_client
 from ..model_domains.shipments import Shipment
 from ..model_domains.supplier_orders import SupplierOrder
+from ..settings import get_settings
 from .supplier_connections import get_valid_cj_access_token
 
 
@@ -330,4 +331,34 @@ def get_supplier_order_shipment(
     return {
         "available": True,
         "shipment": serialize_shipment(shipment),
+    }
+
+
+def configure_cj_logistics_webhook(
+    db: Session,
+    organization_id: int,
+    store_id: int,
+) -> dict[str, Any]:
+    # Reuse the same tenant-scoped order guard so a foreign store cannot
+    # configure callbacks with another organization's CJ credentials.
+    token = get_valid_cj_access_token(
+        db,
+        organization_id,
+        store_id,
+    )
+    callback_url = (
+        f"{get_settings().public_api_base_url}/api/webhooks/cj"
+    )
+    configured = cj_client.set_webhook_configuration(
+        token,
+        callback_url,
+    )
+    if not configured:
+        raise ShipmentTrackingError("CJ_WEBHOOK_CONFIGURATION_REJECTED")
+
+    return {
+        "ok": True,
+        "provider": "cj",
+        "topic": "LOGISTIC",
+        "callback_url": callback_url,
     }
