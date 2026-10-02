@@ -45,6 +45,7 @@ import {
   type ShopifySyncResult,
 } from "../services/integrations";
 
+import CJIntegrationCard from "./CJIntegrationCard";
 import ShopifyOrders from "./ShopifyOrders";
 import TelegramIntegrationCard from "./TelegramIntegrationCard";
 
@@ -52,6 +53,7 @@ import TelegramIntegrationCard from "./TelegramIntegrationCard";
 interface StoreIntegrationsProps {
   storeId: number;
   shopDomain: string | null;
+  storeCountryCode?: string | null;
   canWrite: boolean;
 }
 
@@ -59,6 +61,7 @@ interface StoreIntegrationsProps {
 export default function StoreIntegrations({
   storeId,
   shopDomain,
+  storeCountryCode,
   canWrite,
 }: StoreIntegrationsProps) {
   const { t } = useTranslation();
@@ -1172,6 +1175,13 @@ export default function StoreIntegrations({
           )}
         </div>
       )}
+
+
+      <CJIntegrationCard
+        storeId={storeId}
+        storeCountryCode={storeCountryCode}
+        canWrite={canWrite}
+      />
 
 
       <TelegramIntegrationCard
