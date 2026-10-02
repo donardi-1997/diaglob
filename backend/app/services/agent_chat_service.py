@@ -265,6 +265,9 @@ def _history(
             .all()
         )
     )
+    while messages and messages[0].provider_role != "user":
+        messages.pop(0)
+
     history: list[dict] = []
 
     for message in messages:
