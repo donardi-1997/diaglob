@@ -381,7 +381,7 @@ export default function AgentChatPage({ storeId, storeName }: Props) {
             <p>{copy.subtitle}</p>
           </div>
           <div className="copilot-header-meta">
-            <span className="copilot-online"><span /> Bedrock activo</span>
+            <span className="copilot-online"><span /> Permisos protegidos</span>
             <span>{storeName || `Tienda #${storeId}`}</span>
             {session && !session.has_pending_turn && (
               <button className="icon-button" title="Archivar chat" onClick={() => void archiveCurrent()}>
