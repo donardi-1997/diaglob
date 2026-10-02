@@ -178,6 +178,27 @@ def normalize_carrier_status(
         return "PENDING"
 
     rules = (
+        (
+            "FAILED",
+            (
+                "entrega fallida",
+                "no entregado",
+                "failed delivery",
+                "delivery failed",
+            ),
+        ),
+        (
+            "EXCEPTION",
+            (
+                "novedad",
+                "incidencia",
+                "exception",
+                "direccion incorrecta",
+                "destinatario ausente",
+            ),
+        ),
+        ("RETURNED", ("devuelto", "devolucion", "retornado", "returned")),
+        ("DELAYED", ("retraso", "retrasado", "demora", "delayed")),
         ("DELIVERED", ("entregado", "delivered", "entrega realizada")),
         (
             "OUT_FOR_DELIVERY",
@@ -198,27 +219,6 @@ def normalize_carrier_status(
             ),
         ),
         ("CUSTOMS", ("aduana", "customs")),
-        ("RETURNED", ("devuelto", "devolucion", "retornado", "returned")),
-        ("DELAYED", ("retraso", "retrasado", "demora", "delayed")),
-        (
-            "FAILED",
-            (
-                "entrega fallida",
-                "no entregado",
-                "failed delivery",
-                "delivery failed",
-            ),
-        ),
-        (
-            "EXCEPTION",
-            (
-                "novedad",
-                "incidencia",
-                "exception",
-                "direccion incorrecta",
-                "destinatario ausente",
-            ),
-        ),
         ("SHIPPED", ("despachado", "enviado", "shipped", "dispatch")),
         (
             "IN_TRANSIT",
