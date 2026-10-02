@@ -26,6 +26,7 @@ import {
 } from "../services/auth";
 import { saveSession } from "../services/authStorage";
 import { getMarketingCopy, resolveMarketingLocale } from "../marketingCopy";
+import { trackMarketingEvent } from "../services/marketingTracking";
 import "../onboarding-activation-polish.css";
 
 interface LoginPageProps {
@@ -154,6 +155,7 @@ export default function LoginPage({
       setLoading(true);
       clearFeedback();
       await signUp(cleanName, cleanEmail, password);
+      trackMarketingEvent("registration_submitted", { method: "email" });
       setMode("confirm");
       setMessage(t("loginI18nVerificationSent", { email: cleanEmail }));
     } catch (err) {
@@ -170,6 +172,7 @@ export default function LoginPage({
     const result = await login(cleanEmail, password);
     await provisionAccount(result.AccessToken, cleanName, cleanOrganization);
     saveSession(result.AccessToken, result.IdToken, result.RefreshToken);
+    trackMarketingEvent("complete_registration", { method: "email" });
     onAuthenticated();
   }
 
