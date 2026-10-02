@@ -176,8 +176,21 @@ TOOLS: dict[str, ToolDefinition] = {
         "automations.update",
         _object_schema({
             "flow_id": {"type": "integer", "minimum": 1},
-            "graph": {"type": "object"},
-        }, ["flow_id", "graph"]),
+            "name": {"type": ["string", "null"]},
+            "description": {"type": ["string", "null"]},
+            "graph": {"type": ["object", "null"]},
+        }, ["flow_id"]),
+    ),
+    "automations.publish": ToolDefinition(
+        "automations.publish",
+        "Publicar automatización",
+        "Publica la versión actual antes de activarla.",
+        "automations",
+        "automations.publish",
+        _object_schema(
+            {"flow_id": {"type": "integer", "minimum": 1}},
+            ["flow_id"],
+        ),
     ),
     "automations.activate": ToolDefinition(
         "automations.activate",
