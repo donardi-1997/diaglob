@@ -853,6 +853,10 @@
   ],
   [
     "POST",
+    "/api/webhooks/shopify"
+  ],
+  [
+    "POST",
     "/api/webhooks/telegram/{webhook_path_token}"
   ],
   [
