@@ -46,7 +46,7 @@ jobs:
               frontend/*)
                 frontend=true
                 ;;
-              .github/workflows/validate-pr.yml)
+              .github/workflows/*.yml)
                 backend=true
                 frontend=true
                 ;;
