@@ -4790,3 +4790,96 @@ class TestShopifyOrderWebhooks:
 
         assert response.status_code == 400
 
+class TestShopifyWebhookSubscriptions:
+    def test_ensure_webhooks_is_idempotent_and_creates_only_missing(
+        self,
+        client,
+        shopify_connection,
+        store,
+    ):
+        existing = {
+            "webhookSubscriptions": {
+                "edges": [
+                    {
+                        "node": {
+                            "id": "gid://shopify/WebhookSubscription/1",
+                            "topic": "ORDERS_CREATE",
+                            "uri": "https://api.diaglob.tech/api/webhooks/shopify",
+                        }
+                    }
+                ]
+            }
+        }
+        create_updated = {
+            "webhookSubscriptionCreate": {
+                "webhookSubscription": {
+                    "id": "gid://shopify/WebhookSubscription/2",
+                    "topic": "ORDERS_UPDATED",
+                    "uri": "https://api.diaglob.tech/api/webhooks/shopify",
+                },
+                "userErrors": [],
+            }
+        }
+        create_cancelled = {
+            "webhookSubscriptionCreate": {
+                "webhookSubscription": {
+                    "id": "gid://shopify/WebhookSubscription/3",
+                    "topic": "ORDERS_CANCELLED",
+                    "uri": "https://api.diaglob.tech/api/webhooks/shopify",
+                },
+                "userErrors": [],
+            }
+        }
+
+        with patch(
+            "app.shopify_webhook_subscriptions.decrypt_shopify_secret",
+            return_value="token",
+        ), patch(
+            "app.shopify_webhook_subscriptions.ShopifyGraphQLClient.query",
+            side_effect=[
+                existing,
+                create_updated,
+                create_cancelled,
+            ],
+        ) as query:
+            response = client.post(
+                f"/api/stores/{store.id}/shopify/webhooks/ensure"
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["ok"] is True
+        assert data["retained"] == ["ORDERS_CREATE"]
+        assert [item["topic"] for item in data["created"]] == [
+            "ORDERS_UPDATED",
+            "ORDERS_CANCELLED",
+        ]
+        assert query.call_count == 3
+
+    def test_ensure_webhooks_provider_error_is_visible_and_recorded(
+        self,
+        client,
+        shopify_connection,
+        store,
+        db,
+    ):
+        from app.shopify_client import ShopifyAPIError
+
+        with patch(
+            "app.shopify_webhook_subscriptions.decrypt_shopify_secret",
+            return_value="token",
+        ), patch(
+            "app.shopify_webhook_subscriptions.ShopifyGraphQLClient.query",
+            side_effect=ShopifyAPIError("provider unavailable"),
+        ):
+            response = client.post(
+                f"/api/stores/{store.id}/shopify/webhooks/ensure"
+            )
+
+        assert response.status_code == 502
+        db.expire_all()
+        refreshed = db.query(CommerceConnection).filter(
+            CommerceConnection.id == shopify_connection.id
+        ).one()
+        assert "WEBHOOK_SUBSCRIPTION_FAILED" in (refreshed.last_error or "")
+
