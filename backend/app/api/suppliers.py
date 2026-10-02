@@ -26,6 +26,13 @@ from ..services.supplier_catalog import (
     list_cj_variants,
     quote_cj_freight,
 )
+from ..services.supplier_mappings import (
+    SupplierVariantMappingError,
+    SupplierVariantMappingNotFound,
+    delete_cj_variant_mapping,
+    list_cj_variant_mappings,
+    upsert_cj_variant_mapping,
+)
 from ..services.supplier_orders import (
     SupplierOrderError,
     SupplierOrderNotFound,
@@ -57,8 +64,15 @@ class CJFreightItemRequest(BaseModel):
 
 class CJSupplierOrderItemRequest(BaseModel):
     order_item_id: int = Field(ge=1)
-    external_variant_id: str = Field(min_length=1, max_length=255)
+    external_variant_id: str | None = Field(default=None, min_length=1, max_length=255)
     quantity: int = Field(ge=1, le=1000)
+
+
+class CJVariantMappingRequest(BaseModel):
+    external_product_id: str = Field(min_length=1, max_length=255)
+    external_variant_id: str = Field(min_length=1, max_length=255)
+    external_sku: str | None = Field(default=None, max_length=255)
+    active: bool = True
 
 
 class CJSupplierShippingRequest(BaseModel):
@@ -359,6 +373,87 @@ def cj_freight_quote(
         if isinstance(exc, ValueError):
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         _map_error(exc)
+
+
+@router.get("/api/stores/{store_id}/suppliers/cj/mappings")
+def cj_variant_mappings(
+    store_id: int,
+    membership: OrganizationMembership = Depends(
+        require_permission("commerce.read")
+    ),
+    db: Session = Depends(get_db),
+):
+    try:
+        return list_cj_variant_mappings(
+            db,
+            membership.organization_id,
+            store_id,
+        )
+    except SupplierVariantMappingNotFound as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": str(exc), "message": str(exc)},
+        ) from exc
+
+
+@router.put(
+    "/api/stores/{store_id}/suppliers/cj/mappings/{product_variant_id}"
+)
+def cj_upsert_variant_mapping(
+    store_id: int,
+    product_variant_id: int,
+    payload: CJVariantMappingRequest,
+    membership: OrganizationMembership = Depends(
+        require_permission("commerce.write")
+    ),
+    db: Session = Depends(get_db),
+):
+    try:
+        return upsert_cj_variant_mapping(
+            db,
+            membership.organization_id,
+            store_id,
+            product_variant_id,
+            external_product_id=payload.external_product_id,
+            external_variant_id=payload.external_variant_id,
+            external_sku=payload.external_sku,
+            active=payload.active,
+        )
+    except SupplierVariantMappingNotFound as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": str(exc), "message": str(exc)},
+        ) from exc
+    except SupplierVariantMappingError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": str(exc), "message": str(exc)},
+        ) from exc
+
+
+@router.delete(
+    "/api/stores/{store_id}/suppliers/cj/mappings/{product_variant_id}"
+)
+def cj_delete_variant_mapping(
+    store_id: int,
+    product_variant_id: int,
+    membership: OrganizationMembership = Depends(
+        require_permission("commerce.write")
+    ),
+    db: Session = Depends(get_db),
+):
+    try:
+        return delete_cj_variant_mapping(
+            db,
+            membership.organization_id,
+            store_id,
+            product_variant_id,
+        )
+    except SupplierVariantMappingNotFound as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": str(exc), "message": str(exc)},
+        ) from exc
 
 
 @router.post("/api/stores/{store_id}/suppliers/cj/orders")
