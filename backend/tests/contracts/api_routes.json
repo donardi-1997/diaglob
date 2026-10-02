@@ -61,6 +61,10 @@
   ],
   [
     "DELETE",
+    "/api/stores/{store_id}/suppliers/cj/mappings/{product_variant_id}"
+  ],
+  [
+    "DELETE",
     "/api/stores/{store_id}/suppliers/cj/orders/{supplier_order_id}"
   ],
   [
@@ -73,11 +77,11 @@
   ],
   [
     "DELETE",
-    "/api/team/{membership_id}"
+    "/api/team/invitations/{invitation_id}"
   ],
   [
     "DELETE",
-    "/api/team/invitations/{invitation_id}"
+    "/api/team/{membership_id}"
   ],
   [
     "GET",
@@ -145,6 +149,10 @@
   ],
   [
     "GET",
+    "/api/customers/summary"
+  ],
+  [
+    "GET",
     "/api/customers/{customer_id}"
   ],
   [
@@ -154,10 +162,6 @@
   [
     "GET",
     "/api/customers/{customer_id}/risk/disputes/mine"
-  ],
-  [
-    "GET",
-    "/api/customers/summary"
   ],
   [
     "GET",
@@ -305,6 +309,10 @@
   ],
   [
     "GET",
+    "/api/stores/{store_id}/automation-campaigns/audience/customers"
+  ],
+  [
+    "GET",
     "/api/stores/{store_id}/automation-campaigns/{campaign_id}"
   ],
   [
@@ -322,10 +330,6 @@
   [
     "GET",
     "/api/stores/{store_id}/automation-campaigns/{campaign_id}/runs/{run_id}/recipients/{recipient_id}"
-  ],
-  [
-    "GET",
-    "/api/stores/{store_id}/automation-campaigns/audience/customers"
   ],
   [
     "GET",
@@ -417,15 +421,15 @@
   ],
   [
     "GET",
+    "/api/stores/{store_id}/payments/providers"
+  ],
+  [
+    "GET",
     "/api/stores/{store_id}/payments/{payment_id}"
   ],
   [
     "GET",
     "/api/stores/{store_id}/payments/{provider}/status"
-  ],
-  [
-    "GET",
-    "/api/stores/{store_id}/payments/providers"
   ],
   [
     "GET",
@@ -438,6 +442,10 @@
   [
     "GET",
     "/api/stores/{store_id}/suppliers/cj"
+  ],
+  [
+    "GET",
+    "/api/stores/{store_id}/suppliers/cj/mappings"
   ],
   [
     "GET",
@@ -625,18 +633,6 @@
   ],
   [
     "POST",
-    "/api/knowledge-bases/{knowledge_base_id}/sources/{source_id}/sync"
-  ],
-  [
-    "POST",
-    "/api/knowledge-bases/{knowledge_base_id}/sources/{source_id}/sync-drive-file"
-  ],
-  [
-    "POST",
-    "/api/knowledge-bases/{knowledge_base_id}/sources/{source_id}/sync-folder"
-  ],
-  [
-    "POST",
     "/api/knowledge-bases/{knowledge_base_id}/sources/google-doc"
   ],
   [
@@ -653,6 +649,18 @@
   ],
   [
     "POST",
+    "/api/knowledge-bases/{knowledge_base_id}/sources/{source_id}/sync"
+  ],
+  [
+    "POST",
+    "/api/knowledge-bases/{knowledge_base_id}/sources/{source_id}/sync-drive-file"
+  ],
+  [
+    "POST",
+    "/api/knowledge-bases/{knowledge_base_id}/sources/{source_id}/sync-folder"
+  ],
+  [
+    "POST",
     "/api/register/provision"
   ],
   [
@@ -662,6 +670,10 @@
   [
     "POST",
     "/api/stores/{store_id}/automation-campaigns"
+  ],
+  [
+    "POST",
+    "/api/stores/{store_id}/automation-campaigns/audience/preview"
   ],
   [
     "POST",
@@ -677,11 +689,11 @@
   ],
   [
     "POST",
-    "/api/stores/{store_id}/automation-campaigns/audience/preview"
+    "/api/stores/{store_id}/automation-flows"
   ],
   [
     "POST",
-    "/api/stores/{store_id}/automation-flows"
+    "/api/stores/{store_id}/automation-flows/simulate"
   ],
   [
     "POST",
@@ -706,10 +718,6 @@
   [
     "POST",
     "/api/stores/{store_id}/automation-flows/{flow_id}/versions/{version_id}/publish"
-  ],
-  [
-    "POST",
-    "/api/stores/{store_id}/automation-flows/simulate"
   ],
   [
     "POST",
@@ -878,6 +886,10 @@
   [
     "PUT",
     "/api/stores/{store_id}/automations/{automation_id}"
+  ],
+  [
+    "PUT",
+    "/api/stores/{store_id}/suppliers/cj/mappings/{product_variant_id}"
   ],
   [
     "PUT",
