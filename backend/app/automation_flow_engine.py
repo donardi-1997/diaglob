@@ -628,17 +628,69 @@ def _process_tool_node(
     return "advanced"
 
 
-def _render_call_prompt(template: str, customer: Customer, store: Store) -> str:
-    context = {
-        "customer.name": customer.name or "",
-        "customer.phone": customer.phone or "",
-        "customer.country": customer.country_code or "",
-        "store.name": store.name or "",
-    }
-    rendered = template
-    for key, value in context.items():
-        rendered = rendered.replace("{{" + key + "}}", str(value))
-    return rendered.strip()
+def _record_order_confirmation_outcome(
+    db: Session,
+    run: AutomationFlowRun,
+    config: dict,
+    outcome: str,
+    now: datetime,
+) -> None:
+    if str(config.get("call_purpose") or "general") != "order_confirmation":
+        return
+
+    context = dict(run.trigger_context or {})
+    order_context = dict(context.get("order") or {})
+    order_id = order_context.get("id")
+    if not order_id:
+        return
+
+    try:
+        order_id = int(order_id)
+    except (TypeError, ValueError):
+        return
+
+    order = db.query(Order).filter(
+        Order.id == order_id,
+        Order.organization_id == run.organization_id,
+        Order.store_id == run.store_id,
+    ).first()
+    if order is None:
+        return
+
+    from .services.order_confirmation import set_order_confirmation
+
+    set_order_confirmation(
+        db,
+        order,
+        status=outcome,
+        source="voice_ai",
+        now=now,
+    )
+    order_context["confirmation_status"] = outcome
+    order_context["confirmation_source"] = "voice_ai"
+    order_context["confirmed_at"] = (
+        now.isoformat() + "Z"
+        if outcome == "confirmed"
+        else None
+    )
+    context["order"] = order_context
+    run.trigger_context = context
+    db.flush()
+
+
+def _render_call_prompt(
+    template: str,
+    customer: Customer,
+    store: Store,
+    run: AutomationFlowRun | None = None,
+) -> str:
+    rendered = _resolve_tool_value(
+        template,
+        customer,
+        store,
+        run,
+    )
+    return str(rendered or "").strip()
 
 
 def _process_call_node(
@@ -675,6 +727,13 @@ def _process_call_node(
             **(latest.extra_data or {}),
             "timed_out": True,
         }
+        _record_order_confirmation_outcome(
+            db,
+            run,
+            config,
+            "no_answer",
+            now,
+        )
         _advance_flow(db, recipient, graph, node["id"], now, outcome="no_answer")
         return "advanced"
 
@@ -690,6 +749,13 @@ def _process_call_node(
             error_code="no_phone" if customer else "customer_missing",
             message="Customer phone unavailable" if customer else "Customer not found",
         )
+        _record_order_confirmation_outcome(
+            db,
+            run,
+            config,
+            "failed",
+            now,
+        )
         _advance_flow(db, recipient, graph, node["id"], now, outcome="failed")
         return "advanced"
 
@@ -697,6 +763,7 @@ def _process_call_node(
         str(config.get("call_prompt") or ""),
         customer,
         store,
+        run,
     )
     language = str(config.get("call_language") or store.default_language or "es")
     provider = voice_sender or start_voice_call
@@ -715,6 +782,16 @@ def _process_call_node(
                 "flow_recipient_id": recipient.id,
                 "node_id": node["id"],
                 "customer_id": customer.id,
+                "order_id": (
+                    ((run.trigger_context or {}).get("order") or {}).get("id")
+                    if isinstance(run.trigger_context, dict)
+                    else None
+                ),
+                "order_number": (
+                    ((run.trigger_context or {}).get("order") or {}).get("number")
+                    if isinstance(run.trigger_context, dict)
+                    else None
+                ),
             },
         )
     except VoiceProviderError as exc:
@@ -728,6 +805,13 @@ def _process_call_node(
             outcome="failed",
             error_code=exc.code,
             message=str(exc),
+        )
+        _record_order_confirmation_outcome(
+            db,
+            run,
+            config,
+            "failed",
+            now,
         )
         _advance_flow(db, recipient, graph, node["id"], now, outcome="failed")
         return "advanced"
@@ -743,6 +827,13 @@ def _process_call_node(
             outcome="failed",
             error_code="voice_provider_error",
             message="Voice provider failed to start the call",
+        )
+        _record_order_confirmation_outcome(
+            db,
+            run,
+            config,
+            "failed",
+            now,
         )
         _advance_flow(db, recipient, graph, node["id"], now, outcome="failed")
         return "advanced"
@@ -824,6 +915,24 @@ def complete_voice_call(
     }
 
     graph = _get_graph_from_version(db, recipient.flow_version_id)
+    run = db.get(AutomationFlowRun, recipient.flow_run_id)
+    call_node = next(
+        (
+            item
+            for item in graph.get("nodes", [])
+            if item.get("id") == node_exec.node_id
+        ),
+        None,
+    )
+    if run is not None and call_node is not None:
+        _record_order_confirmation_outcome(
+            db,
+            run,
+            call_node.get("config", {}),
+            normalized,
+            now,
+        )
+
     _advance_flow(
         db,
         recipient,
