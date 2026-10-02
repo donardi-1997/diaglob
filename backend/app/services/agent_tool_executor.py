@@ -23,7 +23,7 @@ from .agent_approvals import (
     serialize_approval,
     validate_approved_action,
 )
-from .ai_tool_registry import get_tool
+from .ai_tool_registry import get_tool, validate_tool_arguments
 from .auto_fulfillment import (
     enqueue_store_paid_orders,
     requeue_store_auto_fulfillment,
@@ -545,6 +545,15 @@ def execute_agent_tool(
             "status": "denied",
             "code": "TOOL_UNKNOWN",
             "message": "Unknown tool.",
+        }
+
+    argument_errors = validate_tool_arguments(tool, arguments)
+    if argument_errors:
+        return {
+            "status": "denied",
+            "code": "TOOL_ARGUMENTS_INVALID",
+            "message": "; ".join(argument_errors[:10]),
+            "tool_name": tool_name,
         }
 
     decision = evaluate_action(
