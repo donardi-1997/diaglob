@@ -1,18 +1,19 @@
 import React, { useCallback } from "react";
-import { useTranslation } from "react-i18next";
 import {
   ReactFlowProvider,
-  useNodesState,
-  useEdgesState,
-  addEdge,
   type Connection,
   type NodeTypes,
+  type OnEdgesChange,
+  type OnNodesChange,
 } from "@xyflow/react";
 import FlowCanvas from "./FlowCanvas";
 import FlowNode from "./FlowNode";
+import FlowNodePalette from "./FlowNodePalette";
 import {
+  addNodeToGraph,
   type FlowGraph,
   type FlowNode as FlowNodeData,
+  type FlowNodeType,
 } from "./flowGraphUtils";
 
 interface FlowBuilderInnerProps {
@@ -20,144 +21,221 @@ interface FlowBuilderInnerProps {
   onGraphChange: (graph: FlowGraph) => void;
   selectedNodeId: string | null;
   onNodeSelect: (nodeId: string | null) => void;
+  canWrite: boolean;
 }
 
-function FlowBuilderInner({ graph, onGraphChange, selectedNodeId, onNodeSelect }: FlowBuilderInnerProps) {
-  const { t } = useTranslation();
-  const nodeTypes: NodeTypes = { flowNode: FlowNode as any };
+const nodeTypes: NodeTypes = {
+  flowNode: FlowNode as any,
+};
 
-  const [, , onNodesChange] = useNodesState(
-    graph.nodes.map((n) => ({
-      id: n.id,
-      type: "flowNode",
-      position: { x: n.position.x, y: n.position.y },
-      data: n,
-      selected: n.id === selectedNodeId,
-    }))
-  );
-
-  const [, setEdges, onEdgesChange] = useEdgesState(
-    graph.edges.map((e, i) => ({
-      id: `edge-${i}-${e.source}-${e.target}-${e.sourceHandle || "default"}`,
-      source: e.source,
-      target: e.target,
-      sourceHandle: e.sourceHandle || null,
-      targetHandle: e.targetHandle || null,
-      label: e.label || undefined,
-      type: "smoothstep",
-      style: { stroke: "var(--text-muted)", strokeWidth: 1.5 },
-    }))
-  );
-
+function FlowBuilderInner({
+  graph,
+  onGraphChange,
+  selectedNodeId,
+  onNodeSelect,
+  canWrite,
+}: FlowBuilderInnerProps) {
   const graphRef = React.useRef(graph);
   graphRef.current = graph;
 
   const syncGraph = useCallback(
-    (newNodes: FlowNodeData[], newEdges: { source: string; target: string; sourceHandle?: string; targetHandle?: string; label?: string }[]) => {
+    (
+      newNodes: FlowNodeData[],
+      newEdges: FlowGraph["edges"],
+    ) => {
       onGraphChange({
         nodes: newNodes,
-        edges: newEdges.map((e) => ({
-          source: e.source,
-          target: e.target,
-          sourceHandle: e.sourceHandle || undefined,
-          targetHandle: e.targetHandle || undefined,
-          label: e.label || undefined,
-        })),
+        edges: newEdges,
       });
     },
-    [onGraphChange]
+    [onGraphChange],
   );
 
-  const handleNodesChange: typeof onNodesChange = useCallback(
+  const handleNodesChange: OnNodesChange = useCallback(
     (changes) => {
-      onNodesChange(changes);
-      const positionChanges = changes.filter((c: any) => c.type === "position" && c.position);
-      if (positionChanges.length > 0) {
-        const updated = graphRef.current.nodes.map((n) => {
-          const change = positionChanges.find((c: any) => c.id === n.id) as any;
-          if (change?.position) {
-            return { ...n, position: { x: change.position.x, y: change.position.y } };
+      if (!canWrite) return;
+
+      let nextNodes = graphRef.current.nodes;
+      let nextEdges = graphRef.current.edges;
+      let changed = false;
+
+      for (const change of changes) {
+        if (change.type === "position" && change.position) {
+          nextNodes = nextNodes.map((node) =>
+            node.id === change.id
+              ? {
+                  ...node,
+                  position: {
+                    x: change.position!.x,
+                    y: change.position!.y,
+                  },
+                }
+              : node,
+          );
+          changed = true;
+        }
+
+        if (change.type === "remove") {
+          nextNodes = nextNodes.filter(
+            (node) => node.id !== change.id,
+          );
+          nextEdges = nextEdges.filter(
+            (edge) =>
+              edge.source !== change.id
+              && edge.target !== change.id,
+          );
+          if (selectedNodeId === change.id) {
+            onNodeSelect(null);
           }
-          return n;
-        });
-        syncGraph(updated, graphRef.current.edges);
+          changed = true;
+        }
       }
-      const removeChanges = changes.filter((c: any) => c.type === "remove");
-      if (removeChanges.length > 0) {
-        const ids = new Set(removeChanges.map((c: any) => c.id));
-        syncGraph(
-          graphRef.current.nodes.filter((n) => !ids.has(n.id)),
-          graphRef.current.edges.filter((e) => !ids.has(e.source) && !ids.has(e.target))
-        );
+
+      if (changed) {
+        syncGraph(nextNodes, nextEdges);
       }
     },
-    [onNodesChange, syncGraph]
+    [
+      canWrite,
+      onNodeSelect,
+      selectedNodeId,
+      syncGraph,
+    ],
   );
 
-  const handleEdgesChange: typeof onEdgesChange = useCallback(
+  const handleEdgesChange: OnEdgesChange = useCallback(
     (changes) => {
-      onEdgesChange(changes);
-      const removeChanges = changes.filter((c: any) => c.type === "remove");
-      if (removeChanges.length > 0) {
-        const edgeIds = removeChanges.map((c: any) => c.id);
-        const updatedEdges = graphRef.current.edges.filter((e, i) => {
-          const edgeId = `edge-${i}-${e.source}-${e.target}-${e.sourceHandle || "default"}`;
-          return !edgeIds.includes(edgeId);
-        });
-        syncGraph(graphRef.current.nodes, updatedEdges);
-      }
+      if (!canWrite) return;
+
+      const removed = new Set(
+        changes
+          .filter((change) => change.type === "remove")
+          .map((change) => change.id),
+      );
+
+      if (!removed.size) return;
+
+      const nextEdges = graphRef.current.edges.filter(
+        (edge, index) => {
+          const edgeId =
+            `edge-${index}-${edge.source}-${edge.target}-${edge.sourceHandle || "default"}`;
+          return !removed.has(edgeId);
+        },
+      );
+
+      syncGraph(graphRef.current.nodes, nextEdges);
     },
-    [onEdgesChange, syncGraph]
+    [canWrite, syncGraph],
   );
 
   const handleConnect = useCallback(
     (connection: Connection) => {
-      setEdges((eds) => addEdge({ ...connection, type: "smoothstep", style: { stroke: "var(--text-muted)", strokeWidth: 1.5 } }, eds));
-      if (connection.source && connection.target) {
-        syncGraph(graphRef.current.nodes, [
-          ...graphRef.current.edges,
-          {
-            source: connection.source,
-            target: connection.target,
-            sourceHandle: connection.sourceHandle || undefined,
-            targetHandle: connection.targetHandle || undefined,
-          },
-        ]);
+      if (
+        !canWrite
+        || !connection.source
+        || !connection.target
+      ) {
+        return;
       }
+
+      const label =
+        connection.sourceHandle === "true"
+        || connection.sourceHandle === "false"
+          ? connection.sourceHandle
+          : undefined;
+
+      const nextEdge = {
+        source: connection.source,
+        target: connection.target,
+        sourceHandle: connection.sourceHandle || undefined,
+        targetHandle: connection.targetHandle || undefined,
+        label,
+      };
+
+      const withoutConflictingBranch =
+        graphRef.current.edges.filter((edge) => {
+          if (edge.source !== connection.source) return true;
+          if (label) {
+            return (edge.label || edge.sourceHandle) !== label;
+          }
+          return Boolean(edge.label || edge.sourceHandle);
+        });
+
+      syncGraph(
+        graphRef.current.nodes,
+        [...withoutConflictingBranch, nextEdge],
+      );
     },
-    [setEdges, syncGraph]
+    [canWrite, syncGraph],
+  );
+
+  const addNode = useCallback(
+    (
+      type: FlowNodeType,
+      position?: { x: number; y: number },
+    ) => {
+      if (!canWrite) return;
+
+      const fallbackPosition = {
+        x: 260 + ((graphRef.current.nodes.length % 3) * 220),
+        y: 150 + (graphRef.current.nodes.length * 80),
+      };
+
+      const next = addNodeToGraph(
+        graphRef.current,
+        type,
+        position || fallbackPosition,
+      );
+
+      if (next === graphRef.current) return;
+
+      onGraphChange(next);
+      const created = next.nodes[next.nodes.length - 1];
+      if (created) onNodeSelect(created.id);
+    },
+    [canWrite, onGraphChange, onNodeSelect],
   );
 
   return (
-    <FlowCanvas
-      graph={{ nodes: graph.nodes, edges: graph.edges }}
-      onNodesChange={handleNodesChange as any}
-      onEdgesChange={handleEdgesChange as any}
-      onConnect={handleConnect}
-      onNodeClick={onNodeSelect}
-      selectedNodeId={selectedNodeId}
-      nodeTypes={nodeTypes}
-      t={t}
-    />
+    <div className="flow-builder-v2">
+      <FlowNodePalette
+        canWrite={canWrite}
+        onAdd={(type) => addNode(type)}
+      />
+      <div className="flow-canvas-workspace">
+        <div className="flow-canvas-hint">
+          <span>Canvas</span>
+          <small>
+            Conecta los nodos desde los puntos de entrada y salida.
+          </small>
+        </div>
+        <FlowCanvas
+          graph={graph}
+          onNodesChange={handleNodesChange}
+          onEdgesChange={handleEdgesChange}
+          onConnect={handleConnect}
+          onNodeClick={onNodeSelect}
+          onDropNode={addNode}
+          selectedNodeId={selectedNodeId}
+          nodeTypes={nodeTypes}
+        />
+      </div>
+    </div>
   );
 }
 
 export interface FlowBuilderProps {
   graph: FlowGraph;
   onGraphChange: (graph: FlowGraph) => void;
+  selectedNodeId: string | null;
+  onNodeSelect: (nodeId: string | null) => void;
+  canWrite: boolean;
 }
 
-export default function FlowBuilder({ graph, onGraphChange }: FlowBuilderProps) {
-  const [selectedNodeId, setSelectedNodeId] = React.useState<string | null>(null);
-
+export default function FlowBuilder(props: FlowBuilderProps) {
   return (
     <ReactFlowProvider>
-      <FlowBuilderInner
-        graph={graph}
-        onGraphChange={onGraphChange}
-        selectedNodeId={selectedNodeId}
-        onNodeSelect={setSelectedNodeId}
-      />
+      <FlowBuilderInner {...props} />
     </ReactFlowProvider>
   );
 }
