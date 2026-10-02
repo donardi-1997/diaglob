@@ -4700,6 +4700,56 @@ class TestShopifyOrderWebhooks:
         assert item.id == original_item_id
         assert item.quantity == 2
 
+    def test_stale_retry_does_not_regress_newer_order_state(
+        self,
+        client,
+        shopify_connection,
+        store,
+        db,
+    ):
+        import json
+
+        payload = self._payload()
+        payload["financial_status"] = "paid"
+        payload["updated_at"] = "2026-10-02T15:00:00Z"
+        paid_body = json.dumps(payload).encode("utf-8")
+        secret, paid_headers = self._headers(
+            paid_body,
+            topic="orders/updated",
+        )
+
+        with patch.dict(os.environ, {"SHOPIFY_CLIENT_SECRET": secret}, clear=False):
+            first = client.post(
+                "/api/webhooks/shopify",
+                content=paid_body,
+                headers=paid_headers,
+            )
+            assert first.status_code == 200
+
+            stale = self._payload()
+            stale["updated_at"] = "2026-10-02T14:21:00Z"
+            stale_body = json.dumps(stale).encode("utf-8")
+            _, stale_headers = self._headers(
+                stale_body,
+                topic="orders/create",
+            )
+            retry = client.post(
+                "/api/webhooks/shopify",
+                content=stale_body,
+                headers=stale_headers,
+            )
+
+        assert retry.status_code == 200
+        assert retry.json()["action"] == "ignored_stale"
+
+        db.expire_all()
+        order = db.query(Order).filter(
+            Order.shopify_order_id == "98765"
+        ).one()
+        assert order.financial_status == "paid"
+        assert order.payment_status == "paid"
+        assert order.lifecycle_status == "paid"
+
     def test_cancelled_webhook_marks_order_cancelled(
         self,
         client,
