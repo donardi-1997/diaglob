@@ -36,7 +36,10 @@ def get_voice_provider_config() -> VoiceProviderConfig | None:
 
 
 def voice_provider_configured() -> bool:
-    return get_voice_provider_config() is not None
+    return (
+        get_voice_provider_config() is not None
+        and bool(os.getenv("DIAGLOB_VOICE_WEBHOOK_SECRET", "").strip())
+    )
 
 
 def verify_voice_callback_secret(value: str | None) -> bool:
