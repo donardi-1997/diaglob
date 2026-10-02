@@ -132,11 +132,58 @@ jobs:
         env:
           PROD_HOST: ${{ secrets.PROD_HOST }}
           PROD_USER: ${{ secrets.PROD_USER }}
+        shell: bash
         run: |
+          set -euo pipefail
+
+          set +e
           ssh \
             -i ~/.ssh/diaglob_actions_prod \
             "$PROD_USER@$PROD_HOST" \
             "/opt/diaglob/scripts/deploy.sh"
+          deploy_status=$?
+          set -e
+
+          if [[ "$deploy_status" -eq 0 ]]; then
+            exit 0
+          fi
+
+          # deploy.sh currently performs its own immediate curl --fail health
+          # check after restarting the API. curl exit 22 means the HTTP
+          # endpoint answered with an error (typically a brief 502 while
+          # systemd/Uvicorn is still warming up). Only that exact exit code is
+          # eligible for recovery; every other deploy failure remains fatal.
+          if [[ "$deploy_status" -ne 22 ]]; then
+            echo "deploy.sh failed with non-health exit code: $deploy_status"
+            exit "$deploy_status"
+          fi
+
+          echo "deploy.sh returned curl exit 22; checking for API recovery..."
+
+          for attempt in {1..12}; do
+            body="$(mktemp)"
+
+            if curl \
+              --fail \
+              --silent \
+              --show-error \
+              --max-time 15 \
+              https://api.diaglob.tech/health \
+              --output "$body"; then
+              if grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"' "$body"; then
+                echo "API recovered after transient deploy health failure."
+                rm -f "$body"
+                exit 0
+              fi
+            fi
+
+            rm -f "$body"
+            echo "Recovery check ${attempt}/12 failed; retrying in 5 seconds..."
+            sleep 5
+          done
+
+          echo "API did not recover after deploy.sh exit 22."
+          exit "$deploy_status"
 
       - name: Migrate production database
         env:
