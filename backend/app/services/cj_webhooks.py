@@ -18,6 +18,7 @@ from ..model_domains.supplier_integrations import SupplierConnection
 from ..model_domains.supplier_orders import SupplierOrder
 from .shipment_tracking import (
     _upsert_shipment,
+    emit_shipment_status_events,
     normalize_cj_tracking_code,
     parse_cj_event_time,
 )
@@ -324,6 +325,7 @@ def process_cj_webhook(
         tracking_provider=params.get("trackingProvider"),
         tracking_url=params.get("trackingUrl"),
     )
+    previous_status = None if shipment.id is None else shipment.normalized_status
     db.flush()
 
     try:

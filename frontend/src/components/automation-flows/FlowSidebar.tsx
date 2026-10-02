@@ -43,6 +43,17 @@ const TRIGGER_LABELS: Record<string, string> = {
   customer_created: "flowTriggerType_customer_created",
   order_created: "flowTriggerType_order_created",
   failed_order: "flowTriggerType_failed_order",
+  post_sales_case_created: "flowTriggerType_post_sales_case_created",
+  post_sales_case_updated: "flowTriggerType_post_sales_case_updated",
+  post_sales_case_resolved: "flowTriggerType_post_sales_case_resolved",
+  shipment_created: "flowTriggerType_shipment_created",
+  shipment_in_transit: "flowTriggerType_shipment_in_transit",
+  shipment_out_for_delivery: "flowTriggerType_shipment_out_for_delivery",
+  shipment_delivered: "flowTriggerType_shipment_delivered",
+  shipment_delayed: "flowTriggerType_shipment_delayed",
+  shipment_failed: "flowTriggerType_shipment_failed",
+  shipment_delivery_exception: "flowTriggerType_shipment_delivery_exception",
+  shipment_returned: "flowTriggerType_shipment_returned",
 };
 
 const FIELD_LABELS: Record<string, string> = {

@@ -63,3 +63,23 @@ export async function updateAgent(
 
   return response.data;
 }
+
+
+export interface WorkforceRole {
+  id: string;
+  name: string;
+  purpose: string;
+  instruction: string;
+  customer_facing: boolean;
+  capabilities: string[];
+  recommended_templates: string[];
+}
+
+export async function getWorkforceCatalog() {
+  const response = await api.get<{
+    roles: WorkforceRole[];
+    total: number;
+  }>("/api/ai/workforce");
+
+  return response.data;
+}

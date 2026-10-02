@@ -16,6 +16,7 @@ from ..models import (
     Store,
     WhatsAppConnection,
 )
+from ..instagram_models import InstagramConnection
 from ..model_domains.supplier_integrations import SupplierConnection
 from ..operations import get_operations_summary
 from ..payments.registry import get_providers_for_market
@@ -36,6 +37,7 @@ def _display_provider(provider: str) -> str:
         "meta_ads": "Meta Ads",
         "whatsapp": "WhatsApp",
         "telegram": "Telegram",
+        "instagram": "Instagram",
         "google": "Google",
     }
     return labels.get(
@@ -240,6 +242,40 @@ def get_operations_integrations(
                 category="messaging",
                 connected=telegram_status == "connected",
                 status=telegram_status,
+            )
+        )
+
+    instagram = _isolated_read(
+        db,
+        "instagram",
+        lambda: (
+            db.query(InstagramConnection)
+            .filter(
+                InstagramConnection.organization_id == organization_id,
+                InstagramConnection.store_id == store_id,
+            )
+            .first()
+        ),
+    )
+    if instagram is _FAILED:
+        integrations.append(
+            _degraded_item(
+                key="instagram",
+                provider="instagram",
+                name="Instagram",
+                category="messaging",
+            )
+        )
+    else:
+        instagram_status = instagram.status if instagram else "disconnected"
+        integrations.append(
+            _item(
+                key="instagram",
+                provider="instagram",
+                name="Instagram",
+                category="messaging",
+                connected=instagram_status == "connected",
+                status=instagram_status,
             )
         )
 

@@ -15,7 +15,18 @@ export type TriggerType =
   | "customer_segment"
   | "customer_created"
   | "order_created"
-  | "failed_order";
+  | "failed_order"
+  | "post_sales_case_created"
+  | "post_sales_case_updated"
+  | "post_sales_case_resolved"
+  | "shipment_created"
+  | "shipment_in_transit"
+  | "shipment_out_for_delivery"
+  | "shipment_delivered"
+  | "shipment_delayed"
+  | "shipment_failed"
+  | "shipment_delivery_exception"
+  | "shipment_returned";
 
 export type ConditionField =
   | "customer.segment"
@@ -125,6 +136,17 @@ const TRIGGER_TYPES: TriggerType[] = [
   "customer_created",
   "order_created",
   "failed_order",
+  "post_sales_case_created",
+  "post_sales_case_updated",
+  "post_sales_case_resolved",
+  "shipment_created",
+  "shipment_in_transit",
+  "shipment_out_for_delivery",
+  "shipment_delivered",
+  "shipment_delayed",
+  "shipment_failed",
+  "shipment_delivery_exception",
+  "shipment_returned",
 ];
 
 const CONDITION_FIELDS: ConditionField[] = [

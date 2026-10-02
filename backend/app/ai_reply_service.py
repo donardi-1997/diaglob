@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from .ai_generation import generate_grounded_answer
 from .commerce import search_products
 from .db import SessionLocal
+from .integrations.instagram.client import send_message as send_instagram_text_message
 from .integrations.telegram.client import send_message as send_telegram_text_message
 from .models import (
     Agent,
@@ -13,6 +14,8 @@ from .models import (
     Store,
     WhatsAppConnection,
 )
+from .instagram_models import InstagramConnection
+from .instagram_security import decrypt_instagram_secret
 from .rag import retrieve_agent_knowledge
 from .services.ai_usage_service import acquire_ai_capacity, refund_ai_capacity
 from .services.order_intelligence import build_customer_order_context
@@ -24,6 +27,7 @@ from .whatsapp_client import (
 from .whatsapp_security import (
     decrypt_whatsapp_secret,
 )
+from .workforce_catalog import get_workforce_role
 
 
 HANDOFF_KEYWORDS = [
@@ -65,18 +69,34 @@ def _resolve_agent(
     organization_id: int,
     store_id: int,
 ) -> Agent | None:
-    return (
+    agents = (
         db.query(Agent)
         .filter(
-            Agent.organization_id
-            == organization_id,
+            Agent.organization_id == organization_id,
             Agent.active.is_(True),
-            Agent.stores.any(
-                Store.id == store_id
-            ),
+            Agent.stores.any(Store.id == store_id),
         )
-        .first()
+        .order_by(Agent.id)
+        .all()
     )
+
+    # Internal workforce roles (for example Analyst) must never become the
+    # implicit customer-facing responder just because they were created first.
+    eligible = []
+    for agent in agents:
+        workforce_role = get_workforce_role(agent.role)
+        if workforce_role is None or workforce_role.get("customer_facing"):
+            eligible.append(agent)
+
+    priority = {
+        "sales": 0,
+        "support": 1,
+        "post_sales": 2,
+        "logistics": 3,
+        "retention": 4,
+    }
+    eligible.sort(key=lambda item: (priority.get(item.role, 50), item.id))
+    return eligible[0] if eligible else None
 
 
 def _build_history_text(
@@ -156,6 +176,46 @@ def _deliver_answer(
             if result.get("message_id") is not None
             else None
         )
+        ai_message.delivery_status = "sent"
+        db.commit()
+        return
+
+    if channel == "instagram":
+        connection = (
+            db.query(InstagramConnection)
+            .filter(
+                InstagramConnection.store_id == conversation.store_id,
+                InstagramConnection.organization_id == conversation.organization_id,
+                InstagramConnection.status == "connected",
+            )
+            .first()
+        )
+        ai_message.provider = "instagram"
+        customer_key = (
+            conversation.customer.phone
+            if conversation.customer
+            else None
+        )
+        if (
+            not connection
+            or not customer_key
+            or not customer_key.startswith("instagram:")
+        ):
+            ai_message.delivery_status = "failed"
+            db.commit()
+            return
+
+        token = decrypt_instagram_secret(connection.access_token_encrypted)
+        recipient_id = customer_key.split(":", 1)[1]
+        result = send_instagram_text_message(
+            token,
+            instagram_account_id=connection.instagram_account_id,
+            recipient_id=recipient_id,
+            text=answer,
+        )
+        ai_message.external_message_id = str(
+            result.get("message_id") or result.get("id") or ""
+        ) or None
         ai_message.delivery_status = "sent"
         db.commit()
         return

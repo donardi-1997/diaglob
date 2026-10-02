@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from ..integrations.cj import client as cj_client
 from ..model_domains.shipments import Shipment
+from ..automations import safe_emit_event
 from ..model_domains.supplier_orders import SupplierOrder
 from ..settings import get_settings
 from .supplier_connections import get_valid_cj_access_token
@@ -39,6 +40,69 @@ STATUS_CODE_MAP = {
     13: "EXCEPTION",
     14: "RETURNED",
 }
+
+
+STATUS_EVENT_MAP = {
+    "SHIPPED": "shipment.in_transit",
+    "IN_TRANSIT": "shipment.in_transit",
+    "CUSTOMS": "shipment.in_transit",
+    "READY_FOR_PICKUP": "shipment.in_transit",
+    "OUT_FOR_DELIVERY": "shipment.out_for_delivery",
+    "DELIVERED": "shipment.delivered",
+    "EXCEPTION": "shipment.delivery_exception",
+    "RETURNED": "shipment.returned",
+}
+
+
+def emit_shipment_status_events(
+    db: Session,
+    shipment: Shipment,
+    previous_status: str | None,
+    *,
+    event_source_id: str | None = None,
+) -> list[str]:
+    """Emit canonical shipment events only when a persisted status changes."""
+    emitted: list[str] = []
+    current_status = (shipment.normalized_status or "PENDING").upper()
+
+    payload = {
+        "shipment_id": shipment.id,
+        "supplier_order_id": shipment.supplier_order_id,
+        "order_id": shipment.order_id,
+        "customer_id": (
+            shipment.commerce_order.customer_id
+            if shipment.commerce_order is not None
+            else None
+        ),
+        "tracking_number": shipment.tracking_number,
+        "carrier": shipment.last_mile_carrier or shipment.tracking_provider or shipment.logistic_name,
+        "shipment": serialize_shipment(shipment),
+    }
+
+    event_types: list[str] = []
+    if previous_status is None:
+        event_types.append("shipment.created")
+    if previous_status != current_status:
+        normalized_event = STATUS_EVENT_MAP.get(current_status)
+        if normalized_event:
+            event_types.append(normalized_event)
+
+    for event_type in dict.fromkeys(event_types):
+        safe_emit_event(
+            db,
+            shipment.organization_id,
+            shipment.store_id,
+            event_type,
+            payload,
+            event_id=(
+                f"{event_source_id}:{event_type}:{current_status}"
+                if event_source_id
+                else f"shipment:{shipment.id}:{event_type}:{current_status}"
+            ),
+        )
+        emitted.append(event_type)
+
+    return emitted
 
 
 def normalize_cj_tracking_code(value: int | str | None) -> str:
@@ -249,6 +313,7 @@ def sync_cj_shipment(
         tracking_provider=remote_order.get("trackingProvider"),
         tracking_url=remote_order.get("trackingUrl"),
     )
+    previous_status = None if shipment.id is None else shipment.normalized_status
     db.flush()
 
     tracking_items = cj_client.get_tracking_info(token, [tracking_number])
@@ -292,6 +357,12 @@ def sync_cj_shipment(
     shipment.updated_at = now
     db.commit()
     db.refresh(shipment)
+    emit_shipment_status_events(
+        db,
+        shipment,
+        previous_status,
+        event_source_id=f"cj-sync:{supplier_order.id}",
+    )
 
     return {
         "available": True,

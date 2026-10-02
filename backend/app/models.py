@@ -55,6 +55,7 @@ from .model_domains.knowledge import (  # noqa: F401
 # Customer models are physically defined in app.model_domains.customers.
 # This import preserves the historical app.models import surface.
 from .model_domains.customers import Customer, CustomerStoreProfile
+from .model_domains.post_sales import PostSalesCase, PostSalesCaseEvent
 
 
 # ============================================================
@@ -1402,3 +1403,7 @@ from .model_domains.ai_usage import AiUsageCreditGrant
 # Unit Economics models are physically defined in app.model_domains.unit_economics.
 # These imports preserve the historical app.models import surface.
 from .model_domains.unit_economics import PaymentMethodCostRule, StoreUnitEconomicsConfig
+
+
+# Instagram Messaging integration is physically defined outside the legacy model module.
+from .instagram_models import InstagramConnection

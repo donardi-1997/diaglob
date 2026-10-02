@@ -86,6 +86,7 @@ from .api.cj_webhooks import router as cj_webhooks_router  # noqa: E402
 from .api.dropi import router as dropi_router  # noqa: E402
 from .api.google import router as google_router  # noqa: E402
 from .api.health import router as health_router  # noqa: E402
+from .api.instagram import router as instagram_router  # noqa: E402
 from .api.knowledge import router as knowledge_router  # noqa: E402
 from .api.markets import router as markets_router  # noqa: E402
 from .api.orders import router as orders_router  # noqa: E402
@@ -93,6 +94,7 @@ from .api.organizations import router as organizations_router  # noqa: E402
 from .api.products import router as products_router  # noqa: E402
 from .api.nuvemshop import router as nuvemshop_router  # noqa: E402
 from .api.payments import router as payments_router  # noqa: E402
+from .api.post_sales import router as post_sales_router  # noqa: E402
 from .api.shopify import router as shopify_router  # noqa: E402
 from .api.dropshipping_analytics import router as dropshipping_analytics_router  # noqa: E402
 from .api.stores import router as stores_router  # noqa: E402
@@ -102,6 +104,7 @@ from .api.unit_economics import router as unit_economics_router  # noqa: E402
 from .api.whatsapp import router as whatsapp_router  # noqa: E402
 
 app.include_router(health_router)
+app.include_router(instagram_router)
 app.include_router(auth_router)
 app.include_router(organizations_router)
 app.include_router(stores_router)
@@ -117,6 +120,7 @@ app.include_router(shopify_router)
 app.include_router(nuvemshop_router)
 app.include_router(knowledge_router)
 app.include_router(payments_router)
+app.include_router(post_sales_router)
 app.include_router(google_router)
 app.include_router(billing_router)
 app.include_router(ai_usage_router)

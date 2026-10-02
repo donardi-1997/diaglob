@@ -48,6 +48,7 @@ import {
 import CJIntegrationCard from "./CJIntegrationCard";
 import ShopifyOrders from "./ShopifyOrders";
 import TelegramIntegrationCard from "./TelegramIntegrationCard";
+import InstagramIntegrationCard from "./InstagramIntegrationCard";
 
 
 interface StoreIntegrationsProps {
@@ -1185,6 +1186,11 @@ export default function StoreIntegrations({
 
 
       <TelegramIntegrationCard
+        storeId={storeId}
+        canWrite={canWrite}
+      />
+
+      <InstagramIntegrationCard
         storeId={storeId}
         canWrite={canWrite}
       />

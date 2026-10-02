@@ -19,7 +19,7 @@ from .models import (
     AutomationFlow, AutomationFlowVersion, AutomationFlowRun,
     AutomationFlowRecipientExecution, AutomationNodeExecution,
     AutomationDeliveryAttempt, AutomationRateLimit,
-    Customer, OrganizationMembership, Store, WhatsAppConnection,
+    Customer, CustomerStoreProfile, OrganizationMembership, Store, WhatsAppConnection,
 )
 from .whatsapp_client import WhatsAppDeliveryError, send_whatsapp_template_message, send_whatsapp_text_message
 from .whatsapp_compliance import evaluate_whatsapp_delivery_eligibility, get_last_whatsapp_inbound_by_customer
@@ -270,14 +270,46 @@ def _process_condition_node(db: Session, recipient: AutomationFlowRecipientExecu
     if not customer:
         _finish_flow_recipient(db, recipient, "failed", now, code="customer_missing", message="Customer not found")
         return "failed"
+    profile = db.query(CustomerStoreProfile).filter(
+        CustomerStoreProfile.customer_id == customer.id,
+        CustomerStoreProfile.store_id == run.store_id,
+        CustomerStoreProfile.organization_id == run.organization_id,
+    ).first()
+
+    intelligence = None
+    if field in {
+        "customer.segment",
+        "customer.health",
+        "customer.priority",
+        "customer.needs_attention",
+        "customer.needs_followup",
+    }:
+        from .customers.intelligence import get_customer_metrics
+
+        intelligence = next(
+            (
+                item for item in get_customer_metrics(
+                    db,
+                    run.organization_id,
+                    run.store_id,
+                )
+                if item.get("id") == customer.id
+            ),
+            None,
+        )
+
     customer_data = {
-        "customer.segment": getattr(customer, "primary_segment", None),
-        "customer.health": getattr(customer, "customer_health", None),
-        "customer.priority": getattr(customer, "priority", None),
-        "customer.needs_attention": getattr(customer, "needs_attention", False),
-        "customer.needs_followup": getattr(customer, "needs_followup", False),
-        "customer.order_count": getattr(customer, "orders_count", 0),
-        "customer.country": getattr(customer, "country_code", None),
+        "customer.segment": (intelligence or {}).get("primary_segment"),
+        "customer.health": (intelligence or {}).get("customer_health"),
+        "customer.priority": (intelligence or {}).get("priority"),
+        "customer.needs_attention": bool(
+            (intelligence or {}).get("needs_attention", False)
+        ),
+        "customer.needs_followup": bool(
+            (intelligence or {}).get("needs_followup", False)
+        ),
+        "customer.order_count": profile.orders_count if profile else 0,
+        "customer.country": customer.country_code,
         "has_successful_order_since_flow_start": False,
     }
     actual = customer_data.get(field)

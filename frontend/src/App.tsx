@@ -21,6 +21,7 @@ import {
   MessageSquareText,
   Plug,
   ShoppingBag,
+  ShieldCheck,
   Sparkles,
   Store,
   Users,
@@ -53,6 +54,7 @@ const AgentChatPage = lazy(() => import("./pages/AgentChatPage"));
 const AnalyticsPage = lazy(() => import("./pages/AnalyticsPage"));
 const CustomersWorkspacePage = lazy(() => import("./pages/CustomersWorkspacePage"));
 const IntegrationsHubPage = lazy(() => import("./pages/IntegrationsHubPage"));
+const PostSalesPage = lazy(() => import("./pages/PostSalesPage"));
 
 interface NavigationDefinition {
   key: string;
@@ -108,6 +110,14 @@ const navigation: NavigationDefinition[] = [
     group: "operations",
     icon: ShoppingBag,
     permission: "commerce.read",
+  },
+  {
+    key: "post-sales",
+    labelKey: "postSales",
+    fallback: "Postventa",
+    group: "operations",
+    icon: ShieldCheck,
+    permission: "post_sales.read",
   },
   {
     key: "integrations",
@@ -361,6 +371,12 @@ function App() {
           searchEntityId={commerceSearchKind ? selectedSearchResult?.entityId : undefined}
           searchQuery={commerceSearchKind ? selectedSearchResult?.query : undefined}
           searchRequestKey={commerceSearchKind ? searchRequestKey : undefined}
+        />
+      )}
+      {activePage === "post-sales" && (
+        <PostSalesPage
+          storeId={Number(selectedStoreId) || 0}
+          canWrite={can("post_sales.write")}
         />
       )}
       {activePage === "integrations" && (
