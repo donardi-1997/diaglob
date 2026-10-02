@@ -15,6 +15,10 @@ from ..model_domains.supplier_integrations import SupplierConnection
 from ..model_domains.supplier_orders import SupplierOrder
 from ..models import CommerceConnection, Order, OrderItem
 from ..shopify_client import ShopifyAPIError
+from .shipment_tracking import (
+    ShipmentTrackingError,
+    configure_cj_logistics_webhook,
+)
 from .shopify_fulfillment import (
     ShopifyFulfillmentError,
     create_shopify_fulfillment_from_shipment,
@@ -151,6 +155,22 @@ def configure_cj_auto_fulfillment(
                 "SHOPIFY_FULFILLMENT_SCOPES_REQUIRED:"
                 + ",".join(missing_scopes)
             )
+
+        try:
+            configure_cj_logistics_webhook(
+                db,
+                organization_id,
+                store_id,
+            )
+        except (
+            CJError,
+            ShipmentTrackingError,
+            SupplierConnectionError,
+            SupplierConnectionNotFound,
+        ) as exc:
+            raise AutoFulfillmentError(
+                "CJ_LOGISTICS_WEBHOOK_REQUIRED:" + str(exc)
+            ) from exc
 
     connection.auto_fulfillment_enabled = bool(enabled)
     connection.auto_origin_country_code = origin
