@@ -335,7 +335,16 @@ def _process_condition_node(db: Session, recipient: AutomationFlowRecipientExecu
         "customer.country": customer.country_code,
         "has_successful_order_since_flow_start": False,
     }
-    actual = customer_data.get(field)
+    runtime = _runtime_context(
+        customer,
+        db.get(Store, run.store_id),
+        run,
+    )
+    actual = (
+        customer_data[field]
+        if field in customer_data
+        else runtime.get(field)
+    )
     result = _evaluate_condition(actual, operator, value)
     branch = "true" if result else "false"
     _record_node_execution(db, recipient, node["id"], "condition", "completed", now, outcome=branch)
@@ -419,6 +428,96 @@ def _resolve_tool_value(
     return resolved
 
 
+def _enqueue_confirmed_trigger_order(
+    db: Session,
+    membership: OrganizationMembership,
+    run: AutomationFlowRun,
+) -> dict:
+    """Queue only the order that triggered this flow after recorded confirmation."""
+    from .services.action_policy import evaluate_action
+    from .services.auto_fulfillment import enqueue_shopify_order
+
+    decision = evaluate_action(
+        db,
+        membership,
+        "fulfillment.retry",
+        store_id=run.store_id,
+    )
+    if not decision.allowed:
+        return {
+            "status": "error",
+            "code": decision.code or "fulfillment_not_allowed",
+            "message": decision.message or "Fulfillment is not allowed",
+        }
+
+    context = run.trigger_context or {}
+    event = context.get("event") if isinstance(context, dict) else {}
+    order_context = context.get("order") if isinstance(context, dict) else {}
+    if not isinstance(event, dict) or event.get("type") != "order.created":
+        return {
+            "status": "error",
+            "code": "trigger_order_required",
+            "message": "Fulfillment requires an order.created trigger",
+        }
+    if not isinstance(order_context, dict) or not order_context.get("id"):
+        return {
+            "status": "error",
+            "code": "trigger_order_missing",
+            "message": "The triggering order is unavailable",
+        }
+
+    try:
+        order_id = int(order_context["id"])
+    except (TypeError, ValueError):
+        return {
+            "status": "error",
+            "code": "trigger_order_invalid",
+            "message": "The triggering order id is invalid",
+        }
+
+    order = db.query(Order).filter(
+        Order.id == order_id,
+        Order.organization_id == run.organization_id,
+        Order.store_id == run.store_id,
+    ).first()
+    if order is None:
+        return {
+            "status": "error",
+            "code": "trigger_order_not_found",
+            "message": "The triggering order no longer exists",
+        }
+
+    if (order.confirmation_status or "").lower() != "confirmed":
+        return {
+            "status": "error",
+            "code": "order_confirmation_required",
+            "message": "The triggering order has not been confirmed",
+        }
+
+    job = enqueue_shopify_order(db, order.id)
+    if job is None:
+        return {
+            "status": "error",
+            "code": "auto_fulfillment_not_queued",
+            "message": (
+                "The order is not eligible or automatic fulfillment "
+                "is not enabled for this store"
+            ),
+        }
+
+    return {
+        "status": "success",
+        "result": {
+            "order_id": order.id,
+            "order_number": order.order_number,
+            "confirmation_status": order.confirmation_status,
+            "job_id": job.id,
+            "job_status": job.status,
+            "provider": job.provider,
+        },
+    }
+
+
 def _process_tool_node(
     db: Session,
     recipient: AutomationFlowRecipientExecution,
@@ -474,14 +573,27 @@ def _process_tool_node(
         )
         return "failed"
 
-    arguments = _resolve_tool_value(config.get("arguments", {}), customer)
-    result = execute_agent_tool(
-        db,
-        membership,
-        tool_name=tool_name,
-        store_id=run.store_id,
-        arguments=arguments if isinstance(arguments, dict) else {},
+    store = db.get(Store, run.store_id)
+    arguments = _resolve_tool_value(
+        config.get("arguments", {}),
+        customer,
+        store,
+        run,
     )
+    if tool_name == "fulfillment.enqueue_trigger_order":
+        result = _enqueue_confirmed_trigger_order(
+            db,
+            membership,
+            run,
+        )
+    else:
+        result = execute_agent_tool(
+            db,
+            membership,
+            tool_name=tool_name,
+            store_id=run.store_id,
+            arguments=arguments if isinstance(arguments, dict) else {},
+        )
 
     if result.get("status") != "success":
         code = str(result.get("code") or "flow_tool_failed")
