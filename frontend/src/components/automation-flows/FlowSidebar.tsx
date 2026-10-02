@@ -2,6 +2,7 @@ import {
   Clock,
   GitBranch,
   MessageSquare,
+  PhoneCall,
   Square,
   Trash2,
   Wrench,
@@ -85,6 +86,7 @@ const NODE_ICONS: Record<string, typeof Zap> = {
   trigger: Zap,
   wait: Clock,
   message: MessageSquare,
+  call: PhoneCall,
   condition: GitBranch,
   tool: Wrench,
   end: Square,
@@ -392,6 +394,62 @@ export default function FlowSidebar({
                     {t("flowTemplateHint")}
                   </small>
                 )}
+              </>
+            )}
+
+            {node.type === "call" && (
+              <>
+                <label>
+                  <span>{t("flowCallPrompt")}</span>
+                  <textarea
+                    rows={7}
+                    value={node.config.call_prompt || ""}
+                    onChange={(event) =>
+                      canWrite
+                      && onUpdate(node.id, {
+                        call_prompt: event.target.value,
+                      })}
+                    disabled={!canWrite}
+                    placeholder={t("flowCallPromptPlaceholder")}
+                  />
+                </label>
+                <label>
+                  <span>{t("flowCallLanguage")}</span>
+                  <select
+                    value={node.config.call_language || "es"}
+                    onChange={(event) =>
+                      canWrite
+                      && onUpdate(node.id, {
+                        call_language: event.target.value,
+                      })}
+                    disabled={!canWrite}
+                  >
+                    <option value="es">Español</option>
+                    <option value="en">English</option>
+                    <option value="pt-BR">Português</option>
+                  </select>
+                </label>
+                <label>
+                  <span>{t("flowCallTimeout")}</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={60}
+                    value={Number(node.config.timeout_minutes ?? 5)}
+                    onChange={(event) =>
+                      canWrite
+                      && onUpdate(node.id, {
+                        timeout_minutes: Math.min(
+                          60,
+                          Math.max(1, Number(event.target.value) || 5),
+                        ),
+                      })}
+                    disabled={!canWrite}
+                  />
+                </label>
+                <small className="flow-field-hint">
+                  {t("flowCallOutcomeHint")}
+                </small>
               </>
             )}
 
