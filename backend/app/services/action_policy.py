@@ -104,6 +104,10 @@ ACTION_POLICIES: dict[str, ActionPolicy] = {
         "automations.update", "automations.write", "write", "simple",
         description="Modify an automation.",
     ),
+    "automations.publish": ActionPolicy(
+        "automations.publish", "automations.write", "write", "simple",
+        description="Publish the current version of an automation.",
+    ),
     "automations.activate": ActionPolicy(
         "automations.activate", "automations.write", "external", "simple",
         description="Activate an automation that may call external services.",
