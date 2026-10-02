@@ -73,6 +73,10 @@ const FIELD_LABELS: Record<string, string> = {
   "order.currency": "flowField_order_currency",
   "order.country": "flowField_order_country",
   "order.fulfillment_status": "flowField_order_fulfillment_status",
+  "shipment.status": "flowField_shipment_status",
+  "shipment.carrier": "flowField_shipment_carrier",
+  "shipment.destination_country": "flowField_shipment_destination_country",
+  "shipment.provider": "flowField_shipment_provider",
 };
 
 const OPERATOR_LABELS: Record<string, string> = {
