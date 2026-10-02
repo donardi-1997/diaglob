@@ -1,19 +1,31 @@
-import { useCallback, useEffect, useState } from "react";
-import { ArrowLeft, RotateCcw } from "lucide-react";
 import {
-  listFlowRuns,
+  useCallback,
+  useEffect,
+  useState,
+} from "react";
+import {
+  ArrowLeft,
+  Network,
+  RotateCcw,
+  Users,
+} from "lucide-react";
+import {
+  getFlowRecipientDetail,
   getFlowRun,
   listFlowRunRecipients,
-  getFlowRecipientDetail,
+  listFlowRuns,
   retryFlowRecipient,
-  type AutomationFlowRun,
+  retryFlowRecipientFromNode,
   type AutomationFlowRecipient,
   type AutomationFlowRecipientDetail,
+  type AutomationFlowRun,
 } from "../../services/automationFlows";
+import FlowExecutionDebugger from "./FlowExecutionDebugger";
 
 interface Props {
   storeId: number;
   flowId: number;
+  canWrite: boolean;
   onBack: () => void;
   t: (key: string) => string;
 }
@@ -30,17 +42,41 @@ const STATUS_STYLES: Record<string, string> = {
   retry_wait: "rgba(230,168,23,0.12)",
   skipped: "rgba(255,255,255,0.04)",
   ambiguous: "rgba(230,168,23,0.12)",
+  active: "rgba(74,158,255,0.12)",
+  waiting: "rgba(230,168,23,0.12)",
 };
 
-type SubView = "runs" | "recipients" | "detail";
+const TERMINAL_RECIPIENT_STATUSES = new Set([
+  "failed",
+  "ambiguous",
+  "completed",
+]);
 
-export default function FlowRuns({ storeId, flowId, onBack, t }: Props) {
+type SubView =
+  | "runs"
+  | "run-map"
+  | "recipients"
+  | "detail";
+
+export default function FlowRuns({
+  storeId,
+  flowId,
+  canWrite,
+  onBack,
+  t,
+}: Props) {
   const [subView, setSubView] = useState<SubView>("runs");
   const [runs, setRuns] = useState<AutomationFlowRun[]>([]);
-  const [selectedRun, setSelectedRun] = useState<AutomationFlowRun | null>(null);
-  const [recipients, setRecipients] = useState<AutomationFlowRecipient[]>([]);
-  const [selectedRecipient, setSelectedRecipient] = useState<AutomationFlowRecipientDetail | null>(null);
+  const [selectedRun, setSelectedRun] =
+    useState<AutomationFlowRun | null>(null);
+  const [recipients, setRecipients] = useState<
+    AutomationFlowRecipient[]
+  >([]);
+  const [selectedRecipient, setSelectedRecipient] =
+    useState<AutomationFlowRecipientDetail | null>(null);
   const [loading, setLoading] = useState(false);
+  const [retryingNodeId, setRetryingNodeId] =
+    useState<string | null>(null);
   const [error, setError] = useState("");
 
   const loadRuns = useCallback(async () => {
@@ -64,16 +100,33 @@ export default function FlowRuns({ storeId, flowId, onBack, t }: Props) {
       setLoading(true);
       setError("");
       try {
-        const detail = await getFlowRun(storeId, flowId, run.id);
+        const detail = await getFlowRun(
+          storeId,
+          flowId,
+          run.id,
+        );
         setSelectedRun(detail);
-        setSubView("recipients");
+        setSubView("run-map");
       } catch {
         setError(t("flowRunsLoadError"));
       } finally {
         setLoading(false);
       }
     },
-    [storeId, flowId, t]
+    [storeId, flowId, t],
+  );
+
+  const refreshSelectedRun = useCallback(
+    async (runId: number) => {
+      const detail = await getFlowRun(
+        storeId,
+        flowId,
+        runId,
+      );
+      setSelectedRun(detail);
+      return detail;
+    },
+    [storeId, flowId],
   );
 
   const loadRecipients = useCallback(
@@ -81,7 +134,11 @@ export default function FlowRuns({ storeId, flowId, onBack, t }: Props) {
       setLoading(true);
       setError("");
       try {
-        const result = await listFlowRunRecipients(storeId, flowId, runId);
+        const result = await listFlowRunRecipients(
+          storeId,
+          flowId,
+          runId,
+        );
         setRecipients(result.items);
       } catch {
         setError(t("flowRunsLoadError"));
@@ -89,11 +146,13 @@ export default function FlowRuns({ storeId, flowId, onBack, t }: Props) {
         setLoading(false);
       }
     },
-    [storeId, flowId, t]
+    [storeId, flowId, t],
   );
 
   useEffect(() => {
-    if (subView === "recipients" && selectedRun) void loadRecipients(selectedRun.id);
+    if (subView === "recipients" && selectedRun) {
+      void loadRecipients(selectedRun.id);
+    }
   }, [subView, selectedRun?.id, loadRecipients]);
 
   const loadRecipientDetail = useCallback(
@@ -101,7 +160,14 @@ export default function FlowRuns({ storeId, flowId, onBack, t }: Props) {
       setLoading(true);
       setError("");
       try {
-        setSelectedRecipient(await getFlowRecipientDetail(storeId, flowId, runId, recipientId));
+        setSelectedRecipient(
+          await getFlowRecipientDetail(
+            storeId,
+            flowId,
+            runId,
+            recipientId,
+          ),
+        );
         setSubView("detail");
       } catch {
         setError(t("flowRunsLoadError"));
@@ -109,7 +175,7 @@ export default function FlowRuns({ storeId, flowId, onBack, t }: Props) {
         setLoading(false);
       }
     },
-    [storeId, flowId, t]
+    [storeId, flowId, t],
   );
 
   const handleRetry = useCallback(
@@ -117,63 +183,109 @@ export default function FlowRuns({ storeId, flowId, onBack, t }: Props) {
       setLoading(true);
       setError("");
       try {
-        await retryFlowRecipient(storeId, flowId, runId, recipientId);
-        setSelectedRecipient(null);
-        setSubView("recipients");
-        void loadRecipients(runId);
+        await retryFlowRecipient(
+          storeId,
+          flowId,
+          runId,
+          recipientId,
+        );
+        await refreshSelectedRun(runId);
+        setSelectedRecipient(
+          await getFlowRecipientDetail(
+            storeId,
+            flowId,
+            runId,
+            recipientId,
+          ),
+        );
       } catch {
         setError(t("flowRetryError"));
       } finally {
         setLoading(false);
       }
     },
-    [storeId, flowId, loadRecipients, t]
+    [storeId, flowId, refreshSelectedRun, t],
   );
 
-  const formatDate = (iso: string | null) => (iso ? new Date(iso).toLocaleString() : "-");
+  const handleRetryFromNode = useCallback(
+    async (nodeId: string) => {
+      if (!selectedRun || !selectedRecipient || !canWrite) {
+        return;
+      }
+      setRetryingNodeId(nodeId);
+      setError("");
+      try {
+        await retryFlowRecipientFromNode(
+          storeId,
+          flowId,
+          selectedRun.id,
+          selectedRecipient.id,
+          nodeId,
+        );
+        await refreshSelectedRun(selectedRun.id);
+        setSelectedRecipient(
+          await getFlowRecipientDetail(
+            storeId,
+            flowId,
+            selectedRun.id,
+            selectedRecipient.id,
+          ),
+        );
+      } catch {
+        setError(t("flowRetryError"));
+      } finally {
+        setRetryingNodeId(null);
+      }
+    },
+    [
+      canWrite,
+      flowId,
+      refreshSelectedRun,
+      selectedRecipient,
+      selectedRun,
+      storeId,
+      t,
+    ],
+  );
+
+  const formatDate = (iso: string | null) =>
+    iso ? new Date(iso).toLocaleString() : "-";
+
+  const goBack = () => {
+    if (subView === "detail") {
+      setSelectedRecipient(null);
+      setSubView("recipients");
+      return;
+    }
+    if (subView === "recipients") {
+      setRecipients([]);
+      setSubView("run-map");
+      return;
+    }
+    if (subView === "run-map") {
+      setSelectedRun(null);
+      setSubView("runs");
+      return;
+    }
+    onBack();
+  };
 
   const breadcrumb = (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+    <div className="flow-runs-breadcrumb">
       <button
         className="icon-button"
-        onClick={() => {
-          if (subView === "detail") {
-            setSelectedRecipient(null);
-            setSubView("recipients");
-          } else if (subView === "recipients") {
-            setSelectedRun(null);
-            setSubView("runs");
-          } else {
-            onBack();
-          }
-        }}
-        style={{
-          width: 34,
-          height: 34,
-          display: "inline-flex",
-          alignItems: "center",
-          justifyContent: "center",
-          border: "1px solid var(--border)",
-          borderRadius: 8,
-          background: "transparent",
-          color: "var(--text-muted)",
-          cursor: "pointer",
-        }}
+        onClick={goBack}
+        aria-label="Volver"
       >
         <ArrowLeft size={14} />
       </button>
-      <span style={{ fontSize: 13, color: "var(--text-muted)" }}>
-        {subView === "runs" && t("flowRunsBreadcrumbRuns")}
-        {subView === "recipients" && (
-          <>
-            {t("flowRunsBreadcrumbRuns")} / {t("flowRunsBreadcrumbRecipients")}
-          </>
-        )}
-        {subView === "detail" && (
-          <>
-            {t("flowRunsBreadcrumbRuns")} / {t("flowRunsBreadcrumbRecipients")} / {t("flowRunsBreadcrumbDetail")}
-          </>
-        )}
+      <span>
+        {t("flowRunsBreadcrumbRuns")}
+        {subView === "run-map" && " / Debug"}
+        {subView === "recipients"
+          && ` / ${t("flowRunsBreadcrumbRecipients")}`}
+        {subView === "detail"
+          && ` / ${t("flowRunsBreadcrumbRecipients")} / ${t("flowRunsBreadcrumbDetail")}`}
       </span>
     </div>
   );
@@ -187,159 +299,243 @@ export default function FlowRuns({ storeId, flowId, onBack, t }: Props) {
     );
   }
 
-  if (error) {
-    return (
-      <section className="flow-runs-section">
-        {breadcrumb}
-        <p style={{ color: "#ef4444" }}>{error}</p>
-      </section>
-    );
-  }
-
   if (subView === "detail" && selectedRecipient) {
+    const canRetry = canWrite
+      && TERMINAL_RECIPIENT_STATUSES.has(
+        selectedRecipient.status,
+      );
+
     return (
       <section className="flow-runs-section">
         {breadcrumb}
-        <div className="flow-recipient-detail" style={{ padding: "0 0 20px" }}>
-          <h3 style={{ margin: "0 0 16px" }}>{t("flowRecipientDetail")}</h3>
-          <div className="flow-recipient-meta" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <div>
-              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{t("flowRecipientCustomer")}</span>
-              <p style={{ margin: "2px 0 0" }}>#{selectedRecipient.customer_id}</p>
-            </div>
-            <div>
-              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{t("flowRecipientStatus")}</span>
-              <p style={{ margin: "2px 0 0" }}>
-                <span
-                  style={{
-                    display: "inline-block",
-                    padding: "2px 8px",
-                    borderRadius: 6,
-                    fontSize: 11,
-                    fontWeight: 600,
-                    background: STATUS_STYLES[selectedRecipient.status] || "rgba(255,255,255,0.06)",
-                    color: "var(--text)",
-                  }}
-                >
-                  {t(`flowRecipientStatus_${selectedRecipient.status}`)}
-                </span>
-              </p>
-            </div>
-            <div>
-              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{t("flowRecipientAttempts")}</span>
-              <p style={{ margin: "2px 0 0" }}>{selectedRecipient.attempt_count}</p>
-            </div>
-            {selectedRecipient.error_message && (
-              <div>
-                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{t("flowRecipientError")}</span>
-                <p style={{ margin: "2px 0 0", color: "#ef4444" }}>{selectedRecipient.error_message}</p>
-              </div>
-            )}
+
+        {error && (
+          <p className="flow-runs-error">{error}</p>
+        )}
+
+        <div className="flow-recipient-debug-header">
+          <div>
+            <span>Destinatario</span>
+            <strong>
+              Cliente #{selectedRecipient.customer_id}
+            </strong>
           </div>
-
-          {selectedRecipient.node_executions.length > 0 && (
-            <>
-              <h4 style={{ margin: "20px 0 12px", fontSize: 14 }}>{t("flowNodeExecutions")}</h4>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {selectedRecipient.node_executions.map((ne) => (
-                  <div
-                    key={ne.id}
-                    style={{
-                      padding: "12px 16px",
-                      border: "1px solid var(--border)",
-                      borderRadius: 10,
-                      background: "var(--panel)",
-                    }}
-                  >
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <div>
-                        <span style={{ fontSize: 12, fontWeight: 600 }}>{ne.node_id}</span>
-                        <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: 8 }}>{ne.node_type}</span>
-                      </div>
-                      <span
-                        style={{
-                          fontSize: 11,
-                          fontWeight: 600,
-                          padding: "2px 8px",
-                          borderRadius: 6,
-                          background: ne.status === "completed" ? "rgba(34,197,94,0.12)" : ne.status === "failed" ? "rgba(239,68,68,0.12)" : "rgba(255,255,255,0.06)",
-                          color: "var(--text)",
-                        }}
-                      >
-                        {t(`flowExecStatus_${ne.status}`)}
-                      </span>
-                    </div>
-                    {ne.error_message && (
-                      <p style={{ margin: "6px 0 0", fontSize: 12, color: "#ef4444" }}>{ne.error_message}</p>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-
-          {["failed", "skipped"].includes(selectedRecipient.status) && (
-            <button
-              className="primary-button"
-              style={{ marginTop: 16 }}
-              disabled={loading}
-              onClick={() => void handleRetry(selectedRecipient.flow_run_id, selectedRecipient.id)}
-            >
-              <RotateCcw size={14} />
-              {t("flowRetry")}
-            </button>
-          )}
+          <span
+            className="flow-recipient-status"
+            style={{
+              background:
+                STATUS_STYLES[selectedRecipient.status]
+                || STATUS_STYLES.pending,
+            }}
+          >
+            {t(
+              `flowRecipientStatus_${selectedRecipient.status}`,
+            )}
+          </span>
+          <div className="flow-recipient-debug-meta">
+            <span>
+              Intentos: {selectedRecipient.attempt_count}
+            </span>
+            <span>
+              Nodo actual: {
+                selectedRecipient.current_node_id || "-"
+              }
+            </span>
+            <span>
+              Inicio: {
+                formatDate(selectedRecipient.started_at)
+              }
+            </span>
+          </div>
         </div>
+
+        {selectedRecipient.error_message && (
+          <div className="flow-run-error-banner">
+            <strong>
+              {selectedRecipient.error_code || "Error"}
+            </strong>
+            <span>{selectedRecipient.error_message}</span>
+          </div>
+        )}
+
+        {selectedRun?.graph ? (
+          <FlowExecutionDebugger
+            graph={selectedRun.graph}
+            nodeExecutions={
+              selectedRecipient.node_executions
+            }
+            currentNodeId={
+              selectedRecipient.current_node_id
+            }
+            recipientStatus={selectedRecipient.status}
+            canRetryFromNode={canRetry}
+            retrying={Boolean(retryingNodeId)}
+            onRetryFromNode={(nodeId) =>
+              void handleRetryFromNode(nodeId)}
+          />
+        ) : (
+          <p className="flow-runs-empty">
+            No se encontró el grafo histórico de esta ejecución.
+          </p>
+        )}
+
+        {canRetry && (
+          <button
+            className="secondary-button flow-retry-recipient"
+            disabled={loading || Boolean(retryingNodeId)}
+            onClick={() =>
+              void handleRetry(
+                selectedRecipient.flow_run_id,
+                selectedRecipient.id,
+              )}
+          >
+            <RotateCcw size={14} />
+            Reintentar desde el nodo actual
+          </button>
+        )}
       </section>
     );
   }
 
-  if (subView === "recipients") {
+  if (subView === "recipients" && selectedRun) {
     return (
       <section className="flow-runs-section">
         {breadcrumb}
-        <h3 style={{ margin: "0 0 16px" }}>{t("flowRecipients")}</h3>
+
+        <div className="flow-runs-view-header">
+          <div>
+            <span>Run #{selectedRun.id}</span>
+            <h3>{t("flowRecipients")}</h3>
+          </div>
+          <button
+            className="secondary-button"
+            onClick={() => setSubView("run-map")}
+          >
+            <Network size={14} />
+            Mapa de ejecución
+          </button>
+        </div>
+
+        {error && (
+          <p className="flow-runs-error">{error}</p>
+        )}
         {loading && <p>{t("flowLoading")}</p>}
-        {!loading && recipients.length === 0 && <p style={{ color: "var(--text-muted)" }}>{t("flowNoRecipients")}</p>}
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {recipients.map((r) => (
-            <div
-              key={r.id}
+        {!loading && recipients.length === 0 && (
+          <p className="flow-runs-empty">
+            {t("flowNoRecipients")}
+          </p>
+        )}
+
+        <div className="flow-recipient-list">
+          {recipients.map((recipient) => (
+            <button
+              key={recipient.id}
+              type="button"
               className="flow-recipient-row"
-              onClick={() => void loadRecipientDetail(selectedRun!.id, r.id)}
-              style={{
-                padding: "12px 16px",
-                border: "1px solid var(--border)",
-                borderRadius: 10,
-                background: "var(--panel)",
-                cursor: "pointer",
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                transition: "border-color 150ms ease",
-              }}
+              onClick={() =>
+                void loadRecipientDetail(
+                  selectedRun.id,
+                  recipient.id,
+                )}
             >
               <div>
-                <span style={{ fontSize: 13, fontWeight: 600 }}>#{r.customer_id}</span>
-                <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: 8 }}>
-                  {t("flowAttemptCount")}: {r.attempt_count}
+                <strong>
+                  Cliente #{recipient.customer_id}
+                </strong>
+                <span>
+                  {t("flowAttemptCount")}: {
+                    recipient.attempt_count
+                  }
                 </span>
+                {recipient.current_node_id && (
+                  <small>
+                    {recipient.current_node_id}
+                  </small>
+                )}
               </div>
               <span
+                className="flow-recipient-status"
                 style={{
-                  fontSize: 11,
-                  fontWeight: 600,
-                  padding: "2px 8px",
-                  borderRadius: 6,
-                  background: STATUS_STYLES[r.status] || "rgba(255,255,255,0.06)",
-                  color: "var(--text)",
+                  background:
+                    STATUS_STYLES[recipient.status]
+                    || STATUS_STYLES.pending,
                 }}
               >
-                {t(`flowRecipientStatus_${r.status}`)}
+                {t(
+                  `flowRecipientStatus_${recipient.status}`,
+                )}
               </span>
-            </div>
+            </button>
           ))}
         </div>
+      </section>
+    );
+  }
+
+  if (subView === "run-map" && selectedRun) {
+    return (
+      <section className="flow-runs-section">
+        {breadcrumb}
+
+        <div className="flow-runs-view-header">
+          <div>
+            <span>Diagnóstico</span>
+            <h3>Run #{selectedRun.id}</h3>
+          </div>
+          <button
+            className="secondary-button"
+            onClick={() => setSubView("recipients")}
+          >
+            <Users size={14} />
+            Ver destinatarios
+          </button>
+        </div>
+
+        {error && (
+          <p className="flow-runs-error">{error}</p>
+        )}
+
+        <div className="flow-run-summary-strip">
+          <div>
+            <span>Estado</span>
+            <strong>{selectedRun.status}</strong>
+          </div>
+          <div>
+            <span>Total</span>
+            <strong>
+              {selectedRun.total_recipients}
+            </strong>
+          </div>
+          <div>
+            <span>Completados</span>
+            <strong>
+              {selectedRun.completed_recipients}
+            </strong>
+          </div>
+          <div>
+            <span>Fallidos</span>
+            <strong>
+              {selectedRun.failed_recipients}
+            </strong>
+          </div>
+          <div>
+            <span>Inicio</span>
+            <strong>
+              {formatDate(selectedRun.started_at)}
+            </strong>
+          </div>
+        </div>
+
+        {selectedRun.graph ? (
+          <FlowExecutionDebugger
+            graph={selectedRun.graph}
+            nodeStats={selectedRun.node_stats}
+          />
+        ) : (
+          <p className="flow-runs-empty">
+            Esta ejecución no tiene un grafo histórico disponible.
+          </p>
+        )}
       </section>
     );
   }
@@ -347,47 +543,63 @@ export default function FlowRuns({ storeId, flowId, onBack, t }: Props) {
   return (
     <section className="flow-runs-section">
       {breadcrumb}
-      <h3 style={{ margin: "0 0 16px" }}>{t("flowRuns")}</h3>
-      {!runs.length && !loading && <p style={{ color: "var(--text-muted)" }}>{t("flowNoRuns")}</p>}
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+
+      <div className="flow-runs-view-header">
+        <div>
+          <span>Observabilidad</span>
+          <h3>{t("flowRuns")}</h3>
+        </div>
+      </div>
+
+      {error && (
+        <p className="flow-runs-error">{error}</p>
+      )}
+
+      {!runs.length && !loading && (
+        <p className="flow-runs-empty">
+          {t("flowNoRuns")}
+        </p>
+      )}
+
+      <div className="flow-run-list">
         {runs.map((run) => (
-          <div
+          <button
             key={run.id}
+            type="button"
             className="flow-run-row"
             onClick={() => void loadRunDetail(run)}
-            style={{
-              padding: "14px 18px",
-              border: "1px solid var(--border)",
-              borderRadius: 10,
-              background: "var(--panel)",
-              cursor: "pointer",
-              transition: "border-color 150ms ease",
-            }}
           >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <span style={{ fontSize: 13, fontWeight: 600 }}>#{run.id}</span>
+            <div className="flow-run-row-main">
+              <div>
+                <Network size={15} />
+                <strong>Run #{run.id}</strong>
                 <span
+                  className="flow-run-status"
                   style={{
-                    fontSize: 11,
-                    fontWeight: 600,
-                    padding: "2px 8px",
-                    borderRadius: 6,
-                    background: STATUS_STYLES[run.status] || "rgba(255,255,255,0.06)",
-                    color: "var(--text)",
+                    background:
+                      STATUS_STYLES[run.status]
+                      || STATUS_STYLES.pending,
                   }}
                 >
                   {t(`flowRunStatus_${run.status}`)}
                 </span>
               </div>
-              <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{formatDate(run.created_at)}</span>
+              <span>{formatDate(run.created_at)}</span>
             </div>
-            <div style={{ marginTop: 8, display: "flex", gap: 16, fontSize: 12, color: "var(--text-secondary)" }}>
-              <span>{t("flowRunTotal")}: {run.total_recipients}</span>
-              <span>{t("flowRunCompleted")}: {run.completed_recipients}</span>
-              <span>{t("flowRunFailed")}: {run.failed_recipients}</span>
+            <div className="flow-run-row-stats">
+              <span>
+                Total <strong>{run.total_recipients}</strong>
+              </span>
+              <span>
+                Completados{" "}
+                <strong>{run.completed_recipients}</strong>
+              </span>
+              <span>
+                Fallidos{" "}
+                <strong>{run.failed_recipients}</strong>
+              </span>
             </div>
-          </div>
+          </button>
         ))}
       </div>
     </section>
