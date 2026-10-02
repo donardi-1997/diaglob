@@ -241,3 +241,57 @@ test("catalog insertion preserves tool configuration", () => {
     limit: 10,
   });
 });
+
+
+test("voice call nodes require all terminal outcome branches", () => {
+  const graph: FlowGraph = {
+    nodes: [
+      {
+        id: "trigger",
+        type: "trigger",
+        config: { trigger_type: "order_created" },
+        position: { x: 0, y: 0 },
+      },
+      {
+        id: "call",
+        type: "call",
+        config: {
+          call_prompt: "Confirma tu pedido",
+          call_language: "es",
+          timeout_minutes: 5,
+        },
+        position: { x: 0, y: 100 },
+      },
+      ...["confirmed", "rejected", "no_answer", "failed"].map(
+        (id, index) => ({
+          id,
+          type: "end" as const,
+          config: {},
+          position: { x: index * 100, y: 220 },
+        }),
+      ),
+    ],
+    edges: [
+      { source: "trigger", target: "call" },
+      ...["confirmed", "rejected", "no_answer", "failed"].map(
+        (outcome) => ({
+          source: "call",
+          target: outcome,
+          sourceHandle: outcome,
+          label: outcome,
+        }),
+      ),
+    ],
+  };
+
+  assert.deepEqual(validateFlowGraph(graph), []);
+
+  graph.edges = graph.edges.filter(
+    (edge) => edge.label !== "no_answer",
+  );
+  assert.ok(
+    validateFlowGraph(graph).includes(
+      "flowValidationCallMissingBranch",
+    ),
+  );
+});
