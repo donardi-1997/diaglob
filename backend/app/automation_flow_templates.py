@@ -237,7 +237,35 @@ FLOW_TEMPLATES = [
         "estimated_setup_minutes": 2,
         "graph": _message_flow(
             "shipment_delivery_exception",
-            "Hola {{customer.name}}, detectamos una novedad con la entrega de tu pedido. Estamos revisándola y te mantendremos informado.",
+            "Hola {{customer.name}}, detectamos una novedad con tu envío {{shipment.tracking_number}} de {{shipment.carrier}}. Estamos revisándola y te mantendremos informado.",
+        ),
+    },
+    {
+        "id": "shipment_out_for_delivery_notice",
+        "name": "Avisar pedido en reparto",
+        "description": "Avisa automáticamente cuando la transportadora marca el envío en ruta de entrega.",
+        "category": "Logistics",
+        "recommended_role": "logistics",
+        "required_integrations": ["whatsapp"],
+        "icon": "truck",
+        "estimated_setup_minutes": 1,
+        "graph": _message_flow(
+            "shipment_out_for_delivery",
+            "Hola {{customer.name}}, tu envío {{shipment.tracking_number}} con {{shipment.carrier}} ya está en reparto. Te recomendamos estar atento a la entrega.",
+        ),
+    },
+    {
+        "id": "shipment_delivered_followup",
+        "name": "Seguimiento después de entrega",
+        "description": "Contacta al cliente cuando la transportadora confirma la entrega.",
+        "category": "Post-sales",
+        "recommended_role": "post_sales",
+        "required_integrations": ["whatsapp"],
+        "icon": "check-circle",
+        "estimated_setup_minutes": 1,
+        "graph": _message_flow(
+            "shipment_delivered",
+            "Hola {{customer.name}}, {{shipment.carrier}} reportó como entregado tu envío {{shipment.tracking_number}}. ¿Recibiste todo correctamente?",
         ),
     },
     {
