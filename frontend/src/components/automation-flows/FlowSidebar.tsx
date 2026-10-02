@@ -1,10 +1,22 @@
-import { X, Zap, Clock, MessageSquare, GitBranch, Square, Trash2 } from "lucide-react";
-import type { FlowGraph, FlowNode, FlowNodeConfig } from "./flowGraphUtils";
-import { TRIGGER_TYPES, CONDITION_FIELDS, CONDITION_OPERATORS, humanizeNodeType } from "./flowGraphUtils";
+import {
+  Clock,
+  GitBranch,
+  MessageSquare,
+  Square,
+  Trash2,
+  X,
+  Zap,
+} from "lucide-react";
+import type { FlowNode, FlowNodeConfig } from "./flowGraphUtils";
+import {
+  CONDITION_FIELDS,
+  CONDITION_OPERATORS,
+  TRIGGER_TYPES,
+  humanizeNodeType,
+} from "./flowGraphUtils";
 
 interface FlowSidebarProps {
   node: FlowNode | null;
-  graph: FlowGraph;
   onUpdate: (nodeId: string, config: Partial<FlowNodeConfig>) => void;
   onDelete: (nodeId: string) => void;
   onClose: () => void;
@@ -21,23 +33,24 @@ const TRIGGER_LABELS: Record<string, string> = {
 };
 
 const FIELD_LABELS: Record<string, string> = {
-  customer_segment: "flowField_customer_segment",
-  customer_health: "flowField_customer_health",
-  customer_priority: "flowField_customer_priority",
-  needs_attention: "flowField_needs_attention",
-  needs_followup: "flowField_needs_followup",
-  orders_count: "flowField_orders_count",
-  country_code: "flowField_country_code",
-  successful_order_since_start: "flowField_successful_order_since_start",
+  "customer.segment": "flowField_customer_segment",
+  "customer.health": "flowField_customer_health",
+  "customer.priority": "flowField_customer_priority",
+  "customer.needs_attention": "flowField_needs_attention",
+  "customer.needs_followup": "flowField_needs_followup",
+  "customer.order_count": "flowField_orders_count",
+  "customer.country": "flowField_country_code",
+  has_successful_order_since_flow_start:
+    "flowField_successful_order_since_start",
 };
 
 const OPERATOR_LABELS: Record<string, string> = {
   equals: "flowOperator_equals",
   not_equals: "flowOperator_not_equals",
-  gt: "flowOperator_gt",
-  gte: "flowOperator_gte",
-  lt: "flowOperator_lt",
-  lte: "flowOperator_lte",
+  greater_than: "flowOperator_gt",
+  greater_or_equal: "flowOperator_gte",
+  less_than: "flowOperator_lt",
+  less_or_equal: "flowOperator_lte",
   in: "flowOperator_in",
   not_in: "flowOperator_not_in",
   is_true: "flowOperator_is_true",
@@ -52,10 +65,22 @@ const NODE_ICONS: Record<string, typeof Zap> = {
   end: Square,
 };
 
-const BOOLEAN_FIELDS = new Set(["needs_attention", "needs_followup"]);
-const NUMERIC_FIELDS = new Set(["orders_count"]);
+const BOOLEAN_FIELDS = new Set([
+  "customer.needs_attention",
+  "customer.needs_followup",
+  "has_successful_order_since_flow_start",
+]);
 
-export default function FlowSidebar({ node, onUpdate, onDelete, onClose, t, canWrite }: FlowSidebarProps) {
+const NUMERIC_FIELDS = new Set(["customer.order_count"]);
+
+export default function FlowSidebar({
+  node,
+  onUpdate,
+  onDelete,
+  onClose,
+  t,
+  canWrite,
+}: FlowSidebarProps) {
   const isOpen = node !== null;
   const Icon = node ? NODE_ICONS[node.type] || Square : Square;
 
@@ -76,63 +101,46 @@ export default function FlowSidebar({ node, onUpdate, onDelete, onClose, t, canW
         display: "flex",
         flexDirection: "column",
         overflow: "hidden",
-        boxShadow: isOpen ? "-8px 0 30px rgba(0,0,0,0.15)" : "none",
+        boxShadow: isOpen
+          ? "-8px 0 30px rgba(0,0,0,0.15)"
+          : "none",
       }}
     >
       {node && (
         <>
-          <div
-            className="flow-sidebar-header"
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              padding: "18px 20px",
-              borderBottom: "1px solid var(--border)",
-              flexShrink: 0,
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <Icon size={18} style={{ color: "var(--accent)" }} />
-              <h3 style={{ margin: 0, fontSize: 15 }}>
-                {humanizeNodeType(node.type, t)}
-              </h3>
+          <div className="flow-sidebar-header">
+            <div>
+              <Icon size={18} />
+              <div>
+                <span>Configuración</span>
+                <h3>{humanizeNodeType(node.type, t)}</h3>
+              </div>
             </div>
             <button
               className="icon-button"
               onClick={onClose}
-              style={{
-                width: 34,
-                height: 34,
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                border: "1px solid var(--border)",
-                borderRadius: 8,
-                background: "transparent",
-                color: "var(--text-muted)",
-                cursor: "pointer",
-              }}
+              aria-label="Cerrar inspector"
             >
               <X size={16} />
             </button>
           </div>
 
-          <div
-            className="management-form"
-            style={{ flex: 1, overflowY: "auto", padding: 20, display: "flex", flexDirection: "column", gap: 20 }}
-          >
+          <div className="management-form flow-sidebar-form">
             {node.type === "trigger" && (
               <label>
                 <span>{t("flowTriggerType")}</span>
                 <select
                   value={node.config.trigger_type || "manual"}
-                  onChange={(e) => canWrite && onUpdate(node.id, { trigger_type: e.target.value as any })}
+                  onChange={(event) =>
+                    canWrite
+                    && onUpdate(node.id, {
+                      trigger_type: event.target.value as FlowNodeConfig["trigger_type"],
+                    })}
                   disabled={!canWrite}
                 >
-                  {TRIGGER_TYPES.map((tt) => (
-                    <option key={tt} value={tt}>
-                      {t(TRIGGER_LABELS[tt] || tt)}
+                  {TRIGGER_TYPES.map((triggerType) => (
+                    <option key={triggerType} value={triggerType}>
+                      {t(TRIGGER_LABELS[triggerType] || triggerType)}
                     </option>
                   ))}
                 </select>
@@ -145,17 +153,25 @@ export default function FlowSidebar({ node, onUpdate, onDelete, onClose, t, canW
                   <span>{t("flowDuration")}</span>
                   <input
                     type="number"
-                    min={0}
-                    value={node.config.duration || 0}
-                    onChange={(e) => canWrite && onUpdate(node.id, { duration: Number(e.target.value) })}
+                    min={1}
+                    value={Number(node.config.value ?? 1)}
+                    onChange={(event) =>
+                      canWrite
+                      && onUpdate(node.id, {
+                        value: Math.max(1, Number(event.target.value) || 1),
+                      })}
                     disabled={!canWrite}
                   />
                 </label>
                 <label>
                   <span>{t("flowDurationUnit")}</span>
                   <select
-                    value={node.config.duration_unit || "hours"}
-                    onChange={(e) => canWrite && onUpdate(node.id, { duration_unit: e.target.value as any })}
+                    value={node.config.unit || "hours"}
+                    onChange={(event) =>
+                      canWrite
+                      && onUpdate(node.id, {
+                        unit: event.target.value as FlowNodeConfig["unit"],
+                      })}
                     disabled={!canWrite}
                   >
                     <option value="minutes">{t("flowUnit_minutes")}</option>
@@ -171,29 +187,32 @@ export default function FlowSidebar({ node, onUpdate, onDelete, onClose, t, canW
                 <label>
                   <span>{t("flowConditionField")}</span>
                   <select
-                    value={node.config.condition_field || ""}
-                    onChange={(e) => {
+                    value={node.config.field || ""}
+                    onChange={(event) => {
                       if (!canWrite) return;
-                      const field = e.target.value as any;
-                      const patch: Partial<FlowNodeConfig> = { condition_field: field };
-                      if (BOOLEAN_FIELDS.has(field)) {
-                        patch.condition_operator = "is_true";
-                        patch.condition_value = true;
-                      } else if (NUMERIC_FIELDS.has(field)) {
-                        patch.condition_operator = "gt";
-                        patch.condition_value = 0;
+
+                      const field = event.target.value as FlowNodeConfig["field"];
+                      const patch: Partial<FlowNodeConfig> = { field };
+
+                      if (field && BOOLEAN_FIELDS.has(field)) {
+                        patch.operator = "is_true";
+                        patch.value = true;
+                      } else if (field && NUMERIC_FIELDS.has(field)) {
+                        patch.operator = "greater_than";
+                        patch.value = 0;
                       } else {
-                        patch.condition_operator = "equals";
-                        patch.condition_value = "";
+                        patch.operator = "equals";
+                        patch.value = "";
                       }
+
                       onUpdate(node.id, patch);
                     }}
                     disabled={!canWrite}
                   >
                     <option value="">{t("flowSelectField")}</option>
-                    {CONDITION_FIELDS.map((f) => (
-                      <option key={f} value={f}>
-                        {t(FIELD_LABELS[f] || f)}
+                    {CONDITION_FIELDS.map((field) => (
+                      <option key={field} value={field}>
+                        {t(FIELD_LABELS[field] || field)}
                       </option>
                     ))}
                   </select>
@@ -202,13 +221,17 @@ export default function FlowSidebar({ node, onUpdate, onDelete, onClose, t, canW
                 <label>
                   <span>{t("flowConditionOperator")}</span>
                   <select
-                    value={node.config.condition_operator || "equals"}
-                    onChange={(e) => canWrite && onUpdate(node.id, { condition_operator: e.target.value as any })}
+                    value={node.config.operator || "equals"}
+                    onChange={(event) =>
+                      canWrite
+                      && onUpdate(node.id, {
+                        operator: event.target.value as FlowNodeConfig["operator"],
+                      })}
                     disabled={!canWrite}
                   >
-                    {CONDITION_OPERATORS.map((op) => (
-                      <option key={op} value={op}>
-                        {t(OPERATOR_LABELS[op] || op)}
+                    {CONDITION_OPERATORS.map((operator) => (
+                      <option key={operator} value={operator}>
+                        {t(OPERATOR_LABELS[operator] || operator)}
                       </option>
                     ))}
                   </select>
@@ -216,27 +239,41 @@ export default function FlowSidebar({ node, onUpdate, onDelete, onClose, t, canW
 
                 <label>
                   <span>{t("flowConditionValue")}</span>
-                  {BOOLEAN_FIELDS.has(node.config.condition_field || "") ? (
+                  {BOOLEAN_FIELDS.has(node.config.field || "") ? (
                     <select
-                      value={String(node.config.condition_value ?? "true")}
-                      onChange={(e) => canWrite && onUpdate(node.id, { condition_value: e.target.value === "true" })}
+                      value={String(node.config.value ?? true)}
+                      onChange={(event) =>
+                        canWrite
+                        && onUpdate(node.id, {
+                          value: event.target.value === "true",
+                          operator:
+                            event.target.value === "true"
+                              ? "is_true"
+                              : "is_false",
+                        })}
                       disabled={!canWrite}
                     >
                       <option value="true">{t("flowOperator_is_true")}</option>
                       <option value="false">{t("flowOperator_is_false")}</option>
                     </select>
-                  ) : NUMERIC_FIELDS.has(node.config.condition_field || "") ? (
+                  ) : NUMERIC_FIELDS.has(node.config.field || "") ? (
                     <input
                       type="number"
-                      value={Number(node.config.condition_value ?? 0)}
-                      onChange={(e) => canWrite && onUpdate(node.id, { condition_value: Number(e.target.value) })}
+                      value={Number(node.config.value ?? 0)}
+                      onChange={(event) =>
+                        canWrite
+                        && onUpdate(node.id, {
+                          value: Number(event.target.value),
+                        })}
                       disabled={!canWrite}
                     />
                   ) : (
                     <input
                       type="text"
-                      value={String(node.config.condition_value ?? "")}
-                      onChange={(e) => canWrite && onUpdate(node.id, { condition_value: e.target.value })}
+                      value={String(node.config.value ?? "")}
+                      onChange={(event) =>
+                        canWrite
+                        && onUpdate(node.id, { value: event.target.value })}
                       disabled={!canWrite}
                       placeholder={t("flowEnterValue")}
                     />
@@ -251,42 +288,42 @@ export default function FlowSidebar({ node, onUpdate, onDelete, onClose, t, canW
                   <span>{t("flowMessageMode")}</span>
                   <select
                     value={node.config.message_mode || "auto"}
-                    onChange={(e) => canWrite && onUpdate(node.id, { message_mode: e.target.value as any })}
+                    onChange={(event) =>
+                      canWrite
+                      && onUpdate(node.id, {
+                        message_mode: event.target.value as FlowNodeConfig["message_mode"],
+                      })}
                     disabled={!canWrite}
                   >
-                    <option value="free_form">{t("flowMessageMode_free_form")}</option>
-                    <option value="template">{t("flowMessageMode_template")}</option>
+                    <option value="free_form">
+                      {t("flowMessageMode_free_form")}
+                    </option>
+                    <option value="template">
+                      {t("flowMessageMode_template")}
+                    </option>
                     <option value="auto">{t("flowMessageMode_auto")}</option>
                   </select>
                 </label>
+
+                <label>
+                  <span>{t("flowMessageLabel")}</span>
+                  <textarea
+                    rows={5}
+                    value={node.config.message_template || ""}
+                    onChange={(event) =>
+                      canWrite
+                      && onUpdate(node.id, {
+                        message_template: event.target.value,
+                      })}
+                    disabled={!canWrite}
+                    placeholder={t("flowMessagePlaceholder")}
+                  />
+                </label>
+
                 {node.config.message_mode === "template" && (
-                  <small style={{ color: "var(--text-muted)", fontSize: 12 }}>
+                  <small className="flow-field-hint">
                     {t("flowTemplateHint")}
                   </small>
-                )}
-                {node.config.message_mode !== "template" && (
-                  <label>
-                    <span>{t("flowMessageLabel")}</span>
-                    <textarea
-                      rows={3}
-                      value={node.config.label || ""}
-                      onChange={(e) => canWrite && onUpdate(node.id, { label: e.target.value })}
-                      disabled={!canWrite}
-                      placeholder={t("flowMessagePlaceholder")}
-                      style={{
-                        width: "100%",
-                        boxSizing: "border-box",
-                        padding: "10px 12px",
-                        border: "1px solid var(--border)",
-                        borderRadius: 10,
-                        background: "transparent",
-                        color: "var(--text)",
-                        font: "inherit",
-                        resize: "vertical",
-                        outline: "none",
-                      }}
-                    />
-                  </label>
                 )}
               </>
             )}
@@ -297,7 +334,9 @@ export default function FlowSidebar({ node, onUpdate, onDelete, onClose, t, canW
                 <input
                   type="text"
                   value={node.config.label || ""}
-                  onChange={(e) => canWrite && onUpdate(node.id, { label: e.target.value })}
+                  onChange={(event) =>
+                    canWrite
+                    && onUpdate(node.id, { label: event.target.value })}
                   disabled={!canWrite}
                   placeholder={t("flowEndPlaceholder")}
                 />
@@ -306,16 +345,9 @@ export default function FlowSidebar({ node, onUpdate, onDelete, onClose, t, canW
           </div>
 
           {node.type !== "trigger" && canWrite && (
-            <div
-              style={{
-                padding: "16px 20px",
-                borderTop: "1px solid var(--border)",
-                flexShrink: 0,
-              }}
-            >
+            <div className="flow-sidebar-footer">
               <button
-                className="secondary-button"
-                style={{ width: "100%", color: "#ef4444", borderColor: "rgba(239,68,68,0.3)" }}
+                className="secondary-button flow-delete-node"
                 onClick={() => onDelete(node.id)}
               >
                 <Trash2 size={14} />
