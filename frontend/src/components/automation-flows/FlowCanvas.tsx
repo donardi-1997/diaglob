@@ -16,6 +16,7 @@ import type {
   FlowEdge,
   FlowGraph,
   FlowNode as FlowNodeData,
+  FlowNodeConfig,
   FlowNodeType,
 } from "./flowGraphUtils";
 
@@ -28,6 +29,7 @@ interface FlowCanvasProps {
   onDropNode: (
     type: FlowNodeType,
     position: { x: number; y: number },
+    config?: Partial<FlowNodeConfig>,
   ) => void;
   selectedNodeId: string | null;
   nodeTypes: NodeTypes;
@@ -108,18 +110,33 @@ export default function FlowCanvas({
   const handleDrop = useCallback(
     (event: React.DragEvent<HTMLDivElement>) => {
       event.preventDefault();
-      const type = event.dataTransfer.getData(
+      const raw = event.dataTransfer.getData(
         "application/diaglob-flow-node",
-      ) as FlowNodeType;
+      );
+      if (!raw) return;
 
-      if (!type) return;
+      let descriptor: {
+        type: FlowNodeType;
+        config?: Partial<FlowNodeConfig>;
+      };
+      try {
+        descriptor = JSON.parse(raw) as {
+          type: FlowNodeType;
+          config?: Partial<FlowNodeConfig>;
+        };
+      } catch {
+        descriptor = { type: raw as FlowNodeType };
+      }
+
+      if (!descriptor.type) return;
 
       onDropNode(
-        type,
+        descriptor.type,
         screenToFlowPosition({
           x: event.clientX,
           y: event.clientY,
         }),
+        descriptor.config,
       );
     },
     [onDropNode, screenToFlowPosition],
