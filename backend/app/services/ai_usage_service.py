@@ -15,6 +15,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..model_domains.ai_usage import AiUsageCreditGrant
+from ..model_domains.ai_agent import AgentChatMessage, AgentChatSession
 from ..models import Conversation, Message, Organization
 from ..plan_limits import get_organization_limits
 from .trial_service import refresh_trial_state
@@ -54,7 +55,26 @@ def _count_ai_responses(
         query = query.filter(Message.created_at >= start)
     if end:
         query = query.filter(Message.created_at < end)
-    return int(query.scalar() or 0)
+    customer_ai_responses = int(query.scalar() or 0)
+
+    copilot_query = (
+        db.query(func.count(AgentChatMessage.id))
+        .join(
+            AgentChatSession,
+            AgentChatSession.id == AgentChatMessage.session_id,
+        )
+        .filter(
+            AgentChatSession.organization_id == organization_id,
+            AgentChatMessage.provider_role == "assistant",
+            AgentChatMessage.billable.is_(True),
+        )
+    )
+    if start:
+        copilot_query = copilot_query.filter(AgentChatMessage.created_at >= start)
+    if end:
+        copilot_query = copilot_query.filter(AgentChatMessage.created_at < end)
+
+    return customer_ai_responses + int(copilot_query.scalar() or 0)
 
 
 def _extra_credit_totals(db: Session, organization_id: int) -> tuple[int, int]:
