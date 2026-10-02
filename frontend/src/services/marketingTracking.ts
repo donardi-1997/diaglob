@@ -228,6 +228,8 @@ function handleConsentChange(event: Event) {
 export function initializeMarketingTracking() {
   if (hasAdvertisingConsent()) {
     activateAdvertisingTracking();
+  } else {
+    clearMarketingAttribution();
   }
 
   if (!consentListenerRegistered && typeof window !== "undefined") {
