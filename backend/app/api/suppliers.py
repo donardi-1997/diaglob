@@ -18,6 +18,7 @@ from ..services.auto_fulfillment import (
     enqueue_store_paid_orders,
     process_auto_fulfillment_job_background,
     requeue_store_auto_fulfillment,
+    sync_shopify_from_shipment_background,
 )
 from ..services.shipment_tracking import (
     ShipmentNotFound,
@@ -673,18 +674,26 @@ def cj_cancel_supplier_order(
 def cj_sync_tracking(
     store_id: int,
     supplier_order_id: int,
+    background_tasks: BackgroundTasks,
     membership: OrganizationMembership = Depends(
         require_permission("commerce.write")
     ),
     db: Session = Depends(get_db),
 ):
     try:
-        return sync_cj_shipment(
+        result = sync_cj_shipment(
             db,
             membership.organization_id,
             store_id,
             supplier_order_id,
         )
+        shipment = result.get("shipment") if result.get("available") else None
+        if shipment and shipment.get("id"):
+            background_tasks.add_task(
+                sync_shopify_from_shipment_background,
+                int(shipment["id"]),
+            )
+        return result
     except ShipmentNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ShipmentTrackingError as exc:
