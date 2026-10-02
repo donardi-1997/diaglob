@@ -208,6 +208,14 @@ def process_cj_webhook(
         open_id.encode("utf-8")
     ).hexdigest()
 
+    topic = str(payload.get("type") or "UNKNOWN").upper()
+    params = payload.get("params") or {}
+    supplier_order = (
+        _find_supplier_order(db, connections, params)
+        if topic == "LOGISTIC" and isinstance(params, dict)
+        else None
+    )
+
     existing = (
         db.query(CJWebhookReceipt)
         .filter(
@@ -217,20 +225,33 @@ def process_cj_webhook(
         .first()
     )
     if existing:
-        return {
+        duplicate_result = {
             "ok": True,
             "duplicate": True,
             "message_id": message_id,
         }
+        tracking_number = (
+            str(params.get("trackingNumber") or "").strip()
+            if isinstance(params, dict)
+            else ""
+        )
+        if supplier_order is not None and tracking_number:
+            shipment = (
+                db.query(Shipment)
+                .filter(
+                    Shipment.supplier_order_id == supplier_order.id,
+                    Shipment.provider == "cj",
+                    Shipment.tracking_number == tracking_number,
+                )
+                .order_by(Shipment.id.desc())
+                .first()
+            )
+            if shipment is not None:
+                duplicate_result["shipment_id"] = shipment.id
+                duplicate_result["status"] = shipment.normalized_status
+        return duplicate_result
 
     now = datetime.utcnow()
-    topic = str(payload.get("type") or "UNKNOWN").upper()
-    params = payload.get("params") or {}
-    supplier_order = (
-        _find_supplier_order(db, connections, params)
-        if topic == "LOGISTIC" and isinstance(params, dict)
-        else None
-    )
     resolved_connection_id = (
         supplier_order.supplier_connection_id
         if supplier_order is not None

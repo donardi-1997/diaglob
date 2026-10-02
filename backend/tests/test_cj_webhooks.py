@@ -191,6 +191,7 @@ def test_duplicate_message_is_idempotent(db, data):
 
     assert first["duplicate"] is False
     assert second["duplicate"] is True
+    assert second["shipment_id"] == first["shipment_id"]
     assert db.query(CJWebhookReceipt).count() == 1
     assert db.query(Shipment).count() == 1
 

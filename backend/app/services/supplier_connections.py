@@ -104,6 +104,9 @@ def get_cj_status(
             "connected_at": None,
             "last_sync_at": None,
             "last_error": None,
+            "auto_fulfillment_enabled": False,
+            "auto_origin_country_code": "CN",
+            "auto_notify_customer": True,
         }
 
     return {
@@ -133,6 +136,9 @@ def get_cj_status(
             else None
         ),
         "last_error": connection.last_error,
+        "auto_fulfillment_enabled": connection.auto_fulfillment_enabled,
+        "auto_origin_country_code": connection.auto_origin_country_code,
+        "auto_notify_customer": connection.auto_notify_customer,
     }
 
 

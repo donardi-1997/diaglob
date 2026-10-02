@@ -1,6 +1,6 @@
 """Supplier integration HTTP endpoints."""
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -12,6 +12,14 @@ from ..integrations.cj.client import (
     CJTemporaryError,
 )
 from ..models import OrganizationMembership
+from ..services.auto_fulfillment import (
+    AutoFulfillmentError,
+    configure_cj_auto_fulfillment,
+    enqueue_store_paid_orders,
+    process_auto_fulfillment_job_background,
+    requeue_store_auto_fulfillment,
+    sync_shopify_from_shipment_background,
+)
 from ..services.shipment_tracking import (
     ShipmentNotFound,
     ShipmentTrackingError,
@@ -55,6 +63,12 @@ router = APIRouter()
 
 class CJConnectRequest(BaseModel):
     api_key: str = Field(min_length=1, max_length=200)
+
+
+class CJAutoFulfillmentRequest(BaseModel):
+    enabled: bool
+    origin_country_code: str = Field(default="CN", min_length=2, max_length=2)
+    notify_customer: bool = True
 
 
 class CJFreightItemRequest(BaseModel):
@@ -163,6 +177,76 @@ def cj_status(
         return get_cj_status(db, membership.organization_id, store_id)
     except SupplierConnectionNotFound as exc:
         _map_error(exc)
+
+
+@router.put("/api/stores/{store_id}/suppliers/cj/auto-fulfillment")
+def cj_configure_auto_fulfillment(
+    store_id: int,
+    payload: CJAutoFulfillmentRequest,
+    background_tasks: BackgroundTasks,
+    membership: OrganizationMembership = Depends(
+        require_permission("commerce.write")
+    ),
+    db: Session = Depends(get_db),
+):
+    try:
+        result = configure_cj_auto_fulfillment(
+            db,
+            membership.organization_id,
+            store_id,
+            enabled=payload.enabled,
+            origin_country_code=payload.origin_country_code,
+            notify_customer=payload.notify_customer,
+        )
+    except AutoFulfillmentError as exc:
+        code = str(exc)
+        status = (
+            409
+            if code.startswith("SHOPIFY_FULFILLMENT_SCOPES_REQUIRED")
+            else 400
+        )
+        raise HTTPException(
+            status_code=status,
+            detail={"code": code, "message": code},
+        ) from exc
+
+    for job_id in result.get("queued_job_ids") or []:
+        background_tasks.add_task(
+            process_auto_fulfillment_job_background,
+            job_id,
+        )
+    return result
+
+
+@router.post("/api/stores/{store_id}/suppliers/cj/auto-fulfillment/retry")
+def cj_retry_auto_fulfillment(
+    store_id: int,
+    background_tasks: BackgroundTasks,
+    membership: OrganizationMembership = Depends(
+        require_permission("commerce.write")
+    ),
+    db: Session = Depends(get_db),
+):
+    queued = set(
+        enqueue_store_paid_orders(
+            db,
+            membership.organization_id,
+            store_id,
+        )
+    )
+    queued.update(
+        requeue_store_auto_fulfillment(
+            db,
+            membership.organization_id,
+            store_id,
+        )
+    )
+    for job_id in sorted(queued):
+        background_tasks.add_task(
+            process_auto_fulfillment_job_background,
+            job_id,
+        )
+    return {"ok": True, "queued_job_ids": sorted(queued)}
 
 
 @router.post("/api/stores/{store_id}/suppliers/cj/connect")
@@ -403,13 +487,14 @@ def cj_upsert_variant_mapping(
     store_id: int,
     product_variant_id: int,
     payload: CJVariantMappingRequest,
+    background_tasks: BackgroundTasks,
     membership: OrganizationMembership = Depends(
         require_permission("commerce.write")
     ),
     db: Session = Depends(get_db),
 ):
     try:
-        return upsert_cj_variant_mapping(
+        result = upsert_cj_variant_mapping(
             db,
             membership.organization_id,
             store_id,
@@ -419,6 +504,26 @@ def cj_upsert_variant_mapping(
             external_sku=payload.external_sku,
             active=payload.active,
         )
+        queued = set(
+            enqueue_store_paid_orders(
+                db,
+                membership.organization_id,
+                store_id,
+            )
+        )
+        queued.update(
+            requeue_store_auto_fulfillment(
+                db,
+                membership.organization_id,
+                store_id,
+            )
+        )
+        for job_id in sorted(queued):
+            background_tasks.add_task(
+                process_auto_fulfillment_job_background,
+                job_id,
+            )
+        return result
     except SupplierVariantMappingNotFound as exc:
         raise HTTPException(
             status_code=404,
@@ -569,18 +674,26 @@ def cj_cancel_supplier_order(
 def cj_sync_tracking(
     store_id: int,
     supplier_order_id: int,
+    background_tasks: BackgroundTasks,
     membership: OrganizationMembership = Depends(
         require_permission("commerce.write")
     ),
     db: Session = Depends(get_db),
 ):
     try:
-        return sync_cj_shipment(
+        result = sync_cj_shipment(
             db,
             membership.organization_id,
             store_id,
             supplier_order_id,
         )
+        shipment = result.get("shipment") if result.get("available") else None
+        if shipment and shipment.get("id"):
+            background_tasks.add_task(
+                sync_shopify_from_shipment_background,
+                int(shipment["id"]),
+            )
+        return result
     except ShipmentNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ShipmentTrackingError as exc:
