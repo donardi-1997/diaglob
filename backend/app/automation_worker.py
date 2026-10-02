@@ -6,6 +6,7 @@ import time
 
 from .automation_execution_engine import worker_cycle
 from .automation_flow_engine import claim_flow_recipients, reclaim_expired_flow_leases, process_flow_recipient, aggregate_flow_runs
+from .services.auto_fulfillment import process_pending_auto_fulfillment_jobs
 from .db import SessionLocal
 
 running = True
@@ -38,7 +39,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--once", action="store_true")
     parser.add_argument("--poll-seconds", type=int, default=10)
-    parser.add_argument("--mode", choices=["campaigns", "flows", "both"], default="both")
+    parser.add_argument("--mode", choices=["campaigns", "flows", "fulfillment", "both"], default="both")
     args = parser.parse_args()
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
@@ -49,6 +50,8 @@ def main():
                 worker_cycle(db)
             if args.mode in ("flows", "both"):
                 _flow_worker_cycle(db)
+            if args.mode in ("fulfillment", "both"):
+                process_pending_auto_fulfillment_jobs(db)
         except Exception:
             logging.exception("automation worker cycle failed")
             db.rollback()
