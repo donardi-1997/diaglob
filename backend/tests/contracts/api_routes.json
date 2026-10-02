@@ -125,6 +125,10 @@
   ],
   [
     "GET",
+    "/api/ai/tools"
+  ],
+  [
+    "GET",
     "/api/billing/ai-packages"
   ],
   [
@@ -562,6 +566,10 @@
   [
     "PATCH",
     "/api/team/{membership_id}"
+  ],
+  [
+    "POST",
+    "/api/ai/actions/authorize"
   ],
   [
     "POST",
