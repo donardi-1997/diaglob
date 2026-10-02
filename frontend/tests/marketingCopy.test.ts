@@ -7,14 +7,14 @@ const locales = ["es", "en", "pt-BR"] as const;
 
 test("public marketing copy stays customer-facing in every supported language", () => {
   const developerJargon = [
-    "rag",
-    "runtime",
-    "rbac",
-    "tool node",
-    "knowledge base",
-    "trigger",
-    "stack",
-    "workspace",
+    /\brag\b/i,
+    /\bruntime\b/i,
+    /\brbac\b/i,
+    /\btool nodes?\b/i,
+    /\bknowledge bases?\b/i,
+    /\btriggers?\b/i,
+    /\bstack\b/i,
+    /\bworkspace\b/i,
   ];
 
   for (const locale of locales) {
@@ -35,7 +35,7 @@ test("public marketing copy stays customer-facing in every supported language", 
 
     for (const jargon of developerJargon) {
       assert.equal(
-        visibleText.includes(jargon),
+        jargon.test(visibleText),
         false,
         `${locale} marketing copy should not expose developer jargon: ${jargon}`,
       );
