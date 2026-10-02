@@ -15,7 +15,6 @@ from .automation_execution_engine import (
     BACKOFF_SECONDS, BATCH_SIZE, LEASE_SECONDS, MAX_ATTEMPTS, MAX_PER_MINUTE,
     _acquire_rate_slot, utcnow,
 )
-from .automation_campaigns import render_template
 from .models import (
     AutomationFlow, AutomationFlowVersion, AutomationFlowRun,
     AutomationFlowRecipientExecution, AutomationNodeExecution,
