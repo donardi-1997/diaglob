@@ -1,0 +1,340 @@
+.cj-integration {
+  overflow: hidden;
+}
+
+.cj-description {
+  line-height: 1.55;
+}
+
+.cj-account-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin: 10px 0;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.cj-account-meta strong {
+  color: var(--text-secondary);
+}
+
+.cj-connect-form,
+.cj-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.cj-connect-form input,
+.cj-search input,
+.cj-freight-form input {
+  min-width: 0;
+  flex: 1;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  outline: 0;
+  background: var(--control-bg);
+  color: var(--text);
+}
+
+.cj-actions {
+  flex-wrap: wrap;
+}
+
+.cj-catalog {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.cj-search {
+  margin-top: 0;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--control-bg);
+  color: var(--text-muted);
+}
+
+.cj-search input {
+  border: 0;
+  background: transparent;
+}
+
+.cj-search button,
+.cj-freight-form button {
+  min-height: 30px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--accent);
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.cj-search button:disabled,
+.cj-freight-form button:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+.cj-empty {
+  padding: 18px 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-align: center;
+}
+
+.cj-products-grid {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 8px;
+}
+
+.cj-product {
+  min-width: 0;
+  padding: 8px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--control-bg);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.cj-product:hover,
+.cj-product.active,
+.cj-variant:hover,
+.cj-variant.active {
+  border-color: rgba(124, 108, 255, .5);
+  background: var(--accent-soft);
+}
+
+.cj-product img,
+.cj-product-placeholder {
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  object-fit: cover;
+  background: var(--elevated);
+}
+
+.cj-product-placeholder {
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+}
+
+.cj-product > span,
+.cj-variant > span:first-child {
+  min-width: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+
+.cj-product strong,
+.cj-variant strong {
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cj-product small,
+.cj-variant small {
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 9px;
+}
+
+.cj-variants {
+  margin-top: 14px;
+  display: grid;
+  gap: 6px;
+}
+
+.cj-section-heading {
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.cj-section-heading > div {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.cj-section-heading span {
+  color: var(--accent);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .08em;
+}
+
+.cj-section-heading strong {
+  font-size: 11px;
+}
+
+.cj-variant {
+  width: 100%;
+  padding: 9px 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.cj-variant-price {
+  flex-shrink: 0;
+  color: var(--green);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.cj-operational-grid {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr);
+  gap: 10px;
+}
+
+.cj-operation-card {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--control-bg);
+}
+
+.cj-operation-card > p,
+.cj-freight-options p {
+  margin: 8px 0 0;
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.cj-stock-total {
+  display: block;
+  margin-top: 10px;
+  font-size: 25px;
+}
+
+.cj-operation-card > span {
+  color: var(--text-muted);
+  font-size: 9px;
+}
+
+.cj-warehouses,
+.cj-freight-options {
+  margin-top: 9px;
+  display: grid;
+  gap: 5px;
+}
+
+.cj-warehouses > div,
+.cj-freight-options > div {
+  padding: 7px 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-radius: 7px;
+  background: var(--elevated);
+  font-size: 10px;
+}
+
+.cj-freight-options > div > span {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.cj-freight-options small {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 9px;
+}
+
+.cj-freight-form {
+  margin-top: 8px;
+  display: grid;
+  grid-template-columns: 76px 76px minmax(80px, .7fr) minmax(120px, 1fr);
+  gap: 7px;
+  align-items: end;
+}
+
+.cj-freight-form label {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cj-freight-form label span {
+  color: var(--text-muted);
+  font-size: 8px;
+  font-weight: 700;
+}
+
+.cj-freight-form input {
+  width: 100%;
+  height: 32px;
+}
+
+.cj-freight-form button {
+  height: 32px;
+}
+
+@media (max-width: 900px) {
+  .cj-operational-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cj-freight-form {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .cj-freight-form button {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 560px) {
+  .cj-connect-form,
+  .cj-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .cj-products-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cj-freight-form {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .cj-freight-form label:nth-child(3),
+  .cj-freight-form button {
+    grid-column: 1 / -1;
+  }
+}

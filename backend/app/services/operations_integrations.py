@@ -16,6 +16,7 @@ from ..models import (
     Store,
     WhatsAppConnection,
 )
+from ..model_domains.supplier_integrations import SupplierConnection
 from ..operations import get_operations_summary
 from ..payments.registry import get_providers_for_market
 from ..telegram_models import TelegramConnection
@@ -31,6 +32,7 @@ def _display_provider(provider: str) -> str:
         "shopify": "Shopify",
         "nuvemshop": "Nuvemshop",
         "dropi": "Dropi",
+        "cj": "CJ Dropshipping",
         "meta_ads": "Meta Ads",
         "whatsapp": "WhatsApp",
         "telegram": "Telegram",
@@ -325,6 +327,41 @@ def get_operations_integrations(
                 category="supplier",
                 connected=dropi.status == "connected",
                 status=dropi.status,
+            )
+        )
+
+    cj = _isolated_read(
+        db,
+        "cj",
+        lambda: (
+            db.query(SupplierConnection)
+            .filter(
+                SupplierConnection.organization_id == organization_id,
+                SupplierConnection.store_id == store_id,
+                SupplierConnection.provider == "cj",
+            )
+            .first()
+        ),
+    )
+    if cj is _FAILED:
+        integrations.append(
+            _degraded_item(
+                key="supplier:cj",
+                provider="cj",
+                name="CJ Dropshipping",
+                category="supplier",
+            )
+        )
+    else:
+        cj_status = cj.status if cj else "disconnected"
+        integrations.append(
+            _item(
+                key="supplier:cj",
+                provider="cj",
+                name="CJ Dropshipping",
+                category="supplier",
+                connected=cj_status == "connected",
+                status=cj_status,
             )
         )
 

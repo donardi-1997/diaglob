@@ -352,6 +352,7 @@ function App() {
           storeId={Number(selectedStoreId) || 0}
           storeName={selectedStore?.name}
           shopDomain={selectedStore?.shopify_domain}
+          storeCountryCode={selectedStore?.country_code}
           canWrite={can("stores.write")}
           onNavigateToKnowledge={() => handleNavigate("knowledge")}
           onNavigateToStores={() => handleNavigate("settings")}
