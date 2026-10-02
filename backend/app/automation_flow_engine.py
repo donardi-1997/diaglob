@@ -222,6 +222,10 @@ def process_flow_recipient(
     if run.status not in ("pending", "running"):
         return "run_not_active"
     if node_type == "end":
+        _record_node_execution(
+            db, recipient, node["id"], "end", "completed", now,
+            outcome="flow_completed",
+        )
         _finish_flow_recipient(db, recipient, "completed", now)
         return "completed"
     if node_type == "wait":
