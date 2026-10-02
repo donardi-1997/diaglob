@@ -74,10 +74,15 @@ export default function CookieConsent() {
   const [advertising, setAdvertising] = useState(initialConsent?.advertising ?? false);
 
   const persist = (allowAdvertising: boolean) => {
+    const shouldReloadAfterRevocation = consent?.advertising === true && !allowAdvertising;
     const saved = saveCookieConsent(allowAdvertising);
     setConsent(saved);
     setAdvertising(saved.advertising);
     setPreferencesOpen(false);
+
+    if (shouldReloadAfterRevocation) {
+      window.location.reload();
+    }
   };
 
   const openPreferences = () => {
