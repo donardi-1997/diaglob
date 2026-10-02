@@ -1317,6 +1317,7 @@ const resources = {
       commerceTabSummary: "Resumen",
       commerceTabProducts: "Productos",
       commerceTabOrders: "Órdenes",
+      commerceTabShipments: "Envíos",
       commerceSummaryError:
         "No se pudo cargar el resumen de comercio.",
       commerceNoData:
@@ -1348,6 +1349,34 @@ const resources = {
         "No hay órdenes disponibles.",
       commerceOrdersCount:
         "{{count}} orden(es)",
+      commerceShipmentsError:
+        "No se pudieron cargar los envíos.",
+      commerceShipmentsSyncError:
+        "No se pudo actualizar el tracking.",
+      commerceShipmentsPushUpdates:
+        "Esta transportadora recibe actualizaciones automáticamente por conexión webhook.",
+      commerceNoShipments:
+        "Aún no hay envíos registrados.",
+      commerceNoShipmentsHelp:
+        "Los envíos aparecerán cuando CJ, Shopify o una transportadora conectada registre una guía.",
+      commerceShipmentsCount:
+        "{{count}} envío(s)",
+      commerceShipmentsActive:
+        "{{count}} envío(s) en curso",
+      commerceShipmentTracking:
+        "Guía",
+      commerceShipmentCarrier:
+        "Transportadora",
+      commerceShipmentOrder:
+        "Pedido",
+      commerceShipmentLastUpdate:
+        "Última actualización",
+      commerceShipmentLastMile:
+        "Última milla",
+      commerceShipmentSync:
+        "Actualizar tracking",
+      commerceShipmentOpenTracking:
+        "Abrir tracking",
       commerceOrderNumber: "#",
       commerceOrderTotal: "Total",
       commerceOrderStatus: "Estado",
@@ -3480,6 +3509,7 @@ const resources = {
       commerceTabSummary: "Summary",
       commerceTabProducts: "Products",
       commerceTabOrders: "Orders",
+      commerceTabShipments: "Shipments",
       commerceSummaryError:
         "Could not load commerce summary.",
       commerceNoData:
@@ -3510,6 +3540,34 @@ const resources = {
         "No orders available.",
       commerceOrdersCount:
         "{{count}} order(s)",
+      commerceShipmentsError:
+        "Could not load shipments.",
+      commerceShipmentsSyncError:
+        "Could not refresh tracking.",
+      commerceShipmentsPushUpdates:
+        "This carrier receives updates automatically through its webhook connection.",
+      commerceNoShipments:
+        "No shipments registered yet.",
+      commerceNoShipmentsHelp:
+        "Shipments will appear when CJ, Shopify, or a connected carrier registers a tracking number.",
+      commerceShipmentsCount:
+        "{{count}} shipment(s)",
+      commerceShipmentsActive:
+        "{{count}} shipment(s) in progress",
+      commerceShipmentTracking:
+        "Tracking",
+      commerceShipmentCarrier:
+        "Carrier",
+      commerceShipmentOrder:
+        "Order",
+      commerceShipmentLastUpdate:
+        "Last update",
+      commerceShipmentLastMile:
+        "Last mile",
+      commerceShipmentSync:
+        "Refresh tracking",
+      commerceShipmentOpenTracking:
+        "Open tracking",
       commerceOrderNumber: "#",
       commerceOrderTotal: "Total",
       commerceOrderStatus: "Status",
