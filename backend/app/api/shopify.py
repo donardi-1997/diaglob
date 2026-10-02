@@ -32,6 +32,7 @@ from ..services.shopify_service import (
     ShopifyProviderError,
     create_poc as svc_create_poc,
     disconnect as svc_disconnect,
+    ensure_order_webhooks as svc_ensure_order_webhooks,
     get_order as svc_get_order,
     list_orders as svc_list_orders,
     process_oauth_callback as svc_process_oauth_callback,
@@ -196,6 +197,50 @@ def disconnect_shopify(
         return svc_disconnect(db, membership.organization_id, store_id)
     except ShopifyNotFoundError as exc:
         _map_oauth_error(exc)
+
+
+@router.post("/api/stores/{store_id}/shopify/webhooks/ensure")
+def shopify_ensure_order_webhooks(
+    store_id: int,
+    membership: OrganizationMembership = Depends(
+        require_permission("stores.write")
+    ),
+    db: Session = Depends(get_db),
+):
+    try:
+        return svc_ensure_order_webhooks(
+            db,
+            membership.organization_id,
+            store_id,
+        )
+    except ShopifyNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "SHOPIFY_NOT_CONNECTED",
+                "message": str(exc),
+            },
+        ) from exc
+    except ShopifyAuthError as exc:
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "code": "SHOPIFY_AUTH_FAILED",
+                "message": str(exc),
+            },
+        ) from exc
+    except (
+        ShopifyAPIError,
+        ShopifyGraphQLError,
+        ShopifyUserError,
+    ) as exc:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "code": "SHOPIFY_WEBHOOK_SETUP_FAILED",
+                "message": str(exc),
+            },
+        ) from exc
 
 
 @router.post("/api/stores/{store_id}/shopify/test")
