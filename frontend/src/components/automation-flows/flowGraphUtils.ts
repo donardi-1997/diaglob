@@ -365,6 +365,7 @@ export function addNodeToGraph(
   graph: FlowGraph,
   type: FlowNodeType,
   position: { x: number; y: number },
+  config?: Partial<FlowNodeConfig>,
 ): FlowGraph {
   if (type === "trigger" && graph.nodes.some((node) => node.type === "trigger")) {
     return graph;
@@ -385,7 +386,10 @@ export function addNodeToGraph(
       {
         id,
         type,
-        config: defaultConfigForNode(type),
+        config: {
+          ...defaultConfigForNode(type),
+          ...(config || {}),
+        },
         position,
       },
     ],
