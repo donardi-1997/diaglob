@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  addNodeToGraph,
   createDefaultGraph,
   deserializeFlowGraph,
   serializeFlowGraph,
@@ -148,4 +149,95 @@ test("serialized conditional edges preserve runtime branch labels", () => {
   };
 
   assert.equal(serialized.edges[0].label, "true");
+});
+
+
+test("tool nodes are valid when they use an executable capability", () => {
+  const graph: FlowGraph = {
+    nodes: [
+      {
+        id: "trigger",
+        type: "trigger",
+        config: { trigger_type: "manual" },
+        position: { x: 0, y: 0 },
+      },
+      {
+        id: "tool",
+        type: "tool",
+        config: {
+          tool_name: "analytics.summary",
+          arguments: {},
+        },
+        position: { x: 0, y: 100 },
+      },
+      {
+        id: "end",
+        type: "end",
+        config: {},
+        position: { x: 0, y: 200 },
+      },
+    ],
+    edges: [
+      { source: "trigger", target: "tool" },
+      { source: "tool", target: "end" },
+    ],
+  };
+
+  assert.deepEqual(validateFlowGraph(graph), []);
+});
+
+test("tool node requires a selected capability", () => {
+  const graph: FlowGraph = {
+    nodes: [
+      {
+        id: "trigger",
+        type: "trigger",
+        config: { trigger_type: "manual" },
+        position: { x: 0, y: 0 },
+      },
+      {
+        id: "tool",
+        type: "tool",
+        config: { arguments: {} },
+        position: { x: 0, y: 100 },
+      },
+      {
+        id: "end",
+        type: "end",
+        config: {},
+        position: { x: 0, y: 200 },
+      },
+    ],
+    edges: [
+      { source: "trigger", target: "tool" },
+      { source: "tool", target: "end" },
+    ],
+  };
+
+  assert.ok(
+    validateFlowGraph(graph).includes("flowValidationToolMissingName"),
+  );
+});
+
+test("catalog insertion preserves tool configuration", () => {
+  const graph = createDefaultGraph();
+  const next = addNodeToGraph(
+    graph,
+    "tool",
+    { x: 100, y: 200 },
+    {
+      tool_name: "customers.search",
+      arguments: {
+        query: "{{customer.name}}",
+        limit: 10,
+      },
+    },
+  );
+
+  const tool = next.nodes.find((node) => node.type === "tool");
+  assert.equal(tool?.config.tool_name, "customers.search");
+  assert.deepEqual(tool?.config.arguments, {
+    query: "{{customer.name}}",
+    limit: 10,
+  });
 });
