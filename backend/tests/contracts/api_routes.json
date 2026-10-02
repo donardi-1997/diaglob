@@ -765,6 +765,10 @@
   ],
   [
     "POST",
+    "/api/stores/{store_id}/automation-flows/{flow_id}/runs/{run_id}/recipients/{recipient_id}/retry-from-node/{node_id}"
+  ],
+  [
+    "POST",
     "/api/stores/{store_id}/automation-flows/{flow_id}/versions"
   ],
   [
