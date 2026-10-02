@@ -1,4 +1,4 @@
-export type FlowNodeType = "trigger" | "wait" | "message" | "condition" | "tool" | "end";
+export type FlowNodeType = "trigger" | "wait" | "message" | "condition" | "call" | "tool" | "end";
 
 export type FlowToolName =
   | "orders.list"
@@ -72,6 +72,10 @@ export interface FlowNodeConfig {
 
   message_mode?: MessageMode;
   message_template?: string;
+
+  call_prompt?: string;
+  call_language?: string;
+  timeout_minutes?: number;
   template_variables?: Record<string, string>;
   whatsapp_template_id?: number;
   template_provider_name?: string;
@@ -126,6 +130,7 @@ const NODE_TYPES: FlowNodeType[] = [
   "wait",
   "message",
   "condition",
+  "call",
   "tool",
   "end",
 ];
@@ -215,6 +220,12 @@ export function defaultConfigForNode(type: FlowNodeType): FlowNodeConfig {
         message_mode: "auto",
         message_template: "Hola {{customer.name}}",
       };
+    case "call":
+      return {
+        call_prompt: "Hola {{customer.name}}, te llamamos de {{store.name}} para confirmar tu pedido reciente. ¿Deseas recibirlo?",
+        call_language: "es",
+        timeout_minutes: 5,
+      };
     case "tool":
       return {
         tool_name: "analytics.summary",
@@ -277,6 +288,24 @@ export function validateFlowGraph(graph: FlowGraph): string[] {
       }
     }
 
+    if (node.type === "call") {
+      const branches = outgoing.map(edgeBranch);
+      const expected = ["confirmed", "rejected", "no_answer", "failed"];
+      if (!node.config.call_prompt?.trim()) {
+        errors.push("flowValidationCallMissingPrompt");
+      }
+      const timeout = Number(node.config.timeout_minutes ?? 5);
+      if (!Number.isFinite(timeout) || timeout < 1 || timeout > 60) {
+        errors.push("flowValidationCallInvalidTimeout");
+      }
+      if (expected.some((branch) => !branches.includes(branch))) {
+        errors.push("flowValidationCallMissingBranch");
+      }
+      if (outgoing.length > expected.length) {
+        errors.push("flowValidationCallTooManyBranches");
+      }
+    }
+
     if (node.type === "tool") {
       if (!node.config.tool_name) {
         errors.push("flowValidationToolMissingName");
@@ -292,7 +321,7 @@ export function validateFlowGraph(graph: FlowGraph): string[] {
       }
     }
 
-    if (node.type !== "condition" && node.type !== "end") {
+    if (node.type !== "condition" && node.type !== "call" && node.type !== "end") {
       if (outgoing.length === 0) {
         errors.push("flowValidationMissingOutgoing");
       }
@@ -470,6 +499,7 @@ export function humanizeNodeType(
     wait: t("flowNodeTypeWait"),
     message: t("flowNodeTypeMessage"),
     condition: t("flowNodeTypeCondition"),
+    call: t("flowNodeTypeCall"),
     tool: t("flowNodeTypeTool"),
     end: t("flowNodeTypeEnd"),
   };
@@ -495,6 +525,8 @@ export function humanizeNodeSummary(
         node.config.message_template
         || `${t(`flowMessageMode_${node.config.message_mode || "auto"}`)} · WhatsApp`
       );
+    case "call":
+      return node.config.call_prompt || t("flowNodeTypeCall");
     case "tool":
       return node.config.tool_name || t("flowNodeTypeTool");
     case "end":
