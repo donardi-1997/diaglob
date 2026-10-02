@@ -345,7 +345,7 @@ def _find_local_variant(
     db: Session,
     *,
     store_id: int,
-    shopify_variant_id: str | null,
+    shopify_variant_id: str | None,
 ) -> ProductVariant | None:
     if not shopify_variant_id:
         return None
