@@ -821,6 +821,11 @@ class Order(Base):
         nullable=True,
     )
 
+    shipping_address: Mapped[dict | None] = mapped_column(
+        JSON,
+        nullable=True,
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=datetime.utcnow,
@@ -846,6 +851,14 @@ class Order(Base):
 
 class OrderItem(Base):
     __tablename__ = "order_items"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "order_id",
+            "shopify_line_item_id",
+            name="uq_order_item_order_shopify_line_item",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(
         Integer,
@@ -898,6 +911,12 @@ class OrderItem(Base):
     shopify_variant_id: Mapped[str | None] = mapped_column(
         String(255),
         nullable=True,
+    )
+
+    shopify_line_item_id: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
     )
 
     title: Mapped[str] = mapped_column(
