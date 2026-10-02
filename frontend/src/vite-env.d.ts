@@ -5,6 +5,8 @@ interface ImportMetaEnv {
   readonly VITE_SENTRY_ENVIRONMENT?: string
   readonly VITE_SENTRY_RELEASE?: string
   readonly VITE_SENTRY_TRACES_SAMPLE_RATE?: string
+  readonly VITE_META_PIXEL_ID?: string
+  readonly VITE_TIKTOK_PIXEL_ID?: string
 }
 
 interface ImportMeta {

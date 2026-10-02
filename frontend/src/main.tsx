@@ -6,10 +6,12 @@ import { BrowserRouter } from 'react-router-dom'
 import App from './App'
 import i18n from './i18n'
 import { initializeFrontendObservability } from './observability'
+import { initializeMarketingTracking } from './services/marketingTracking'
 import './index.css'
 import './conversations-layout-fix.css'
 
 initializeFrontendObservability(import.meta.env, (options) => Sentry.init(options))
+initializeMarketingTracking()
 
 const errorFallback = (
   <main role="alert">
