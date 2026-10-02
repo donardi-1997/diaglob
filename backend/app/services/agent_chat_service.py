@@ -28,6 +28,9 @@ from .ai_usage_service import acquire_ai_capacity, refund_ai_capacity
 from .bedrock_agent_chat import AgentModelError, converse
 
 
+CHAT_HISTORY_MESSAGE_LIMIT = 40
+
+
 _RESOLVED_TOOL_STATUSES = {
     "success",
     "error",
@@ -253,11 +256,14 @@ def _history(
     db: Session,
     session: AgentChatSession,
 ) -> list[dict]:
-    messages = (
-        db.query(AgentChatMessage)
-        .filter(AgentChatMessage.session_id == session.id)
-        .order_by(AgentChatMessage.id.asc())
-        .all()
+    messages = list(
+        reversed(
+            db.query(AgentChatMessage)
+            .filter(AgentChatMessage.session_id == session.id)
+            .order_by(AgentChatMessage.id.desc())
+            .limit(CHAT_HISTORY_MESSAGE_LIMIT)
+            .all()
+        )
     )
     history: list[dict] = []
 
