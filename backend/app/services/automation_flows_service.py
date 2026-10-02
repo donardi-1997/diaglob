@@ -536,6 +536,7 @@ def simulate_flow(db: Session, organization_id: int, store_id: int, graph: dict)
     message_nodes = [n for n in nodes if n.get("type") == "message"]
     wait_nodes = [n for n in nodes if n.get("type") == "wait"]
     condition_nodes = [n for n in nodes if n.get("type") == "condition"]
+    tool_nodes = [n for n in nodes if n.get("type") == "tool"]
     end_nodes = [n for n in nodes if n.get("type") == "end"]
 
     if len(message_nodes) == 0:
@@ -548,6 +549,6 @@ def simulate_flow(db: Session, organization_id: int, store_id: int, graph: dict)
         "summary": {
             "total_nodes": len(nodes), "message_nodes": len(message_nodes),
             "wait_nodes": len(wait_nodes), "condition_nodes": len(condition_nodes),
-            "end_nodes": len(end_nodes),
+            "tool_nodes": len(tool_nodes), "end_nodes": len(end_nodes),
         },
     }
