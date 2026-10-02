@@ -80,7 +80,50 @@ def _conditional_message_flow(
     }
 
 
+def _call_confirmation_flow():
+    return {
+        "nodes": [
+            _node("trigger", "trigger", 300, 60, trigger_type="order_created"),
+            _node(
+                "call",
+                "call",
+                300,
+                220,
+                call_prompt=(
+                    "Hola {{customer.name}}, te llamamos de {{store.name}} para confirmar "
+                    "tu pedido reciente. Confirma si deseas recibirlo. Si no deseas continuar, "
+                    "indícalo claramente."
+                ),
+                call_language="es",
+                timeout_minutes=5,
+            ),
+            _node("confirmed", "end", 40, 440, label="Pedido confirmado"),
+            _node("rejected", "end", 220, 440, label="Pedido rechazado"),
+            _node("no_answer", "end", 410, 440, label="No contestó"),
+            _node("failed", "end", 590, 440, label="Llamada fallida"),
+        ],
+        "edges": [
+            {"source": "trigger", "target": "call"},
+            {"source": "call", "target": "confirmed", "label": "confirmed"},
+            {"source": "call", "target": "rejected", "label": "rejected"},
+            {"source": "call", "target": "no_answer", "label": "no_answer"},
+            {"source": "call", "target": "failed", "label": "failed"},
+        ],
+    }
+
+
 FLOW_TEMPLATES = [
+    {
+        "id": "voice_order_confirmation",
+        "name": "Confirmar pedido por llamada",
+        "description": "Llama al cliente con IA y separa confirmado, rechazado, sin respuesta o fallo.",
+        "category": "Orders",
+        "recommended_role": "sales",
+        "required_integrations": ["voice"],
+        "icon": "phone-call",
+        "estimated_setup_minutes": 2,
+        "graph": _call_confirmation_flow(),
+    },
     {
         "id": "order_confirmation_flow",
         "name": "Confirmar pedido",
