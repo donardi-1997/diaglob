@@ -139,11 +139,11 @@ def _call_confirmation_flow():
 FLOW_TEMPLATES = [
     {
         "id": "voice_order_confirmation",
-        "name": "Confirmar pedido por llamada",
-        "description": "Llama al cliente con IA y separa confirmado, rechazado, sin respuesta o fallo.",
+        "name": "Confirmar COD por llamada + fulfillment",
+        "description": "Detecta pedidos contraentrega, confirma por llamada IA y encola el pedido confirmado para fulfillment.",
         "category": "Orders",
         "recommended_role": "sales",
-        "required_integrations": ["voice"],
+        "required_integrations": ["voice", "shopify", "cj_auto_fulfillment"],
         "icon": "phone-call",
         "estimated_setup_minutes": 2,
         "graph": _call_confirmation_flow(),
