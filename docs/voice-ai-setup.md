@@ -93,8 +93,23 @@ contract. It intentionally does not hard-code Twilio, Amazon Connect, ElevenLabs
 or another telephony vendor. A concrete provider can be attached without
 changing Flow Builder semantics.
 
-The current `order_created` event bridge identifies the customer but does not
-persist the full order event payload in the flow run. Therefore the first voice
-template confirms a recent order generically. Order-specific variables such as
-amount, payment method/COD, and order number should be added through event
-context persistence in the next slice.
+Order-triggered flows now persist a normalized snapshot in
+`AutomationFlowRun.trigger_context`. Voice scripts and flow conditions can use
+the exact order that fired the flow without re-querying mutable business state.
+
+Available order variables include:
+
+- `{{order.id}}`, `{{order.number}}`
+- `{{order.total}}`, `{{order.currency}}`
+- `{{order.payment_method}}`, `{{order.payment_status}}`, `{{order.is_cod}}`
+- `{{order.shipping.city}}`, province, country, address and zip
+- `{{order.items_summary}}`
+
+When a call node uses `call_purpose=order_confirmation`, terminal outcomes are
+persisted on the order. A confirmed COD order is eligible for the existing
+Shopify -> CJ auto-fulfillment pipeline. The dedicated Flow Builder action
+`fulfillment.enqueue_trigger_order` can only enqueue the order stored in the
+run's trigger context; it cannot target an arbitrary order ID.
+
+The one-click COD template requires Voice, Shopify, and CJ auto-fulfillment to
+be connected before it can be created.

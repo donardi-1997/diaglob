@@ -29,6 +29,7 @@ export interface AutomationFlowRun {
   flow_version_id: number;
   status: "pending" | "running" | "completed" | "partial" | "failed";
   trigger_key: string | null;
+  trigger_context?: Record<string, unknown> | null;
   total_recipients: number;
   completed_recipients: number;
   failed_recipients: number;

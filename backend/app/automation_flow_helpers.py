@@ -42,6 +42,7 @@ def serialize_run(run: AutomationFlowRun) -> dict:
         "flow_version_id": run.flow_version_id,
         "status": run.status,
         "trigger_key": run.trigger_key,
+        "trigger_context": run.trigger_context,
         "total_recipients": run.total_recipients,
         "completed_recipients": run.completed_recipients,
         "failed_recipients": run.failed_recipients,

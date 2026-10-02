@@ -67,6 +67,12 @@ const FIELD_LABELS: Record<string, string> = {
   "customer.country": "flowField_country_code",
   has_successful_order_since_flow_start:
     "flowField_successful_order_since_start",
+  "order.is_cod": "flowField_order_is_cod",
+  "order.payment_status": "flowField_order_payment_status",
+  "order.total": "flowField_order_total",
+  "order.currency": "flowField_order_currency",
+  "order.country": "flowField_order_country",
+  "order.fulfillment_status": "flowField_order_fulfillment_status",
 };
 
 const OPERATOR_LABELS: Record<string, string> = {
@@ -96,9 +102,10 @@ const BOOLEAN_FIELDS = new Set([
   "customer.needs_attention",
   "customer.needs_followup",
   "has_successful_order_since_flow_start",
+  "order.is_cod",
 ]);
 
-const NUMERIC_FIELDS = new Set(["customer.order_count"]);
+const NUMERIC_FIELDS = new Set(["customer.order_count", "order.total"]);
 
 function updateToolArgument(
   node: FlowNode,
@@ -412,6 +419,26 @@ export default function FlowSidebar({
                     disabled={!canWrite}
                     placeholder={t("flowCallPromptPlaceholder")}
                   />
+                </label>
+                <label>
+                  <span>{t("flowCallPurpose")}</span>
+                  <select
+                    value={node.config.call_purpose || "general"}
+                    onChange={(event) =>
+                      canWrite
+                      && onUpdate(node.id, {
+                        call_purpose:
+                          event.target.value as FlowNodeConfig["call_purpose"],
+                      })}
+                    disabled={!canWrite}
+                  >
+                    <option value="general">
+                      {t("flowCallPurpose_general")}
+                    </option>
+                    <option value="order_confirmation">
+                      {t("flowCallPurpose_order_confirmation")}
+                    </option>
+                  </select>
                 </label>
                 <label>
                   <span>{t("flowCallLanguage")}</span>

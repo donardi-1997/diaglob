@@ -83,31 +83,55 @@ def _conditional_message_flow(
 def _call_confirmation_flow():
     return {
         "nodes": [
-            _node("trigger", "trigger", 300, 60, trigger_type="order_created"),
+            _node("trigger", "trigger", 320, 40, trigger_type="order_created"),
+            _node(
+                "is_cod",
+                "condition",
+                320,
+                170,
+                field="order.is_cod",
+                operator="is_true",
+                value=True,
+            ),
             _node(
                 "call",
                 "call",
-                300,
-                220,
+                180,
+                330,
                 call_prompt=(
                     "Hola {{customer.name}}, te llamamos de {{store.name}} para confirmar "
-                    "tu pedido reciente. Confirma si deseas recibirlo. Si no deseas continuar, "
-                    "indícalo claramente."
+                    "tu pedido #{{order.number}} por {{order.total}} {{order.currency}}. "
+                    "El pedido incluye {{order.items_summary}} y la entrega está registrada "
+                    "para {{order.shipping.city}}, {{order.shipping.province}}. "
+                    "Por favor confirma claramente si deseas recibirlo."
                 ),
                 call_language="es",
+                call_purpose="order_confirmation",
                 timeout_minutes=5,
             ),
-            _node("confirmed", "end", 40, 440, label="Pedido confirmado"),
-            _node("rejected", "end", 220, 440, label="Pedido rechazado"),
-            _node("no_answer", "end", 410, 440, label="No contestó"),
-            _node("failed", "end", 590, 440, label="Llamada fallida"),
+            _node(
+                "fulfill",
+                "tool",
+                20,
+                540,
+                tool_name="fulfillment.enqueue_trigger_order",
+                arguments={},
+            ),
+            _node("confirmed", "end", 20, 720, label="Confirmado y enviado a fulfillment"),
+            _node("rejected", "end", 180, 720, label="Pedido rechazado"),
+            _node("no_answer", "end", 350, 720, label="No contestó"),
+            _node("failed", "end", 510, 720, label="Llamada fallida"),
+            _node("not_cod", "end", 520, 330, label="No requiere confirmación COD"),
         ],
         "edges": [
-            {"source": "trigger", "target": "call"},
-            {"source": "call", "target": "confirmed", "label": "confirmed"},
+            {"source": "trigger", "target": "is_cod"},
+            {"source": "is_cod", "target": "call", "label": "true"},
+            {"source": "is_cod", "target": "not_cod", "label": "false"},
+            {"source": "call", "target": "fulfill", "label": "confirmed"},
             {"source": "call", "target": "rejected", "label": "rejected"},
             {"source": "call", "target": "no_answer", "label": "no_answer"},
             {"source": "call", "target": "failed", "label": "failed"},
+            {"source": "fulfill", "target": "confirmed"},
         ],
     }
 
@@ -115,11 +139,11 @@ def _call_confirmation_flow():
 FLOW_TEMPLATES = [
     {
         "id": "voice_order_confirmation",
-        "name": "Confirmar pedido por llamada",
-        "description": "Llama al cliente con IA y separa confirmado, rechazado, sin respuesta o fallo.",
+        "name": "Confirmar COD por llamada + fulfillment",
+        "description": "Detecta pedidos contraentrega, confirma por llamada IA y encola el pedido confirmado para fulfillment.",
         "category": "Orders",
         "recommended_role": "sales",
-        "required_integrations": ["voice"],
+        "required_integrations": ["voice", "shopify", "cj_auto_fulfillment"],
         "icon": "phone-call",
         "estimated_setup_minutes": 2,
         "graph": _call_confirmation_flow(),

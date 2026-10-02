@@ -19,7 +19,7 @@ from .models import (
     AutomationFlow, AutomationFlowVersion, AutomationFlowRun,
     AutomationFlowRecipientExecution, AutomationNodeExecution,
     AutomationDeliveryAttempt, AutomationRateLimit,
-    Customer, CustomerStoreProfile, OrganizationMembership, Store, WhatsAppConnection,
+    Customer, CustomerStoreProfile, Order, OrganizationMembership, Store, WhatsAppConnection,
 )
 from .whatsapp_client import WhatsAppDeliveryError, send_whatsapp_template_message, send_whatsapp_text_message
 from .whatsapp_compliance import evaluate_whatsapp_delivery_eligibility, get_last_whatsapp_inbound_by_customer
@@ -35,7 +35,14 @@ FLOW_POLL_BATCH = int(os.getenv("AUTOMATION_FLOW_BATCH_SIZE", str(BATCH_SIZE)))
 # ============================================================
 
 
-def materialize_flow_trigger(db: Session, flow: AutomationFlow, customer_ids: list[int], trigger_key: str | None = None, now: datetime | None = None) -> AutomationFlowRun | None:
+def materialize_flow_trigger(
+    db: Session,
+    flow: AutomationFlow,
+    customer_ids: list[int],
+    trigger_key: str | None = None,
+    now: datetime | None = None,
+    trigger_context: dict | None = None,
+) -> AutomationFlowRun | None:
     """Create a flow run and recipient executions for a manual/audience trigger."""
     now = now or utcnow()
     if flow.status != "active" or not flow.active_version_id:
@@ -62,6 +69,7 @@ def materialize_flow_trigger(db: Session, flow: AutomationFlow, customer_ids: li
         flow_id=flow.id, flow_version_id=version.id,
         organization_id=flow.organization_id, store_id=flow.store_id,
         status="pending", trigger_key=trigger_key,
+        trigger_context=trigger_context,
         total_recipients=len(customer_ids), started_at=now,
     )
     try:
@@ -327,7 +335,16 @@ def _process_condition_node(db: Session, recipient: AutomationFlowRecipientExecu
         "customer.country": customer.country_code,
         "has_successful_order_since_flow_start": False,
     }
-    actual = customer_data.get(field)
+    runtime = _runtime_context(
+        customer,
+        db.get(Store, run.store_id),
+        run,
+    )
+    actual = (
+        customer_data[field]
+        if field in customer_data
+        else runtime.get(field)
+    )
     result = _evaluate_condition(actual, operator, value)
     branch = "true" if result else "false"
     _record_node_execution(db, recipient, node["id"], "condition", "completed", now, outcome=branch)
@@ -335,19 +352,64 @@ def _process_condition_node(db: Session, recipient: AutomationFlowRecipientExecu
     return "advanced"
 
 
-def _resolve_tool_value(value, customer: Customer):
-    """Resolve a small, typed runtime context inside tool arguments."""
-    context = {
+def _flatten_runtime_context(
+    target: dict[str, object],
+    prefix: str,
+    value,
+) -> None:
+    if isinstance(value, dict):
+        for key, child in value.items():
+            child_prefix = f"{prefix}.{key}" if prefix else str(key)
+            _flatten_runtime_context(target, child_prefix, child)
+        return
+    if isinstance(value, list):
+        return
+    target[prefix] = value
+
+
+def _runtime_context(
+    customer: Customer,
+    store: Store | None = None,
+    run: AutomationFlowRun | None = None,
+) -> dict[str, object]:
+    context: dict[str, object] = {
         "customer.id": customer.id,
         "customer.name": customer.name,
         "customer.email": customer.email,
         "customer.phone": customer.phone,
         "customer.country": customer.country_code,
     }
+    if store is not None:
+        context["store.id"] = store.id
+        context["store.name"] = store.name
+        context["store.country"] = store.country_code
+        context["store.currency"] = store.currency
+
+    if run is not None and isinstance(run.trigger_context, dict):
+        for key, value in run.trigger_context.items():
+            _flatten_runtime_context(context, str(key), value)
+
+    return context
+
+
+def _resolve_tool_value(
+    value,
+    customer: Customer,
+    store: Store | None = None,
+    run: AutomationFlowRun | None = None,
+):
+    """Resolve typed runtime variables from customer, store, and trigger context."""
+    context = _runtime_context(customer, store, run)
     if isinstance(value, dict):
-        return {key: _resolve_tool_value(item, customer) for key, item in value.items()}
+        return {
+            key: _resolve_tool_value(item, customer, store, run)
+            for key, item in value.items()
+        }
     if isinstance(value, list):
-        return [_resolve_tool_value(item, customer) for item in value]
+        return [
+            _resolve_tool_value(item, customer, store, run)
+            for item in value
+        ]
     if not isinstance(value, str):
         return value
 
@@ -359,8 +421,101 @@ def _resolve_tool_value(value, customer: Customer):
 
     resolved = value
     for key, replacement in context.items():
-        resolved = resolved.replace("{{" + key + "}}", "" if replacement is None else str(replacement))
+        resolved = resolved.replace(
+            "{{" + key + "}}",
+            "" if replacement is None else str(replacement),
+        )
     return resolved
+
+
+def _enqueue_confirmed_trigger_order(
+    db: Session,
+    membership: OrganizationMembership,
+    run: AutomationFlowRun,
+) -> dict:
+    """Queue only the order that triggered this flow after recorded confirmation."""
+    from .services.action_policy import evaluate_action
+    from .services.auto_fulfillment import enqueue_shopify_order
+
+    decision = evaluate_action(
+        db,
+        membership,
+        "fulfillment.retry",
+        store_id=run.store_id,
+    )
+    if not decision.allowed:
+        return {
+            "status": "error",
+            "code": decision.code or "fulfillment_not_allowed",
+            "message": decision.message or "Fulfillment is not allowed",
+        }
+
+    context = run.trigger_context or {}
+    event = context.get("event") if isinstance(context, dict) else {}
+    order_context = context.get("order") if isinstance(context, dict) else {}
+    if not isinstance(event, dict) or event.get("type") != "order.created":
+        return {
+            "status": "error",
+            "code": "trigger_order_required",
+            "message": "Fulfillment requires an order.created trigger",
+        }
+    if not isinstance(order_context, dict) or not order_context.get("id"):
+        return {
+            "status": "error",
+            "code": "trigger_order_missing",
+            "message": "The triggering order is unavailable",
+        }
+
+    try:
+        order_id = int(order_context["id"])
+    except (TypeError, ValueError):
+        return {
+            "status": "error",
+            "code": "trigger_order_invalid",
+            "message": "The triggering order id is invalid",
+        }
+
+    order = db.query(Order).filter(
+        Order.id == order_id,
+        Order.organization_id == run.organization_id,
+        Order.store_id == run.store_id,
+    ).first()
+    if order is None:
+        return {
+            "status": "error",
+            "code": "trigger_order_not_found",
+            "message": "The triggering order no longer exists",
+        }
+
+    if (order.confirmation_status or "").lower() != "confirmed":
+        return {
+            "status": "error",
+            "code": "order_confirmation_required",
+            "message": "The triggering order has not been confirmed",
+        }
+
+    job = enqueue_shopify_order(db, order.id)
+    if job is None:
+        return {
+            "status": "error",
+            "code": "auto_fulfillment_not_queued",
+            "message": (
+                "The order is not eligible or automatic fulfillment "
+                "is not enabled for this store"
+            ),
+        }
+
+    return {
+        "status": "success",
+        "result": {
+            "order_id": order.id,
+            "order_number": order.order_number,
+            "confirmation_status": order.confirmation_status,
+            "job_id": job.id,
+            "job_status": job.status,
+            "provider": job.provider,
+        },
+    }
 
 
 def _process_tool_node(
@@ -418,14 +573,27 @@ def _process_tool_node(
         )
         return "failed"
 
-    arguments = _resolve_tool_value(config.get("arguments", {}), customer)
-    result = execute_agent_tool(
-        db,
-        membership,
-        tool_name=tool_name,
-        store_id=run.store_id,
-        arguments=arguments if isinstance(arguments, dict) else {},
+    store = db.get(Store, run.store_id)
+    arguments = _resolve_tool_value(
+        config.get("arguments", {}),
+        customer,
+        store,
+        run,
     )
+    if tool_name == "fulfillment.enqueue_trigger_order":
+        result = _enqueue_confirmed_trigger_order(
+            db,
+            membership,
+            run,
+        )
+    else:
+        result = execute_agent_tool(
+            db,
+            membership,
+            tool_name=tool_name,
+            store_id=run.store_id,
+            arguments=arguments if isinstance(arguments, dict) else {},
+        )
 
     if result.get("status") != "success":
         code = str(result.get("code") or "flow_tool_failed")
@@ -460,17 +628,69 @@ def _process_tool_node(
     return "advanced"
 
 
-def _render_call_prompt(template: str, customer: Customer, store: Store) -> str:
-    context = {
-        "customer.name": customer.name or "",
-        "customer.phone": customer.phone or "",
-        "customer.country": customer.country_code or "",
-        "store.name": store.name or "",
-    }
-    rendered = template
-    for key, value in context.items():
-        rendered = rendered.replace("{{" + key + "}}", str(value))
-    return rendered.strip()
+def _record_order_confirmation_outcome(
+    db: Session,
+    run: AutomationFlowRun,
+    config: dict,
+    outcome: str,
+    now: datetime,
+) -> None:
+    if str(config.get("call_purpose") or "general") != "order_confirmation":
+        return
+
+    context = dict(run.trigger_context or {})
+    order_context = dict(context.get("order") or {})
+    order_id = order_context.get("id")
+    if not order_id:
+        return
+
+    try:
+        order_id = int(order_id)
+    except (TypeError, ValueError):
+        return
+
+    order = db.query(Order).filter(
+        Order.id == order_id,
+        Order.organization_id == run.organization_id,
+        Order.store_id == run.store_id,
+    ).first()
+    if order is None:
+        return
+
+    from .services.order_confirmation import set_order_confirmation
+
+    set_order_confirmation(
+        db,
+        order,
+        status=outcome,
+        source="voice_ai",
+        now=now,
+    )
+    order_context["confirmation_status"] = outcome
+    order_context["confirmation_source"] = "voice_ai"
+    order_context["confirmed_at"] = (
+        now.isoformat() + "Z"
+        if outcome == "confirmed"
+        else None
+    )
+    context["order"] = order_context
+    run.trigger_context = context
+    db.flush()
+
+
+def _render_call_prompt(
+    template: str,
+    customer: Customer,
+    store: Store,
+    run: AutomationFlowRun | None = None,
+) -> str:
+    rendered = _resolve_tool_value(
+        template,
+        customer,
+        store,
+        run,
+    )
+    return str(rendered or "").strip()
 
 
 def _process_call_node(
@@ -507,6 +727,13 @@ def _process_call_node(
             **(latest.extra_data or {}),
             "timed_out": True,
         }
+        _record_order_confirmation_outcome(
+            db,
+            run,
+            config,
+            "no_answer",
+            now,
+        )
         _advance_flow(db, recipient, graph, node["id"], now, outcome="no_answer")
         return "advanced"
 
@@ -522,6 +749,13 @@ def _process_call_node(
             error_code="no_phone" if customer else "customer_missing",
             message="Customer phone unavailable" if customer else "Customer not found",
         )
+        _record_order_confirmation_outcome(
+            db,
+            run,
+            config,
+            "failed",
+            now,
+        )
         _advance_flow(db, recipient, graph, node["id"], now, outcome="failed")
         return "advanced"
 
@@ -529,6 +763,7 @@ def _process_call_node(
         str(config.get("call_prompt") or ""),
         customer,
         store,
+        run,
     )
     language = str(config.get("call_language") or store.default_language or "es")
     provider = voice_sender or start_voice_call
@@ -547,6 +782,16 @@ def _process_call_node(
                 "flow_recipient_id": recipient.id,
                 "node_id": node["id"],
                 "customer_id": customer.id,
+                "order_id": (
+                    ((run.trigger_context or {}).get("order") or {}).get("id")
+                    if isinstance(run.trigger_context, dict)
+                    else None
+                ),
+                "order_number": (
+                    ((run.trigger_context or {}).get("order") or {}).get("number")
+                    if isinstance(run.trigger_context, dict)
+                    else None
+                ),
             },
         )
     except VoiceProviderError as exc:
@@ -560,6 +805,13 @@ def _process_call_node(
             outcome="failed",
             error_code=exc.code,
             message=str(exc),
+        )
+        _record_order_confirmation_outcome(
+            db,
+            run,
+            config,
+            "failed",
+            now,
         )
         _advance_flow(db, recipient, graph, node["id"], now, outcome="failed")
         return "advanced"
@@ -575,6 +827,13 @@ def _process_call_node(
             outcome="failed",
             error_code="voice_provider_error",
             message="Voice provider failed to start the call",
+        )
+        _record_order_confirmation_outcome(
+            db,
+            run,
+            config,
+            "failed",
+            now,
         )
         _advance_flow(db, recipient, graph, node["id"], now, outcome="failed")
         return "advanced"
@@ -656,6 +915,24 @@ def complete_voice_call(
     }
 
     graph = _get_graph_from_version(db, recipient.flow_version_id)
+    run = db.get(AutomationFlowRun, recipient.flow_run_id)
+    call_node = next(
+        (
+            item
+            for item in graph.get("nodes", [])
+            if item.get("id") == node_exec.node_id
+        ),
+        None,
+    )
+    if run is not None and call_node is not None:
+        _record_order_confirmation_outcome(
+            db,
+            run,
+            call_node.get("config", {}),
+            normalized,
+            now,
+        )
+
     _advance_flow(
         db,
         recipient,

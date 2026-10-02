@@ -787,6 +787,22 @@ class Order(Base):
         nullable=True,
     )
 
+    confirmation_status: Mapped[str | None] = mapped_column(
+        String(30),
+        nullable=True,
+        index=True,
+    )
+
+    confirmation_source: Mapped[str | None] = mapped_column(
+        String(30),
+        nullable=True,
+    )
+
+    confirmed_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+    )
+
     note: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
@@ -1338,6 +1354,7 @@ class AutomationFlowRun(Base):
     store_id: Mapped[int] = mapped_column(ForeignKey("stores.id", ondelete="CASCADE"), nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False, index=True)
     trigger_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    trigger_context: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     total_recipients: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     completed_recipients: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     failed_recipients: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

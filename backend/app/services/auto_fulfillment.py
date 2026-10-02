@@ -15,6 +15,7 @@ from ..model_domains.supplier_integrations import SupplierConnection
 from ..model_domains.supplier_orders import SupplierOrder
 from ..models import CommerceConnection, Order, OrderItem
 from ..shopify_client import ShopifyAPIError
+from .order_confirmation import is_cod_order
 from .shipment_tracking import (
     ShipmentTrackingError,
     configure_cj_logistics_webhook,
@@ -83,7 +84,12 @@ def _shopify_connection(
 def _eligible_order(order: Order) -> bool:
     if order.source != "shopify":
         return False
-    if (order.payment_status or "").lower() != "paid":
+    payment_ready = (order.payment_status or "").lower() == "paid"
+    confirmed_cod = (
+        is_cod_order(order)
+        and (order.confirmation_status or "").lower() == "confirmed"
+    )
+    if not payment_ready and not confirmed_cod:
         return False
     if (order.fulfillment_status or "").lower() == "fulfilled":
         return False
