@@ -771,6 +771,32 @@ const resources = {
         "Copiar webhook",
       integrationsCopyVerifyToken:
         "Copiar verify token",
+      carrierIntegrationsTitle:
+        "Transportadoras",
+      carrierIntegrationsSubtitle:
+        "Recibe estados de entrega de transportadoras locales y úsalos en tracking, postventa y automatizaciones.",
+      carrierIntegrationsColombiaFirst:
+        "Cobertura inicial: Colombia",
+      carrierIntegrationsOtherCountry:
+        "La conexión directa de transportadoras comienza por Colombia. El motor de tracking ya está preparado para ampliar países.",
+      carrierIntegrationsConnectedCount:
+        "{{count}} conectada(s)",
+      carrierIntegrationsOfficialApi:
+        "API oficial identificada · adapter directo en siguiente fase",
+      carrierIntegrationsTrackingBridge:
+        "Seguimiento por actualizaciones webhook",
+      carrierIntegrationsUpdatesUrl:
+        "URL de actualizaciones",
+      carrierIntegrationsTokenOnce:
+        "Token de conexión (guárdalo ahora)",
+      carrierIntegrationsConnect:
+        "Conectar seguimiento",
+      carrierIntegrationsLoadError:
+        "No pudimos cargar las transportadoras.",
+      carrierIntegrationsConnectError:
+        "No pudimos conectar la transportadora.",
+      carrierIntegrationsDisconnectError:
+        "No pudimos desconectar la transportadora.",
       integrationsShopifyNoDomain:
         "Sin dominio Shopify",
       integrationsShopifyConnectError:
@@ -2931,6 +2957,32 @@ const resources = {
         "Copy webhook",
       integrationsCopyVerifyToken:
         "Copy verify token",
+      carrierIntegrationsTitle:
+        "Carriers",
+      carrierIntegrationsSubtitle:
+        "Receive local carrier delivery updates and use them across tracking, post-sales, and automations.",
+      carrierIntegrationsColombiaFirst:
+        "Initial coverage: Colombia",
+      carrierIntegrationsOtherCountry:
+        "Direct carrier connectivity starts in Colombia. The tracking engine is ready to expand to more countries.",
+      carrierIntegrationsConnectedCount:
+        "{{count}} connected",
+      carrierIntegrationsOfficialApi:
+        "Official API identified · direct adapter next",
+      carrierIntegrationsTrackingBridge:
+        "Tracking through webhook updates",
+      carrierIntegrationsUpdatesUrl:
+        "Updates URL",
+      carrierIntegrationsTokenOnce:
+        "Connection token (save it now)",
+      carrierIntegrationsConnect:
+        "Connect tracking",
+      carrierIntegrationsLoadError:
+        "We could not load carriers.",
+      carrierIntegrationsConnectError:
+        "We could not connect the carrier.",
+      carrierIntegrationsDisconnectError:
+        "We could not disconnect the carrier.",
       integrationsShopifyNoDomain:
         "No Shopify domain",
       integrationsShopifyConnectError:
@@ -4551,8 +4603,35 @@ const resources = {
 
       // Integrations
       integrationsTitle: "Integrações",
+      integrationsLoading: "Carregando integrações...",
       integrationsConnected: "Conectado",
       integrationsDisconnected: "Desconectado",
+      integrationsConnect: "Conectar",
+      integrationsDisconnect: "Desconectar",
+      integrationsCopyWebhook: "Copiar webhook",
+      integrationsCopyVerifyToken: "Copiar token de verificação",
+      integrationsCopyError: "Não foi possível copiar.",
+      carrierIntegrationsTitle: "Transportadoras",
+      carrierIntegrationsSubtitle:
+        "Receba atualizações de entrega de transportadoras locais e use-as no rastreamento, pós-venda e automações.",
+      carrierIntegrationsColombiaFirst: "Cobertura inicial: Colômbia",
+      carrierIntegrationsOtherCountry:
+        "A conexão direta de transportadoras começa pela Colômbia. O motor de rastreamento já está preparado para novos países.",
+      carrierIntegrationsConnectedCount: "{{count}} conectada(s)",
+      carrierIntegrationsOfficialApi:
+        "API oficial identificada · adapter direto na próxima fase",
+      carrierIntegrationsTrackingBridge:
+        "Rastreamento por atualizações webhook",
+      carrierIntegrationsUpdatesUrl: "URL de atualizações",
+      carrierIntegrationsTokenOnce:
+        "Token de conexão (salve agora)",
+      carrierIntegrationsConnect: "Conectar rastreamento",
+      carrierIntegrationsLoadError:
+        "Não foi possível carregar as transportadoras.",
+      carrierIntegrationsConnectError:
+        "Não foi possível conectar a transportadora.",
+      carrierIntegrationsDisconnectError:
+        "Não foi possível desconectar a transportadora.",
       integrationsShopifyConnectError: "Erro ao conectar Shopify",
       integrationsWhatsAppConnectError: "Erro ao conectar WhatsApp",
       integrationsDisconnectError: "Erro ao desconectar",
