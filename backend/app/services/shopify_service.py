@@ -24,6 +24,7 @@ from ..shopify_oauth import (
     verify_shopify_hmac,
 )
 from ..shopify_security import encrypt_shopify_secret
+from ..shopify_webhook_subscriptions import ensure_shopify_order_webhooks
 from .trial_service import (
     TrialIdentityAlreadyUsed,
     activate_trial_for_verified_store,
@@ -277,6 +278,24 @@ def process_oauth_callback(db: Session, query_params: dict) -> str:
 
     db.commit()
 
+    # Ensure order webhooks after OAuth. Connection success is preserved if
+    # Shopify temporarily rejects subscription setup; Integrations can retry.
+    try:
+        ensure_shopify_order_webhooks(connection)
+        connection.last_error = None
+        db.commit()
+    except ShopifyAPIError as exc:
+        connection.last_error = (
+            "WEBHOOK_SUBSCRIPTION_FAILED: "
+            + str(exc)[:400]
+        )
+        db.commit()
+        logger.warning(
+            "Shopify webhook subscription setup failed for store %s: %s",
+            connection.store_id,
+            exc,
+        )
+
     # Analytics: Shopify connected
     from .product_analytics import track_shopify_connected
     track_shopify_connected(
@@ -349,6 +368,35 @@ def sync_products(db: Session, organization_id: int, store_id: int) -> dict:
         db.commit()
         raise
 
+    return result
+
+
+def ensure_order_webhooks(
+    db: Session,
+    organization_id: int,
+    store_id: int,
+) -> dict:
+    _require_store(db, organization_id, store_id)
+    connection = _require_connection(
+        db,
+        organization_id,
+        store_id,
+    )
+
+    try:
+        result = ensure_shopify_order_webhooks(
+            connection
+        )
+    except ShopifyAPIError as exc:
+        connection.last_error = (
+            "WEBHOOK_SUBSCRIPTION_FAILED: "
+            + str(exc)[:400]
+        )
+        db.commit()
+        raise
+
+    connection.last_error = None
+    db.commit()
     return result
 
 
