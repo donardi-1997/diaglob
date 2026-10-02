@@ -14,6 +14,7 @@ from ..model_domains.supplier_integrations import SupplierConnection
 from ..model_domains.supplier_orders import SupplierOrder, SupplierOrderItem
 from ..models import Order, OrderItem, Store
 from .supplier_connections import get_valid_cj_access_token
+from .supplier_mappings import resolve_cj_variant_mapping
 
 CJ_PROVIDER = "cj"
 _CANCELLABLE_CJ_STATUSES = {"CREATED", "IN_CART"}
@@ -220,7 +221,16 @@ def _validate_items(
 
         variant_id = str(payload.get("external_variant_id") or "").strip()
         if not variant_id:
-            raise SupplierOrderError("CJ_VARIANT_ID_REQUIRED")
+            mapping = resolve_cj_variant_mapping(
+                db,
+                order.organization_id,
+                order.store_id,
+                product_variant_id=order_item.variant_id,
+                shopify_variant_id=order_item.shopify_variant_id,
+            )
+            if mapping is None:
+                raise SupplierOrderError("CJ_VARIANT_MAPPING_REQUIRED")
+            variant_id = mapping.external_variant_id
 
         quantity = int(payload.get("quantity") or 0)
         if quantity <= 0 or quantity > order_item.quantity:
