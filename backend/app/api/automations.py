@@ -3,7 +3,7 @@
 import logging
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -38,6 +38,8 @@ from ..services.automation_campaigns_service import (
     update_campaign,
     update_legacy_automation,
 )
+from ..automation_flow_engine import complete_voice_call
+from ..voice_client import verify_voice_callback_secret, voice_provider_configured
 from ..automation_flow_templates import (
     get_flow_template,
     get_flow_template_categories,
@@ -151,6 +153,34 @@ class _FlowVersionPublish(BaseModel):
 class _FlowRunCreate(BaseModel):
     customer_ids: list[int]
     trigger_key: str | None = None
+
+
+class VoiceCallCallback(BaseModel):
+    call_id: str
+    outcome: str
+    status: str | None = None
+    transcript: str | None = None
+
+
+@router.post("/api/voice/callback")
+def voice_call_callback(
+    payload: VoiceCallCallback,
+    x_diaglob_voice_secret: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    if not verify_voice_callback_secret(x_diaglob_voice_secret):
+        raise HTTPException(status_code=401, detail="Invalid voice callback secret")
+
+    result = complete_voice_call(
+        db,
+        call_id=payload.call_id,
+        outcome=payload.outcome,
+        transcript=payload.transcript,
+        provider_status=payload.status,
+    )
+    if result["status"] == "not_found":
+        raise HTTPException(status_code=404, detail="Voice call not found")
+    return result
 
 
 # ============================================================
@@ -359,6 +389,9 @@ def _flow_template_availability(db: Session, organization_id: int, store_id: int
             ).first()
             if not connected:
                 missing.append("whatsapp")
+        elif integration == "voice":
+            if not voice_provider_configured():
+                missing.append("voice")
     return {
         "available": not missing,
         "missing": missing,
