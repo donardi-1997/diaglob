@@ -22,6 +22,7 @@ from app.model_domains import supplier_integrations  # noqa: F401
 from app.model_domains import supplier_orders  # noqa: F401
 from app.model_domains import supplier_variant_mappings  # noqa: F401
 from app.model_domains import fulfillment_automation  # noqa: F401
+from app.model_domains import ai_agent  # noqa: F401
 
 config = context.config
 
