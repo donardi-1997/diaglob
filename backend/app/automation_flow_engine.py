@@ -193,6 +193,7 @@ def process_flow_recipient(
     now: datetime | None = None,
     sender=send_whatsapp_text_message,
     claim_token: str | None = None,
+    voice_sender=None,
 ) -> str:
     """Process a single flow recipient at its current node."""
     now = now or utcnow()
@@ -234,6 +235,8 @@ def process_flow_recipient(
         return _process_condition_node(db, recipient, node, graph, now)
     if node_type == "message":
         return _process_message_node(db, recipient, node, run, now, sender)
+    if node_type == "call":
+        return _process_call_node(db, recipient, node, graph, run, now, voice_sender)
     if node_type == "tool":
         return _process_tool_node(db, recipient, node, graph, run, now)
     _advance_flow(db, recipient, graph, node["id"], now)
@@ -455,6 +458,218 @@ def _process_tool_node(
     )
     _advance_flow(db, recipient, graph, node["id"], now)
     return "advanced"
+
+
+def _render_call_prompt(template: str, customer: Customer, store: Store) -> str:
+    context = {
+        "customer.name": customer.name or "",
+        "customer.phone": customer.phone or "",
+        "customer.country": customer.country_code or "",
+        "store.name": store.name or "",
+    }
+    rendered = template
+    for key, value in context.items():
+        rendered = rendered.replace("{{" + key + "}}", str(value))
+    return rendered.strip()
+
+
+def _process_call_node(
+    db: Session,
+    recipient: AutomationFlowRecipientExecution,
+    node: dict,
+    graph: dict,
+    run: AutomationFlowRun,
+    now: datetime,
+    voice_sender=None,
+) -> str:
+    """Start one outbound AI call and wait for a signed provider callback."""
+    from .voice_client import VoiceProviderError, start_voice_call
+
+    config = node.get("config", {})
+    timeout_minutes = int(config.get("timeout_minutes") or 5)
+    customer = db.get(Customer, recipient.customer_id)
+    store = db.get(Store, run.store_id)
+
+    latest = db.query(AutomationNodeExecution).filter(
+        AutomationNodeExecution.flow_recipient_execution_id == recipient.id,
+        AutomationNodeExecution.node_id == node["id"],
+        AutomationNodeExecution.node_type == "call",
+    ).order_by(AutomationNodeExecution.id.desc()).first()
+
+    # A recipient becomes claimable again only when the callback timeout expires.
+    # Do not redial automatically: resolve that attempt as no_answer instead.
+    if latest and latest.status == "waiting" and latest.provider_message_id:
+        latest.status = "completed"
+        latest.outcome = "no_answer"
+        latest.completed_at = now
+        latest.attempt_count += 1
+        latest.extra_data = {
+            **(latest.extra_data or {}),
+            "timed_out": True,
+        }
+        _advance_flow(db, recipient, graph, node["id"], now, outcome="no_answer")
+        return "advanced"
+
+    if not customer or not customer.phone or not store:
+        _record_node_execution(
+            db,
+            recipient,
+            node["id"],
+            "call",
+            "failed",
+            now,
+            outcome="failed",
+            error_code="no_phone" if customer else "customer_missing",
+            message="Customer phone unavailable" if customer else "Customer not found",
+        )
+        _advance_flow(db, recipient, graph, node["id"], now, outcome="failed")
+        return "advanced"
+
+    prompt = _render_call_prompt(
+        str(config.get("call_prompt") or ""),
+        customer,
+        store,
+    )
+    language = str(config.get("call_language") or store.default_language or "es")
+    provider = voice_sender or start_voice_call
+    idempotency_key = f"flow-call:{recipient.id}:{node['id']}:{recipient.attempt_count + 1}"
+
+    try:
+        result = provider(
+            to=customer.phone,
+            prompt=prompt,
+            language=language,
+            idempotency_key=idempotency_key,
+            metadata={
+                "organization_id": run.organization_id,
+                "store_id": run.store_id,
+                "flow_run_id": run.id,
+                "flow_recipient_id": recipient.id,
+                "node_id": node["id"],
+                "customer_id": customer.id,
+            },
+        )
+    except VoiceProviderError as exc:
+        _record_node_execution(
+            db,
+            recipient,
+            node["id"],
+            "call",
+            "failed",
+            now,
+            outcome="failed",
+            error_code=exc.code,
+            message=str(exc),
+        )
+        _advance_flow(db, recipient, graph, node["id"], now, outcome="failed")
+        return "advanced"
+    except Exception:
+        logger.exception("Unexpected voice provider failure")
+        _record_node_execution(
+            db,
+            recipient,
+            node["id"],
+            "call",
+            "failed",
+            now,
+            outcome="failed",
+            error_code="voice_provider_error",
+            message="Voice provider failed to start the call",
+        )
+        _advance_flow(db, recipient, graph, node["id"], now, outcome="failed")
+        return "advanced"
+
+    call_id = str(result.get("call_id") or "")
+    node_exec = _record_node_execution(
+        db,
+        recipient,
+        node["id"],
+        "call",
+        "waiting",
+        now,
+        provider_id=call_id,
+        metadata={
+            "provider_status": result.get("status") or "queued",
+            "language": language,
+            "timeout_minutes": timeout_minutes,
+        },
+    )
+    node_exec.attempt_count = 1
+    recipient.status = "waiting"
+    recipient.next_action_at = now + timedelta(minutes=timeout_minutes)
+    recipient.claim_token = None
+    recipient.claim_expires_at = None
+    recipient.attempt_count += 1
+    db.commit()
+    return "waiting"
+
+
+def complete_voice_call(
+    db: Session,
+    *,
+    call_id: str,
+    outcome: str,
+    transcript: str | None = None,
+    provider_status: str | None = None,
+    now: datetime | None = None,
+) -> dict:
+    """Resolve a pending call idempotently and resume the flow on its outcome branch."""
+    now = now or utcnow()
+    normalized = (outcome or "").strip().lower()
+    if normalized not in {"confirmed", "rejected", "no_answer", "failed"}:
+        normalized = "failed"
+
+    node_exec = db.query(AutomationNodeExecution).filter(
+        AutomationNodeExecution.provider_message_id == call_id,
+        AutomationNodeExecution.node_type == "call",
+    ).order_by(AutomationNodeExecution.id.desc()).first()
+    if not node_exec:
+        return {"status": "not_found", "call_id": call_id}
+
+    if node_exec.status != "waiting":
+        return {
+            "status": "duplicate",
+            "call_id": call_id,
+            "outcome": node_exec.outcome,
+        }
+
+    recipient = db.get(
+        AutomationFlowRecipientExecution,
+        node_exec.flow_recipient_execution_id,
+    )
+    if not recipient or recipient.current_node_id != node_exec.node_id:
+        node_exec.status = "failed"
+        node_exec.outcome = "failed"
+        node_exec.error_code = "voice_flow_state_mismatch"
+        node_exec.error_message = "Flow recipient is no longer waiting on this call"
+        node_exec.completed_at = now
+        db.commit()
+        return {"status": "state_mismatch", "call_id": call_id}
+
+    node_exec.status = "failed" if normalized == "failed" else "completed"
+    node_exec.outcome = normalized
+    node_exec.completed_at = now
+    node_exec.extra_data = {
+        **(node_exec.extra_data or {}),
+        "provider_status": provider_status,
+        "transcript": transcript,
+    }
+
+    graph = _get_graph_from_version(db, recipient.flow_version_id)
+    _advance_flow(
+        db,
+        recipient,
+        graph,
+        node_exec.node_id,
+        now,
+        outcome=normalized,
+    )
+    return {
+        "status": "processed",
+        "call_id": call_id,
+        "outcome": normalized,
+        "recipient_id": recipient.id,
+    }
 
 
 def _process_message_node(db: Session, recipient: AutomationFlowRecipientExecution, node: dict, run: AutomationFlowRun, now: datetime, sender) -> str:
