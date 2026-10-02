@@ -238,3 +238,24 @@ def test_critical_fulfillment_never_executes_without_approval(db):
     assert result["status"] == "confirmation_required"
     assert result["confirmation"] == "critical"
     assert result["risk"] == "financial"
+
+def test_invalid_tool_arguments_are_denied_before_approval(db):
+    membership, store, _order = seed(db)
+
+    result = execute_agent_tool(
+        db,
+        membership,
+        tool_name="automations.create",
+        store_id=store.id,
+        arguments={
+            "name": "Unsafe flow",
+            "graph": {},
+            "unexpected": "must not reach approval",
+        },
+    )
+
+    assert result["status"] == "denied"
+    assert result["code"] == "TOOL_ARGUMENTS_INVALID"
+    assert "unknown field" in result["message"]
+    assert db.query(AutomationFlow).count() == 0
+
