@@ -92,6 +92,7 @@ export interface FlowSimulationResult {
     message_nodes: number;
     wait_nodes: number;
     condition_nodes: number;
+    call_nodes?: number;
     tool_nodes?: number;
     end_nodes: number;
   };
