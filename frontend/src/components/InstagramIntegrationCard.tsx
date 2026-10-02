@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Check, Copy, Instagram, Loader2, Trash2 } from "lucide-react";
+import { Check, Copy, Loader2, MessageSquareText, Trash2 } from "lucide-react";
 
 import {
   connectInstagram,
@@ -103,7 +103,7 @@ export default function InstagramIntegrationCard({ storeId, canWrite }: Props) {
     <div className="store-integration-block instagram">
       <div className="store-integration-header">
         <div className="store-integration-title">
-          <Instagram size={17} />
+          <MessageSquareText size={17} />
           <strong>Instagram</strong>
           <span className={
             status?.connected

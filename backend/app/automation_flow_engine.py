@@ -270,6 +270,18 @@ def _process_condition_node(db: Session, recipient: AutomationFlowRecipientExecu
     if not customer:
         _finish_flow_recipient(db, recipient, "failed", now, code="customer_missing", message="Customer not found")
         return "failed"
+    run = db.get(AutomationFlowRun, recipient.flow_run_id)
+    if not run:
+        _finish_flow_recipient(
+            db,
+            recipient,
+            "failed",
+            now,
+            code="run_missing",
+            message="Flow run not found",
+        )
+        return "failed"
+
     profile = db.query(CustomerStoreProfile).filter(
         CustomerStoreProfile.customer_id == customer.id,
         CustomerStoreProfile.store_id == run.store_id,
