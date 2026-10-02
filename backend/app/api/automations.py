@@ -56,6 +56,7 @@ from ..services.automation_flows_service import (
     list_versions,
     publish_version,
     retry_flow_recipient,
+    retry_flow_recipient_from_node,
     simulate_flow,
     trigger_flow_run,
     update_flow,
@@ -463,6 +464,30 @@ def get_flow_recipient_detail_route(store_id: int, flow_id: int, run_id: int, re
 def retry_flow_recipient_route(store_id: int, flow_id: int, run_id: int, recipient_id: int, membership: OrganizationMembership = Depends(require_permission("automations.write")), db: Session = Depends(get_db)):
     try:
         return retry_flow_recipient(db, membership.organization_id, store_id, flow_id, run_id, recipient_id)
+    except (FlowNotFoundError, FlowConflictError) as exc:
+        raise _map_flow_error(exc)
+
+
+@router.post("/api/stores/{store_id}/automation-flows/{flow_id}/runs/{run_id}/recipients/{recipient_id}/retry-from-node/{node_id}")
+def retry_flow_recipient_from_node_route(
+    store_id: int,
+    flow_id: int,
+    run_id: int,
+    recipient_id: int,
+    node_id: str,
+    membership: OrganizationMembership = Depends(require_permission("automations.write")),
+    db: Session = Depends(get_db),
+):
+    try:
+        return retry_flow_recipient_from_node(
+            db,
+            membership.organization_id,
+            store_id,
+            flow_id,
+            run_id,
+            recipient_id,
+            node_id,
+        )
     except (FlowNotFoundError, FlowConflictError) as exc:
         raise _map_flow_error(exc)
 
