@@ -225,4 +225,13 @@ export const FLOW_RUNTIME_VARIABLES = [
   "{{order.shipping.address1}}",
   "{{order.shipping.zip}}",
   "{{order.items_summary}}",
+  "{{shipment.id}}",
+  "{{shipment.provider}}",
+  "{{shipment.carrier}}",
+  "{{shipment.tracking_number}}",
+  "{{shipment.last_mile_tracking_number}}",
+  "{{shipment.status}}",
+  "{{shipment.destination_country}}",
+  "{{shipment.delivery_days}}",
+  "{{shipment.tracking_url}}",
 ];
