@@ -785,6 +785,10 @@
   ],
   [
     "POST",
+    "/api/stores/{store_id}/shopify/reauthorize"
+  ],
+  [
+    "POST",
     "/api/stores/{store_id}/shopify/sync/products"
   ],
   [
@@ -794,6 +798,10 @@
   [
     "POST",
     "/api/stores/{store_id}/shopify/webhooks/ensure"
+  ],
+  [
+    "POST",
+    "/api/stores/{store_id}/suppliers/cj/auto-fulfillment/retry"
   ],
   [
     "POST",
@@ -886,6 +894,10 @@
   [
     "PUT",
     "/api/stores/{store_id}/automations/{automation_id}"
+  ],
+  [
+    "PUT",
+    "/api/stores/{store_id}/suppliers/cj/auto-fulfillment"
   ],
   [
     "PUT",
