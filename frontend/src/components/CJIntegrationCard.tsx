@@ -17,6 +17,7 @@ import {
 import { useTranslation } from "react-i18next";
 
 import {
+  configureCJAutoFulfillment,
   connectCJ,
   deleteCJVariantMapping,
   disconnectCJ,
@@ -26,6 +27,7 @@ import {
   getCJVariantMappings,
   getCJVariants,
   quoteCJFreight,
+  retryCJAutoFulfillment,
   saveCJVariantMapping,
   searchCJProducts,
   testCJConnection,
@@ -36,6 +38,7 @@ import {
   type CJVariant,
   type CJVariantMapping,
 } from "../services/suppliers";
+import { reauthorizeShopify } from "../services/integrations";
 import "../cj-integration.css";
 
 interface CJIntegrationCardProps {
@@ -90,6 +93,18 @@ const COPY = {
     mapped: "vinculadas",
     unmapped: "sin vincular",
     noStoreVariants: "Sin variantes Shopify sincronizadas. Sincroniza primero el catálogo de la tienda.",
+    autoTitle: "Fulfillment automático",
+    autoDescription: "Cuando un pedido Shopify esté pagado y completamente vinculado, Diaglob cotizará el envío y creará la orden en CJ automáticamente.",
+    autoOn: "Automático activo",
+    autoOff: "Automático apagado",
+    enableAuto: "Activar automático",
+    disableAuto: "Desactivar automático",
+    retryAuto: "Reintentar pendientes",
+    reauthorizeShopify: "Actualizar permisos Shopify",
+    autoSaved: "Configuración de fulfillment automático actualizada.",
+    autoRetried: "Pedidos pendientes encolados nuevamente.",
+    originCountry: "País origen",
+    notifyCustomer: "Notificar al cliente al crear fulfillment",
   },
   en: {
     description: "Connect CJ Dropshipping to browse catalog, stock, freight and prepare supplier orders.",
@@ -134,6 +149,18 @@ const COPY = {
     mapped: "mapped",
     unmapped: "unmapped",
     noStoreVariants: "No synchronized Shopify variants. Sync the store catalog first.",
+    autoTitle: "Automatic fulfillment",
+    autoDescription: "When a Shopify order is paid and fully mapped, Diaglob will quote shipping and create the CJ order automatically.",
+    autoOn: "Automation on",
+    autoOff: "Automation off",
+    enableAuto: "Enable automation",
+    disableAuto: "Disable automation",
+    retryAuto: "Retry pending",
+    reauthorizeShopify: "Update Shopify permissions",
+    autoSaved: "Automatic fulfillment settings updated.",
+    autoRetried: "Pending orders queued again.",
+    originCountry: "Origin country",
+    notifyCustomer: "Notify customer when fulfillment is created",
   },
   "pt-BR": {
     description: "Conecte a CJ Dropshipping para consultar catálogo, estoque, frete e preparar pedidos do fornecedor.",
@@ -178,6 +205,18 @@ const COPY = {
     mapped: "vinculadas",
     unmapped: "sem vínculo",
     noStoreVariants: "Nenhuma variante Shopify sincronizada. Sincronize primeiro o catálogo da loja.",
+    autoTitle: "Fulfillment automático",
+    autoDescription: "Quando um pedido Shopify estiver pago e totalmente vinculado, a Diaglob cotará o frete e criará o pedido na CJ automaticamente.",
+    autoOn: "Automático ativo",
+    autoOff: "Automático desligado",
+    enableAuto: "Ativar automático",
+    disableAuto: "Desativar automático",
+    retryAuto: "Tentar pendentes novamente",
+    reauthorizeShopify: "Atualizar permissões Shopify",
+    autoSaved: "Configuração de fulfillment automático atualizada.",
+    autoRetried: "Pedidos pendentes enfileirados novamente.",
+    originCountry: "País de origem",
+    notifyCustomer: "Notificar cliente ao criar fulfillment",
   },
 } as const;
 
@@ -230,6 +269,8 @@ export default function CJIntegrationCard({
   const [quantity, setQuantity] = useState(1);
   const [mappings, setMappings] = useState<CJVariantMapping[]>([]);
   const [mappingVariantId, setMappingVariantId] = useState<number | "">("");
+  const [autoOrigin, setAutoOrigin] = useState("CN");
+  const [autoNotifyCustomer, setAutoNotifyCustomer] = useState(true);
 
   useEffect(() => {
     setDestination((storeCountryCode || "US").toUpperCase());
@@ -250,6 +291,13 @@ export default function CJIntegrationCard({
   }, [storeId, copy.error]);
 
   const connected = status?.connected === true;
+  const autoEnabled = status?.auto_fulfillment_enabled === true;
+
+  useEffect(() => {
+    if (!status) return;
+    setAutoOrigin((status.auto_origin_country_code || "CN").toUpperCase());
+    setAutoNotifyCustomer(status.auto_notify_customer !== false);
+  }, [status]);
 
   useEffect(() => {
     if (!connected) {
@@ -360,6 +408,52 @@ export default function CJIntegrationCard({
     } catch (err) {
       setError(errorMessage(err, copy.error));
     } finally {
+      setBusy("");
+    }
+  }
+
+  async function handleAutoToggle() {
+    setBusy("auto");
+    setError("");
+    setMessage("");
+    try {
+      await configureCJAutoFulfillment(storeId, {
+        enabled: !autoEnabled,
+        origin_country_code: autoOrigin.trim().toUpperCase(),
+        notify_customer: autoNotifyCustomer,
+      });
+      await reloadStatus();
+      setMessage(copy.autoSaved);
+    } catch (err) {
+      setError(errorMessage(err, copy.error));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function handleAutoRetry() {
+    setBusy("auto-retry");
+    setError("");
+    setMessage("");
+    try {
+      await retryCJAutoFulfillment(storeId);
+      setMessage(copy.autoRetried);
+    } catch (err) {
+      setError(errorMessage(err, copy.error));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function handleShopifyReauthorize() {
+    setBusy("shopify-reauth");
+    setError("");
+    setMessage("");
+    try {
+      const result = await reauthorizeShopify(storeId);
+      window.location.href = result.authorization_url;
+    } catch (err) {
+      setError(errorMessage(err, copy.error));
       setBusy("");
     }
   }
@@ -520,6 +614,71 @@ export default function CJIntegrationCard({
             </span>
           )}
         </div>
+      )}
+
+      {connected && (
+        <section className="cj-auto-panel">
+          <div className="cj-section-heading">
+            <div><Truck size={15} /><strong>{copy.autoTitle}</strong></div>
+            <span className={autoEnabled ? "cj-auto-state on" : "cj-auto-state"}>
+              {autoEnabled ? copy.autoOn : copy.autoOff}
+            </span>
+          </div>
+          <p>{copy.autoDescription}</p>
+          <div className="cj-auto-controls">
+            <label>
+              <span>{copy.originCountry}</span>
+              <input
+                value={autoOrigin}
+                maxLength={2}
+                disabled={autoEnabled}
+                onChange={(event) => setAutoOrigin(event.target.value.toUpperCase())}
+              />
+            </label>
+            <label className="cj-auto-checkbox">
+              <input
+                type="checkbox"
+                checked={autoNotifyCustomer}
+                disabled={autoEnabled}
+                onChange={(event) => setAutoNotifyCustomer(event.target.checked)}
+              />
+              <span>{copy.notifyCustomer}</span>
+            </label>
+            {canWrite && (
+              <button
+                type="button"
+                className={autoEnabled ? "store-integration-button danger" : "store-integration-button primary"}
+                onClick={() => void handleAutoToggle()}
+                disabled={busy === "auto" || autoOrigin.trim().length !== 2}
+              >
+                {busy === "auto" ? <Loader2 className="spin" size={14} /> : <Truck size={14} />}
+                {autoEnabled ? copy.disableAuto : copy.enableAuto}
+              </button>
+            )}
+            {canWrite && (
+              <button
+                type="button"
+                className="store-integration-button secondary"
+                onClick={() => void handleAutoRetry()}
+                disabled={busy === "auto-retry" || !autoEnabled}
+              >
+                {busy === "auto-retry" ? <Loader2 className="spin" size={14} /> : <RefreshCw size={14} />}
+                {copy.retryAuto}
+              </button>
+            )}
+            {canWrite && (
+              <button
+                type="button"
+                className="store-integration-button secondary"
+                onClick={() => void handleShopifyReauthorize()}
+                disabled={busy === "shopify-reauth"}
+              >
+                {busy === "shopify-reauth" ? <Loader2 className="spin" size={14} /> : <RefreshCw size={14} />}
+                {copy.reauthorizeShopify}
+              </button>
+            )}
+          </div>
+        </section>
       )}
 
       {error && <div className="store-integration-test-result error">{error}</div>}
