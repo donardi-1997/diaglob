@@ -354,6 +354,12 @@ def process_cj_webhook(
     receipt.processed_at = now
     db.commit()
     db.refresh(shipment)
+    emit_shipment_status_events(
+        db,
+        shipment,
+        previous_status,
+        event_source_id=f"cj-webhook:{message_id}",
+    )
 
     return {
         "ok": True,

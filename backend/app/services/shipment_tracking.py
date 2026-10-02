@@ -49,6 +49,8 @@ STATUS_EVENT_MAP = {
     "READY_FOR_PICKUP": "shipment.in_transit",
     "OUT_FOR_DELIVERY": "shipment.out_for_delivery",
     "DELIVERED": "shipment.delivered",
+    "DELAYED": "shipment.delayed",
+    "FAILED": "shipment.failed",
     "EXCEPTION": "shipment.delivery_exception",
     "RETURNED": "shipment.returned",
 }
@@ -127,7 +129,11 @@ def normalize_tracking_label(value: str | None) -> str:
         return "CUSTOMS"
     if "return" in label:
         return "RETURNED"
-    if "failed" in label or "exception" in label:
+    if "delay" in label:
+        return "DELAYED"
+    if "failed" in label or "failure" in label:
+        return "FAILED"
+    if "exception" in label:
         return "EXCEPTION"
     if "shipped" in label or "dispatch" in label:
         return "SHIPPED"
