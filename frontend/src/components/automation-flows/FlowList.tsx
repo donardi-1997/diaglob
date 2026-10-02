@@ -1,6 +1,17 @@
 import { useEffect, useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { Plus, ArrowLeft, Play, Pause, Archive, Eye, Edit3 } from "lucide-react";
+import {
+  Plus,
+  ArrowLeft,
+  Play,
+  Pause,
+  Archive,
+  Eye,
+  Edit3,
+  Sparkles,
+  AlertTriangle,
+  CheckCircle2,
+} from "lucide-react";
 import {
   listFlows,
   getFlow,
@@ -20,7 +31,10 @@ import FlowBuilder from "./FlowBuilder";
 import FlowRuns from "./FlowRuns";
 import FlowSidebar from "./FlowSidebar";
 import FlowSimulation from "./FlowSimulation";
+import FlowCopilotPanel from "./FlowCopilotPanel";
 import type { FlowNodeConfig } from "./flowGraphUtils";
+import { validateFlowGraph } from "./flowGraphUtils";
+import "./flow-builder-v2.css";
 
 interface Props {
   canWrite: boolean;
@@ -48,6 +62,7 @@ export default function FlowList({ canWrite, storeId }: Props) {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [showSimulation, setShowSimulation] = useState(false);
+  const [showCopilot, setShowCopilot] = useState(false);
 
   const loadFlows = useCallback(async () => {
     setLoading(true);
@@ -75,7 +90,13 @@ export default function FlowList({ canWrite, storeId }: Props) {
         graph: serializeFlowGraph(createDefaultGraph()),
       });
       setSelectedFlow(flow);
-      setGraph(flow.current_version ? deserializeFlowGraph(flow.current_version.graph) : createDefaultGraph());
+      setGraph(
+        flow.current_version
+          ? deserializeFlowGraph(flow.current_version.graph)
+          : createDefaultGraph(),
+      );
+      setSelectedNodeId(null);
+      setShowCopilot(false);
       setView("builder");
     } catch {
       setError(t("flowCreateError"));
@@ -90,7 +111,13 @@ export default function FlowList({ canWrite, storeId }: Props) {
     try {
       const full = await getFlow(storeId, flow.id);
       setSelectedFlow(full);
-      setGraph(full.current_version ? deserializeFlowGraph(full.current_version.graph) : createDefaultGraph());
+      setGraph(
+        full.current_version
+          ? deserializeFlowGraph(full.current_version.graph)
+          : createDefaultGraph(),
+      );
+      setSelectedNodeId(null);
+      setShowCopilot(false);
       setView("builder");
     } catch {
       setError(t("flowLoadError"));
@@ -173,7 +200,24 @@ export default function FlowList({ canWrite, storeId }: Props) {
     setSelectedNodeId(null);
   };
 
-  const selectedNode = selectedNodeId ? graph.nodes.find((n) => n.id === selectedNodeId) || null : null;
+  const selectedNode = selectedNodeId
+    ? graph.nodes.find((n) => n.id === selectedNodeId) || null
+    : null;
+
+  const validationErrors = validateFlowGraph(graph);
+
+  const handleCopilotApplied = async () => {
+    if (!selectedFlow) return;
+
+    const updated = await getFlow(storeId, selectedFlow.id);
+    setSelectedFlow(updated);
+    setGraph(
+      updated.current_version
+        ? deserializeFlowGraph(updated.current_version.graph)
+        : createDefaultGraph(),
+    );
+    setSelectedNodeId(null);
+  };
 
   const getNodeCount = (flow: AutomationFlow) => {
     if (!flow.current_version) return 0;
@@ -207,6 +251,7 @@ export default function FlowList({ canWrite, storeId }: Props) {
               setView("list");
               setSelectedFlow(null);
               setSelectedNodeId(null);
+              setShowCopilot(false);
             }}
           >
             <ArrowLeft size={14} />
@@ -216,28 +261,91 @@ export default function FlowList({ canWrite, storeId }: Props) {
             <h3 style={{ margin: 0 }}>{selectedFlow.name}</h3>
             {canWrite && (
               <>
-                <button className="secondary-button" onClick={() => setShowSimulation(true)} disabled={saving}>
+                <button
+                  className="secondary-button"
+                  onClick={() => setShowCopilot((current) => !current)}
+                  disabled={saving}
+                >
+                  <Sparkles size={14} />
+                  Diseñar con IA
+                </button>
+                <button
+                  className="secondary-button"
+                  onClick={() => setShowSimulation(true)}
+                  disabled={saving || validationErrors.length > 0}
+                >
                   <Play size={14} />
                   {t("flowSimulate")}
                 </button>
-                <button className="primary-button" onClick={() => void handleSaveGraph()} disabled={saving}>
+                <button
+                  className="primary-button"
+                  onClick={() => void handleSaveGraph()}
+                  disabled={saving || validationErrors.length > 0}
+                >
                   {saving ? t("flowSaving") : t("flowSave")}
                 </button>
               </>
             )}
           </div>
         </div>
-        {error && <p style={{ color: "#ef4444", margin: "8px 0" }}>{error}</p>}
-        <FlowBuilder graph={graph} onGraphChange={setGraph} />
+        {error && (
+          <p style={{ color: "#ef4444", margin: "8px 0" }}>
+            {error}
+          </p>
+        )}
+
+        <div
+          className={
+            validationErrors.length
+              ? "flow-validation-banner invalid"
+              : "flow-validation-banner valid"
+          }
+        >
+          {validationErrors.length ? (
+            <>
+              <AlertTriangle size={15} />
+              <span>
+                Completa el flujo antes de guardarlo: {
+                  validationErrors
+                    .map((key) => t(key))
+                    .join(" · ")
+                }
+              </span>
+            </>
+          ) : (
+            <>
+              <CheckCircle2 size={15} />
+              <span>Grafo válido y listo para guardar.</span>
+            </>
+          )}
+        </div>
+
+        <FlowBuilder
+          graph={graph}
+          onGraphChange={setGraph}
+          selectedNodeId={selectedNodeId}
+          onNodeSelect={setSelectedNodeId}
+          canWrite={canWrite}
+        />
+
         <FlowSidebar
           node={selectedNode}
-          graph={graph}
           onUpdate={handleNodeUpdate}
           onDelete={handleNodeDelete}
           onClose={() => setSelectedNodeId(null)}
           t={t}
           canWrite={canWrite}
         />
+
+        {showCopilot && canWrite && (
+          <FlowCopilotPanel
+            storeId={storeId}
+            flowId={selectedFlow.id}
+            flowName={selectedFlow.name}
+            onApplied={handleCopilotApplied}
+            onClose={() => setShowCopilot(false)}
+          />
+        )}
         {showSimulation && (
           <FlowSimulation
             storeId={storeId}
