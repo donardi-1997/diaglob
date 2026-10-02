@@ -1,3 +1,9 @@
+import {
+  COOKIE_CONSENT_EVENT,
+  hasAdvertisingConsent,
+  type CookieConsentPreferences,
+} from "./cookieConsent";
+
 export type MarketingEventName =
   | "landing_view"
   | "registration_started"
@@ -24,6 +30,9 @@ const LAST_TOUCH_KEY = "diaglob-marketing-last-touch";
 const META_PIXEL_ID = import.meta.env.VITE_META_PIXEL_ID?.trim();
 const TIKTOK_PIXEL_ID = import.meta.env.VITE_TIKTOK_PIXEL_ID?.trim();
 
+let advertisingTrackingActive = false;
+let consentListenerRegistered = false;
+
 type Fbq = {
   (...args: unknown[]): void;
   callMethod?: (...args: unknown[]) => void;
@@ -36,6 +45,8 @@ type Fbq = {
 type TikTokQueue = Array<unknown> & {
   track?: (event: string, params?: Record<string, unknown>) => void;
   page?: () => void;
+  grantConsent?: () => void;
+  revokeConsent?: () => void;
 };
 
 declare global {
@@ -60,8 +71,14 @@ function storageAvailable() {
   return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
 }
 
+export function clearMarketingAttribution() {
+  if (!storageAvailable()) return;
+  window.localStorage.removeItem(FIRST_TOUCH_KEY);
+  window.localStorage.removeItem(LAST_TOUCH_KEY);
+}
+
 export function captureMarketingAttribution(): MarketingAttribution | null {
-  if (!storageAvailable()) return null;
+  if (!storageAvailable() || !hasAdvertisingConsent()) return null;
 
   const params = new URLSearchParams(window.location.search);
   const hasCampaignSignal = [
@@ -99,9 +116,10 @@ export function captureMarketingAttribution(): MarketingAttribution | null {
 }
 
 export function getMarketingAttribution() {
-  if (!storageAvailable()) {
+  if (!storageAvailable() || !hasAdvertisingConsent()) {
     return { firstTouch: null, lastTouch: null };
   }
+
   return {
     firstTouch: safeParseAttribution(window.localStorage.getItem(FIRST_TOUCH_KEY)),
     lastTouch: safeParseAttribution(window.localStorage.getItem(LAST_TOUCH_KEY)),
@@ -129,6 +147,7 @@ function initializeMetaPixel(pixelId: string) {
   const script = document.createElement("script");
   script.async = true;
   script.src = "https://connect.facebook.net/en_US/fbevents.js";
+  script.dataset.diaglobAdvertising = "meta";
   document.head.appendChild(script);
 
   fbq("init", pixelId);
@@ -140,11 +159,12 @@ function initializeTikTokPixel(pixelId: string) {
 
   const safePixelId = JSON.stringify(pixelId);
   const script = document.createElement("script");
+  script.dataset.diaglobAdvertising = "tiktok-bootstrap";
   script.text = `
     !function(w,d,t){
       w.TiktokAnalyticsObject=t;
       var ttq=w[t]=w[t]||[];
-      ttq.methods=["page","track","identify","instances","debug","on","off","once","ready","alias","group","enableCookie","disableCookie"];
+      ttq.methods=["page","track","identify","instances","debug","on","off","once","ready","alias","group","enableCookie","disableCookie","holdConsent","grantConsent","revokeConsent"];
       ttq.setAndDefer=function(t,e){t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}};
       for(var i=0;i<ttq.methods.length;i++)ttq.setAndDefer(ttq,ttq.methods[i]);
       ttq.instance=function(t){for(var e=ttq._i[t]||[],n=0;n<ttq.methods.length;n++)ttq.setAndDefer(e,ttq.methods[n]);return e};
@@ -161,9 +181,11 @@ function initializeTikTokPixel(pixelId: string) {
         o.type="text/javascript";
         o.async=!0;
         o.src=i+"?sdkid="+e+"&lib="+t;
+        o.dataset.diaglobAdvertising="tiktok";
         var a=d.getElementsByTagName("script")[0];
         a.parentNode.insertBefore(o,a)
       };
+      ttq.grantConsent();
       ttq.load(${safePixelId});
       ttq.page();
     }(window,document,"ttq");
@@ -171,10 +193,49 @@ function initializeTikTokPixel(pixelId: string) {
   document.head.appendChild(script);
 }
 
-export function initializeMarketingTracking() {
+function activateAdvertisingTracking() {
+  if (!hasAdvertisingConsent()) return;
+
+  advertisingTrackingActive = true;
   captureMarketingAttribution();
-  if (META_PIXEL_ID) initializeMetaPixel(META_PIXEL_ID);
-  if (TIKTOK_PIXEL_ID) initializeTikTokPixel(TIKTOK_PIXEL_ID);
+
+  if (META_PIXEL_ID) {
+    initializeMetaPixel(META_PIXEL_ID);
+  }
+
+  if (TIKTOK_PIXEL_ID) {
+    initializeTikTokPixel(TIKTOK_PIXEL_ID);
+    window.ttq?.grantConsent?.();
+  }
+}
+
+function deactivateAdvertisingTracking() {
+  advertisingTrackingActive = false;
+  clearMarketingAttribution();
+  window.ttq?.revokeConsent?.();
+}
+
+function handleConsentChange(event: Event) {
+  const consentEvent = event as CustomEvent<CookieConsentPreferences>;
+  if (consentEvent.detail?.advertising) {
+    activateAdvertisingTracking();
+    return;
+  }
+
+  deactivateAdvertisingTracking();
+}
+
+export function initializeMarketingTracking() {
+  if (hasAdvertisingConsent()) {
+    activateAdvertisingTracking();
+  } else {
+    clearMarketingAttribution();
+  }
+
+  if (!consentListenerRegistered && typeof window !== "undefined") {
+    window.addEventListener(COOKIE_CONSENT_EVENT, handleConsentChange);
+    consentListenerRegistered = true;
+  }
 }
 
 function metaEventFor(event: MarketingEventName) {
@@ -209,7 +270,8 @@ export function trackMarketingEvent(
 ) {
   if (typeof window === "undefined") return;
 
-  const attribution = getMarketingAttribution().lastTouch;
+  const advertisingAllowed = advertisingTrackingActive && hasAdvertisingConsent();
+  const attribution = advertisingAllowed ? getMarketingAttribution().lastTouch : null;
   const payload = {
     ...params,
     utm_source: attribution?.source,
@@ -220,9 +282,11 @@ export function trackMarketingEvent(
 
   window.dispatchEvent(
     new CustomEvent("diaglob:marketing-event", {
-      detail: { event, payload },
+      detail: { event, payload, advertisingAllowed },
     }),
   );
+
+  if (!advertisingAllowed) return;
 
   const metaEvent = metaEventFor(event);
   if (metaEvent && window.fbq) {

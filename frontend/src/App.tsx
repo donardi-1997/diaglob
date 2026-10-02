@@ -32,6 +32,7 @@ import AppShellV2, {
 } from "./components/AppShellV2";
 import type { GlobalSearchResult } from "./services/globalSearch";
 import LoginPage from "./pages/LoginPage";
+import CookieConsent from "./components/CookieConsent";
 import { useWorkspace } from "./hooks/useWorkspace";
 import "./App.css";
 import "./landing.css";
@@ -392,7 +393,8 @@ function App() {
   );
 
   return (
-    <Routes>
+    <>
+      <Routes>
       <Route
         path="/"
         element={
@@ -490,7 +492,9 @@ function App() {
         }
       />
       <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+      </Routes>
+      <CookieConsent />
+    </>
   );
 }
 

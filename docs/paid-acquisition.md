@@ -37,7 +37,11 @@ VITE_TIKTOK_PIXEL_ID=<tiktok-pixel-id>
 
 If a variable is absent, that provider is not loaded.
 
-Before enabling a provider in production, update the privacy/cookie disclosure for advertising measurement and review the consent requirements that apply to the launch country.
+Advertising providers are consent-gated in the frontend. Meta Pixel and TikTok Pixel are not loaded until the user enables **Advertising and measurement** in the cookie preferences.
+
+Consent is stored under `diaglob-cookie-consent-v1`. Users can reopen the **Cookies** control and revoke advertising measurement. Revocation clears Diaglob's local campaign-attribution storage and reloads the page so previously loaded advertising scripts are no longer active.
+
+The public Privacy Policy documents Meta Pixel, TikTok Pixel, campaign identifiers, and the consent/withdrawal flow.
 
 ## UTM convention for the first Meta test
 
