@@ -42,6 +42,7 @@ from ..services.shopify_service import (
     list_orders as svc_list_orders,
     process_oauth_callback as svc_process_oauth_callback,
     start_oauth as svc_start_oauth,
+    start_reauthorization as svc_start_reauthorization,
     sync_products as svc_sync_products,
     test_connection as svc_test_connection,
 )
@@ -174,6 +175,29 @@ def start_shopify_connection(
             db, membership.organization_id, store_id, membership.user_id, payload.shop_domain
         )
     except (ShopifyNotFoundError, ShopifyConnectionError, ShopifyOAuthError) as exc:
+        _map_oauth_error(exc)
+
+
+@router.post("/api/stores/{store_id}/shopify/reauthorize")
+def reauthorize_shopify(
+    store_id: int,
+    membership: OrganizationMembership = Depends(
+        require_permission("stores.write")
+    ),
+    db: Session = Depends(get_db),
+):
+    try:
+        return svc_start_reauthorization(
+            db,
+            membership.organization_id,
+            store_id,
+            membership.user_id,
+        )
+    except (
+        ShopifyNotFoundError,
+        ShopifyConnectionError,
+        ShopifyOAuthError,
+    ) as exc:
         _map_oauth_error(exc)
 
 
