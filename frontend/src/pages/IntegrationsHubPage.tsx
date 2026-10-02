@@ -30,6 +30,7 @@ interface IntegrationsHubPageProps {
   storeId: number;
   storeName?: string;
   shopDomain?: string | null;
+  storeCountryCode?: string | null;
   canWrite: boolean;
   onNavigateToKnowledge: () => void;
   onNavigateToStores: () => void;
@@ -295,6 +296,7 @@ export default function IntegrationsHubPage({
   storeId,
   storeName,
   shopDomain,
+  storeCountryCode,
   canWrite,
   onNavigateToKnowledge,
   onNavigateToStores,
@@ -555,6 +557,7 @@ export default function IntegrationsHubPage({
           key={`${storeId}-${refreshKey}`}
           storeId={storeId}
           shopDomain={shopDomain || null}
+          storeCountryCode={storeCountryCode}
           canWrite={canWrite}
         />
       </section>
