@@ -22,6 +22,10 @@ from .shopify_fulfillment import (
 )
 from .supplier_catalog import quote_cj_freight
 from .supplier_mappings import resolve_cj_variant_mapping
+from .supplier_connections import (
+    SupplierConnectionError,
+    SupplierConnectionNotFound,
+)
 from .supplier_orders import (
     SupplierOrderError,
     SupplierOrderNotFound,
@@ -509,8 +513,11 @@ def process_auto_fulfillment_job(
         )
     except (
         CJError,
+        SupplierConnectionError,
+        SupplierConnectionNotFound,
         SupplierOrderError,
         SupplierOrderNotFound,
+        ValueError,
     ) as exc:
         return _mark_failure(
             db,
@@ -529,12 +536,31 @@ def process_auto_fulfillment_job(
     return _serialize_job(job)
 
 
+def _recover_unexpected_job_failure(
+    db: Session,
+    job_id: int,
+    exc: Exception,
+) -> None:
+    db.rollback()
+    job = (
+        db.query(AutoFulfillmentJob)
+        .filter(AutoFulfillmentJob.id == job_id)
+        .first()
+    )
+    if job is None or job.status in _TERMINAL_JOB_STATUSES:
+        return
+    job.status = "retry"
+    job.last_error = f"UNEXPECTED:{type(exc).__name__}:{exc}"[:1000]
+    job.updated_at = datetime.utcnow()
+    db.commit()
+
+
 def process_auto_fulfillment_job_background(job_id: int) -> None:
     db = SessionLocal()
     try:
         process_auto_fulfillment_job(db, job_id)
-    except Exception:
-        db.rollback()
+    except Exception as exc:
+        _recover_unexpected_job_failure(db, job_id, exc)
     finally:
         db.close()
 
@@ -544,16 +570,22 @@ def process_pending_auto_fulfillment_jobs(
     *,
     limit: int = 10,
 ) -> int:
-    jobs = (
-        db.query(AutoFulfillmentJob)
-        .filter(AutoFulfillmentJob.status.in_(["pending", "retry"]))
-        .order_by(AutoFulfillmentJob.id.asc())
-        .limit(limit)
-        .all()
-    )
+    job_ids = [
+        row[0]
+        for row in (
+            db.query(AutoFulfillmentJob.id)
+            .filter(AutoFulfillmentJob.status.in_(["pending", "retry"]))
+            .order_by(AutoFulfillmentJob.id.asc())
+            .limit(limit)
+            .all()
+        )
+    ]
     processed = 0
-    for job in jobs:
-        process_auto_fulfillment_job(db, job.id)
+    for job_id in job_ids:
+        try:
+            process_auto_fulfillment_job(db, job_id)
+        except Exception as exc:
+            _recover_unexpected_job_failure(db, job_id, exc)
         processed += 1
     return processed
 
