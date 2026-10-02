@@ -35,7 +35,14 @@ FLOW_POLL_BATCH = int(os.getenv("AUTOMATION_FLOW_BATCH_SIZE", str(BATCH_SIZE)))
 # ============================================================
 
 
-def materialize_flow_trigger(db: Session, flow: AutomationFlow, customer_ids: list[int], trigger_key: str | None = None, now: datetime | None = None) -> AutomationFlowRun | None:
+def materialize_flow_trigger(
+    db: Session,
+    flow: AutomationFlow,
+    customer_ids: list[int],
+    trigger_key: str | None = None,
+    now: datetime | None = None,
+    trigger_context: dict | None = None,
+) -> AutomationFlowRun | None:
     """Create a flow run and recipient executions for a manual/audience trigger."""
     now = now or utcnow()
     if flow.status != "active" or not flow.active_version_id:
@@ -62,6 +69,7 @@ def materialize_flow_trigger(db: Session, flow: AutomationFlow, customer_ids: li
         flow_id=flow.id, flow_version_id=version.id,
         organization_id=flow.organization_id, store_id=flow.store_id,
         status="pending", trigger_key=trigger_key,
+        trigger_context=trigger_context,
         total_recipients=len(customer_ids), started_at=now,
     )
     try:
