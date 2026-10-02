@@ -125,12 +125,6 @@ def process_shopify_order_webhook(
     if store is None:
         raise ShopifyWebhookError("STORE_NOT_FOUND")
 
-    customer = _upsert_customer(
-        db,
-        store=store,
-        payload=payload,
-    )
-
     order = (
         db.query(Order)
         .filter(
@@ -140,6 +134,30 @@ def process_shopify_order_webhook(
         )
         .first()
     )
+
+    incoming_updated_at = _parse_datetime(
+        payload.get("updated_at")
+    )
+    if (
+        order is not None
+        and incoming_updated_at is not None
+        and order.updated_at is not None
+        and incoming_updated_at < order.updated_at
+    ):
+        return {
+            "ok": True,
+            "action": "ignored_stale",
+            "order_id": order.id,
+            "shopify_order_id": external_order_id,
+            "topic": topic,
+        }
+
+    customer = _upsert_customer(
+        db,
+        store=store,
+        payload=payload,
+    )
+
     created = order is None
 
     if order is None:
