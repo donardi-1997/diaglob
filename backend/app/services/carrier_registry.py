@@ -14,6 +14,7 @@ class CarrierDefinition:
     countries: tuple[str, ...]
     aliases: tuple[str, ...]
     integration_modes: tuple[str, ...]
+    documented_api: bool = False
     tracking_page_url: str | None = None
     tracking_url_template: str | None = None
 
@@ -26,6 +27,7 @@ class CarrierDefinition:
             "tracking_page_url": self.tracking_page_url,
             "supports_push_webhook": "webhook" in self.integration_modes,
             "supports_direct_sync": "api" in self.integration_modes,
+            "documented_api": self.documented_api,
         }
 
 
@@ -35,7 +37,8 @@ CARRIERS: dict[str, CarrierDefinition] = {
         name="Coordinadora",
         countries=("CO",),
         aliases=("coordinadora", "coordinadora mercantil"),
-        integration_modes=("webhook", "api"),
+        integration_modes=("webhook",),
+        documented_api=True,
         tracking_page_url="https://coordinadora.com/rastreo/",
         tracking_url_template="https://rastreo.coordinadora.com/?guia={tracking_number}",
     ),
@@ -45,6 +48,7 @@ CARRIERS: dict[str, CarrierDefinition] = {
         countries=("CO",),
         aliases=("servientrega", "servi entrega"),
         integration_modes=("webhook",),
+        documented_api=False,
         tracking_page_url="https://www.servientrega.com/wps/portal/rastreo-envio",
     ),
     "interrapidisimo": CarrierDefinition(
@@ -57,7 +61,8 @@ CARRIERS: dict[str, CarrierDefinition] = {
             "interrapidisimo",
             "interrapidísimo",
         ),
-        integration_modes=("webhook", "api"),
+        integration_modes=("webhook",),
+        documented_api=True,
         tracking_page_url="https://www.interrapidisimo.com/",
     ),
     "tcc": CarrierDefinition(
@@ -65,7 +70,8 @@ CARRIERS: dict[str, CarrierDefinition] = {
         name="TCC",
         countries=("CO",),
         aliases=("tcc", "transportadora comercial colombia"),
-        integration_modes=("webhook", "api"),
+        integration_modes=("webhook",),
+        documented_api=True,
         tracking_page_url="https://tcc.com.co/",
     ),
 }
