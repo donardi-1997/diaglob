@@ -80,7 +80,7 @@ def test_spanish_carrier_status_normalization():
 
 
 def test_connect_carrier_returns_one_time_webhook_token(monkeypatch):
-    monkeypatch.setenv("PUBLIC_API_BASE_URL", "https://api.diaglob.tech")
+    monkeypatch.setenv("DIAGLOB_PUBLIC_API_BASE_URL", "https://api.diaglob.tech")
     engine, session = _db()
     try:
         org, store = _seed(session)
@@ -111,7 +111,7 @@ def test_connect_carrier_returns_one_time_webhook_token(monkeypatch):
 
 
 def test_carrier_webhook_updates_shipment_and_is_idempotent(monkeypatch):
-    monkeypatch.setenv("PUBLIC_API_BASE_URL", "https://api.diaglob.tech")
+    monkeypatch.setenv("DIAGLOB_PUBLIC_API_BASE_URL", "https://api.diaglob.tech")
     engine, session = _db()
     try:
         org, store = _seed(session)
@@ -186,7 +186,7 @@ def test_carrier_webhook_updates_shipment_and_is_idempotent(monkeypatch):
 
 
 def test_webhook_token_cannot_update_another_carrier(monkeypatch):
-    monkeypatch.setenv("PUBLIC_API_BASE_URL", "https://api.diaglob.tech")
+    monkeypatch.setenv("DIAGLOB_PUBLIC_API_BASE_URL", "https://api.diaglob.tech")
     engine, session = _db()
     try:
         org, store = _seed(session)
@@ -224,7 +224,7 @@ def test_webhook_token_cannot_update_another_carrier(monkeypatch):
 
 
 def test_non_cj_registered_shipment_uses_push_updates(monkeypatch):
-    monkeypatch.setenv("PUBLIC_API_BASE_URL", "https://api.diaglob.tech")
+    monkeypatch.setenv("DIAGLOB_PUBLIC_API_BASE_URL", "https://api.diaglob.tech")
     engine, session = _db()
     try:
         org, store = _seed(session)
