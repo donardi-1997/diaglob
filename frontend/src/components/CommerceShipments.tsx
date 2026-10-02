@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ExternalLink,
   LoaderCircle,
@@ -35,7 +35,7 @@ export default function CommerceShipments({
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
-  async function load() {
+  const load = useCallback(async () => {
     try {
       setLoading(true);
       setError("");
@@ -47,11 +47,11 @@ export default function CommerceShipments({
     } finally {
       setLoading(false);
     }
-  }
+  }, [storeId, t]);
 
   useEffect(() => {
     void load();
-  }, [storeId]);
+  }, [load]);
 
   const activeCount = useMemo(
     () =>
@@ -123,7 +123,8 @@ export default function CommerceShipments({
             </thead>
             <tbody>
               {shipments.map((shipment) => {
-                const latestEvent = shipment.events.at(-1);
+                const latestEvent =
+                  shipment.events[shipment.events.length - 1];
                 return (
                   <tr key={shipment.id}>
                     <td className="commerce-order-number">
@@ -148,7 +149,7 @@ export default function CommerceShipments({
                           shipment.status,
                         )}`}
                       >
-                        {shipment.status.replaceAll("_", " ")}
+                        {shipment.status.replace(/_/g, " ")}
                       </span>
                       {latestEvent?.description && (
                         <div style={{ marginTop: 5, fontSize: 11, opacity: 0.7 }}>
