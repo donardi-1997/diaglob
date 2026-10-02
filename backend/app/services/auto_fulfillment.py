@@ -133,6 +133,21 @@ def configure_cj_auto_fulfillment(
     if len(origin) != 2 or not origin.isalpha():
         raise AutoFulfillmentError("INVALID_ORIGIN_COUNTRY")
 
+    if enabled:
+        shopify_connection = _shopify_connection(
+            db,
+            organization_id,
+            store_id,
+        )
+        if shopify_connection is None:
+            raise AutoFulfillmentError("SHOPIFY_NOT_CONNECTED")
+        missing_scopes = missing_fulfillment_scopes(shopify_connection)
+        if missing_scopes:
+            raise AutoFulfillmentError(
+                "SHOPIFY_FULFILLMENT_SCOPES_REQUIRED:"
+                + ",".join(missing_scopes)
+            )
+
     connection.auto_fulfillment_enabled = bool(enabled)
     connection.auto_origin_country_code = origin
     connection.auto_notify_customer = bool(notify_customer)
