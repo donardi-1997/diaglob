@@ -112,6 +112,7 @@ def _order_trigger_context(order: Order) -> dict[str, Any]:
         "lifecycle_status": order.lifecycle_status,
         "source": order.source,
         "shipping": shipping,
+        "country": shipping.get("country_code") or shipping.get("country"),
         "items": items,
         "items_summary": items_summary,
         "confirmation_status": order.confirmation_status,
