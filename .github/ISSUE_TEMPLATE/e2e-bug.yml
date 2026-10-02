@@ -1,0 +1,88 @@
+name: E2E bug
+description: Report a bug found during Diaglob E2E validation
+title: "[E2E] "
+labels:
+  - bug
+body:
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - P0 - security/data/cross-tenant/payment or unauthorized action
+        - P1 - core flow blocked
+        - P2 - workaround exists
+        - P3 - cosmetic/polish
+    validations:
+      required: true
+
+  - type: input
+    id: e2e_case
+    attributes:
+      label: E2E case
+      placeholder: E2E-11
+    validations:
+      required: true
+
+  - type: input
+    id: commit
+    attributes:
+      label: Deployed commit
+      placeholder: abc1234
+    validations:
+      required: true
+
+  - type: input
+    id: surface
+    attributes:
+      label: Surface
+      placeholder: Shopify / Automations / Copilot / Billing / ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Minimal reproduction steps
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual
+    validations:
+      required: true
+
+  - type: input
+    id: http_status
+    attributes:
+      label: HTTP status / error code
+      placeholder: 409 / PLAN_REQUIRED / browser error
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Safe evidence
+      description: Do not include passwords, tokens, cookies, API keys, OAuth secrets, Authorization headers, or real customer PII.
+
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety check
+      options:
+        - label: Evidence contains no credentials, tokens, cookies, API keys, or real customer PII.
+          required: true
+        - label: I recorded the organization/store using non-sensitive identifiers only when needed.
+          required: true
