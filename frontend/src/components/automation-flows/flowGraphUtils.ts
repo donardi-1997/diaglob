@@ -1,4 +1,14 @@
-export type FlowNodeType = "trigger" | "wait" | "message" | "condition" | "end";
+export type FlowNodeType = "trigger" | "wait" | "message" | "condition" | "tool" | "end";
+
+export type FlowToolName =
+  | "orders.list"
+  | "orders.get"
+  | "products.list"
+  | "customers.search"
+  | "tracking.get"
+  | "suppliers.cj.search"
+  | "suppliers.cj.quote"
+  | "analytics.summary";
 
 export type TriggerType =
   | "manual"
@@ -56,6 +66,9 @@ export interface FlowNodeConfig {
   template_provider_name?: string;
   template_language?: string;
 
+  tool_name?: FlowToolName;
+  arguments?: Record<string, unknown>;
+
   label?: string;
 }
 
@@ -86,6 +99,7 @@ const NODE_TYPES: FlowNodeType[] = [
   "wait",
   "message",
   "condition",
+  "tool",
   "end",
 ];
 
@@ -163,6 +177,11 @@ export function defaultConfigForNode(type: FlowNodeType): FlowNodeConfig {
         message_mode: "auto",
         message_template: "Hola {{customer.name}}",
       };
+    case "tool":
+      return {
+        tool_name: "analytics.summary",
+        arguments: {},
+      };
     case "end":
       return {};
   }
@@ -218,7 +237,24 @@ export function validateFlowGraph(graph: FlowGraph): string[] {
       if (outgoing.length > 2) {
         errors.push("flowValidationConditionTooManyBranches");
       }
-    } else if (node.type !== "end") {
+    }
+
+    if (node.type === "tool") {
+      if (!node.config.tool_name) {
+        errors.push("flowValidationToolMissingName");
+      }
+      if (
+        node.config.arguments != null
+        && (
+          typeof node.config.arguments !== "object"
+          || Array.isArray(node.config.arguments)
+        )
+      ) {
+        errors.push("flowValidationToolInvalidArguments");
+      }
+    }
+
+    if (node.type !== "condition" && node.type !== "end") {
       if (outgoing.length === 0) {
         errors.push("flowValidationMissingOutgoing");
       }
@@ -392,6 +428,7 @@ export function humanizeNodeType(
     wait: t("flowNodeTypeWait"),
     message: t("flowNodeTypeMessage"),
     condition: t("flowNodeTypeCondition"),
+    tool: t("flowNodeTypeTool"),
     end: t("flowNodeTypeEnd"),
   };
   return map[type] || type;
@@ -416,6 +453,8 @@ export function humanizeNodeSummary(
         node.config.message_template
         || `${t(`flowMessageMode_${node.config.message_mode || "auto"}`)} · WhatsApp`
       );
+    case "tool":
+      return node.config.tool_name || t("flowNodeTypeTool");
     case "end":
       return node.config.label || t("flowNodeTypeEnd");
   }
