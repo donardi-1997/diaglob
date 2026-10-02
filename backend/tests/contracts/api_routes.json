@@ -45,6 +45,10 @@
   ],
   [
     "DELETE",
+    "/api/stores/{store_id}/carriers/{carrier_key}"
+  ],
+  [
+    "DELETE",
     "/api/stores/{store_id}/dropi/disconnect"
   ],
   [
@@ -154,6 +158,10 @@
   [
     "GET",
     "/api/billing/ai-packages"
+  ],
+  [
+    "GET",
+    "/api/carriers"
   ],
   [
     "GET",
@@ -413,6 +421,10 @@
   ],
   [
     "GET",
+    "/api/stores/{store_id}/carriers"
+  ],
+  [
+    "GET",
     "/api/stores/{store_id}/commerce"
   ],
   [
@@ -478,6 +490,14 @@
   [
     "GET",
     "/api/stores/{store_id}/post-sales/summary"
+  ],
+  [
+    "GET",
+    "/api/stores/{store_id}/shipments"
+  ],
+  [
+    "GET",
+    "/api/stores/{store_id}/shipments/{shipment_id}"
   ],
   [
     "GET",
@@ -681,6 +701,10 @@
   ],
   [
     "POST",
+    "/api/carriers/detect"
+  ],
+  [
+    "POST",
     "/api/commerce/products"
   ],
   [
@@ -837,6 +861,10 @@
   ],
   [
     "POST",
+    "/api/stores/{store_id}/carriers/{carrier_key}/connect"
+  ],
+  [
+    "POST",
     "/api/stores/{store_id}/dropi/connect"
   ],
   [
@@ -882,6 +910,14 @@
   [
     "POST",
     "/api/stores/{store_id}/post-sales/cases/{case_id}/notes"
+  ],
+  [
+    "POST",
+    "/api/stores/{store_id}/shipments"
+  ],
+  [
+    "POST",
+    "/api/stores/{store_id}/shipments/{shipment_id}/sync"
   ],
   [
     "POST",
@@ -966,6 +1002,10 @@
   [
     "POST",
     "/api/voice/callback"
+  ],
+  [
+    "POST",
+    "/api/webhooks/carriers/{carrier_key}/{webhook_token}"
   ],
   [
     "POST",
