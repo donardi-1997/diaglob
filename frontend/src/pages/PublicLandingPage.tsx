@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 
 import { getMarketingCopy, resolveMarketingLocale } from "../marketingCopy";
+import { trackMarketingEvent } from "../services/marketingTracking";
 
 interface PublicLandingPageProps {
   onNavigateToLogin: () => void;
@@ -115,6 +116,10 @@ export default function PublicLandingPage({
   const [theme, setTheme] = useState(() => localStorage.getItem("diaglob-theme") || "dark");
 
   useEffect(() => {
+    trackMarketingEvent("landing_view", { locale });
+  }, [locale]);
+
+  useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
     localStorage.setItem("diaglob-theme", theme);
   }, [theme]);
@@ -137,6 +142,14 @@ export default function PublicLandingPage({
     }
     meta.setAttribute("content", description);
   }, [copy.hero.subtitle, locale]);
+
+  const beginRegistration = (placement: string, planId?: string) => {
+    if (planId) {
+      trackMarketingEvent("pricing_plan_interest", { placement, plan_id: planId });
+    }
+    trackMarketingEvent("registration_started", { placement, plan_id: planId });
+    onNavigateToRegister();
+  };
 
   const changeLanguage = (language: string) => {
     void i18n.changeLanguage(language);
@@ -219,7 +232,7 @@ export default function PublicLandingPage({
               {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
             </button>
             <button className="marketing-login-button" onClick={onNavigateToLogin}>{copy.nav.login}</button>
-            <button className="marketing-primary-button compact" onClick={onNavigateToRegister}>
+            <button className="marketing-primary-button compact" onClick={() => beginRegistration("nav")}>
               {copy.nav.start}<ArrowRight size={16} />
             </button>
           </div>
@@ -247,7 +260,7 @@ export default function PublicLandingPage({
               ))}
             </div>
             <button className="marketing-login-button" onClick={onNavigateToLogin}>{copy.nav.login}</button>
-            <button className="marketing-primary-button" onClick={onNavigateToRegister}>{copy.nav.start}</button>
+            <button className="marketing-primary-button" onClick={() => beginRegistration("mobile_nav")}>{copy.nav.start}</button>
           </div>
         )}
       </header>
@@ -265,7 +278,7 @@ export default function PublicLandingPage({
               </h1>
               <p className="marketing-hero-subtitle">{copy.hero.subtitle}</p>
               <div className="marketing-hero-actions">
-                <button className="marketing-primary-button large" onClick={onNavigateToRegister}>
+                <button className="marketing-primary-button large" onClick={() => beginRegistration("hero")}>
                   {copy.hero.primary}<ArrowRight size={18} />
                 </button>
                 <button className="marketing-secondary-button large" onClick={() => scrollTo("workflow")}>
@@ -468,7 +481,7 @@ export default function PublicLandingPage({
                   <div className="marketing-price-feature"><Store size={17} /><span><strong>{plan.stores}</strong> {plan.stores === 1 ? copy.pricing.store : copy.pricing.stores}</span></div>
                   <div className="marketing-price-feature"><Bot size={17} /><span><strong>{plan.ai}</strong> {copy.pricing.includedAi}</span></div>
                   <div className="marketing-price-feature"><Check size={17} /><span>{ui.coreOpsAnalytics}</span></div>
-                  <button className={plan.recommended ? "marketing-primary-button full" : "marketing-secondary-button full"} onClick={onNavigateToRegister}>
+                  <button className={plan.recommended ? "marketing-primary-button full" : "marketing-secondary-button full"} onClick={() => beginRegistration("pricing", plan.id)}>
                     {copy.pricing.cta}<ArrowRight size={16} />
                   </button>
                 </article>
@@ -504,7 +517,7 @@ export default function PublicLandingPage({
             <h2>{copy.final.title}</h2>
             <p>{copy.final.subtitle}</p>
             <div className="marketing-hero-actions centered-actions">
-              <button className="marketing-primary-button large inverse" onClick={onNavigateToRegister}>{copy.final.cta}<ArrowRight size={18} /></button>
+              <button className="marketing-primary-button large inverse" onClick={() => beginRegistration("final_cta")}>{copy.final.cta}<ArrowRight size={18} /></button>
               <button className="marketing-final-login" onClick={onNavigateToLogin}>{copy.final.login}</button>
             </div>
           </div>
@@ -519,7 +532,7 @@ export default function PublicLandingPage({
           </div>
           <div><strong>{copy.footer.product}</strong><button onClick={() => scrollTo("product")}>{copy.nav.product}</button><button onClick={() => scrollTo("integrations")}>{copy.nav.integrations}</button><button onClick={() => scrollTo("pricing")}>{copy.nav.pricing}</button></div>
           <div><strong>{copy.footer.legal}</strong><a href="/privacy">{copy.footer.privacy}</a><a href="/terms">{copy.footer.terms}</a><a href="/refund-policy">{locale === "en" ? "Refund Policy" : locale === "pt-BR" ? "Política de reembolso" : "Política de reembolsos"}</a></div>
-          <div><strong>{copy.footer.account}</strong><button onClick={onNavigateToLogin}>{copy.nav.login}</button><button onClick={onNavigateToRegister}>{copy.nav.start}</button></div>
+          <div><strong>{copy.footer.account}</strong><button onClick={onNavigateToLogin}>{copy.nav.login}</button><button onClick={() => beginRegistration("footer")}>{copy.nav.start}</button></div>
         </div>
         <div className="marketing-shell marketing-footer-bottom">© {new Date().getFullYear()} Diaglob. {copy.footer.rights}</div>
       </footer>
