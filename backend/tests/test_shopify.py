@@ -14,6 +14,8 @@ from app.main import (
 )
 from app.models import (
     CommerceConnection,
+    Customer,
+    CustomerStoreProfile,
     Order,
     OrderItem,
     Organization,
@@ -4472,3 +4474,319 @@ class TestShopifyOrdersExternalStatus:
             app.dependency_overrides.pop(
                 get_current_membership, None
             )
+
+class TestShopifyOrderWebhooks:
+    @staticmethod
+    def _payload():
+        return {
+            "id": 98765,
+            "order_number": 1057,
+            "name": "#1057",
+            "email": "buyer@example.com",
+            "created_at": "2026-10-02T14:20:00Z",
+            "updated_at": "2026-10-02T14:21:00Z",
+            "currency": "USD",
+            "current_total_price": "59.98",
+            "financial_status": "pending",
+            "fulfillment_status": None,
+            "payment_gateway_names": ["bogus"],
+            "note": "Webhook order",
+            "customer": {
+                "id": 2001,
+                "first_name": "Ada",
+                "last_name": "Buyer",
+                "email": "buyer@example.com",
+                "phone": "+15551234567",
+            },
+            "shipping_address": {
+                "first_name": "Ada",
+                "last_name": "Buyer",
+                "address1": "123 Test St",
+                "address2": "Apt 4",
+                "city": "Miami",
+                "province": "Florida",
+                "province_code": "FL",
+                "country": "United States",
+                "country_code": "US",
+                "zip": "33101",
+                "phone": "+15551234567",
+            },
+            "line_items": [
+                {
+                    "id": 555,
+                    "variant_id": 101,
+                    "title": "Shirt",
+                    "name": "Shirt - Default",
+                    "sku": "SKU-001",
+                    "quantity": 1,
+                    "price": "59.98",
+                }
+            ],
+        }
+
+    @staticmethod
+    def _headers(payload_bytes, *, topic="orders/create", shop="test-store.myshopify.com"):
+        import base64
+        import hashlib
+        import hmac
+
+        secret = "shopify-webhook-secret"
+        signature = base64.b64encode(
+            hmac.new(
+                secret.encode("utf-8"),
+                payload_bytes,
+                hashlib.sha256,
+            ).digest()
+        ).decode("ascii")
+        return secret, {
+            "X-Shopify-Hmac-Sha256": signature,
+            "X-Shopify-Topic": topic,
+            "X-Shopify-Shop-Domain": shop,
+            "X-Shopify-Webhook-Id": "webhook-test-1",
+        }
+
+    def _sync_catalog(self, client, store):
+        with patch(
+            "app.shopify_sync.decrypt_shopify_secret",
+            return_value="token",
+        ), patch(
+            "app.shopify_sync.ShopifyGraphQLClient.query",
+            side_effect=[PAGE1, PAGE2],
+        ):
+            response = client.post(
+                f"/api/stores/{store.id}/shopify/sync/products"
+            )
+            assert response.status_code == 200
+
+    def test_create_webhook_persists_customer_order_items_and_address(
+        self,
+        client,
+        shopify_connection,
+        store,
+        db,
+    ):
+        import json
+
+        self._sync_catalog(client, store)
+        payload = self._payload()
+        body = json.dumps(payload).encode("utf-8")
+        secret, headers = self._headers(body)
+
+        with patch.dict(
+            os.environ,
+            {"SHOPIFY_CLIENT_SECRET": secret},
+            clear=False,
+        ):
+            response = client.post(
+                "/api/webhooks/shopify",
+                content=body,
+                headers=headers,
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["ok"] is True
+        assert data["action"] == "created"
+
+        db.expire_all()
+        order = (
+            db.query(Order)
+            .filter(Order.shopify_order_id == "98765")
+            .one()
+        )
+        assert order.store_id == store.id
+        assert order.order_number == "1057"
+        assert order.source == "shopify"
+        assert order.lifecycle_status == "open"
+        assert order.fulfillment_status == "unfulfilled"
+        assert order.shipping_address["city"] == "Miami"
+        assert order.shipping_address["country_code"] == "US"
+
+        customer = db.query(Customer).filter(Customer.id == order.customer_id).one()
+        assert customer.name == "Ada Buyer"
+        assert customer.phone == "+15551234567"
+        assert customer.email == "buyer@example.com"
+
+        profile = (
+            db.query(CustomerStoreProfile)
+            .filter(
+                CustomerStoreProfile.customer_id == customer.id,
+                CustomerStoreProfile.store_id == store.id,
+            )
+            .one()
+        )
+        assert profile.external_customer_id == "2001"
+        assert profile.orders_count == 1
+        assert float(profile.total_spent) == 59.98
+        assert profile.last_order_ref == "1057"
+
+        items = db.query(OrderItem).filter(OrderItem.order_id == order.id).all()
+        assert len(items) == 1
+        assert items[0].shopify_line_item_id == "555"
+        assert items[0].shopify_variant_id == "101"
+        assert items[0].variant_id is not None
+
+    def test_duplicate_create_is_idempotent(self, client, shopify_connection, store, db):
+        import json
+
+        payload = self._payload()
+        body = json.dumps(payload).encode("utf-8")
+        secret, headers = self._headers(body)
+
+        with patch.dict(os.environ, {"SHOPIFY_CLIENT_SECRET": secret}, clear=False):
+            first = client.post("/api/webhooks/shopify", content=body, headers=headers)
+            second = client.post("/api/webhooks/shopify", content=body, headers=headers)
+
+        assert first.status_code == 200
+        assert second.status_code == 200
+        assert second.json()["action"] == "updated"
+        assert db.query(Order).filter(Order.shopify_order_id == "98765").count() == 1
+        order = db.query(Order).filter(Order.shopify_order_id == "98765").one()
+        assert db.query(OrderItem).filter(OrderItem.order_id == order.id).count() == 1
+        assert db.query(Customer).count() == 1
+
+    def test_updated_webhook_updates_same_order_and_line_item(
+        self,
+        client,
+        shopify_connection,
+        store,
+        db,
+    ):
+        import json
+
+        payload = self._payload()
+        create_body = json.dumps(payload).encode("utf-8")
+        secret, create_headers = self._headers(create_body)
+
+        with patch.dict(os.environ, {"SHOPIFY_CLIENT_SECRET": secret}, clear=False):
+            assert client.post(
+                "/api/webhooks/shopify",
+                content=create_body,
+                headers=create_headers,
+            ).status_code == 200
+
+            original = db.query(Order).filter(Order.shopify_order_id == "98765").one()
+            original_item = db.query(OrderItem).filter(OrderItem.order_id == original.id).one()
+            original_order_id = original.id
+            original_item_id = original_item.id
+
+            payload["financial_status"] = "paid"
+            payload["current_total_price"] = "119.96"
+            payload["line_items"][0]["quantity"] = 2
+            payload["updated_at"] = "2026-10-02T15:00:00Z"
+            update_body = json.dumps(payload).encode("utf-8")
+            _, update_headers = self._headers(
+                update_body,
+                topic="orders/updated",
+            )
+
+            response = client.post(
+                "/api/webhooks/shopify",
+                content=update_body,
+                headers=update_headers,
+            )
+
+        assert response.status_code == 200
+        assert response.json()["action"] == "updated"
+
+        db.expire_all()
+        order = db.query(Order).filter(Order.shopify_order_id == "98765").one()
+        item = db.query(OrderItem).filter(OrderItem.order_id == order.id).one()
+        assert order.id == original_order_id
+        assert order.financial_status == "paid"
+        assert order.payment_status == "paid"
+        assert order.lifecycle_status == "paid"
+        assert float(order.total_amount) == 119.96
+        assert item.id == original_item_id
+        assert item.quantity == 2
+
+    def test_cancelled_webhook_marks_order_cancelled(
+        self,
+        client,
+        shopify_connection,
+        store,
+        db,
+    ):
+        import json
+
+        payload = self._payload()
+        body = json.dumps(payload).encode("utf-8")
+        secret, headers = self._headers(body)
+
+        with patch.dict(os.environ, {"SHOPIFY_CLIENT_SECRET": secret}, clear=False):
+            assert client.post(
+                "/api/webhooks/shopify",
+                content=body,
+                headers=headers,
+            ).status_code == 200
+
+            payload["cancelled_at"] = "2026-10-02T16:00:00Z"
+            cancel_body = json.dumps(payload).encode("utf-8")
+            _, cancel_headers = self._headers(
+                cancel_body,
+                topic="orders/cancelled",
+            )
+            response = client.post(
+                "/api/webhooks/shopify",
+                content=cancel_body,
+                headers=cancel_headers,
+            )
+
+        assert response.status_code == 200
+        db.expire_all()
+        order = db.query(Order).filter(Order.shopify_order_id == "98765").one()
+        assert order.lifecycle_status == "cancelled"
+
+    def test_invalid_hmac_is_rejected(self, client, shopify_connection):
+        import json
+
+        body = json.dumps(self._payload()).encode("utf-8")
+        response = client.post(
+            "/api/webhooks/shopify",
+            content=body,
+            headers={
+                "X-Shopify-Hmac-Sha256": "invalid",
+                "X-Shopify-Topic": "orders/create",
+                "X-Shopify-Shop-Domain": "test-store.myshopify.com",
+            },
+        )
+        assert response.status_code == 401
+
+    def test_unknown_shop_is_acknowledged_without_persisting(
+        self,
+        client,
+        shopify_connection,
+        db,
+    ):
+        import json
+
+        body = json.dumps(self._payload()).encode("utf-8")
+        secret, headers = self._headers(
+            body,
+            shop="unknown-store.myshopify.com",
+        )
+
+        with patch.dict(os.environ, {"SHOPIFY_CLIENT_SECRET": secret}, clear=False):
+            response = client.post(
+                "/api/webhooks/shopify",
+                content=body,
+                headers=headers,
+            )
+
+        assert response.status_code == 200
+        assert response.json()["action"] == "ignored"
+        assert db.query(Order).count() == 0
+
+    def test_invalid_json_is_rejected(self, client, shopify_connection):
+        body = b"{not-json"
+        secret, headers = self._headers(body)
+
+        with patch.dict(os.environ, {"SHOPIFY_CLIENT_SECRET": secret}, clear=False):
+            response = client.post(
+                "/api/webhooks/shopify",
+                content=body,
+                headers=headers,
+            )
+
+        assert response.status_code == 400
+
