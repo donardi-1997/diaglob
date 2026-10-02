@@ -10,6 +10,7 @@ from app.models import (
     Store,
     User,
 )
+from app.model_domains.shipments import CarrierConnection
 from app.model_domains.supplier_integrations import SupplierConnection
 from app.services.operations_integrations import (
     get_dynamic_operations_summary,
@@ -256,3 +257,44 @@ def test_cj_supplier_status_is_visible_in_operations_summary():
     finally:
         db.close()
 
+
+
+def test_colombia_carriers_are_visible_and_connection_status_is_real():
+    db = _session()
+    try:
+        _seed_org_store(
+            db,
+            org_id=1,
+            store_id=1,
+            country="CO",
+            currency="COP",
+        )
+        db.add(
+            CarrierConnection(
+                organization_id=1,
+                store_id=1,
+                carrier_key="coordinadora",
+                integration_mode="webhook",
+                status="connected",
+                webhook_secret_hash="a" * 64,
+            )
+        )
+        db.commit()
+
+        integrations = get_operations_integrations(db, 1, 1)
+        logistics = {
+            item["provider"]: item
+            for item in integrations
+            if item["category"] == "logistics"
+        }
+
+        assert set(logistics) == {
+            "coordinadora",
+            "servientrega",
+            "interrapidisimo",
+            "tcc",
+        }
+        assert logistics["coordinadora"]["connected"] is True
+        assert logistics["servientrega"]["connected"] is False
+    finally:
+        db.close()

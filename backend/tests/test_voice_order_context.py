@@ -7,6 +7,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.automation_flow_engine import (
     _enqueue_confirmed_trigger_order,
+    _render_runtime_template,
     claim_flow_recipients,
     complete_voice_call,
     materialize_flow_trigger,
@@ -419,6 +420,58 @@ def test_confirmed_trigger_order_is_the_only_order_queued_for_fulfillment():
         assert len(jobs) == 1
         assert jobs[0].order_id == order.id
         assert jobs[0].order_id != other.id
+    finally:
+        session.close()
+        Base.metadata.drop_all(bind=engine)
+
+
+def test_runtime_template_renders_frozen_shipment_context():
+    engine, session, org, user, _membership, store, customer, order = _setup()
+    try:
+        flow = _activate_flow(
+            session,
+            org,
+            user,
+            store,
+            _order_call_graph(),
+            "Shipment runtime variables",
+        )
+        run = materialize_flow_trigger(
+            session,
+            flow,
+            [customer.id],
+            trigger_context={
+                "event": {"type": "shipment.out_for_delivery", "id": "evt-shipment-1"},
+                "order": {
+                    "id": order.id,
+                    "number": order.order_number,
+                },
+                "shipment": {
+                    "id": 77,
+                    "provider": "coordinadora",
+                    "carrier": "Coordinadora",
+                    "tracking_number": "GUIA-123",
+                    "status": "OUT_FOR_DELIVERY",
+                    "destination_country": "CO",
+                    "tracking_url": "https://example.test/GUIA-123",
+                },
+            },
+        )
+        assert run is not None
+
+        rendered = _render_runtime_template(
+            (
+                "Hola {{customer.name}}, tu envío {{shipment.tracking_number}} "
+                "con {{shipment.carrier}} está {{shipment.status}}."
+            ),
+            customer,
+            store,
+            run,
+        )
+        assert rendered == (
+            "Hola Ana Pérez, tu envío GUIA-123 "
+            "con Coordinadora está OUT_FOR_DELIVERY."
+        )
     finally:
         session.close()
         Base.metadata.drop_all(bind=engine)

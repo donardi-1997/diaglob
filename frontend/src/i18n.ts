@@ -771,6 +771,32 @@ const resources = {
         "Copiar webhook",
       integrationsCopyVerifyToken:
         "Copiar verify token",
+      carrierIntegrationsTitle:
+        "Transportadoras",
+      carrierIntegrationsSubtitle:
+        "Recibe estados de entrega de transportadoras locales y úsalos en tracking, postventa y automatizaciones.",
+      carrierIntegrationsColombiaFirst:
+        "Cobertura inicial: Colombia",
+      carrierIntegrationsOtherCountry:
+        "La conexión directa de transportadoras comienza por Colombia. El motor de tracking ya está preparado para ampliar países.",
+      carrierIntegrationsConnectedCount:
+        "{{count}} conectada(s)",
+      carrierIntegrationsOfficialApi:
+        "API oficial identificada · adapter directo en siguiente fase",
+      carrierIntegrationsTrackingBridge:
+        "Seguimiento por actualizaciones webhook",
+      carrierIntegrationsUpdatesUrl:
+        "URL de actualizaciones",
+      carrierIntegrationsTokenOnce:
+        "Token de conexión (guárdalo ahora)",
+      carrierIntegrationsConnect:
+        "Conectar seguimiento",
+      carrierIntegrationsLoadError:
+        "No pudimos cargar las transportadoras.",
+      carrierIntegrationsConnectError:
+        "No pudimos conectar la transportadora.",
+      carrierIntegrationsDisconnectError:
+        "No pudimos desconectar la transportadora.",
       integrationsShopifyNoDomain:
         "Sin dominio Shopify",
       integrationsShopifyConnectError:
@@ -1291,6 +1317,7 @@ const resources = {
       commerceTabSummary: "Resumen",
       commerceTabProducts: "Productos",
       commerceTabOrders: "Órdenes",
+      commerceTabShipments: "Envíos",
       commerceSummaryError:
         "No se pudo cargar el resumen de comercio.",
       commerceNoData:
@@ -1322,6 +1349,34 @@ const resources = {
         "No hay órdenes disponibles.",
       commerceOrdersCount:
         "{{count}} orden(es)",
+      commerceShipmentsError:
+        "No se pudieron cargar los envíos.",
+      commerceShipmentsSyncError:
+        "No se pudo actualizar el tracking.",
+      commerceShipmentsPushUpdates:
+        "Esta transportadora recibe actualizaciones automáticamente por conexión webhook.",
+      commerceNoShipments:
+        "Aún no hay envíos registrados.",
+      commerceNoShipmentsHelp:
+        "Los envíos aparecerán cuando CJ, Shopify o una transportadora conectada registre una guía.",
+      commerceShipmentsCount:
+        "{{count}} envío(s)",
+      commerceShipmentsActive:
+        "{{count}} envío(s) en curso",
+      commerceShipmentTracking:
+        "Guía",
+      commerceShipmentCarrier:
+        "Transportadora",
+      commerceShipmentOrder:
+        "Pedido",
+      commerceShipmentLastUpdate:
+        "Última actualización",
+      commerceShipmentLastMile:
+        "Última milla",
+      commerceShipmentSync:
+        "Actualizar tracking",
+      commerceShipmentOpenTracking:
+        "Abrir tracking",
       commerceOrderNumber: "#",
       commerceOrderTotal: "Total",
       commerceOrderStatus: "Estado",
@@ -1919,6 +1974,10 @@ const resources = {
       flowField_order_currency: "Moneda del pedido",
       flowField_order_country: "País de entrega",
       flowField_order_fulfillment_status: "Estado de fulfillment",
+      flowField_shipment_status: "Estado del envío",
+      flowField_shipment_carrier: "Transportadora",
+      flowField_shipment_destination_country: "País destino del envío",
+      flowField_shipment_provider: "Proveedor del tracking",
       flowOperator_equals: "es igual a",
       flowOperator_not_equals: "no es igual a",
       flowOperator_gt: "mayor que",
@@ -2927,6 +2986,32 @@ const resources = {
         "Copy webhook",
       integrationsCopyVerifyToken:
         "Copy verify token",
+      carrierIntegrationsTitle:
+        "Carriers",
+      carrierIntegrationsSubtitle:
+        "Receive local carrier delivery updates and use them across tracking, post-sales, and automations.",
+      carrierIntegrationsColombiaFirst:
+        "Initial coverage: Colombia",
+      carrierIntegrationsOtherCountry:
+        "Direct carrier connectivity starts in Colombia. The tracking engine is ready to expand to more countries.",
+      carrierIntegrationsConnectedCount:
+        "{{count}} connected",
+      carrierIntegrationsOfficialApi:
+        "Official API identified · direct adapter next",
+      carrierIntegrationsTrackingBridge:
+        "Tracking through webhook updates",
+      carrierIntegrationsUpdatesUrl:
+        "Updates URL",
+      carrierIntegrationsTokenOnce:
+        "Connection token (save it now)",
+      carrierIntegrationsConnect:
+        "Connect tracking",
+      carrierIntegrationsLoadError:
+        "We could not load carriers.",
+      carrierIntegrationsConnectError:
+        "We could not connect the carrier.",
+      carrierIntegrationsDisconnectError:
+        "We could not disconnect the carrier.",
       integrationsShopifyNoDomain:
         "No Shopify domain",
       integrationsShopifyConnectError:
@@ -3424,6 +3509,7 @@ const resources = {
       commerceTabSummary: "Summary",
       commerceTabProducts: "Products",
       commerceTabOrders: "Orders",
+      commerceTabShipments: "Shipments",
       commerceSummaryError:
         "Could not load commerce summary.",
       commerceNoData:
@@ -3454,6 +3540,34 @@ const resources = {
         "No orders available.",
       commerceOrdersCount:
         "{{count}} order(s)",
+      commerceShipmentsError:
+        "Could not load shipments.",
+      commerceShipmentsSyncError:
+        "Could not refresh tracking.",
+      commerceShipmentsPushUpdates:
+        "This carrier receives updates automatically through its webhook connection.",
+      commerceNoShipments:
+        "No shipments registered yet.",
+      commerceNoShipmentsHelp:
+        "Shipments will appear when CJ, Shopify, or a connected carrier registers a tracking number.",
+      commerceShipmentsCount:
+        "{{count}} shipment(s)",
+      commerceShipmentsActive:
+        "{{count}} shipment(s) in progress",
+      commerceShipmentTracking:
+        "Tracking",
+      commerceShipmentCarrier:
+        "Carrier",
+      commerceShipmentOrder:
+        "Order",
+      commerceShipmentLastUpdate:
+        "Last update",
+      commerceShipmentLastMile:
+        "Last mile",
+      commerceShipmentSync:
+        "Refresh tracking",
+      commerceShipmentOpenTracking:
+        "Open tracking",
       commerceOrderNumber: "#",
       commerceOrderTotal: "Total",
       commerceOrderStatus: "Status",
@@ -4050,6 +4164,10 @@ const resources = {
       flowField_order_currency: "Order currency",
       flowField_order_country: "Delivery country",
       flowField_order_fulfillment_status: "Fulfillment status",
+      flowField_shipment_status: "Shipment status",
+      flowField_shipment_carrier: "Carrier",
+      flowField_shipment_destination_country: "Shipment destination country",
+      flowField_shipment_provider: "Tracking provider",
       flowOperator_equals: "equals",
       flowOperator_not_equals: "not equals",
       flowOperator_gt: "greater than",
@@ -4543,8 +4661,35 @@ const resources = {
 
       // Integrations
       integrationsTitle: "Integrações",
+      integrationsLoading: "Carregando integrações...",
       integrationsConnected: "Conectado",
       integrationsDisconnected: "Desconectado",
+      integrationsConnect: "Conectar",
+      integrationsDisconnect: "Desconectar",
+      integrationsCopyWebhook: "Copiar webhook",
+      integrationsCopyVerifyToken: "Copiar token de verificação",
+      integrationsCopyError: "Não foi possível copiar.",
+      carrierIntegrationsTitle: "Transportadoras",
+      carrierIntegrationsSubtitle:
+        "Receba atualizações de entrega de transportadoras locais e use-as no rastreamento, pós-venda e automações.",
+      carrierIntegrationsColombiaFirst: "Cobertura inicial: Colômbia",
+      carrierIntegrationsOtherCountry:
+        "A conexão direta de transportadoras começa pela Colômbia. O motor de rastreamento já está preparado para novos países.",
+      carrierIntegrationsConnectedCount: "{{count}} conectada(s)",
+      carrierIntegrationsOfficialApi:
+        "API oficial identificada · adapter direto na próxima fase",
+      carrierIntegrationsTrackingBridge:
+        "Rastreamento por atualizações webhook",
+      carrierIntegrationsUpdatesUrl: "URL de atualizações",
+      carrierIntegrationsTokenOnce:
+        "Token de conexão (salve agora)",
+      carrierIntegrationsConnect: "Conectar rastreamento",
+      carrierIntegrationsLoadError:
+        "Não foi possível carregar as transportadoras.",
+      carrierIntegrationsConnectError:
+        "Não foi possível conectar a transportadora.",
+      carrierIntegrationsDisconnectError:
+        "Não foi possível desconectar a transportadora.",
       integrationsShopifyConnectError: "Erro ao conectar Shopify",
       integrationsWhatsAppConnectError: "Erro ao conectar WhatsApp",
       integrationsDisconnectError: "Erro ao desconectar",

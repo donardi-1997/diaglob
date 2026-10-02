@@ -17,8 +17,10 @@ from ..models import (
     WhatsAppConnection,
 )
 from ..instagram_models import InstagramConnection
+from ..model_domains.shipments import CarrierConnection
 from ..model_domains.supplier_integrations import SupplierConnection
 from ..operations import get_operations_summary
+from .carrier_registry import list_carriers
 from ..payments.registry import get_providers_for_market
 from ..telegram_models import TelegramConnection
 
@@ -400,6 +402,48 @@ def get_operations_integrations(
                 status=cj_status,
             )
         )
+
+    carrier_rows = _isolated_read(
+        db,
+        "carriers",
+        lambda: (
+            db.query(CarrierConnection)
+            .filter(
+                CarrierConnection.organization_id == organization_id,
+                CarrierConnection.store_id == store_id,
+            )
+            .all()
+        ),
+    )
+    carrier_catalog = list_carriers(store.country_code)
+    if carrier_rows is _FAILED:
+        for carrier in carrier_catalog:
+            integrations.append(
+                _degraded_item(
+                    key=f"carrier:{carrier['key']}",
+                    provider=carrier["key"],
+                    name=carrier["name"],
+                    category="logistics",
+                )
+            )
+    else:
+        carrier_connections = {
+            connection.carrier_key: connection
+            for connection in carrier_rows
+        }
+        for carrier in carrier_catalog:
+            connection = carrier_connections.get(carrier["key"])
+            status = connection.status if connection else "disconnected"
+            integrations.append(
+                _item(
+                    key=f"carrier:{carrier['key']}",
+                    provider=carrier["key"],
+                    name=carrier["name"],
+                    category="logistics",
+                    connected=status == "connected",
+                    status=status,
+                )
+            )
 
     google = _isolated_read(
         db,

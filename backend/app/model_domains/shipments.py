@@ -6,6 +6,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    JSON,
     String,
     Text,
     UniqueConstraint,
@@ -119,6 +120,76 @@ class Shipment(Base):
     commerce_order = relationship("Order")
 
 
+class CarrierConnection(Base):
+    __tablename__ = "carrier_connections"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "store_id",
+            "carrier_key",
+            name="uq_carrier_connection_store_key",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    organization_id: Mapped[int] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    store_id: Mapped[int] = mapped_column(
+        ForeignKey("stores.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    carrier_key: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        index=True,
+    )
+    integration_mode: Mapped[str] = mapped_column(
+        String(30),
+        default="webhook",
+        nullable=False,
+    )
+    status: Mapped[str] = mapped_column(
+        String(30),
+        default="connected",
+        nullable=False,
+        index=True,
+    )
+    external_account_id: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+    webhook_secret_hash: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+    )
+    provider_config: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    last_sync_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    connected_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+    store = relationship("Store")
+    organization = relationship("Organization")
+
+
 class TrackingEvent(Base):
     __tablename__ = "tracking_events"
 
@@ -195,4 +266,4 @@ class CJWebhookReceipt(Base):
     processed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
-__all__ = ["Shipment", "TrackingEvent", "CJWebhookReceipt"]
+__all__ = ["Shipment", "CarrierConnection", "TrackingEvent", "CJWebhookReceipt"]

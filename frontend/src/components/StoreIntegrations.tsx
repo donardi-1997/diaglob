@@ -46,6 +46,7 @@ import {
 } from "../services/integrations";
 
 import CJIntegrationCard from "./CJIntegrationCard";
+import CarrierIntegrationsCard from "./CarrierIntegrationsCard";
 import ShopifyOrders from "./ShopifyOrders";
 import TelegramIntegrationCard from "./TelegramIntegrationCard";
 import InstagramIntegrationCard from "./InstagramIntegrationCard";
@@ -1179,6 +1180,12 @@ export default function StoreIntegrations({
 
 
       <CJIntegrationCard
+        storeId={storeId}
+        storeCountryCode={storeCountryCode}
+        canWrite={canWrite}
+      />
+
+      <CarrierIntegrationsCard
         storeId={storeId}
         storeCountryCode={storeCountryCode}
         canWrite={canWrite}

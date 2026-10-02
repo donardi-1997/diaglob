@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import uuid
 from datetime import datetime, timedelta
 
@@ -14,7 +15,6 @@ from .automation_execution_engine import (
     BACKOFF_SECONDS, BATCH_SIZE, LEASE_SECONDS, MAX_ATTEMPTS, MAX_PER_MINUTE,
     _acquire_rate_slot, utcnow,
 )
-from .automation_campaigns import render_template
 from .models import (
     AutomationFlow, AutomationFlowVersion, AutomationFlowRun,
     AutomationFlowRecipientExecution, AutomationNodeExecution,
@@ -28,6 +28,7 @@ from .whatsapp_security import decrypt_whatsapp_secret
 logger = logging.getLogger(__name__)
 
 FLOW_POLL_BATCH = int(os.getenv("AUTOMATION_FLOW_BATCH_SIZE", str(BATCH_SIZE)))
+_FLOW_VARIABLE_RE = re.compile(r"{{\s*([a-zA-Z0-9_.]+)\s*}}")
 
 
 # ============================================================
@@ -378,6 +379,14 @@ def _runtime_context(
         "customer.email": customer.email,
         "customer.phone": customer.phone,
         "customer.country": customer.country_code,
+        "customer.segment": getattr(customer, "primary_segment", None),
+        "customer.health": getattr(customer, "customer_health", None),
+        "customer.classification": getattr(
+            customer,
+            "commercial_classification",
+            None,
+        ),
+        "customer.value_tier": getattr(customer, "value_tier", None),
     }
     if store is not None:
         context["store.id"] = store.id
@@ -390,6 +399,23 @@ def _runtime_context(
             _flatten_runtime_context(context, str(key), value)
 
     return context
+
+
+def _render_runtime_template(
+    template: str,
+    customer: Customer,
+    store: Store,
+    run: AutomationFlowRun,
+) -> str | None:
+    context = _runtime_context(customer, store, run)
+    variables = _FLOW_VARIABLE_RE.findall(template)
+    for key in variables:
+        if key not in context or context[key] in (None, ""):
+            return None
+    return _FLOW_VARIABLE_RE.sub(
+        lambda match: str(context[match.group(1)]),
+        template,
+    )
 
 
 def _resolve_tool_value(
@@ -684,7 +710,16 @@ def _render_call_prompt(
     store: Store,
     run: AutomationFlowRun | None = None,
 ) -> str:
-    rendered = _resolve_tool_value(
+    if run is None:
+        rendered = _resolve_tool_value(
+            template,
+            customer,
+            store,
+            run,
+        )
+        return str(rendered or "").strip()
+
+    rendered = _render_runtime_template(
         template,
         customer,
         store,
@@ -765,6 +800,28 @@ def _process_call_node(
         store,
         run,
     )
+    if not prompt:
+        _record_node_execution(
+            db,
+            recipient,
+            node["id"],
+            "call",
+            "failed",
+            now,
+            outcome="failed",
+            error_code="invalid_template_data",
+            message="Call template variables are unavailable",
+        )
+        _record_order_confirmation_outcome(
+            db,
+            run,
+            config,
+            "failed",
+            now,
+        )
+        _advance_flow(db, recipient, graph, node["id"], now, outcome="failed")
+        return "advanced"
+
     language = str(config.get("call_language") or store.default_language or "es")
     provider = voice_sender or start_voice_call
     idempotency_key = f"flow-call:{recipient.id}:{node['id']}:{recipient.attempt_count + 1}"
@@ -970,11 +1027,36 @@ def _process_message_node(db: Session, recipient: AutomationFlowRecipientExecuti
         return "retry_wait"
     message_mode = config.get("message_mode", "free_form")
     message_template = config.get("message_template", "")
-    rendered = render_template(message_template, {
-        "name": customer.name, "phone": customer.phone,
-        "primary_segment": getattr(customer, "primary_segment", None),
-        "customer_health": getattr(customer, "customer_health", None),
-    }, store) if message_template else None
+    rendered = (
+        _render_runtime_template(
+            message_template,
+            customer,
+            store,
+            run,
+        )
+        if message_template
+        else None
+    )
+    if message_template and rendered is None:
+        _record_node_execution(
+            db,
+            recipient,
+            node["id"],
+            "message",
+            "skipped",
+            now,
+            outcome="invalid_template_data",
+            error_code="invalid_template_data",
+        )
+        _advance_flow(
+            db,
+            recipient,
+            _get_graph_from_version(db, recipient.flow_version_id),
+            node["id"],
+            now,
+        )
+        return "skipped"
+
     compliance = evaluate_whatsapp_delivery_eligibility(
         db, _make_flow_campaign_proxy(config, run), connection, customer.id, now,
     )

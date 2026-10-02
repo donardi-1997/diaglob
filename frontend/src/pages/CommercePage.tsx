@@ -5,10 +5,12 @@ import {
   LayoutDashboard,
   Package,
   ShoppingBag,
+  Truck,
 } from "lucide-react";
 import CommerceSummary from "../components/CommerceSummary";
 import CommerceProducts from "../components/CommerceProducts";
 import CommerceOrders from "../components/CommerceOrders";
+import CommerceShipments from "../components/CommerceShipments";
 import PixPaymentsPanel from "../components/PixPaymentsPanel";
 import { getPaymentProviders } from "../services/payments";
 
@@ -27,6 +29,7 @@ type CommerceTab =
   | "summary"
   | "products"
   | "orders"
+  | "shipments"
   | "payments";
 
 
@@ -50,6 +53,12 @@ const BASE_TABS: {
     key: "orders",
     labelKey: "commerceTabOrders",
     icon: ShoppingBag,
+  },
+  {
+    key: "shipments",
+    labelKey: "commerceTabShipments",
+    fallbackLabel: "Envíos",
+    icon: Truck,
   },
 ];
 
@@ -192,6 +201,13 @@ export default function CommercePage({
             canWrite={canWrite}
             initialOrderId={searchKind === "order" ? searchEntityId : undefined}
             searchRequestKey={searchKind === "order" ? searchRequestKey : undefined}
+          />
+        )}
+
+        {activeTab === "shipments" && (
+          <CommerceShipments
+            storeId={storeId}
+            canWrite={canWrite}
           />
         )}
 

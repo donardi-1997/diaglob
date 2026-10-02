@@ -137,6 +137,29 @@ def _build_trigger_context(
     order = _resolve_order(db, organization_id, store_id, payload)
     if order is not None:
         context["order"] = _order_trigger_context(order)
+
+    shipment = payload.get("shipment")
+    if isinstance(shipment, dict):
+        context["shipment"] = {
+            "id": shipment.get("id"),
+            "provider": shipment.get("provider"),
+            "carrier": (
+                payload.get("carrier")
+                or shipment.get("last_mile_carrier")
+                or shipment.get("tracking_provider")
+                or shipment.get("logistic_name")
+            ),
+            "tracking_number": shipment.get("tracking_number"),
+            "last_mile_tracking_number": shipment.get(
+                "last_mile_tracking_number"
+            ),
+            "status": shipment.get("status"),
+            "destination_country": shipment.get(
+                "destination_country_code"
+            ),
+            "delivery_days": shipment.get("delivery_days"),
+            "tracking_url": shipment.get("tracking_url"),
+        }
     return context
 
 

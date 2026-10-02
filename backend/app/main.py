@@ -96,6 +96,7 @@ from .api.nuvemshop import router as nuvemshop_router  # noqa: E402
 from .api.payments import router as payments_router  # noqa: E402
 from .api.post_sales import router as post_sales_router  # noqa: E402
 from .api.shopify import router as shopify_router  # noqa: E402
+from .api.shipments import router as shipments_router  # noqa: E402
 from .api.dropshipping_analytics import router as dropshipping_analytics_router  # noqa: E402
 from .api.stores import router as stores_router  # noqa: E402
 from .api.suppliers import router as suppliers_router  # noqa: E402
@@ -117,6 +118,7 @@ app.include_router(products_router)
 app.include_router(orders_router)
 app.include_router(commerce_router)
 app.include_router(shopify_router)
+app.include_router(shipments_router)
 app.include_router(nuvemshop_router)
 app.include_router(knowledge_router)
 app.include_router(payments_router)
