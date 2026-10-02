@@ -11,6 +11,9 @@ export interface CJConnectionStatus {
   connected_at: string | null;
   last_sync_at: string | null;
   last_error: string | null;
+  auto_fulfillment_enabled: boolean;
+  auto_origin_country_code: string;
+  auto_notify_customer: boolean;
 }
 
 export interface CJConnectionTestResult {
@@ -244,6 +247,39 @@ export async function deleteCJVariantMapping(
 ) {
   const response = await api.delete(
     `/api/stores/${storeId}/suppliers/cj/mappings/${productVariantId}`,
+  );
+  return response.data;
+}
+
+
+export async function configureCJAutoFulfillment(
+  storeId: number,
+  input: {
+    enabled: boolean;
+    origin_country_code: string;
+    notify_customer: boolean;
+  },
+) {
+  const response = await api.put<{
+    ok: boolean;
+    provider: "cj";
+    enabled: boolean;
+    origin_country_code: string;
+    notify_customer: boolean;
+    queued_job_ids: number[];
+  }>(
+    `/api/stores/${storeId}/suppliers/cj/auto-fulfillment`,
+    input,
+  );
+  return response.data;
+}
+
+export async function retryCJAutoFulfillment(storeId: number) {
+  const response = await api.post<{
+    ok: boolean;
+    queued_job_ids: number[];
+  }>(
+    `/api/stores/${storeId}/suppliers/cj/auto-fulfillment/retry`,
   );
   return response.data;
 }
