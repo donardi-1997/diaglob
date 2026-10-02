@@ -1,50 +1,65 @@
 import { useCallback, useMemo } from "react";
 import {
-  ReactFlow,
   Background,
   Controls,
   MiniMap,
-  type Node,
-  type Edge,
-  type OnNodesChange,
-  type OnEdgesChange,
+  ReactFlow,
+  useReactFlow,
   type Connection,
+  type Edge,
+  type Node,
   type NodeTypes,
+  type OnEdgesChange,
+  type OnNodesChange,
 } from "@xyflow/react";
-import type { FlowGraph, FlowNode as FlowNodeData, FlowEdge } from "./flowGraphUtils";
+import type {
+  FlowEdge,
+  FlowGraph,
+  FlowNode as FlowNodeData,
+  FlowNodeType,
+} from "./flowGraphUtils";
 
 interface FlowCanvasProps {
   graph: FlowGraph;
   onNodesChange: OnNodesChange;
   onEdgesChange: OnEdgesChange;
-  onConnect: (conn: Connection) => void;
+  onConnect: (connection: Connection) => void;
   onNodeClick: (nodeId: string) => void;
+  onDropNode: (
+    type: FlowNodeType,
+    position: { x: number; y: number },
+  ) => void;
   selectedNodeId: string | null;
   nodeTypes: NodeTypes;
-  t: (key: string) => string;
 }
 
 function toReactFlowNodes(nodes: FlowNodeData[]): Node[] {
-  return nodes.map((n) => ({
-    id: n.id,
+  return nodes.map((node) => ({
+    id: node.id,
     type: "flowNode",
-    position: { x: n.position.x, y: n.position.y },
-    data: n,
+    position: {
+      x: node.position.x,
+      y: node.position.y,
+    },
+    data: node,
     selected: false,
   }));
 }
 
 function toReactFlowEdges(edges: FlowEdge[]): Edge[] {
-  return edges.map((e, i) => ({
-    id: `edge-${i}-${e.source}-${e.target}-${e.sourceHandle || "default"}`,
-    source: e.source,
-    target: e.target,
-    sourceHandle: e.sourceHandle || null,
-    targetHandle: e.targetHandle || null,
-    label: e.label || undefined,
+  return edges.map((edge, index) => ({
+    id: `edge-${index}-${edge.source}-${edge.target}-${edge.sourceHandle || "default"}`,
+    source: edge.source,
+    target: edge.target,
+    sourceHandle: edge.sourceHandle || null,
+    targetHandle: edge.targetHandle || null,
+    label: edge.label || undefined,
     type: "smoothstep",
     animated: false,
-    style: { stroke: "var(--text-muted)", strokeWidth: 1.5 },
+    style: {
+      stroke: "var(--text-muted)",
+      strokeWidth: 1.5,
+    },
   }));
 }
 
@@ -54,36 +69,67 @@ export default function FlowCanvas({
   onEdgesChange,
   onConnect,
   onNodeClick,
+  onDropNode,
   selectedNodeId,
   nodeTypes,
 }: FlowCanvasProps) {
+  const { screenToFlowPosition } = useReactFlow();
+
   const nodes = useMemo(() => {
-    const rfNodes = toReactFlowNodes(graph.nodes);
-    if (selectedNodeId) {
-      return rfNodes.map((n) => ({ ...n, selected: n.id === selectedNodeId }));
-    }
-    return rfNodes;
+    const reactFlowNodes = toReactFlowNodes(graph.nodes);
+    if (!selectedNodeId) return reactFlowNodes;
+
+    return reactFlowNodes.map((node) => ({
+      ...node,
+      selected: node.id === selectedNodeId,
+    }));
   }, [graph.nodes, selectedNodeId]);
 
-  const edges = useMemo(() => toReactFlowEdges(graph.edges), [graph.edges]);
+  const edges = useMemo(
+    () => toReactFlowEdges(graph.edges),
+    [graph.edges],
+  );
 
   const handleNodeClick = useCallback(
     (_event: React.MouseEvent, node: Node) => {
       onNodeClick(node.id);
     },
-    [onNodeClick]
+    [onNodeClick],
+  );
+
+  const handleDragOver = useCallback(
+    (event: React.DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+    },
+    [],
+  );
+
+  const handleDrop = useCallback(
+    (event: React.DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      const type = event.dataTransfer.getData(
+        "application/diaglob-flow-node",
+      ) as FlowNodeType;
+
+      if (!type) return;
+
+      onDropNode(
+        type,
+        screenToFlowPosition({
+          x: event.clientX,
+          y: event.clientY,
+        }),
+      );
+    },
+    [onDropNode, screenToFlowPosition],
   );
 
   return (
     <div
       className="flow-canvas-container"
-      style={{
-        height: 500,
-        border: "1px solid var(--border)",
-        borderRadius: 14,
-        background: "var(--panel)",
-        overflow: "hidden",
-      }}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
     >
       <ReactFlow
         nodes={nodes}
@@ -98,20 +144,21 @@ export default function FlowCanvas({
         proOptions={{ hideAttribution: true }}
         defaultEdgeOptions={{
           type: "smoothstep",
-          style: { stroke: "var(--text-muted)", strokeWidth: 1.5 },
+          style: {
+            stroke: "var(--text-muted)",
+            strokeWidth: 1.5,
+          },
         }}
       >
-        <Background color="var(--text-muted)" gap={20} size={1} />
-        <Controls
-          style={{
-            background: "var(--panel)",
-            border: "1px solid var(--border)",
-            borderRadius: 10,
-          }}
+        <Background
+          color="var(--text-muted)"
+          gap={20}
+          size={1}
         />
+        <Controls />
         <MiniMap
           nodeColor={(node: Node) => {
-            const data = node.data as FlowNodeData;
+            const data = node.data as unknown as FlowNodeData;
             const colors: Record<string, string> = {
               trigger: "#7c5cff",
               wait: "#e6a817",
@@ -122,11 +169,6 @@ export default function FlowCanvas({
             return colors[data?.type] || "#6b7280";
           }}
           maskColor="rgba(0,0,0,0.35)"
-          style={{
-            background: "var(--bg)",
-            border: "1px solid var(--border)",
-            borderRadius: 8,
-          }}
         />
       </ReactFlow>
     </div>
