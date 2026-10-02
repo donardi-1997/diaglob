@@ -73,6 +73,7 @@ def test_colombia_carrier_detection_is_conservative():
 def test_spanish_carrier_status_normalization():
     assert normalize_carrier_status(None, "En reparto") == "OUT_FOR_DELIVERY"
     assert normalize_carrier_status(None, "Entregado al destinatario") == "DELIVERED"
+    assert normalize_carrier_status(None, "No entregado") == "FAILED"
     assert normalize_carrier_status(None, "Novedad de dirección incorrecta") == "EXCEPTION"
     assert normalize_carrier_status(None, "En tránsito a ciudad destino") == "IN_TRANSIT"
     assert normalize_carrier_status("RETURNED") == "RETURNED"
