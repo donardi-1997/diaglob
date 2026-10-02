@@ -96,6 +96,31 @@ def _make_graph(trigger_type="manual", wait_value=1, wait_unit="hours",
     return {"nodes": nodes, "edges": edges}
 
 
+def _make_tool_graph(tool_name="analytics.summary", arguments=None):
+    return {
+        "nodes": [
+            {
+                "id": "trigger",
+                "type": "trigger",
+                "config": {"trigger_type": "manual"},
+            },
+            {
+                "id": "tool1",
+                "type": "tool",
+                "config": {
+                    "tool_name": tool_name,
+                    "arguments": arguments or {},
+                },
+            },
+            {"id": "end", "type": "end", "config": {}},
+        ],
+        "edges": [
+            {"source": "trigger", "target": "tool1"},
+            {"source": "tool1", "target": "end"},
+        ],
+    }
+
+
 # ═══════════════════════════════════════════════════════════════
 # GRAPH VALIDATION
 # ═══════════════════════════════════════════════════════════════
@@ -274,6 +299,20 @@ class TestGraphValidation:
         nodes[0] = {"id": "t", "type": "trigger", "config": {"trigger_type": "manual"}}
         errors = validate_graph({"nodes": nodes, "edges": []})
         assert any("exceeds maximum" in e for e in errors)
+
+
+    def test_valid_tool_node(self):
+        assert validate_graph(_make_tool_graph()) == []
+
+    def test_rejects_unsupported_tool_node(self):
+        errors = validate_graph(_make_tool_graph("fulfillment.retry"))
+        assert any("unsupported flow tool" in error for error in errors)
+
+    def test_rejects_non_object_tool_arguments(self):
+        graph = _make_tool_graph()
+        graph["nodes"][1]["config"]["arguments"] = ["bad"]
+        errors = validate_graph(graph)
+        assert any("tool arguments must be an object" in error for error in errors)
 
 
 class TestGraphHelpers:
@@ -966,6 +1005,76 @@ class TestFlowExecution:
         assert result == "not_claimed"
 
 
+class TestFlowToolExecution:
+    def test_tool_node_executes_with_creator_permissions_and_records_output(self, db):
+        session, org, store = db
+        user, _ = _user_and_membership(session, org, store)
+        customer = Customer(
+            organization_id=org.id,
+            name="Tool Customer",
+            phone="+573009999999",
+        )
+        session.add(customer)
+        session.flush()
+        session.add(CustomerStoreProfile(
+            organization_id=org.id,
+            customer_id=customer.id,
+            store_id=store.id,
+            currency=store.currency,
+        ))
+
+        flow = AutomationFlow(
+            organization_id=org.id,
+            store_id=store.id,
+            name="Tool Flow",
+            status="active",
+            created_by=user.id,
+        )
+        session.add(flow)
+        session.flush()
+        version = AutomationFlowVersion(
+            flow_id=flow.id,
+            organization_id=org.id,
+            version_number=1,
+            graph=_make_tool_graph(),
+            published_at=utcnow(),
+            activated_at=utcnow(),
+        )
+        session.add(version)
+        session.flush()
+        flow.current_version_id = version.id
+        flow.active_version_id = version.id
+        session.commit()
+
+        run = materialize_flow_trigger(session, flow, [customer.id])
+        claims = claim_flow_recipients(session, include_tokens=True)
+        assert run is not None
+        assert len(claims) == 1
+
+        recipient_id, claim_token = claims[0]
+        result = process_flow_recipient(
+            session,
+            recipient_id,
+            claim_token=claim_token,
+        )
+
+        assert result == "advanced"
+        recipient = session.get(
+            AutomationFlowRecipientExecution,
+            recipient_id,
+        )
+        assert recipient.current_node_id == "end"
+
+        execution = session.query(AutomationNodeExecution).filter(
+            AutomationNodeExecution.flow_recipient_execution_id == recipient_id,
+            AutomationNodeExecution.node_id == "tool1",
+        ).one()
+        assert execution.status == "completed"
+        assert execution.completed_at is not None
+        assert execution.extra_data["tool_name"] == "analytics.summary"
+        assert execution.extra_data["output"]["total_orders"] == 0
+
+
 # ═══════════════════════════════════════════════════════════════
 # FLOW SIMULATION API
 # ═══════════════════════════════════════════════════════════════
@@ -1270,5 +1379,162 @@ class TestFlowTriggerEndpoints:
             resp = client.post(f"/api/stores/{store.id}/automation-flows/{flow.id}/runs/{run_id}/recipients/{recip_id}/retry")
             assert resp.status_code == 200
             assert resp.json()["status"] == "active"
+        finally:
+            app.dependency_overrides.clear()
+
+
+# ═══════════════════════════════════════════════════════════════
+# FLOW DEBUGGER API
+# ═══════════════════════════════════════════════════════════════
+
+class TestFlowDebuggerEndpoints:
+    def _terminal_run(self, db):
+        session, org, store = db
+        user, membership = _user_and_membership(session, org, store)
+        customer = Customer(
+            organization_id=org.id,
+            name="Debug Customer",
+            phone="+573008888888",
+        )
+        session.add(customer)
+        session.flush()
+        session.add(CustomerStoreProfile(
+            organization_id=org.id,
+            customer_id=customer.id,
+            store_id=store.id,
+            currency=store.currency,
+        ))
+
+        flow = AutomationFlow(
+            organization_id=org.id,
+            store_id=store.id,
+            name="Debug Flow",
+            status="active",
+            created_by=user.id,
+        )
+        session.add(flow)
+        session.flush()
+        version = AutomationFlowVersion(
+            flow_id=flow.id,
+            organization_id=org.id,
+            version_number=1,
+            graph=_make_graph(),
+            published_at=utcnow(),
+            activated_at=utcnow(),
+        )
+        session.add(version)
+        session.flush()
+        flow.current_version_id = version.id
+        flow.active_version_id = version.id
+        session.flush()
+
+        run = AutomationFlowRun(
+            flow_id=flow.id,
+            flow_version_id=version.id,
+            organization_id=org.id,
+            store_id=store.id,
+            status="completed",
+            total_recipients=1,
+            completed_recipients=1,
+            failed_recipients=0,
+            started_at=utcnow() - timedelta(seconds=2),
+            completed_at=utcnow(),
+        )
+        session.add(run)
+        session.flush()
+        recipient = AutomationFlowRecipientExecution(
+            flow_run_id=run.id,
+            flow_version_id=version.id,
+            customer_id=customer.id,
+            organization_id=org.id,
+            status="completed",
+            current_node_id="end",
+            next_action_at=utcnow(),
+            started_at=utcnow() - timedelta(seconds=2),
+            completed_at=utcnow(),
+        )
+        session.add(recipient)
+        session.flush()
+        started = utcnow() - timedelta(milliseconds=250)
+        session.add(AutomationNodeExecution(
+            flow_recipient_execution_id=recipient.id,
+            node_id="wait1",
+            node_type="wait",
+            status="completed",
+            outcome="wait_complete",
+            started_at=started,
+            completed_at=utcnow(),
+            extra_data={"sample": "value"},
+        ))
+        session.commit()
+        return flow, run, recipient, user, membership, store
+
+    def _client(self, session, user, membership):
+        client = TestClient(app)
+        app.dependency_overrides[get_current_user] = lambda: user
+        app.dependency_overrides[get_current_membership] = lambda: membership
+        app.dependency_overrides[get_db] = lambda: session
+        return client
+
+    def test_run_detail_returns_graph_and_node_stats(self, db):
+        session, org, store = db
+        flow, run, recipient, user, membership, _ = self._terminal_run(db)
+        client = self._client(session, user, membership)
+        try:
+            response = client.get(
+                f"/api/stores/{store.id}/automation-flows/{flow.id}/runs/{run.id}"
+            )
+            assert response.status_code == 200
+            data = response.json()
+            assert data["graph"]["nodes"]
+            assert data["node_stats"]["wait1"]["executions"] == 1
+            assert data["node_stats"]["wait1"]["avg_duration_ms"] is not None
+        finally:
+            app.dependency_overrides.clear()
+
+    def test_recipient_detail_returns_node_duration(self, db):
+        session, org, store = db
+        flow, run, recipient, user, membership, _ = self._terminal_run(db)
+        client = self._client(session, user, membership)
+        try:
+            response = client.get(
+                f"/api/stores/{store.id}/automation-flows/{flow.id}/runs/{run.id}/recipients/{recipient.id}"
+            )
+            assert response.status_code == 200
+            execution = response.json()["node_executions"][0]
+            assert execution["duration_ms"] is not None
+            assert execution["metadata"]["sample"] == "value"
+        finally:
+            app.dependency_overrides.clear()
+
+    def test_retry_from_node_reopens_terminal_recipient_and_run(self, db):
+        session, org, store = db
+        flow, run, recipient, user, membership, _ = self._terminal_run(db)
+        client = self._client(session, user, membership)
+        try:
+            response = client.post(
+                f"/api/stores/{store.id}/automation-flows/{flow.id}/runs/{run.id}/recipients/{recipient.id}/retry-from-node/wait1"
+            )
+            assert response.status_code == 200
+            assert response.json()["status"] == "active"
+            assert response.json()["current_node_id"] == "wait1"
+            assert response.json()["retry_from_node_id"] == "wait1"
+
+            session.refresh(run)
+            assert run.status == "pending"
+            assert run.completed_recipients == 0
+            assert run.completed_at is None
+        finally:
+            app.dependency_overrides.clear()
+
+    def test_retry_from_trigger_is_rejected(self, db):
+        session, org, store = db
+        flow, run, recipient, user, membership, _ = self._terminal_run(db)
+        client = self._client(session, user, membership)
+        try:
+            response = client.post(
+                f"/api/stores/{store.id}/automation-flows/{flow.id}/runs/{run.id}/recipients/{recipient.id}/retry-from-node/trigger"
+            )
+            assert response.status_code == 409
         finally:
             app.dependency_overrides.clear()

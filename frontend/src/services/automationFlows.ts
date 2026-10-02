@@ -36,6 +36,18 @@ export interface AutomationFlowRun {
   completed_at: string | null;
   created_at: string | null;
   recipients?: AutomationFlowRecipient[];
+  graph?: Record<string, unknown>;
+  node_stats?: Record<string, FlowNodeRunStats>;
+}
+
+export interface FlowNodeRunStats {
+  node_id: string;
+  node_type: string;
+  executions: number;
+  status_counts: Record<string, number>;
+  avg_duration_ms: number | null;
+  latest_status: string | null;
+  last_error: string | null;
 }
 
 export interface AutomationFlowRecipient {
@@ -66,6 +78,7 @@ export interface NodeExecution {
   error_code: string | null;
   error_message: string | null;
   metadata: Record<string, unknown> | null;
+  duration_ms: number | null;
   started_at: string | null;
   completed_at: string | null;
 }
@@ -79,6 +92,7 @@ export interface FlowSimulationResult {
     message_nodes: number;
     wait_nodes: number;
     condition_nodes: number;
+    tool_nodes?: number;
     end_nodes: number;
   };
 }
@@ -189,6 +203,19 @@ export async function getFlowRecipientDetail(storeId: number, flowId: number, ru
 
 export async function retryFlowRecipient(storeId: number, flowId: number, runId: number, recipientId: number) {
   const response = await api.post<AutomationFlowRecipient>(`/api/stores/${storeId}/automation-flows/${flowId}/runs/${runId}/recipients/${recipientId}/retry`);
+  return response.data;
+}
+
+export async function retryFlowRecipientFromNode(
+  storeId: number,
+  flowId: number,
+  runId: number,
+  recipientId: number,
+  nodeId: string,
+) {
+  const response = await api.post<AutomationFlowRecipient>(
+    `/api/stores/${storeId}/automation-flows/${flowId}/runs/${runId}/recipients/${recipientId}/retry-from-node/${encodeURIComponent(nodeId)}`,
+  );
   return response.data;
 }
 

@@ -1,12 +1,25 @@
 import { Handle, Position } from "@xyflow/react";
-import { Zap, Clock, MessageSquare, GitBranch, Square } from "lucide-react";
-import { humanizeNodeSummary, humanizeNodeType, type FlowNode as FlowNodeData, type FlowNodeType } from "./flowGraphUtils";
+import {
+  Clock,
+  GitBranch,
+  MessageSquare,
+  Square,
+  Wrench,
+  Zap,
+} from "lucide-react";
+import {
+  humanizeNodeSummary,
+  humanizeNodeType,
+  type FlowNode as FlowNodeData,
+  type FlowNodeType,
+} from "./flowGraphUtils";
 
 const TYPE_COLORS: Record<FlowNodeType, string> = {
   trigger: "var(--accent)",
   wait: "#e6a817",
   condition: "#4a9eff",
   message: "var(--green)",
+  tool: "#8b5cf6",
   end: "var(--text-muted)",
 };
 
@@ -15,29 +28,104 @@ const TYPE_ICONS: Record<FlowNodeType, typeof Zap> = {
   wait: Clock,
   condition: GitBranch,
   message: MessageSquare,
+  tool: Wrench,
   end: Square,
 };
 
-export default function FlowNode({ data, selected }: { data: Record<string, unknown>; selected?: boolean }) {
+const DEBUG_STYLES: Record<
+  string,
+  { color: string; background: string; label: string }
+> = {
+  completed: {
+    color: "#22c55e",
+    background: "rgba(34,197,94,0.12)",
+    label: "Completado",
+  },
+  failed: {
+    color: "#ef4444",
+    background: "rgba(239,68,68,0.12)",
+    label: "Falló",
+  },
+  ambiguous: {
+    color: "#f59e0b",
+    background: "rgba(245,158,11,0.12)",
+    label: "Ambiguo",
+  },
+  skipped: {
+    color: "#94a3b8",
+    background: "rgba(148,163,184,0.12)",
+    label: "Omitido",
+  },
+  running: {
+    color: "#3b82f6",
+    background: "rgba(59,130,246,0.12)",
+    label: "Ejecutando",
+  },
+  waiting: {
+    color: "#e6a817",
+    background: "rgba(230,168,23,0.12)",
+    label: "Esperando",
+  },
+  pending: {
+    color: "var(--text-muted)",
+    background: "rgba(255,255,255,0.06)",
+    label: "Pendiente",
+  },
+};
+
+function formatDuration(duration?: number | null) {
+  if (duration == null) return null;
+  if (duration < 1000) return `${duration} ms`;
+  if (duration < 60_000) {
+    return `${(duration / 1000).toFixed(1)} s`;
+  }
+  return `${(duration / 60_000).toFixed(1)} min`;
+}
+
+export default function FlowNode({
+  data,
+  selected,
+}: {
+  data: Record<string, unknown>;
+  selected?: boolean;
+}) {
   const nodeData = data as unknown as FlowNodeData;
   const nodeType = nodeData.type as FlowNodeType;
   const Icon = TYPE_ICONS[nodeType] || Square;
   const color = TYPE_COLORS[nodeType] || "var(--text-muted)";
+  const debug = nodeData.debug;
+  const debugStyle = debug
+    ? DEBUG_STYLES[debug.status] || DEBUG_STYLES.pending
+    : null;
+  const duration = formatDuration(debug?.duration_ms);
 
   return (
     <div
-      className="flow-node-card"
+      className={
+        debug
+          ? `flow-node-card flow-node-debug is-${debug.status}`
+          : "flow-node-card"
+      }
       style={{
+        position: "relative",
         padding: "14px 16px",
         borderRadius: 12,
         background: "var(--panel)",
-        border: selected ? "2px solid var(--accent)" : "1px solid var(--border)",
-        borderLeft: `4px solid ${color}`,
+        border: selected
+          ? "2px solid var(--accent)"
+          : debugStyle
+            ? `1px solid ${debugStyle.color}`
+            : "1px solid var(--border)",
+        borderLeft: `4px solid ${debugStyle?.color || color}`,
         cursor: "pointer",
         transition: "all 150ms ease",
-        minWidth: 180,
-        maxWidth: 240,
-        boxShadow: selected ? "0 0 0 3px rgba(124, 92, 255, 0.12)" : "none",
+        minWidth: 190,
+        maxWidth: 250,
+        boxShadow: selected
+          ? "0 0 0 3px rgba(124, 92, 255, 0.12)"
+          : debugStyle
+            ? `0 0 0 2px ${debugStyle.background}`
+            : "none",
       }}
     >
       {nodeType !== "trigger" && (
@@ -53,8 +141,21 @@ export default function FlowNode({ data, selected }: { data: Record<string, unkn
         />
       )}
 
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <Icon size={16} style={{ color, flexShrink: 0 }} />
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          paddingRight: debug ? 8 : 0,
+        }}
+      >
+        <Icon
+          size={16}
+          style={{
+            color: debugStyle?.color || color,
+            flexShrink: 0,
+          }}
+        />
         <span
           style={{
             fontSize: 9,
@@ -64,7 +165,7 @@ export default function FlowNode({ data, selected }: { data: Record<string, unkn
             color: "var(--text-muted)",
           }}
         >
-          {humanizeNodeType(nodeType, (k: string) => k)}
+          {humanizeNodeType(nodeType, (key: string) => key)}
         </span>
       </div>
 
@@ -78,9 +179,40 @@ export default function FlowNode({ data, selected }: { data: Record<string, unkn
           textOverflow: "ellipsis",
           whiteSpace: "nowrap",
         }}
+        title={humanizeNodeSummary(
+          nodeData,
+          (key: string) => key,
+        )}
       >
-        {humanizeNodeSummary(nodeData, (k: string) => k)}
+        {humanizeNodeSummary(
+          nodeData,
+          (key: string) => key,
+        )}
       </p>
+
+      {debug && debugStyle && (
+        <div className="flow-node-debug-meta">
+          <span
+            className="flow-node-debug-status"
+            style={{
+              color: debugStyle.color,
+              background: debugStyle.background,
+            }}
+          >
+            {debug.label || debugStyle.label}
+          </span>
+          {duration && <small>{duration}</small>}
+          {debug.executions != null && debug.executions > 1 && (
+            <small>{debug.executions} ejec.</small>
+          )}
+        </div>
+      )}
+
+      {debug?.error && (
+        <p className="flow-node-debug-error" title={debug.error}>
+          {debug.error}
+        </p>
+      )}
 
       {nodeType === "condition" ? (
         <>
@@ -96,16 +228,7 @@ export default function FlowNode({ data, selected }: { data: Record<string, unkn
               left: "70%",
             }}
           />
-          <span
-            style={{
-              position: "absolute",
-              bottom: -18,
-              left: "63%",
-              fontSize: 9,
-              color: "var(--green)",
-              fontWeight: 600,
-            }}
-          >
+          <span className="flow-condition-label yes">
             YES
           </span>
           <Handle
@@ -120,16 +243,7 @@ export default function FlowNode({ data, selected }: { data: Record<string, unkn
               left: "30%",
             }}
           />
-          <span
-            style={{
-              position: "absolute",
-              bottom: -18,
-              left: "20%",
-              fontSize: 9,
-              color: "#ef4444",
-              fontWeight: 600,
-            }}
-          >
+          <span className="flow-condition-label no">
             NO
           </span>
         </>

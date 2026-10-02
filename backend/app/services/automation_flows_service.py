@@ -272,6 +272,71 @@ def list_flow_runs(db: Session, organization_id: int, store_id: int, flow_id: in
     return [_sr(r) for r in runs]
 
 
+def _duration_ms(started_at: datetime | None, completed_at: datetime | None) -> int | None:
+    if not started_at or not completed_at:
+        return None
+    return max(0, int((completed_at - started_at).total_seconds() * 1000))
+
+
+def _run_node_stats(db: Session, run: AutomationFlowRun, graph: dict) -> dict[str, dict]:
+    recipient_ids = [
+        row[0]
+        for row in db.query(AutomationFlowRecipientExecution.id).filter(
+            AutomationFlowRecipientExecution.flow_run_id == run.id,
+        ).all()
+    ]
+    executions = []
+    if recipient_ids:
+        executions = db.query(AutomationNodeExecution).filter(
+            AutomationNodeExecution.flow_recipient_execution_id.in_(recipient_ids),
+        ).order_by(AutomationNodeExecution.started_at).all()
+
+    stats: dict[str, dict] = {}
+    for node in graph.get("nodes", []):
+        node_id = str(node.get("id") or "")
+        if not node_id:
+            continue
+        stats[node_id] = {
+            "node_id": node_id,
+            "node_type": node.get("type"),
+            "executions": 0,
+            "status_counts": {},
+            "avg_duration_ms": None,
+            "latest_status": None,
+            "last_error": None,
+        }
+
+    durations: dict[str, list[int]] = {}
+    for execution in executions:
+        item = stats.setdefault(
+            execution.node_id,
+            {
+                "node_id": execution.node_id,
+                "node_type": execution.node_type,
+                "executions": 0,
+                "status_counts": {},
+                "avg_duration_ms": None,
+                "latest_status": None,
+                "last_error": None,
+            },
+        )
+        item["executions"] += 1
+        item["status_counts"][execution.status] = (
+            item["status_counts"].get(execution.status, 0) + 1
+        )
+        item["latest_status"] = execution.status
+        if execution.error_message:
+            item["last_error"] = execution.error_message
+        duration = _duration_ms(execution.started_at, execution.completed_at)
+        if duration is not None:
+            durations.setdefault(execution.node_id, []).append(duration)
+
+    for node_id, values in durations.items():
+        stats[node_id]["avg_duration_ms"] = int(sum(values) / len(values))
+
+    return stats
+
+
 def get_flow_run(db: Session, organization_id: int, store_id: int, flow_id: int, run_id: int) -> dict:
     _flow_or_404(db, organization_id, store_id, flow_id)
     run = db.get(AutomationFlowRun, run_id)
@@ -281,8 +346,13 @@ def get_flow_run(db: Session, organization_id: int, store_id: int, flow_id: int,
     recipients = db.query(AutomationFlowRecipientExecution).filter(
         AutomationFlowRecipientExecution.flow_run_id == run_id
     ).all()
+    version = db.get(AutomationFlowVersion, run.flow_version_id)
+    graph = version.graph if version else {"nodes": [], "edges": []}
+
     result = _sr(run)
     result["recipients"] = [_srec(r) for r in recipients]
+    result["graph"] = graph
+    result["node_stats"] = _run_node_stats(db, run, graph)
     return result
 
 
@@ -328,11 +398,54 @@ def get_flow_recipient_detail(db: Session, organization_id: int, store_id: int, 
          "provider_message_id": ne.provider_message_id,
          "error_code": ne.error_code, "error_message": ne.error_message,
          "metadata": ne.extra_data,
+         "duration_ms": _duration_ms(ne.started_at, ne.completed_at),
          "started_at": ne.started_at.isoformat() if ne.started_at else None,
          "completed_at": ne.completed_at.isoformat() if ne.completed_at else None}
         for ne in node_execs
     ]
     return result
+
+
+def _recalculate_flow_run(db: Session, run: AutomationFlowRun) -> None:
+    db.flush()
+    statuses = [
+        row[0]
+        for row in db.query(AutomationFlowRecipientExecution.status).filter(
+            AutomationFlowRecipientExecution.flow_run_id == run.id,
+        ).all()
+    ]
+    run.failed_recipients = sum(
+        1 for status in statuses if status in ("failed", "ambiguous")
+    )
+    run.completed_recipients = sum(
+        1 for status in statuses if status == "completed"
+    )
+    terminal = run.failed_recipients + run.completed_recipients
+    if terminal < run.total_recipients:
+        run.status = "pending"
+        run.completed_at = None
+    elif run.failed_recipients:
+        run.status = "partial"
+    else:
+        run.status = "completed"
+
+
+def _reset_flow_recipient(
+    recipient: AutomationFlowRecipientExecution,
+    now: datetime,
+    *,
+    node_id: str | None = None,
+) -> None:
+    recipient.status = "active"
+    if node_id is not None:
+        recipient.current_node_id = node_id
+    recipient.error_code = None
+    recipient.error_message = None
+    recipient.claim_token = None
+    recipient.claim_expires_at = None
+    recipient.next_action_at = now
+    recipient.started_at = now
+    recipient.completed_at = None
 
 
 def retry_flow_recipient(db: Session, organization_id: int, store_id: int, flow_id: int, run_id: int, recipient_id: int) -> dict:
@@ -345,27 +458,66 @@ def retry_flow_recipient(db: Session, organization_id: int, store_id: int, flow_
         raise FlowConflictError(f"Cannot retry recipient in '{recipient.status}' status")
 
     now = utcnow()
-    recipient.status = "active"
-    recipient.error_code = None
-    recipient.error_message = None
-    recipient.claim_token = None
-    recipient.claim_expires_at = None
-    recipient.next_action_at = now
-    recipient.started_at = now
-    recipient.completed_at = None
+    _reset_flow_recipient(recipient, now)
 
     run = db.get(AutomationFlowRun, run_id)
-    statuses = [r[0] for r in db.query(AutomationFlowRecipientExecution.status).filter(
-        AutomationFlowRecipientExecution.flow_run_id == run_id,
-    ).all()]
-    run.failed_recipients = sum(1 for s in statuses if s in ("failed", "ambiguous"))
-    run.completed_recipients = sum(1 for s in statuses if s == "completed")
-    if run.status == "completed":
-        run.status = "pending"
-        run.completed_at = None
+    if not run or run.flow_id != flow_id:
+        raise FlowNotFoundError("Run not found")
+    _recalculate_flow_run(db, run)
 
     db.commit()
     return _srec(recipient)
+
+
+def retry_flow_recipient_from_node(
+    db: Session,
+    organization_id: int,
+    store_id: int,
+    flow_id: int,
+    run_id: int,
+    recipient_id: int,
+    node_id: str,
+) -> dict:
+    """Restart one terminal recipient from an explicit node in its run version."""
+    _flow_or_404(db, organization_id, store_id, flow_id)
+
+    run = db.get(AutomationFlowRun, run_id)
+    if not run or run.flow_id != flow_id:
+        raise FlowNotFoundError("Run not found")
+
+    recipient = db.get(AutomationFlowRecipientExecution, recipient_id)
+    if not recipient or recipient.flow_run_id != run_id:
+        raise FlowNotFoundError("Recipient not found")
+    if recipient.status not in ("failed", "ambiguous", "completed"):
+        raise FlowConflictError(
+            f"Cannot retry recipient in '{recipient.status}' status"
+        )
+
+    version = db.get(AutomationFlowVersion, recipient.flow_version_id)
+    if not version or version.id != run.flow_version_id:
+        raise FlowNotFoundError("Flow version not found")
+
+    node = next(
+        (
+            candidate
+            for candidate in version.graph.get("nodes", [])
+            if candidate.get("id") == node_id
+        ),
+        None,
+    )
+    if not node:
+        raise FlowNotFoundError("Node not found in run version")
+    if node.get("type") == "trigger":
+        raise FlowConflictError("Cannot restart a recipient from a trigger node")
+
+    now = utcnow()
+    _reset_flow_recipient(recipient, now, node_id=node_id)
+    _recalculate_flow_run(db, run)
+    db.commit()
+
+    result = _srec(recipient)
+    result["retry_from_node_id"] = node_id
+    return result
 
 
 def simulate_flow(db: Session, organization_id: int, store_id: int, graph: dict) -> dict:
@@ -384,6 +536,7 @@ def simulate_flow(db: Session, organization_id: int, store_id: int, graph: dict)
     message_nodes = [n for n in nodes if n.get("type") == "message"]
     wait_nodes = [n for n in nodes if n.get("type") == "wait"]
     condition_nodes = [n for n in nodes if n.get("type") == "condition"]
+    tool_nodes = [n for n in nodes if n.get("type") == "tool"]
     end_nodes = [n for n in nodes if n.get("type") == "end"]
 
     if len(message_nodes) == 0:
@@ -396,6 +549,6 @@ def simulate_flow(db: Session, organization_id: int, store_id: int, graph: dict)
         "summary": {
             "total_nodes": len(nodes), "message_nodes": len(message_nodes),
             "wait_nodes": len(wait_nodes), "condition_nodes": len(condition_nodes),
-            "end_nodes": len(end_nodes),
+            "tool_nodes": len(tool_nodes), "end_nodes": len(end_nodes),
         },
     }

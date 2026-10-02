@@ -1,34 +1,97 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import {
+  BarChart3,
+  Bot,
+  Braces,
   Clock,
   GitBranch,
   MessageSquare,
+  PackageSearch,
   Search,
+  ShoppingBag,
   Square,
+  Store,
+  Truck,
+  Users,
+  Webhook,
   Zap,
 } from "lucide-react";
-import type { FlowNodeType } from "./flowGraphUtils";
+import type {
+  FlowNodeConfig,
+  FlowNodeType,
+} from "./flowGraphUtils";
+import {
+  FLOW_TOOL_CATALOG,
+  type FlowToolCatalogItem,
+} from "./flowToolCatalog";
 
 interface Props {
   canWrite: boolean;
-  onAdd: (type: FlowNodeType) => void;
+  onAdd: (
+    type: FlowNodeType,
+    config?: Partial<FlowNodeConfig>,
+  ) => void;
 }
 
-const ITEMS: Array<{
+interface PaletteItem {
+  id: string;
   type: FlowNodeType;
   title: string;
   description: string;
   group: string;
   icon: typeof Zap;
-}> = [
+  config?: Partial<FlowNodeConfig>;
+  planned?: boolean;
+}
+
+const CORE_ITEMS: PaletteItem[] = [
   {
+    id: "trigger-manual",
     type: "trigger",
-    title: "Trigger",
-    description: "Inicia el flujo por evento o manualmente.",
+    title: "Inicio manual",
+    description: "Ejecuta el flujo manualmente o sobre una audiencia.",
     group: "Inicio",
     icon: Zap,
+    config: { trigger_type: "manual" },
   },
   {
+    id: "trigger-order-created",
+    type: "trigger",
+    title: "Pedido creado",
+    description: "Inicia el flujo cuando se registra un pedido.",
+    group: "Inicio",
+    icon: ShoppingBag,
+    config: { trigger_type: "order_created" },
+  },
+  {
+    id: "trigger-failed-order",
+    type: "trigger",
+    title: "Pedido fallido",
+    description: "Inicia el flujo ante un pedido fallido.",
+    group: "Inicio",
+    icon: ShoppingBag,
+    config: { trigger_type: "failed_order" },
+  },
+  {
+    id: "trigger-customer-created",
+    type: "trigger",
+    title: "Cliente creado",
+    description: "Inicia el flujo al crear un cliente.",
+    group: "Inicio",
+    icon: Users,
+    config: { trigger_type: "customer_created" },
+  },
+  {
+    id: "trigger-customer-segment",
+    type: "trigger",
+    title: "Segmento de cliente",
+    description: "Inicia el flujo según clasificación del cliente.",
+    group: "Inicio",
+    icon: Users,
+    config: { trigger_type: "customer_segment" },
+  },
+  {
+    id: "condition",
     type: "condition",
     title: "Condición",
     description: "Divide el flujo según datos del cliente.",
@@ -36,6 +99,7 @@ const ITEMS: Array<{
     icon: GitBranch,
   },
   {
+    id: "wait",
     type: "wait",
     title: "Espera",
     description: "Pausa la ejecución por minutos, horas o días.",
@@ -43,13 +107,15 @@ const ITEMS: Array<{
     icon: Clock,
   },
   {
+    id: "message",
     type: "message",
     title: "WhatsApp",
     description: "Envía un mensaje o plantilla al cliente.",
-    group: "Acciones",
+    group: "Canales",
     icon: MessageSquare,
   },
   {
+    id: "end",
     type: "end",
     title: "Fin",
     description: "Finaliza una rama del flujo.",
@@ -58,34 +124,100 @@ const ITEMS: Array<{
   },
 ];
 
+const TOOL_ICONS: Record<FlowToolCatalogItem["group"], typeof Zap> = {
+  Pedidos: ShoppingBag,
+  Productos: PackageSearch,
+  Clientes: Users,
+  Proveedores: Truck,
+  Analytics: BarChart3,
+};
+
+const TOOL_ITEMS: PaletteItem[] = FLOW_TOOL_CATALOG.map((tool) => ({
+  id: `tool-${tool.name}`,
+  type: "tool",
+  title: tool.title,
+  description: tool.description,
+  group: tool.group,
+  icon: TOOL_ICONS[tool.group],
+  config: {
+    tool_name: tool.name,
+    arguments: tool.defaultArguments,
+  },
+}));
+
+const PLANNED_ITEMS: PaletteItem[] = [
+  {
+    id: "planned-shopify-write",
+    type: "tool",
+    title: "Acción Shopify",
+    description: "Escrituras sobre pedidos/productos con control de aprobación.",
+    group: "Próximamente",
+    icon: Store,
+    planned: true,
+  },
+  {
+    id: "planned-http",
+    type: "tool",
+    title: "HTTP / Webhook",
+    description: "Requests salientes con allowlist y protección SSRF.",
+    group: "Próximamente",
+    icon: Webhook,
+    planned: true,
+  },
+  {
+    id: "planned-variables",
+    type: "tool",
+    title: "Variables",
+    description: "Guardar outputs y reutilizarlos en nodos posteriores.",
+    group: "Próximamente",
+    icon: Braces,
+    planned: true,
+  },
+  {
+    id: "planned-ai",
+    type: "tool",
+    title: "IA",
+    description: "Transformar, clasificar o generar datos con modelos.",
+    group: "Próximamente",
+    icon: Bot,
+    planned: true,
+  },
+];
+
+const ITEMS = [...CORE_ITEMS, ...TOOL_ITEMS, ...PLANNED_ITEMS];
+
 export default function FlowNodePalette({ canWrite, onAdd }: Props) {
   const [query, setQuery] = useState("");
+  const term = query.trim().toLowerCase();
+  const visible = term
+    ? ITEMS.filter((item) =>
+        [item.title, item.description, item.group]
+          .join(" ")
+          .toLowerCase()
+          .includes(term),
+      )
+    : ITEMS;
+  const groups = [...new Set(visible.map((item) => item.group))];
 
-  const visible = useMemo(() => {
-    const term = query.trim().toLowerCase();
-    if (!term) return ITEMS;
-    return ITEMS.filter((item) =>
-      [item.title, item.description, item.group]
-        .join(" ")
-        .toLowerCase()
-        .includes(term),
-    );
-  }, [query]);
-
-  const groups = useMemo(
-    () => [...new Set(visible.map((item) => item.group))],
-    [visible],
-  );
+  function payload(item: PaletteItem) {
+    return JSON.stringify({
+      type: item.type,
+      config: item.config || {},
+    });
+  }
 
   function handleDragStart(
     event: React.DragEvent<HTMLButtonElement>,
-    type: FlowNodeType,
+    item: PaletteItem,
   ) {
-    if (!canWrite) {
+    if (!canWrite || item.planned) {
       event.preventDefault();
       return;
     }
-    event.dataTransfer.setData("application/diaglob-flow-node", type);
+    event.dataTransfer.setData(
+      "application/diaglob-flow-node",
+      payload(item),
+    );
     event.dataTransfer.effectAllowed = "move";
   }
 
@@ -93,7 +225,7 @@ export default function FlowNodePalette({ canWrite, onAdd }: Props) {
     <aside className="flow-palette">
       <div className="flow-palette-heading">
         <span>Herramientas</span>
-        <strong>Nodos</strong>
+        <strong>Catálogo operativo</strong>
       </div>
 
       <label className="flow-palette-search">
@@ -101,7 +233,7 @@ export default function FlowNodePalette({ canWrite, onAdd }: Props) {
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Buscar nodo..."
+          placeholder="Buscar nodo, CJ, pedido..."
         />
       </label>
 
@@ -115,20 +247,37 @@ export default function FlowNodePalette({ canWrite, onAdd }: Props) {
                 const Icon = item.icon;
                 return (
                   <button
-                    key={item.type}
+                    key={item.id}
                     type="button"
-                    className="flow-palette-item"
-                    draggable={canWrite}
-                    disabled={!canWrite}
+                    className={
+                      item.planned
+                        ? "flow-palette-item planned"
+                        : "flow-palette-item"
+                    }
+                    draggable={canWrite && !item.planned}
+                    disabled={!canWrite || item.planned}
                     onDragStart={(event) =>
-                      handleDragStart(event, item.type)}
-                    onClick={() => onAdd(item.type)}
+                      handleDragStart(event, item)}
+                    onClick={() =>
+                      !item.planned
+                      && onAdd(item.type, item.config)}
                   >
-                    <span className={`flow-palette-icon type-${item.type}`}>
+                    <span
+                      className={
+                        `flow-palette-icon type-${item.type}`
+                      }
+                    >
                       <Icon size={15} />
                     </span>
                     <span>
-                      <strong>{item.title}</strong>
+                      <strong>
+                        {item.title}
+                        {item.planned && (
+                          <em className="flow-planned-badge">
+                            Próximamente
+                          </em>
+                        )}
+                      </strong>
                       <small>{item.description}</small>
                     </span>
                   </button>
@@ -139,7 +288,9 @@ export default function FlowNodePalette({ canWrite, onAdd }: Props) {
       </div>
 
       <p className="flow-palette-help">
-        Arrastra un nodo al canvas o haz clic para agregarlo.
+        Solo las capacidades ejecutables están habilitadas. Las acciones
+        sensibles seguirán requiriendo controles adicionales antes de
+        habilitarse en segundo plano.
       </p>
     </aside>
   );

@@ -13,6 +13,7 @@ import {
   addNodeToGraph,
   type FlowGraph,
   type FlowNode as FlowNodeData,
+  type FlowNodeConfig,
   type FlowNodeType,
 } from "./flowGraphUtils";
 
@@ -173,6 +174,7 @@ function FlowBuilderInner({
     (
       type: FlowNodeType,
       position?: { x: number; y: number },
+      config?: Partial<FlowNodeConfig>,
     ) => {
       if (!canWrite) return;
 
@@ -185,6 +187,7 @@ function FlowBuilderInner({
         graphRef.current,
         type,
         position || fallbackPosition,
+        config,
       );
 
       if (next === graphRef.current) return;
@@ -200,7 +203,8 @@ function FlowBuilderInner({
     <div className="flow-builder-v2">
       <FlowNodePalette
         canWrite={canWrite}
-        onAdd={(type) => addNode(type)}
+        onAdd={(type, config) =>
+          addNode(type, undefined, config)}
       />
       <div className="flow-canvas-workspace">
         <div className="flow-canvas-hint">

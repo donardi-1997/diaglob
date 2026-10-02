@@ -232,6 +232,7 @@ export default function FlowList({ canWrite, storeId }: Props) {
       <FlowRuns
         storeId={storeId}
         flowId={selectedFlow.id}
+        canWrite={canWrite}
         onBack={() => {
           setView("list");
           setSelectedFlow(null);

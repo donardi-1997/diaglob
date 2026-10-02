@@ -19,7 +19,7 @@ from .models import (
     AutomationFlow, AutomationFlowVersion, AutomationFlowRun,
     AutomationFlowRecipientExecution, AutomationNodeExecution,
     AutomationDeliveryAttempt, AutomationRateLimit,
-    Customer, Store, WhatsAppConnection,
+    Customer, OrganizationMembership, Store, WhatsAppConnection,
 )
 from .whatsapp_client import WhatsAppDeliveryError, send_whatsapp_template_message, send_whatsapp_text_message
 from .whatsapp_compliance import evaluate_whatsapp_delivery_eligibility, get_last_whatsapp_inbound_by_customer
@@ -222,6 +222,10 @@ def process_flow_recipient(
     if run.status not in ("pending", "running"):
         return "run_not_active"
     if node_type == "end":
+        _record_node_execution(
+            db, recipient, node["id"], "end", "completed", now,
+            outcome="flow_completed",
+        )
         _finish_flow_recipient(db, recipient, "completed", now)
         return "completed"
     if node_type == "wait":
@@ -230,6 +234,8 @@ def process_flow_recipient(
         return _process_condition_node(db, recipient, node, graph, now)
     if node_type == "message":
         return _process_message_node(db, recipient, node, run, now, sender)
+    if node_type == "tool":
+        return _process_tool_node(db, recipient, node, graph, run, now)
     _advance_flow(db, recipient, graph, node["id"], now)
     return "advanced"
 
@@ -279,6 +285,131 @@ def _process_condition_node(db: Session, recipient: AutomationFlowRecipientExecu
     branch = "true" if result else "false"
     _record_node_execution(db, recipient, node["id"], "condition", "completed", now, outcome=branch)
     _advance_flow(db, recipient, graph, node["id"], now, outcome=branch)
+    return "advanced"
+
+
+def _resolve_tool_value(value, customer: Customer):
+    """Resolve a small, typed runtime context inside tool arguments."""
+    context = {
+        "customer.id": customer.id,
+        "customer.name": customer.name,
+        "customer.email": customer.email,
+        "customer.phone": customer.phone,
+        "customer.country": customer.country_code,
+    }
+    if isinstance(value, dict):
+        return {key: _resolve_tool_value(item, customer) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_resolve_tool_value(item, customer) for item in value]
+    if not isinstance(value, str):
+        return value
+
+    stripped = value.strip()
+    if stripped.startswith("{{") and stripped.endswith("}}"):
+        key = stripped[2:-2].strip()
+        if key in context:
+            return context[key]
+
+    resolved = value
+    for key, replacement in context.items():
+        resolved = resolved.replace("{{" + key + "}}", "" if replacement is None else str(replacement))
+    return resolved
+
+
+def _process_tool_node(
+    db: Session,
+    recipient: AutomationFlowRecipientExecution,
+    node: dict,
+    graph: dict,
+    run: AutomationFlowRun,
+    now: datetime,
+) -> str:
+    """Execute a confirmation-free Diaglob capability inside a flow."""
+    from .services.agent_tool_executor import execute_agent_tool
+
+    config = node.get("config", {})
+    tool_name = str(config.get("tool_name") or "")
+    flow = db.get(AutomationFlow, run.flow_id)
+    customer = db.get(Customer, recipient.customer_id)
+
+    if not flow or not flow.created_by:
+        _record_node_execution(
+            db, recipient, node["id"], "tool", "failed", now,
+            error_code="flow_creator_missing",
+            message="Flow creator is unavailable for permission evaluation",
+        )
+        _finish_flow_recipient(
+            db, recipient, "failed", now,
+            code="flow_creator_missing",
+            message="Flow creator is unavailable for permission evaluation",
+        )
+        return "failed"
+
+    membership = db.query(OrganizationMembership).filter(
+        OrganizationMembership.user_id == flow.created_by,
+        OrganizationMembership.organization_id == run.organization_id,
+        OrganizationMembership.active.is_(True),
+    ).first()
+    if not membership:
+        _record_node_execution(
+            db, recipient, node["id"], "tool", "failed", now,
+            error_code="flow_creator_permission_missing",
+            message="Flow creator no longer has an active organization membership",
+        )
+        _finish_flow_recipient(
+            db, recipient, "failed", now,
+            code="flow_creator_permission_missing",
+            message="Flow creator no longer has an active organization membership",
+        )
+        return "failed"
+
+    if not customer:
+        _finish_flow_recipient(
+            db, recipient, "failed", now,
+            code="customer_missing",
+            message="Customer not found",
+        )
+        return "failed"
+
+    arguments = _resolve_tool_value(config.get("arguments", {}), customer)
+    result = execute_agent_tool(
+        db,
+        membership,
+        tool_name=tool_name,
+        store_id=run.store_id,
+        arguments=arguments if isinstance(arguments, dict) else {},
+    )
+
+    if result.get("status") != "success":
+        code = str(result.get("code") or "flow_tool_failed")
+        message = str(result.get("message") or result.get("status") or "Tool execution failed")
+        _record_node_execution(
+            db, recipient, node["id"], "tool", "failed", now,
+            error_code=code,
+            message=message,
+            metadata={
+                "tool_name": tool_name,
+                "arguments": arguments,
+                "tool_result": result,
+            },
+        )
+        _finish_flow_recipient(
+            db, recipient, "failed", now,
+            code=code,
+            message=message,
+        )
+        return "failed"
+
+    _record_node_execution(
+        db, recipient, node["id"], "tool", "completed", now,
+        outcome="success",
+        metadata={
+            "tool_name": tool_name,
+            "arguments": arguments,
+            "output": result.get("result"),
+        },
+    )
+    _advance_flow(db, recipient, graph, node["id"], now)
     return "advanced"
 
 
@@ -445,13 +576,19 @@ def _finish_flow_recipient(db: Session, recipient: AutomationFlowRecipientExecut
     db.commit()
 
 
-def _record_node_execution(db: Session, recipient: AutomationFlowRecipientExecution, node_id: str, node_type: str, status: str, now: datetime, *, outcome: str | None = None, error_code: str | None = None, message: str | None = None, provider_id: str | None = None) -> AutomationNodeExecution:
+def _record_node_execution(db: Session, recipient: AutomationFlowRecipientExecution, node_id: str, node_type: str, status: str, now: datetime, *, outcome: str | None = None, error_code: str | None = None, message: str | None = None, provider_id: str | None = None, metadata: dict | None = None) -> AutomationNodeExecution:
     ne = AutomationNodeExecution(
         flow_recipient_execution_id=recipient.id,
         node_id=node_id, node_type=node_type, status=status,
         started_at=now, outcome=outcome,
         error_code=error_code, error_message=message,
         provider_message_id=provider_id,
+        extra_data=metadata,
+        completed_at=(
+            now
+            if status in {"completed", "skipped", "failed", "ambiguous"}
+            else None
+        ),
     )
     db.add(ne)
     db.flush()

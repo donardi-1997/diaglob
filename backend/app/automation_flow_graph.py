@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
-NODE_TYPES = {"trigger", "wait", "message", "condition", "end"}
+NODE_TYPES = {"trigger", "wait", "message", "condition", "tool", "end"}
 MAX_NODES = 50
 MAX_MESSAGE_NODES = 10
 MAX_WAIT_DAYS = 365
@@ -28,6 +28,20 @@ CONDITION_OPERATORS = {
 MESSAGE_MODES = {"free_form", "template", "auto"}
 
 WAIT_UNITS = {"minutes", "hours", "days"}
+
+# Read-only / confirmation-free capabilities that may run unattended inside a flow.
+# Write, financial and destructive agent tools stay excluded from the automation
+# runtime until an explicit approval model exists for scheduled execution.
+FLOW_TOOL_NAMES = {
+    "orders.list",
+    "orders.get",
+    "products.list",
+    "customers.search",
+    "tracking.get",
+    "suppliers.cj.search",
+    "suppliers.cj.quote",
+    "analytics.summary",
+}
 
 
 def validate_graph(graph: dict[str, Any]) -> list[str]:
@@ -95,6 +109,14 @@ def validate_graph(graph: dict[str, Any]) -> list[str]:
                 errors.append(f"Node {nid}: invalid message_mode '{mode}'")
             if not config.get("message_template"):
                 errors.append(f"Node {nid}: message_template is required")
+
+        elif ntype == "tool":
+            tool_name = config.get("tool_name", "")
+            if tool_name not in FLOW_TOOL_NAMES:
+                errors.append(f"Node {nid}: unsupported flow tool '{tool_name}'")
+            arguments = config.get("arguments", {})
+            if not isinstance(arguments, dict):
+                errors.append(f"Node {nid}: tool arguments must be an object")
 
         elif ntype == "condition":
             field = config.get("field", "")
