@@ -10,6 +10,7 @@ from app.models import (
     Store,
     User,
 )
+from app.model_domains.supplier_integrations import SupplierConnection
 from app.services.operations_integrations import (
     get_dynamic_operations_summary,
     get_operations_integrations,
@@ -222,3 +223,36 @@ def test_other_tenant_integrations_are_not_exposed():
         assert all(item["provider"] != "nuvemshop" for item in integrations)
     finally:
         db.close()
+
+def test_cj_supplier_status_is_visible_in_operations_summary():
+    db = _session()
+    try:
+        _seed_org_store(
+            db,
+            org_id=1,
+            store_id=1,
+            country="CO",
+            currency="COP",
+        )
+        db.add(
+            SupplierConnection(
+                organization_id=1,
+                store_id=1,
+                provider="cj",
+                status="connected",
+                external_account_id="cj-open-id",
+                external_account_name="Diaglob CJ",
+            )
+        )
+        db.commit()
+
+        integrations = get_operations_integrations(db, 1, 1)
+        by_key = {item["key"]: item for item in integrations}
+
+        assert by_key["supplier:cj"]["provider"] == "cj"
+        assert by_key["supplier:cj"]["name"] == "CJ Dropshipping"
+        assert by_key["supplier:cj"]["connected"] is True
+        assert by_key["supplier:cj"]["status"] == "connected"
+    finally:
+        db.close()
+
