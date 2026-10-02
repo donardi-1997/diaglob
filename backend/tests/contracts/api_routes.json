@@ -785,6 +785,10 @@
   ],
   [
     "POST",
+    "/api/stores/{store_id}/shopify/webhooks/ensure"
+  ],
+  [
+    "POST",
     "/api/stores/{store_id}/suppliers/cj/connect"
   ],
   [
@@ -850,6 +854,10 @@
   [
     "POST",
     "/api/webhooks/payments/{provider}"
+  ],
+  [
+    "POST",
+    "/api/webhooks/shopify"
   ],
   [
     "POST",

@@ -1,3 +1,5 @@
+import json
+import logging
 import os
 
 from fastapi import (
@@ -30,12 +32,20 @@ from ..services.shopify_service import (
     ShopifyProviderError,
     create_poc as svc_create_poc,
     disconnect as svc_disconnect,
+    ensure_order_webhooks as svc_ensure_order_webhooks,
     get_order as svc_get_order,
     list_orders as svc_list_orders,
     process_oauth_callback as svc_process_oauth_callback,
     start_oauth as svc_start_oauth,
     sync_products as svc_sync_products,
     test_connection as svc_test_connection,
+)
+from ..services.shopify_webhook_service import (
+    SUPPORTED_TOPICS,
+    ShopifyWebhookError,
+    process_shopify_order_webhook,
+    resolve_shopify_connection,
+    verify_shopify_webhook_hmac,
 )
 
 router = APIRouter()
@@ -189,6 +199,50 @@ def disconnect_shopify(
         _map_oauth_error(exc)
 
 
+@router.post("/api/stores/{store_id}/shopify/webhooks/ensure")
+def shopify_ensure_order_webhooks(
+    store_id: int,
+    membership: OrganizationMembership = Depends(
+        require_permission("stores.write")
+    ),
+    db: Session = Depends(get_db),
+):
+    try:
+        return svc_ensure_order_webhooks(
+            db,
+            membership.organization_id,
+            store_id,
+        )
+    except ShopifyNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "SHOPIFY_NOT_CONNECTED",
+                "message": str(exc),
+            },
+        ) from exc
+    except ShopifyAuthError as exc:
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "code": "SHOPIFY_AUTH_FAILED",
+                "message": str(exc),
+            },
+        ) from exc
+    except (
+        ShopifyAPIError,
+        ShopifyGraphQLError,
+        ShopifyUserError,
+    ) as exc:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "code": "SHOPIFY_WEBHOOK_SETUP_FAILED",
+                "message": str(exc),
+            },
+        ) from exc
+
+
 @router.post("/api/stores/{store_id}/shopify/test")
 def shopify_test_connection(
     store_id: int,
@@ -331,3 +385,113 @@ def get_order(
         raise HTTPException(status_code=404, detail="Order not found")
 
     return order
+
+# --- Shopify order webhooks ---
+
+
+@router.post("/api/webhooks/shopify")
+async def shopify_order_webhook(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Receive authenticated Shopify order lifecycle webhooks."""
+
+    raw_body = await request.body()
+    hmac_header = request.headers.get(
+        "x-shopify-hmac-sha256"
+    )
+
+    if not verify_shopify_webhook_hmac(
+        raw_body,
+        hmac_header,
+    ):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid Shopify webhook signature",
+        )
+
+    topic = (
+        request.headers.get("x-shopify-topic", "")
+        .strip()
+        .lower()
+    )
+    shop_domain = (
+        request.headers.get(
+            "x-shopify-shop-domain",
+            "",
+        )
+        .strip()
+        .lower()
+    )
+
+    if not topic or not shop_domain:
+        raise HTTPException(
+            status_code=400,
+            detail="Missing Shopify webhook headers",
+        )
+
+    if topic not in SUPPORTED_TOPICS:
+        return {
+            "ok": True,
+            "action": "ignored",
+            "topic": topic,
+        }
+
+    connection = resolve_shopify_connection(
+        db,
+        shop_domain,
+    )
+    if connection is None:
+        # Authenticated webhook from a shop that is no longer connected.
+        # Acknowledge it so Shopify does not keep retrying obsolete delivery.
+        return {
+            "ok": True,
+            "action": "ignored",
+            "topic": topic,
+        }
+
+    try:
+        payload = json.loads(
+            raw_body.decode("utf-8")
+        )
+    except (
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+    ) as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid JSON payload",
+        ) from exc
+
+    try:
+        return process_shopify_order_webhook(
+            db,
+            connection=connection,
+            topic=topic,
+            payload=payload,
+        )
+    except ShopifyWebhookError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": str(exc),
+                "message": str(exc)
+                .replace("_", " ")
+                .title(),
+            },
+        ) from exc
+    except Exception:
+        db.rollback()
+        logging.getLogger(__name__).exception(
+            "Shopify webhook processing failed "
+            "for topic=%s shop=%s",
+            topic,
+            shop_domain,
+        )
+        # Non-2XX responses make Shopify retry transient failures.
+        raise HTTPException(
+            status_code=500,
+            detail="Shopify webhook processing failed",
+        )
+

@@ -5,7 +5,7 @@ import httpx
 
 SHOPIFY_GRAPHQL_VERSION = (
     os.getenv(
-        "SHOPIFY_API_VERSION", "2024-10"
+        "SHOPIFY_API_VERSION", "2026-07"
     ).strip()
     or "2024-10"
 )
