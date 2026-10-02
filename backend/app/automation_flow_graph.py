@@ -34,6 +34,8 @@ CONDITION_FIELDS = {
     "has_successful_order_since_flow_start",
     "order.is_cod", "order.payment_status", "order.total",
     "order.currency", "order.country", "order.fulfillment_status",
+    "shipment.status", "shipment.carrier",
+    "shipment.destination_country", "shipment.provider",
 }
 
 CONDITION_OPERATORS = {
