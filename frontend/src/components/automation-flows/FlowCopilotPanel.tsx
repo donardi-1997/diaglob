@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import {
   Bot,
   Check,
@@ -85,16 +85,15 @@ export default function FlowCopilotPanel({
 
   const approval = pendingApproval(session);
 
-  const lastAssistantText = useMemo(() => {
-    const messages = session?.messages || [];
-    for (let index = messages.length - 1; index >= 0; index -= 1) {
-      const message = messages[index];
-      if (message.role === "assistant" && message.text?.trim()) {
-        return message.text.trim();
-      }
+  let lastAssistantText = "";
+  const messages = session?.messages || [];
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.role === "assistant" && message.text?.trim()) {
+      lastAssistantText = message.text.trim();
+      break;
     }
-    return "";
-  }, [session]);
+  }
 
   async function syncIfApplied(next: AgentChatSession) {
     if (flowWasUpdated(next, flowId)) {
