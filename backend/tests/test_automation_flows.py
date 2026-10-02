@@ -892,7 +892,12 @@ class TestFlowExecution:
         session, org, store = db
         c = self._customer(db)
         c.primary_segment = "vip"
-        c.orders_count = 10
+        profile = session.query(CustomerStoreProfile).filter(
+            CustomerStoreProfile.customer_id == c.id,
+            CustomerStoreProfile.store_id == store.id,
+            CustomerStoreProfile.organization_id == org.id,
+        ).one()
+        profile.orders_count = 10
         session.commit()
         flow = AutomationFlow(
             organization_id=org.id, store_id=store.id,
