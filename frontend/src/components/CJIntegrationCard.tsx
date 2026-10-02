@@ -5,6 +5,7 @@ import {
   ChevronDown,
   ChevronUp,
   Loader2,
+  Link2,
   Package,
   Plug,
   RefreshCw,
@@ -17,12 +18,15 @@ import { useTranslation } from "react-i18next";
 
 import {
   connectCJ,
+  deleteCJVariantMapping,
   disconnectCJ,
   enableCJTrackingWebhook,
   getCJStatus,
   getCJStock,
+  getCJVariantMappings,
   getCJVariants,
   quoteCJFreight,
+  saveCJVariantMapping,
   searchCJProducts,
   testCJConnection,
   type CJConnectionStatus,
@@ -30,6 +34,7 @@ import {
   type CJProduct,
   type CJStockResult,
   type CJVariant,
+  type CJVariantMapping,
 } from "../services/suppliers";
 import "../cj-integration.css";
 
@@ -74,6 +79,17 @@ const COPY = {
     stockTotal: "Inventario total",
     warehouses: "almacenes",
     freightEmpty: "CJ no devolvió opciones de envío para esta combinación.",
+    mappingTitle: "Vincular productos",
+    mappingDescription: "Elige una variante de Shopify y asígnale la variante CJ que la abastece.",
+    shopifyVariant: "Variante Shopify",
+    selectStoreVariant: "Selecciona una variante de Shopify",
+    mapSelected: "Vincular variante CJ seleccionada",
+    unmap: "Quitar vínculo",
+    mappingSaved: "Vínculo Shopify ↔ CJ guardado.",
+    mappingRemoved: "Vínculo eliminado.",
+    mapped: "vinculadas",
+    unmapped: "sin vincular",
+    noStoreVariants: "Sin variantes Shopify sincronizadas. Sincroniza primero el catálogo de la tienda.",
   },
   en: {
     description: "Connect CJ Dropshipping to browse catalog, stock, freight and prepare supplier orders.",
@@ -107,6 +123,17 @@ const COPY = {
     stockTotal: "Total inventory",
     warehouses: "warehouses",
     freightEmpty: "CJ returned no shipping options for this combination.",
+    mappingTitle: "Product mapping",
+    mappingDescription: "Choose a Shopify variant and assign the CJ variant that supplies it.",
+    shopifyVariant: "Shopify variant",
+    selectStoreVariant: "Select a Shopify variant",
+    mapSelected: "Map selected CJ variant",
+    unmap: "Remove mapping",
+    mappingSaved: "Shopify ↔ CJ mapping saved.",
+    mappingRemoved: "Mapping removed.",
+    mapped: "mapped",
+    unmapped: "unmapped",
+    noStoreVariants: "No synchronized Shopify variants. Sync the store catalog first.",
   },
   "pt-BR": {
     description: "Conecte a CJ Dropshipping para consultar catálogo, estoque, frete e preparar pedidos do fornecedor.",
@@ -140,6 +167,17 @@ const COPY = {
     stockTotal: "Estoque total",
     warehouses: "armazéns",
     freightEmpty: "A CJ não retornou opções de envio para esta combinação.",
+    mappingTitle: "Vincular produtos",
+    mappingDescription: "Escolha uma variante da Shopify e associe a variante CJ que a abastece.",
+    shopifyVariant: "Variante Shopify",
+    selectStoreVariant: "Selecione uma variante da Shopify",
+    mapSelected: "Vincular variante CJ selecionada",
+    unmap: "Remover vínculo",
+    mappingSaved: "Vínculo Shopify ↔ CJ salvo.",
+    mappingRemoved: "Vínculo removido.",
+    mapped: "vinculadas",
+    unmapped: "sem vínculo",
+    noStoreVariants: "Nenhuma variante Shopify sincronizada. Sincronize primeiro o catálogo da loja.",
   },
 } as const;
 
@@ -190,6 +228,8 @@ export default function CJIntegrationCard({
   const [origin, setOrigin] = useState("CN");
   const [destination, setDestination] = useState((storeCountryCode || "US").toUpperCase());
   const [quantity, setQuantity] = useState(1);
+  const [mappings, setMappings] = useState<CJVariantMapping[]>([]);
+  const [mappingVariantId, setMappingVariantId] = useState<number | "">("");
 
   useEffect(() => {
     setDestination((storeCountryCode || "US").toUpperCase());
@@ -211,10 +251,56 @@ export default function CJIntegrationCard({
 
   const connected = status?.connected === true;
 
+  useEffect(() => {
+    if (!connected) {
+      setMappings([]);
+      setMappingVariantId("");
+      return;
+    }
+
+    let cancelled = false;
+    getCJVariantMappings(storeId)
+      .then((result) => {
+        if (cancelled) return;
+        setMappings(result.items);
+        setMappingVariantId((current) => {
+          if (current && result.items.some((item) => item.product_variant_id === current)) {
+            return current;
+          }
+          return (
+            result.items.find((item) => !item.mapped)?.product_variant_id
+            || result.items[0]?.product_variant_id
+            || ""
+          );
+        });
+      })
+      .catch((err) => {
+        if (!cancelled) setError(errorMessage(err, copy.error));
+      });
+
+    return () => { cancelled = true; };
+  }, [connected, storeId, copy.error]);
+
   const accountLabel = useMemo(
     () => status?.external_account_name || status?.external_account_id || "CJ Dropshipping",
     [status],
   );
+
+  const selectedMapping = useMemo(
+    () => mappings.find((item) => item.product_variant_id === mappingVariantId) || null,
+    [mappings, mappingVariantId],
+  );
+
+  const mappedCount = useMemo(
+    () => mappings.filter((item) => item.mapped).length,
+    [mappings],
+  );
+
+  async function reloadMappings() {
+    const result = await getCJVariantMappings(storeId);
+    setMappings(result.items);
+    return result;
+  }
 
   async function reloadStatus() {
     const result = await getCJStatus(storeId);
@@ -266,6 +352,8 @@ export default function CJIntegrationCard({
       setSelectedVariant(null);
       setStock(null);
       setFreight(null);
+      setMappings([]);
+      setMappingVariantId("");
       setCatalogOpen(false);
       await reloadStatus();
       setMessage(copy.disconnectedOk);
@@ -369,6 +457,45 @@ export default function CJIntegrationCard({
     }
   }
 
+  async function handleSaveMapping() {
+    if (!canWrite || !mappingVariantId || !selectedProduct || !selectedVariant) return;
+    setBusy("mapping-save");
+    setError("");
+    setMessage("");
+    try {
+      await saveCJVariantMapping(storeId, Number(mappingVariantId), {
+        external_product_id: selectedProduct.external_product_id,
+        external_variant_id: selectedVariant.external_variant_id,
+        external_sku: selectedVariant.sku,
+        active: true,
+      });
+      await reloadMappings();
+      setMessage(copy.mappingSaved);
+    } catch (err) {
+      setError(errorMessage(err, copy.error));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function handleDeleteMapping() {
+    if (!canWrite || !mappingVariantId || !selectedMapping?.mapped) return;
+    setBusy("mapping-delete");
+    setError("");
+    setMessage("");
+    try {
+      await deleteCJVariantMapping(storeId, Number(mappingVariantId));
+      const result = await reloadMappings();
+      const next = result.items.find((item) => !item.mapped) || result.items[0];
+      setMappingVariantId(next?.product_variant_id || "");
+      setMessage(copy.mappingRemoved);
+    } catch (err) {
+      setError(errorMessage(err, copy.error));
+    } finally {
+      setBusy("");
+    }
+  }
+
   return (
     <div className="store-integration-block cj-integration">
       <div className="store-integration-header">
@@ -465,6 +592,78 @@ export default function CJIntegrationCard({
 
           {catalogOpen && (
             <div className="cj-catalog">
+              <section className="cj-mapping-panel">
+                <div className="cj-section-heading">
+                  <div><Link2 size={15} /><strong>{copy.mappingTitle}</strong></div>
+                  <span>{mappedCount}/{mappings.length} {copy.mapped}</span>
+                </div>
+                <p>{copy.mappingDescription}</p>
+
+                {mappings.length === 0 ? (
+                  <div className="cj-empty">{copy.noStoreVariants}</div>
+                ) : (
+                  <div className="cj-mapping-controls">
+                    <label>
+                      <span>{copy.shopifyVariant}</span>
+                      <select
+                        value={mappingVariantId}
+                        onChange={(event) => setMappingVariantId(Number(event.target.value))}
+                      >
+                        <option value="" disabled>{copy.selectStoreVariant}</option>
+                        {mappings.map((mapping) => (
+                          <option key={mapping.product_variant_id} value={mapping.product_variant_id}>
+                            {mapping.product_title} · {mapping.variant_title}
+                            {mapping.sku ? ` · ${mapping.sku}` : ""}
+                            {mapping.mapped ? " ✓" : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <div className="cj-mapping-current">
+                      {selectedMapping?.mapped ? (
+                        <>
+                          <span>
+                            <strong>{selectedMapping.external_sku || selectedMapping.external_variant_id}</strong>
+                            <small>CJ · {selectedMapping.external_variant_id}</small>
+                          </span>
+                          {canWrite && (
+                            <button
+                              type="button"
+                              className="cj-unmap-button"
+                              onClick={() => void handleDeleteMapping()}
+                              disabled={busy === "mapping-delete"}
+                            >
+                              {busy === "mapping-delete" ? <Loader2 className="spin" size={13} /> : <Trash2 size={13} />}
+                              {copy.unmap}
+                            </button>
+                          )}
+                        </>
+                      ) : (
+                        <span><small>{copy.unmapped}</small></span>
+                      )}
+                    </div>
+
+                    {canWrite && (
+                      <button
+                        type="button"
+                        className="cj-map-button"
+                        onClick={() => void handleSaveMapping()}
+                        disabled={
+                          !mappingVariantId
+                          || !selectedProduct
+                          || !selectedVariant
+                          || busy === "mapping-save"
+                        }
+                      >
+                        {busy === "mapping-save" ? <Loader2 className="spin" size={14} /> : <Link2 size={14} />}
+                        {copy.mapSelected}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </section>
+
               <form className="cj-search" onSubmit={handleSearch}>
                 <Search size={15} />
                 <input

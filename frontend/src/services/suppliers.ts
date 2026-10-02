@@ -88,6 +88,31 @@ export interface CJFreightQuote {
   options: CJFreightOption[];
 }
 
+export interface CJVariantMapping {
+  provider: "cj";
+  product_id: number;
+  product_title: string;
+  product_variant_id: number;
+  shopify_variant_id: string | null;
+  variant_title: string;
+  sku: string | null;
+  mapped: boolean;
+  mapping_id: number | null;
+  external_product_id: string | null;
+  external_variant_id: string | null;
+  external_sku: string | null;
+  active: boolean;
+  updated_at: string | null;
+}
+
+export interface CJVariantMappingList {
+  provider: "cj";
+  items: CJVariantMapping[];
+  total: number;
+  mapped: number;
+  unmapped: number;
+}
+
 export async function getCJStatus(storeId: number) {
   const response = await api.get<CJConnectionStatus>(
     `/api/stores/${storeId}/suppliers/cj`,
@@ -184,6 +209,41 @@ export async function quoteCJFreight(
 export async function enableCJTrackingWebhook(storeId: number) {
   const response = await api.post(
     `/api/stores/${storeId}/suppliers/cj/webhooks/logistics/enable`,
+  );
+  return response.data;
+}
+
+
+export async function getCJVariantMappings(storeId: number) {
+  const response = await api.get<CJVariantMappingList>(
+    `/api/stores/${storeId}/suppliers/cj/mappings`,
+  );
+  return response.data;
+}
+
+export async function saveCJVariantMapping(
+  storeId: number,
+  productVariantId: number,
+  input: {
+    external_product_id: string;
+    external_variant_id: string;
+    external_sku?: string | null;
+    active?: boolean;
+  },
+) {
+  const response = await api.put<CJVariantMapping>(
+    `/api/stores/${storeId}/suppliers/cj/mappings/${productVariantId}`,
+    input,
+  );
+  return response.data;
+}
+
+export async function deleteCJVariantMapping(
+  storeId: number,
+  productVariantId: number,
+) {
+  const response = await api.delete(
+    `/api/stores/${storeId}/suppliers/cj/mappings/${productVariantId}`,
   );
   return response.data;
 }

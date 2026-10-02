@@ -12,7 +12,8 @@ from app.db import Base
 from app.integrations.cj.client import CJTemporaryError
 from app.model_domains.supplier_integrations import SupplierConnection
 from app.model_domains.supplier_orders import SupplierOrder
-from app.models import Order, OrderItem, Organization, Store
+from app.model_domains.supplier_variant_mappings import SupplierVariantMapping
+from app.models import Order, OrderItem, Organization, Product, ProductVariant, Store
 from app.services import supplier_orders as service
 from app.supplier_security import encrypt_supplier_secret
 
@@ -69,6 +70,28 @@ def data(db):
     )
     db.add(store)
     db.flush()
+    product = Product(
+        organization_id=org.id,
+        store_id=store.id,
+        shopify_product_id="100",
+        title="Test Product",
+        description="",
+        active=True,
+    )
+    db.add(product)
+    db.flush()
+    variant = ProductVariant(
+        product_id=product.id,
+        shopify_variant_id="101",
+        title="Default",
+        sku="STORE-SKU-1",
+        price=19.995,
+        currency="USD",
+        inventory_quantity=10,
+        available=True,
+    )
+    db.add(variant)
+    db.flush()
     commerce_order = Order(
         organization_id=org.id,
         store_id=store.id,
@@ -87,6 +110,9 @@ def data(db):
         order_id=commerce_order.id,
         organization_id=org.id,
         store_id=store.id,
+        product_id=product.id,
+        variant_id=variant.id,
+        shopify_variant_id="101",
         title="Test Product",
         sku="STORE-SKU-1",
         quantity=2,
@@ -197,6 +223,56 @@ def test_create_order_persists_intent_and_is_idempotent(db, data, monkeypatch):
     assert calls[0]["payType"] == 3
     assert calls[0]["isSandbox"] == 1
 
+
+
+def test_create_order_resolves_variant_from_mapping(db, data, monkeypatch):
+    org, store, _order, item, _connection = data
+    db.add(
+        SupplierVariantMapping(
+            organization_id=org.id,
+            store_id=store.id,
+            product_variant_id=item.variant_id,
+            provider="cj",
+            external_product_id="CJ-P-MAPPED",
+            external_variant_id="CJ-V-MAPPED",
+            external_sku="CJ-SKU-MAPPED",
+            active=True,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
+        )
+    )
+    db.commit()
+
+    monkeypatch.setattr(
+        service,
+        "get_valid_cj_access_token",
+        lambda *_args, **_kwargs: "access",
+    )
+    captured = {}
+
+    def create(_token, body):
+        captured.update(body)
+        return {
+            "orderId": "CJ-ORDER-MAPPED",
+            "orderStatus": "CREATED",
+        }
+
+    monkeypatch.setattr(service.cj_client, "create_order_v3", create)
+
+    request = payload(item)
+    request["idempotency_key"] = "fulfill-mapped"
+    request["items"][0].pop("external_variant_id")
+
+    created = service.create_cj_supplier_order(
+        db,
+        org.id,
+        store.id,
+        **request,
+    )
+
+    assert created["creation_status"] == "created"
+    assert captured["products"][0]["vid"] == "CJ-V-MAPPED"
+    assert created["items"][0]["external_variant_id"] == "CJ-V-MAPPED"
 
 def test_ambiguous_failure_reconciles_before_retry(db, data, monkeypatch):
     org, store, _order, item, _connection = data
