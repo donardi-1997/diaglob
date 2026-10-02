@@ -584,6 +584,11 @@ def _record_node_execution(db: Session, recipient: AutomationFlowRecipientExecut
         error_code=error_code, error_message=message,
         provider_message_id=provider_id,
         extra_data=metadata,
+        completed_at=(
+            now
+            if status in {"completed", "skipped", "failed", "ambiguous"}
+            else None
+        ),
     )
     db.add(ne)
     db.flush()
