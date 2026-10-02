@@ -8,7 +8,8 @@ export type FlowToolName =
   | "tracking.get"
   | "suppliers.cj.search"
   | "suppliers.cj.quote"
-  | "analytics.summary";
+  | "analytics.summary"
+  | "fulfillment.enqueue_trigger_order";
 
 export type TriggerType =
   | "manual"
@@ -36,7 +37,13 @@ export type ConditionField =
   | "customer.needs_followup"
   | "customer.order_count"
   | "customer.country"
-  | "has_successful_order_since_flow_start";
+  | "has_successful_order_since_flow_start"
+  | "order.is_cod"
+  | "order.payment_status"
+  | "order.total"
+  | "order.currency"
+  | "order.country"
+  | "order.fulfillment_status";
 
 export type ConditionOperator =
   | "equals"
@@ -75,6 +82,7 @@ export interface FlowNodeConfig {
 
   call_prompt?: string;
   call_language?: string;
+  call_purpose?: "general" | "order_confirmation";
   timeout_minutes?: number;
   template_variables?: Record<string, string>;
   whatsapp_template_id?: number;
@@ -163,6 +171,12 @@ const CONDITION_FIELDS: ConditionField[] = [
   "customer.order_count",
   "customer.country",
   "has_successful_order_since_flow_start",
+  "order.is_cod",
+  "order.payment_status",
+  "order.total",
+  "order.currency",
+  "order.country",
+  "order.fulfillment_status",
 ];
 
 const CONDITION_OPERATORS: ConditionOperator[] = [
@@ -224,6 +238,7 @@ export function defaultConfigForNode(type: FlowNodeType): FlowNodeConfig {
       return {
         call_prompt: "Hola {{customer.name}}, te llamamos de {{store.name}} para confirmar tu pedido reciente. ¿Deseas recibirlo?",
         call_language: "es",
+        call_purpose: "general",
         timeout_minutes: 5,
       };
     case "tool":
