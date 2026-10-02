@@ -184,6 +184,59 @@ def start_oauth(
     }
 
 
+def start_reauthorization(
+    db: Session,
+    organization_id: int,
+    store_id: int,
+    user_id: int,
+) -> dict:
+    store = _require_store(db, organization_id, store_id)
+    connection = _require_connection(db, organization_id, store_id)
+
+    state = generate_oauth_state()
+    now = datetime.utcnow()
+    oauth_state = ShopifyOAuthState(
+        state=state,
+        organization_id=organization_id,
+        store_id=store.id,
+        user_id=user_id,
+        shop_domain=connection.external_store_url,
+        expires_at=now + timedelta(minutes=10),
+        used=False,
+        created_at=now,
+    )
+    db.add(oauth_state)
+    (
+        db.query(ShopifyOAuthState)
+        .filter(
+            ShopifyOAuthState.store_id == store.id,
+            ShopifyOAuthState.user_id == user_id,
+            ShopifyOAuthState.state != state,
+            ShopifyOAuthState.used.is_(False),
+        )
+        .update({ShopifyOAuthState.used: True}, synchronize_session=False)
+    )
+    try:
+        authorization_url = build_authorization_url(
+            connection.external_store_url,
+            state,
+        )
+    except RuntimeError as exc:
+        db.rollback()
+        raise ShopifyConnectionError("SHOPIFY_NOT_CONFIGURED") from exc
+
+    db.commit()
+    return {
+        "ok": True,
+        "provider": "shopify",
+        "store_id": store.id,
+        "shop_domain": connection.external_store_url,
+        "expires_in_seconds": 600,
+        "authorization_url": authorization_url,
+        "reauthorization": True,
+    }
+
+
 def process_oauth_callback(db: Session, query_params: dict) -> str:
     """Process OAuth callback. Returns frontend redirect URL."""
     if not verify_shopify_hmac(query_params):
@@ -232,13 +285,60 @@ def process_oauth_callback(db: Session, query_params: dict) -> str:
     )
 
     if existing_connection:
+        if (
+            existing_connection.provider != "shopify"
+            or existing_connection.external_store_url != normalized_shop
+        ):
+            (
+                db.query(ShopifyOAuthState)
+                .filter(ShopifyOAuthState.id == oauth_state.id)
+                .update({ShopifyOAuthState.used: True}, synchronize_session=False)
+            )
+            db.commit()
+            return _shopify_connect_frontend_url(connected=False)
+
+        existing_connection.access_token_encrypted = encrypted_token
+        existing_connection.scopes = SHOPIFY_SCOPES
+        existing_connection.status = "connected"
+        existing_connection.last_error = None
+        existing_connection.updated_at = datetime.utcnow()
         (
             db.query(ShopifyOAuthState)
             .filter(ShopifyOAuthState.id == oauth_state.id)
             .update({ShopifyOAuthState.used: True}, synchronize_session=False)
         )
         db.commit()
-        return _shopify_connect_frontend_url(connected=False)
+
+        try:
+            ensure_shopify_order_webhooks(existing_connection)
+            db.commit()
+        except ShopifyAPIError as exc:
+            existing_connection.last_error = (
+                "WEBHOOK_SUBSCRIPTION_FAILED: " + str(exc)[:400]
+            )
+            db.commit()
+            logger.warning(
+                "Shopify webhook subscription setup failed after reauthorization "
+                "for store %s: %s",
+                existing_connection.store_id,
+                exc,
+            )
+
+        try:
+            from .auto_fulfillment import requeue_store_auto_fulfillment
+
+            requeue_store_auto_fulfillment(
+                db,
+                existing_connection.organization_id,
+                existing_connection.store_id,
+            )
+        except Exception:
+            logger.exception(
+                "Unable to requeue automatic fulfillment after Shopify reauthorization"
+            )
+            db.rollback()
+
+        return _shopify_connect_frontend_url(connected=True)
 
     try:
         activate_trial_for_verified_store(
