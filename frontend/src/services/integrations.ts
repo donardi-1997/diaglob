@@ -64,6 +64,26 @@ export async function connectShopify(
 }
 
 
+export async function reauthorizeShopify(
+  storeId: number,
+) {
+  const response =
+    await api.post<{
+      ok: boolean;
+      provider: string;
+      store_id: number;
+      shop_domain: string;
+      expires_in_seconds: number;
+      authorization_url: string;
+      reauthorization: boolean;
+    }>(
+      `/api/stores/${storeId}/shopify/reauthorize`,
+    );
+
+  return response.data;
+}
+
+
 export async function disconnectShopify(
   storeId: number,
 ) {
