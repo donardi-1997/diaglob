@@ -46,60 +46,102 @@ const outcomeIcons = [MessageSquare, Globe, BarChart3];
 const landingUi = {
   es: {
     live: "EN VIVO",
-    aiAgent: "Agente IA",
-    knowledgeSynced: "Conocimiento sincronizado",
+    aiAgent: "Asistente IA",
+    knowledgeSynced: "Conoce tu negocio",
     countries: "3 países",
-    oneWorkspace: "Un solo workspace",
-    commerce: "Comercio",
-    messaging: "Mensajería",
-    knowledge: "Conocimiento",
-    growthPayments: "Crecimiento y pagos",
+    oneWorkspace: "Un solo lugar",
+    commerce: "Tus tiendas",
+    messaging: "Atención al cliente",
+    knowledge: "Tus documentos",
+    growthPayments: "Publicidad y pagos",
     localPayments: "Pagos locales",
-    operationsOs: "Sistema operativo",
-    coreOpsAnalytics: "Operación central + analítica",
+    operationsOs: "Tu centro de control",
+    coreOpsAnalytics: "Pedidos, clientes y reportes",
     primaryNav: "Navegación principal",
     language: "Idioma",
-    capabilities: "Capacidades",
+    capabilities: "Herramientas conectadas",
     lightMode: "Modo claro",
     darkMode: "Modo oscuro",
+    copilotEyebrow: "TU COPILOTO",
+    copilotTitle: "Pregúntale a tu negocio. Y pasa de la respuesta a la acción.",
+    copilotSubtitle: "En lugar de revisar cinco pantallas, pregúntale a Diaglob qué está pasando. Puede ayudarte a encontrar el problema y convertirlo en una tarea automática.",
+    you: "Tú",
+    copilotName: "Copiloto Diaglob",
+    copilotPrompt: "¿Qué pasó hoy con mis pedidos de Colombia?",
+    copilotAnswer: "Recibiste 186 pedidos. Hay 12 con más de 48 horas sin movimiento y la tasa de entrega bajó 4,8%.",
+    copilotOrders: "Ver esos pedidos",
+    copilotAutomate: "Automatizar seguimiento",
+    flowTitle: "Seguimiento de pedidos detenidos",
+    flowStepOne: "Pedido sin movimiento 48 h",
+    flowStepTwo: "Revisar qué está pasando",
+    flowStepThree: "Avisarme y hacer seguimiento",
+    copilotSafety: "Tú decides qué puede consultar y qué acciones puede realizar la IA.",
   },
   en: {
     live: "LIVE",
-    aiAgent: "AI Agent",
-    knowledgeSynced: "Knowledge synced",
+    aiAgent: "AI Assistant",
+    knowledgeSynced: "Knows your business",
     countries: "3 countries",
-    oneWorkspace: "One workspace",
-    commerce: "Commerce",
-    messaging: "Messaging",
-    knowledge: "Knowledge",
-    growthPayments: "Growth & payments",
+    oneWorkspace: "One place",
+    commerce: "Your stores",
+    messaging: "Customer support",
+    knowledge: "Your documents",
+    growthPayments: "Ads & payments",
     localPayments: "Local payments",
-    operationsOs: "Operations OS",
-    coreOpsAnalytics: "Core operations + analytics",
+    operationsOs: "Your control center",
+    coreOpsAnalytics: "Orders, customers & reports",
     primaryNav: "Primary navigation",
     language: "Language",
-    capabilities: "Capabilities",
+    capabilities: "Connected tools",
     lightMode: "Light mode",
     darkMode: "Dark mode",
+    copilotEyebrow: "YOUR COPILOT",
+    copilotTitle: "Ask your business a question. Then turn the answer into action.",
+    copilotSubtitle: "Instead of checking five screens, ask Diaglob what is happening. It can help find the problem and turn the next step into an automatic task.",
+    you: "You",
+    copilotName: "Diaglob Copilot",
+    copilotPrompt: "What happened with my Colombia orders today?",
+    copilotAnswer: "You received 186 orders. 12 have had no movement for more than 48 hours and the delivery rate dropped 4.8%.",
+    copilotOrders: "View those orders",
+    copilotAutomate: "Automate follow-up",
+    flowTitle: "Stalled order follow-up",
+    flowStepOne: "Order stalled for 48 h",
+    flowStepTwo: "Check what is happening",
+    flowStepThree: "Alert me and follow up",
+    copilotSafety: "You decide what AI can check and which actions it can take.",
   },
   "pt-BR": {
     live: "AO VIVO",
-    aiAgent: "Agente IA",
-    knowledgeSynced: "Conhecimento sincronizado",
+    aiAgent: "Assistente IA",
+    knowledgeSynced: "Conhece seu negócio",
     countries: "3 países",
-    oneWorkspace: "Um workspace",
-    commerce: "Comércio",
-    messaging: "Mensagens",
-    knowledge: "Conhecimento",
-    growthPayments: "Crescimento e pagamentos",
+    oneWorkspace: "Um só lugar",
+    commerce: "Suas lojas",
+    messaging: "Atendimento ao cliente",
+    knowledge: "Seus documentos",
+    growthPayments: "Publicidade e pagamentos",
     localPayments: "Pagamentos locais",
-    operationsOs: "Sistema operacional",
-    coreOpsAnalytics: "Operação central + analytics",
+    operationsOs: "Seu centro de controle",
+    coreOpsAnalytics: "Pedidos, clientes e relatórios",
     primaryNav: "Navegação principal",
     language: "Idioma",
-    capabilities: "Recursos",
+    capabilities: "Ferramentas conectadas",
     lightMode: "Modo claro",
     darkMode: "Modo escuro",
+    copilotEyebrow: "SEU COPILOTO",
+    copilotTitle: "Pergunte ao seu negócio. E transforme a resposta em ação.",
+    copilotSubtitle: "Em vez de revisar cinco telas, pergunte ao Diaglob o que está acontecendo. Ele ajuda a encontrar o problema e transformar o próximo passo em uma tarefa automática.",
+    you: "Você",
+    copilotName: "Copiloto Diaglob",
+    copilotPrompt: "O que aconteceu hoje com meus pedidos da Colômbia?",
+    copilotAnswer: "Você recebeu 186 pedidos. Há 12 sem movimento há mais de 48 horas e a taxa de entrega caiu 4,8%.",
+    copilotOrders: "Ver esses pedidos",
+    copilotAutomate: "Automatizar acompanhamento",
+    flowTitle: "Acompanhamento de pedidos parados",
+    flowStepOne: "Pedido sem movimento por 48 h",
+    flowStepTwo: "Revisar o que está acontecendo",
+    flowStepThree: "Me avisar e acompanhar",
+    copilotSafety: "Você decide o que a IA pode consultar e quais ações pode realizar.",
   },
 } as const;
 
@@ -127,10 +169,10 @@ export default function PublicLandingPage({
   useEffect(() => {
     const title =
       locale === "en"
-        ? "Diaglob — Dropshipping operations, AI and analytics"
+        ? "Diaglob — Sell and run your ecommerce with AI"
         : locale === "pt-BR"
-          ? "Diaglob — Operação, IA e analytics para dropshipping"
-          : "Diaglob — Operación, IA y analítica para dropshipping";
+          ? "Diaglob — Venda e opere seu ecommerce com IA"
+          : "Diaglob — Vende y opera tu ecommerce con IA";
     const description = copy.hero.subtitle;
 
     document.title = title;
@@ -202,7 +244,7 @@ export default function PublicLandingPage({
             <span className="marketing-brand-mark"><Sparkles size={19} /></span>
             <span className="marketing-brand-copy">
               <strong>DIAGLOB</strong>
-              <small>AI COMMERCE OS</small>
+              <small>ECOMMERCE + IA</small>
             </span>
           </button>
 
@@ -345,8 +387,8 @@ export default function PublicLandingPage({
         <section className="marketing-proof-strip" aria-label={ui.capabilities}>
           <div className="marketing-shell marketing-proof-inner">
             {[
-              ["Shopify", ShoppingBag], ["WhatsApp", MessageSquare], ["Google Knowledge", BrainCircuit],
-              ["Dropi", Package], ["Meta Ads", Megaphone], ["Analytics", BarChart3],
+              ["Shopify", ShoppingBag], ["WhatsApp", MessageSquare], [ui.knowledge, BrainCircuit],
+              ["Dropi", Package], ["Meta Ads", Megaphone], [locale === "en" ? "Profit" : locale === "pt-BR" ? "Rentabilidade" : "Rentabilidad", BarChart3],
             ].map(([label, Icon]) => {
               const IconComponent = Icon as typeof ShoppingBag;
               return <div key={label as string}><IconComponent size={18} /><span>{label as string}</span></div>;
@@ -392,6 +434,45 @@ export default function PublicLandingPage({
                   </article>
                 );
               })}
+            </div>
+          </div>
+        </section>
+
+        <section className="marketing-section marketing-copilot">
+          <div className="marketing-shell marketing-copilot-grid">
+            <div className="marketing-section-heading marketing-copilot-copy">
+              <span className="marketing-kicker">{ui.copilotEyebrow}</span>
+              <h2>{ui.copilotTitle}</h2>
+              <p>{ui.copilotSubtitle}</p>
+              <div className="marketing-copilot-safety"><Check size={16} />{ui.copilotSafety}</div>
+            </div>
+
+            <div className="marketing-copilot-demo" aria-label={ui.copilotName}>
+              <div className="marketing-chat-preview">
+                <div className="marketing-chat-message user">
+                  <span>{ui.you}</span>
+                  <p>{ui.copilotPrompt}</p>
+                </div>
+                <div className="marketing-chat-message assistant">
+                  <div className="marketing-chat-assistant-head"><Bot size={17} /><span>{ui.copilotName}</span></div>
+                  <p>{ui.copilotAnswer}</p>
+                  <div className="marketing-chat-actions">
+                    <span>{ui.copilotOrders}</span>
+                    <span>{ui.copilotAutomate}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="marketing-flow-preview">
+                <div className="marketing-flow-preview-head"><Workflow size={17} /><strong>{ui.flowTitle}</strong></div>
+                <div className="marketing-flow-preview-steps">
+                  <span>{ui.flowStepOne}</span>
+                  <ArrowRight size={16} />
+                  <span>{ui.flowStepTwo}</span>
+                  <ArrowRight size={16} />
+                  <span>{ui.flowStepThree}</span>
+                </div>
+              </div>
             </div>
           </div>
         </section>
@@ -527,7 +608,7 @@ export default function PublicLandingPage({
       <footer className="marketing-footer">
         <div className="marketing-shell marketing-footer-grid">
           <div className="marketing-footer-brand">
-            <div className="marketing-brand static"><span className="marketing-brand-mark"><Sparkles size={19} /></span><span className="marketing-brand-copy"><strong>DIAGLOB</strong><small>AI COMMERCE OS</small></span></div>
+            <div className="marketing-brand static"><span className="marketing-brand-mark"><Sparkles size={19} /></span><span className="marketing-brand-copy"><strong>DIAGLOB</strong><small>ECOMMERCE + IA</small></span></div>
             <p>{copy.footer.tagline}</p>
           </div>
           <div><strong>{copy.footer.product}</strong><button onClick={() => scrollTo("product")}>{copy.nav.product}</button><button onClick={() => scrollTo("integrations")}>{copy.nav.integrations}</button><button onClick={() => scrollTo("pricing")}>{copy.nav.pricing}</button></div>
