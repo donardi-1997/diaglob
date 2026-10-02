@@ -25,6 +25,22 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Validate E2E PowerShell syntax
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path "scripts/e2e-preflight.ps1"),
+            [ref]$tokens,
+            [ref]$errors
+          ) | Out-Null
+
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            exit 1
+          }
+
       - name: Detect backend and frontend changes
         id: scope
         shell: bash
@@ -46,7 +62,7 @@ jobs:
               frontend/*)
                 frontend=true
                 ;;
-              .github/workflows/validate-pr.yml)
+              .github/workflows/*.yml)
                 backend=true
                 frontend=true
                 ;;
