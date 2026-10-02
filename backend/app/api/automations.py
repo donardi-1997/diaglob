@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 
 from ..analytics import get_automations_analytics, get_date_range
 from ..db import get_db
-from ..models import OrganizationMembership, Store, WhatsAppConnection
+from ..models import CommerceConnection, OrganizationMembership, Store, WhatsAppConnection
+from ..model_domains.supplier_integrations import SupplierConnection
 from .deps import get_current_membership, require_permission
 from ..services.automation_campaigns_service import (
     CampaignConflictError,
@@ -392,6 +393,25 @@ def _flow_template_availability(db: Session, organization_id: int, store_id: int
         elif integration == "voice":
             if not voice_provider_configured():
                 missing.append("voice")
+        elif integration == "shopify":
+            connected = db.query(CommerceConnection.id).filter(
+                CommerceConnection.organization_id == organization_id,
+                CommerceConnection.store_id == store_id,
+                CommerceConnection.provider == "shopify",
+                CommerceConnection.status == "connected",
+            ).first()
+            if not connected:
+                missing.append("shopify")
+        elif integration == "cj_auto_fulfillment":
+            connected = db.query(SupplierConnection.id).filter(
+                SupplierConnection.organization_id == organization_id,
+                SupplierConnection.store_id == store_id,
+                SupplierConnection.provider == "cj",
+                SupplierConnection.status == "connected",
+                SupplierConnection.auto_fulfillment_enabled.is_(True),
+            ).first()
+            if not connected:
+                missing.append("cj_auto_fulfillment")
     return {
         "available": not missing,
         "missing": missing,
