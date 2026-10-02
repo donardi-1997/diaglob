@@ -4,6 +4,7 @@ import os
 
 from fastapi import (
     APIRouter,
+    BackgroundTasks,
     Depends,
     HTTPException,
     Request,
@@ -22,6 +23,10 @@ from ..shopify_client import (
     ShopifyUserError,
 )
 from .deps import require_permission
+from ..services.auto_fulfillment import (
+    enqueue_shopify_order,
+    process_auto_fulfillment_job_background,
+)
 from ..services.attributed_order_service import (
     create_attributed_shopify_order as svc_create_order,
 )
@@ -392,6 +397,7 @@ def get_order(
 @router.post("/api/webhooks/shopify")
 async def shopify_order_webhook(
     request: Request,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
     """Receive authenticated Shopify order lifecycle webhooks."""
@@ -464,12 +470,22 @@ async def shopify_order_webhook(
         ) from exc
 
     try:
-        return process_shopify_order_webhook(
+        result = process_shopify_order_webhook(
             db,
             connection=connection,
             topic=topic,
             payload=payload,
         )
+        order_id = result.get("order_id")
+        if order_id:
+            job = enqueue_shopify_order(db, int(order_id))
+            if job is not None:
+                result["auto_fulfillment_job_id"] = job.id
+                background_tasks.add_task(
+                    process_auto_fulfillment_job_background,
+                    job.id,
+                )
+        return result
     except ShopifyWebhookError as exc:
         db.rollback()
         raise HTTPException(
