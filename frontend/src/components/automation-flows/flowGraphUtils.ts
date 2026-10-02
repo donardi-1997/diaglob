@@ -72,12 +72,28 @@ export interface FlowNodeConfig {
   label?: string;
 }
 
+export interface FlowNodeDebug {
+  status:
+    | "pending"
+    | "running"
+    | "completed"
+    | "failed"
+    | "skipped"
+    | "ambiguous"
+    | "waiting";
+  label?: string;
+  duration_ms?: number | null;
+  executions?: number;
+  error?: string | null;
+}
+
 export interface FlowNode {
   id: string;
   type: FlowNodeType;
   config: FlowNodeConfig;
   position: { x: number; y: number };
   label?: string;
+  debug?: FlowNodeDebug;
   [key: string]: unknown;
 }
 
