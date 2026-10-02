@@ -253,7 +253,7 @@ def evaluate_action(
                 store_id=store_id,
             )
 
-    if policy.risk != "read":
+    if policy.permission.endswith(".write"):
         subscription_ok, code, message = _subscription_write_decision(
             db, membership, policy.permission
         )
