@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import json
 
 from sqlalchemy.orm import Session
 
@@ -38,6 +39,10 @@ _RESOLVED_TOOL_STATUSES = {
 
 class AgentChatError(Exception):
     pass
+
+
+def _json_safe(value):
+    return json.loads(json.dumps(value, default=str))
 
 
 def _require_chat_access(
@@ -418,7 +423,7 @@ def _run_model_until_pause_or_answer(
                 tool_use_id=str(tool_use.get("toolUseId") or ""),
                 tool_name=tool_name,
                 action=tool.action if tool else "",
-                arguments=arguments,
+                arguments=_json_safe(arguments),
                 status="pending",
                 created_at=datetime.utcnow(),
                 updated_at=datetime.utcnow(),
@@ -433,7 +438,7 @@ def _run_model_until_pause_or_answer(
                 store_id=session.store_id,
                 arguments=arguments,
             )
-            call.result = execution
+            call.result = _json_safe(execution)
             if execution.get("status") == "confirmation_required":
                 call.status = "approval_required"
                 approval = execution.get("approval") or {}
@@ -600,7 +605,7 @@ def approve_chat_action(
         arguments=dict(call.arguments or {}),
         approval_id=approval_id,
     )
-    call.result = execution
+    call.result = _json_safe(execution)
     call.status = str(execution.get("status") or "error")
     if call.status not in _RESOLVED_TOOL_STATUSES:
         call.status = "error"
