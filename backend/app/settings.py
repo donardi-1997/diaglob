@@ -64,6 +64,26 @@ class Settings(BaseSettings):
         default="https://api.diaglob.tech",
         validation_alias="DIAGLOB_PUBLIC_API_BASE_URL",
     )
+    agent_model_region: str = Field(
+        default="us-east-2",
+        validation_alias="DIAGLOB_AGENT_MODEL_REGION",
+    )
+    agent_model_id: str = Field(
+        default="us.amazon.nova-2-lite-v1:0",
+        validation_alias="DIAGLOB_AGENT_MODEL_ID",
+    )
+    agent_max_tokens: int = Field(
+        default=1200,
+        ge=128,
+        le=4096,
+        validation_alias="DIAGLOB_AGENT_MAX_TOKENS",
+    )
+    agent_max_tool_rounds: int = Field(
+        default=6,
+        ge=1,
+        le=12,
+        validation_alias="DIAGLOB_AGENT_MAX_TOOL_ROUNDS",
+    )
     sentry_dsn: str | None = Field(default=None, validation_alias="SENTRY_DSN")
     sentry_environment: str = Field(
         default="development",

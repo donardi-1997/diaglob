@@ -56,6 +56,10 @@ class ActionDecision:
 
 
 ACTION_POLICIES: dict[str, ActionPolicy] = {
+    "chat.use": ActionPolicy(
+        "chat.use", "dashboard.read", "read",
+        description="Use the Diaglob operations copilot in the selected store.",
+    ),
     "orders.list": ActionPolicy(
         "orders.list", "commerce.read", "read",
         description="List store orders.",

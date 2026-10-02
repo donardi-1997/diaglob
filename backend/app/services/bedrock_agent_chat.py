@@ -1,0 +1,192 @@
+"""Amazon Bedrock Converse adapter for the Diaglob operations copilot."""
+
+from __future__ import annotations
+
+from functools import lru_cache
+from typing import Any
+
+import boto3
+from botocore.config import Config
+
+from ..settings import get_settings
+
+
+class AgentModelError(Exception):
+    pass
+
+
+def provider_tool_name(internal_name: str) -> str:
+    return internal_name.replace(".", "_").replace("-", "_")[:64]
+
+
+def _provider_schema(schema: dict) -> dict:
+    expected = schema.get("type")
+    if isinstance(expected, list):
+        expected = next((item for item in expected if item != "null"), "string")
+
+    result: dict[str, Any] = {}
+    if expected:
+        result["type"] = expected
+
+    if expected == "object":
+        properties = {}
+        for key, value in (schema.get("properties") or {}).items():
+            if isinstance(value, dict):
+                properties[key] = _provider_schema(value)
+        result["properties"] = properties
+        result["required"] = list(schema.get("required") or [])
+
+    if expected == "array":
+        item_schema = schema.get("items")
+        if isinstance(item_schema, dict):
+            result["items"] = _provider_schema(item_schema)
+
+    if "description" in schema:
+        result["description"] = str(schema["description"])
+    if "enum" in schema:
+        result["enum"] = list(schema["enum"])
+
+    return result
+
+
+def build_bedrock_tool_config(tools: list[dict]) -> tuple[dict | None, dict[str, str]]:
+    specs = []
+    reverse: dict[str, str] = {}
+
+    for tool in tools:
+        internal_name = str(tool["name"])
+        provider_name = provider_tool_name(internal_name)
+        reverse[provider_name] = internal_name
+        schema = _provider_schema(dict(tool.get("input_schema") or {"type": "object"}))
+        if schema.get("type") != "object":
+            schema = {"type": "object", "properties": {}, "required": []}
+
+        specs.append(
+            {
+                "toolSpec": {
+                    "name": provider_name,
+                    "description": str(tool.get("description") or tool.get("title") or internal_name)[:500],
+                    "inputSchema": {"json": schema},
+                }
+            }
+        )
+
+    if not specs:
+        return None, reverse
+
+    return {"tools": specs}, reverse
+
+
+@lru_cache(maxsize=4)
+def _client(region: str):
+    return boto3.client(
+        "bedrock-runtime",
+        region_name=region,
+        config=Config(
+            retries={"max_attempts": 5, "mode": "adaptive"},
+            connect_timeout=10,
+            read_timeout=90,
+        ),
+    )
+
+
+def build_system_prompt(
+    *,
+    store_id: int,
+    context: dict | None = None,
+) -> str:
+    context = context or {}
+    page = str(context.get("page") or "unknown")
+    entity = context.get("entity_id")
+
+    return f"""
+You are Diaglob Operations Copilot, an internal assistant for a dropshipping operations platform.
+
+Current store_id: {store_id}
+Current UI page: {page}
+Current entity_id: {entity if entity is not None else "none"}
+
+Rules:
+- Reply in the same language as the user.
+- Use tools whenever the question depends on current Diaglob data or the user asks to perform an action.
+- Never invent order, customer, product, supplier, tracking, analytics, or automation data.
+- Never claim an action was completed unless the tool result says status=success.
+- The backend decides permissions. Do not attempt to bypass denied tools or store scope.
+- Call one tool at a time whenever possible.
+- If a tool requires confirmation, explain exactly what will happen and why confirmation is required.
+- Financial, destructive, or external side effects must remain subject to backend confirmation rules.
+- Help users design and troubleshoot automations. Prefer the automation tools when they ask to create, edit, publish, activate, pause, or test a flow.
+- Automation graphs use nodes and edges. Keep generated graphs small, explicit, and easy to inspect.
+- Be concise and operational. Surface blockers and the next useful action.
+""".strip()
+
+
+def converse(
+    *,
+    messages: list[dict],
+    tools: list[dict],
+    store_id: int,
+    context: dict | None = None,
+) -> dict:
+    settings = get_settings()
+    tool_config, reverse_names = build_bedrock_tool_config(tools)
+
+    kwargs: dict[str, Any] = {
+        "modelId": settings.agent_model_id,
+        "messages": messages,
+        "system": [
+            {
+                "text": build_system_prompt(
+                    store_id=store_id,
+                    context=context,
+                )
+            }
+        ],
+        "inferenceConfig": {
+            "maxTokens": settings.agent_max_tokens,
+            "temperature": 0,
+        },
+    }
+    if tool_config is not None:
+        kwargs["toolConfig"] = tool_config
+
+    try:
+        response = _client(settings.agent_model_region).converse(**kwargs)
+    except Exception as exc:
+        raise AgentModelError(str(exc)) from exc
+
+    output = (response.get("output") or {}).get("message") or {}
+    content = list(output.get("content") or [])
+    usage = response.get("usage") or {}
+
+    for block in content:
+        tool_use = block.get("toolUse")
+        if not isinstance(tool_use, dict):
+            continue
+        provider_name = str(tool_use.get("name") or "")
+        internal_name = reverse_names.get(provider_name)
+        if internal_name:
+            tool_use["name"] = internal_name
+
+    return {
+        "message": {
+            "role": str(output.get("role") or "assistant"),
+            "content": content,
+        },
+        "stop_reason": response.get("stopReason"),
+        "usage": {
+            "input_tokens": int(usage.get("inputTokens") or 0),
+            "output_tokens": int(usage.get("outputTokens") or 0),
+            "total_tokens": int(usage.get("totalTokens") or 0),
+        },
+        "model_id": settings.agent_model_id,
+    }
+
+
+__all__ = [
+    "AgentModelError",
+    "build_bedrock_tool_config",
+    "build_system_prompt",
+    "converse",
+    "provider_tool_name",
+]

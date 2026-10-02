@@ -1011,6 +1011,7 @@ const resources = {
       knowledge: "Conocimiento",
       commerce: "Comercio",
       automations: "Automatizaciones",
+      copilot: "Copiloto IA",
       analytics: "Analítica",
       settings: "Configuración",
 
@@ -3103,6 +3104,7 @@ const resources = {
       knowledge: "Knowledge",
       commerce: "Commerce",
       automations: "Automations",
+      copilot: "AI Copilot",
       analytics: "Analytics",
       settings: "Settings",
 

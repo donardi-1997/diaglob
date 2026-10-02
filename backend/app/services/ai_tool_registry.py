@@ -125,7 +125,19 @@ TOOLS: dict[str, ToolDefinition] = {
             "start_country_code": {"type": "string", "minLength": 2, "maxLength": 2},
             "end_country_code": {"type": "string", "minLength": 2, "maxLength": 2},
             "zip_code": {"type": ["string", "null"]},
-            "items": {"type": "array", "minItems": 1},
+            "items": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "variant_id": {"type": "string", "minLength": 1},
+                        "quantity": {"type": "integer", "minimum": 1, "maximum": 1000},
+                    },
+                    "required": ["variant_id", "quantity"],
+                    "additionalProperties": False,
+                },
+            },
         }, ["start_country_code", "end_country_code", "items"]),
     ),
     "suppliers.cj.map_variant": ToolDefinition(
@@ -236,6 +248,102 @@ TOOLS: dict[str, ToolDefinition] = {
 }
 
 
+def _matches_type(value: Any, expected: str) -> bool:
+    if expected == "null":
+        return value is None
+    if expected == "string":
+        return isinstance(value, str)
+    if expected == "integer":
+        return isinstance(value, int) and not isinstance(value, bool)
+    if expected == "number":
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if expected == "boolean":
+        return isinstance(value, bool)
+    if expected == "array":
+        return isinstance(value, list)
+    if expected == "object":
+        return isinstance(value, dict)
+    return False
+
+
+def _validate_value(value: Any, schema: dict, path: str) -> list[str]:
+    errors: list[str] = []
+    expected = schema.get("type")
+    expected_types = expected if isinstance(expected, list) else [expected]
+    expected_types = [item for item in expected_types if item]
+
+    if expected_types and not any(
+        _matches_type(value, expected_type)
+        for expected_type in expected_types
+    ):
+        return [f"{path}: invalid type"]
+
+    if value is None:
+        return errors
+
+    if isinstance(value, str):
+        minimum = schema.get("minLength")
+        maximum = schema.get("maxLength")
+        if minimum is not None and len(value) < int(minimum):
+            errors.append(f"{path}: too short")
+        if maximum is not None and len(value) > int(maximum):
+            errors.append(f"{path}: too long")
+
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        minimum = schema.get("minimum")
+        maximum = schema.get("maximum")
+        if minimum is not None and value < minimum:
+            errors.append(f"{path}: below minimum")
+        if maximum is not None and value > maximum:
+            errors.append(f"{path}: above maximum")
+
+    if isinstance(value, list):
+        minimum = schema.get("minItems")
+        maximum = schema.get("maxItems")
+        if minimum is not None and len(value) < int(minimum):
+            errors.append(f"{path}: too few items")
+        if maximum is not None and len(value) > int(maximum):
+            errors.append(f"{path}: too many items")
+        item_schema = schema.get("items")
+        if isinstance(item_schema, dict):
+            for index, item in enumerate(value):
+                errors.extend(
+                    _validate_value(item, item_schema, f"{path}[{index}]")
+                )
+
+    if isinstance(value, dict):
+        properties = schema.get("properties")
+        if isinstance(properties, dict):
+            required = set(schema.get("required") or [])
+            for key in required:
+                if key not in value:
+                    errors.append(f"{path}.{key}: required")
+            if schema.get("additionalProperties") is False:
+                unknown = sorted(set(value) - set(properties))
+                for key in unknown:
+                    errors.append(f"{path}.{key}: unknown field")
+            for key, child_schema in properties.items():
+                if key in value and isinstance(child_schema, dict):
+                    errors.extend(
+                        _validate_value(
+                            value[key],
+                            child_schema,
+                            f"{path}.{key}",
+                        )
+                    )
+
+    return errors
+
+
+def validate_tool_arguments(
+    tool: ToolDefinition,
+    arguments: dict,
+) -> list[str]:
+    if not isinstance(arguments, dict):
+        return ["arguments: object required"]
+    return _validate_value(arguments, tool.input_schema, "arguments")
+
+
 def get_tool(name: str) -> ToolDefinition | None:
     return TOOLS.get(name)
 
@@ -267,4 +375,5 @@ __all__ = [
     "ToolDefinition",
     "get_tool",
     "list_authorized_tools",
+    "validate_tool_arguments",
 ]

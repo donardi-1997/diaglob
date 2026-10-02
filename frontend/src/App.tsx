@@ -48,6 +48,7 @@ const LegalPage = lazy(() => import("./pages/LegalPage"));
 const RefundPolicyPage = lazy(() => import("./pages/RefundPolicyPage"));
 const CommercePage = lazy(() => import("./pages/CommercePage"));
 const AutomationsPage = lazy(() => import("./pages/AutomationsPage"));
+const AgentChatPage = lazy(() => import("./pages/AgentChatPage"));
 const AnalyticsPage = lazy(() => import("./pages/AnalyticsPage"));
 const CustomersWorkspacePage = lazy(() => import("./pages/CustomersWorkspacePage"));
 const IntegrationsHubPage = lazy(() => import("./pages/IntegrationsHubPage"));
@@ -122,6 +123,14 @@ const navigation: NavigationDefinition[] = [
     group: "operations",
     icon: Workflow,
     permission: "automations.read",
+  },
+  {
+    key: "copilot",
+    labelKey: "copilot",
+    fallback: "Copiloto IA",
+    group: "intelligence",
+    icon: Sparkles,
+    permission: "dashboard.read",
   },
   {
     key: "agents",
@@ -321,6 +330,12 @@ function App() {
       )}
       {activePage === "team" && (
         <TeamPage stores={stores} canWrite={can("users.write")} />
+      )}
+      {activePage === "copilot" && (
+        <AgentChatPage
+          storeId={Number(selectedStoreId) || 0}
+          storeName={selectedStore?.name}
+        />
       )}
       {activePage === "agents" && (
         <AgentsPage stores={stores} canWrite={can("agents.write")} />
