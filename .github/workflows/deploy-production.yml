@@ -159,19 +159,46 @@ jobs:
           systemctl restart diaglob-api
           REMOTE
 
-      - name: Verify public API health
+      - name: Verify production smoke surfaces
+        shell: bash
         run: |
-          for attempt in {1..12}; do
-            if curl --fail --silent --show-error https://api.diaglob.tech/health; then
-              echo
-              exit 0
-            fi
-            echo "Health check attempt ${attempt}/12 failed; retrying in 5 seconds..."
-            sleep 5
-          done
+          set -euo pipefail
 
-          echo "Production API health check failed after migrations and restart."
-          exit 1
+          check_url() {
+            local label="$1"
+            local url="$2"
+            local pattern="${3:-}"
+
+            for attempt in {1..12}; do
+              body="$(mktemp)"
+
+              if curl                 --fail                 --location                 --silent                 --show-error                 --max-time 15                 "$url"                 --output "$body"; then
+                if [[ -z "$pattern" ]] || grep -Eq "$pattern" "$body"; then
+                  echo "PASS: $label ($url)"
+                  rm -f "$body"
+                  return 0
+                fi
+              fi
+
+              rm -f "$body"
+              echo "Smoke check '$label' attempt ${attempt}/12 failed; retrying in 5 seconds..."
+              sleep 5
+            done
+
+            echo "FAIL: $label ($url)"
+            return 1
+          }
+
+          check_url             "API health"             "https://api.diaglob.tech/health"             '"status"[[:space:]]*:[[:space:]]*"ok"'
+
+          check_url             "API root"             "https://api.diaglob.tech/"             '"name"[[:space:]]*:[[:space:]]*"Diaglob API"'
+
+          check_url "Frontend landing" "https://diaglob.tech/"
+          check_url "Frontend login" "https://diaglob.tech/login"
+          check_url "Frontend register" "https://diaglob.tech/register"
+          check_url "Privacy policy" "https://diaglob.tech/privacy"
+          check_url "Terms of service" "https://diaglob.tech/terms"
+          check_url "Refund policy" "https://diaglob.tech/refund-policy"
 
   notify:
     name: Telegram Notification
