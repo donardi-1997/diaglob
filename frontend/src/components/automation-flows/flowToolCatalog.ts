@@ -203,4 +203,5 @@ export const FLOW_RUNTIME_VARIABLES = [
   "{{customer.email}}",
   "{{customer.phone}}",
   "{{customer.country}}",
+  "{{store.name}}",
 ];

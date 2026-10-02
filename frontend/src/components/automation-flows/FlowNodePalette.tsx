@@ -7,6 +7,7 @@ import {
   GitBranch,
   MessageSquare,
   PackageSearch,
+  PhoneCall,
   Search,
   ShoppingBag,
   Square,
@@ -113,6 +114,14 @@ const CORE_ITEMS: PaletteItem[] = [
     description: "Envía un mensaje o plantilla al cliente.",
     group: "Canales",
     icon: MessageSquare,
+  },
+  {
+    id: "call",
+    type: "call",
+    title: "Llamada IA",
+    description: "Llama al cliente y ramifica según confirme, rechace o no conteste.",
+    group: "Canales",
+    icon: PhoneCall,
   },
   {
     id: "end",

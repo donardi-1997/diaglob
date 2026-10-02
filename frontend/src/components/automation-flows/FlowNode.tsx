@@ -3,6 +3,7 @@ import {
   Clock,
   GitBranch,
   MessageSquare,
+  PhoneCall,
   Square,
   Wrench,
   Zap,
@@ -19,6 +20,7 @@ const TYPE_COLORS: Record<FlowNodeType, string> = {
   wait: "#e6a817",
   condition: "#4a9eff",
   message: "var(--green)",
+  call: "#06b6d4",
   tool: "#8b5cf6",
   end: "var(--text-muted)",
 };
@@ -28,6 +30,7 @@ const TYPE_ICONS: Record<FlowNodeType, typeof Zap> = {
   wait: Clock,
   condition: GitBranch,
   message: MessageSquare,
+  call: PhoneCall,
   tool: Wrench,
   end: Square,
 };
@@ -246,6 +249,43 @@ export default function FlowNode({
           <span className="flow-condition-label no">
             NO
           </span>
+        </>
+      ) : nodeType === "call" ? (
+        <>
+          {[
+            ["confirmed", "CONF", "var(--green)", "12%"],
+            ["rejected", "RECH", "#ef4444", "37%"],
+            ["no_answer", "SIN", "#f59e0b", "63%"],
+            ["failed", "FAIL", "#94a3b8", "88%"],
+          ].map(([id, label, background, left]) => (
+            <div key={id}>
+              <Handle
+                type="source"
+                position={Position.Bottom}
+                id={id}
+                style={{
+                  width: 10,
+                  height: 10,
+                  background,
+                  border: "2px solid var(--panel)",
+                  left,
+                }}
+              />
+              <span
+                style={{
+                  position: "absolute",
+                  bottom: -18,
+                  left,
+                  transform: "translateX(-50%)",
+                  fontSize: 8,
+                  fontWeight: 700,
+                  color: "var(--text-muted)",
+                }}
+              >
+                {label}
+              </span>
+            </div>
+          ))}
         </>
       ) : nodeType !== "end" ? (
         <Handle

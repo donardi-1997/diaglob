@@ -177,6 +177,12 @@ export default function FlowSimulation({ storeId, graph, flowName, onClose, t }:
                     <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{t("flowSimConditionNodes")}</span>
                     <p style={{ margin: "2px 0 0", fontSize: 16, fontWeight: 700 }}>{result.summary.condition_nodes}</p>
                   </div>
+                  {(result.summary.call_nodes || 0) > 0 && (
+                    <div className="flow-sim-stat" style={{ padding: "10px 14px", border: "1px solid var(--border)", borderRadius: 8, background: "var(--panel)" }}>
+                      <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{t("flowSimCallNodes")}</span>
+                      <p style={{ margin: "2px 0 0", fontSize: 16, fontWeight: 700 }}>{result.summary.call_nodes}</p>
+                    </div>
+                  )}
                 </div>
               )}
             </>

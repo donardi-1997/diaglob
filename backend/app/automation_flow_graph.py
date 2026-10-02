@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
-NODE_TYPES = {"trigger", "wait", "message", "condition", "tool", "end"}
+NODE_TYPES = {"trigger", "wait", "message", "condition", "call", "tool", "end"}
 MAX_NODES = 50
 MAX_MESSAGE_NODES = 10
 MAX_WAIT_DAYS = 365
@@ -45,6 +45,8 @@ CONDITION_OPERATORS = {
 MESSAGE_MODES = {"free_form", "template", "auto"}
 
 WAIT_UNITS = {"minutes", "hours", "days"}
+
+CALL_OUTCOMES = {"confirmed", "rejected", "no_answer", "failed"}
 
 # Read-only / confirmation-free capabilities that may run unattended inside a flow.
 # Write, financial and destructive agent tools stay excluded from the automation
@@ -127,6 +129,14 @@ def validate_graph(graph: dict[str, Any]) -> list[str]:
             if not config.get("message_template"):
                 errors.append(f"Node {nid}: message_template is required")
 
+        elif ntype == "call":
+            prompt = str(config.get("call_prompt") or "").strip()
+            timeout_minutes = config.get("timeout_minutes", 5)
+            if not prompt:
+                errors.append(f"Node {nid}: call_prompt is required")
+            if not isinstance(timeout_minutes, (int, float)) or not 1 <= timeout_minutes <= 60:
+                errors.append(f"Node {nid}: timeout_minutes must be between 1 and 60")
+
         elif ntype == "tool":
             tool_name = config.get("tool_name", "")
             if tool_name not in FLOW_TOOL_NAMES:
@@ -165,6 +175,17 @@ def validate_graph(graph: dict[str, Any]) -> list[str]:
                 errors.append(f"Node {nid}: duplicate true branch")
             if len([e for e in out_edges if e.get("label") == "false"]) > 1:
                 errors.append(f"Node {nid}: duplicate false branch")
+        elif ntype == "call":
+            labels = [e.get("label") for e in out_edges]
+            invalid = sorted({label for label in labels if label not in CALL_OUTCOMES})
+            if invalid:
+                errors.append(f"Node {nid}: invalid call branches: {', '.join(invalid)}")
+            missing = sorted(CALL_OUTCOMES - set(labels))
+            if missing:
+                errors.append(f"Node {nid}: call must handle branches: {', '.join(missing)}")
+            for label in CALL_OUTCOMES:
+                if labels.count(label) > 1:
+                    errors.append(f"Node {nid}: duplicate {label} branch")
         elif ntype == "trigger":
             if len(out_edges) == 0:
                 errors.append(f"Node {nid}: trigger must have an outgoing edge")

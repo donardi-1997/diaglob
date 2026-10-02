@@ -965,6 +965,10 @@
   ],
   [
     "POST",
+    "/api/voice/callback"
+  ],
+  [
+    "POST",
     "/api/webhooks/cj"
   ],
   [
