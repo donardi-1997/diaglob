@@ -13,6 +13,7 @@ import {
   Plug,
   RefreshCw,
   ShoppingBag,
+  Truck,
   Sparkles,
   Store as StoreIcon,
 } from "lucide-react";
@@ -107,6 +108,7 @@ const COPY: Record<
       payments: "Pagos",
       payment: "Pagos",
       knowledge: "Knowledge",
+      logistics: "Logística",
       ads: "Publicidad",
     },
   },
@@ -147,6 +149,7 @@ const COPY: Record<
       payments: "Payments",
       payment: "Payments",
       knowledge: "Knowledge",
+      logistics: "Logistics",
       ads: "Advertising",
     },
   },
@@ -187,6 +190,7 @@ const COPY: Record<
       payments: "Pagamentos",
       payment: "Pagamentos",
       knowledge: "Knowledge",
+      logistics: "Logística",
       ads: "Publicidade",
     },
   },
@@ -212,6 +216,8 @@ const NEXT_STEP_COPY: Record<LocaleKey, Record<string, string>> = {
       "Envía un mensaje de prueba y confirma que la conversación aparezca en la bandeja antes de activar automatizaciones o IA.",
     supplier:
       "Revisa que catálogo, costos y disponibilidad estén completos antes de usar el proveedor en la operación.",
+    logistics:
+      "Registra una guía de prueba y confirma que los cambios de estado lleguen al tracking antes de activar automatizaciones de entrega.",
     default:
       "Haz una prueba del flujo conectado y confirma que los datos esperados aparezcan en Diaglob antes de usarlo en producción.",
   },
@@ -234,6 +240,8 @@ const NEXT_STEP_COPY: Record<LocaleKey, Record<string, string>> = {
       "Send a test message and confirm the conversation appears in the inbox before enabling automations or AI.",
     supplier:
       "Review catalog, costs, and availability before using the supplier in your operating workflow.",
+    logistics:
+      "Register a test tracking number and confirm status updates reach tracking before enabling delivery automations.",
     default:
       "Test the connected workflow and confirm expected data appears in Diaglob before using it in production.",
   },
@@ -256,6 +264,8 @@ const NEXT_STEP_COPY: Record<LocaleKey, Record<string, string>> = {
       "Envie uma mensagem de teste e confirme que a conversa aparece na caixa de entrada antes de ativar automações ou IA.",
     supplier:
       "Revise catálogo, custos e disponibilidade antes de usar o fornecedor na operação.",
+    logistics:
+      "Registre um código de rastreio de teste e confirme as atualizações antes de ativar automações de entrega.",
     default:
       "Teste o fluxo conectado e confirme que os dados esperados aparecem na Diaglob antes de usar em produção.",
   },
@@ -271,6 +281,7 @@ function IntegrationIcon({ category }: { category: string }) {
   if (category === "commerce") return <ShoppingBag size={17} />;
   if (category === "messaging") return <MessageSquareText size={17} />;
   if (category === "supplier") return <Package size={17} />;
+  if (category === "logistics") return <Truck size={17} />;
   if (category === "payments" || category === "payment") return <CreditCard size={17} />;
   if (category === "knowledge") return <BrainCircuit size={17} />;
   return <Plug size={17} />;
@@ -289,6 +300,7 @@ function nextStepFor(integration: OperationsIntegration, locale: LocaleKey) {
   if (integration.category === "commerce") return copy.commerce;
   if (integration.category === "messaging") return copy.messaging;
   if (integration.category === "supplier") return copy.supplier;
+  if (integration.category === "logistics") return copy.logistics;
   return copy.default;
 }
 
