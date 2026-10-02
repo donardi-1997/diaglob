@@ -64,11 +64,23 @@ function executionDebug(
   recipientStatus?: string | null,
 ): FlowNodeDebug {
   if (latest) {
-    let status = latest.status as FlowNodeDebug["status"];
-    if (status === "sending" || status === "processing") {
+    const rawStatus = latest.status;
+    let status: FlowNodeDebug["status"] = "pending";
+    if (rawStatus === "sending" || rawStatus === "processing") {
       status = "running";
+    } else if (rawStatus === "retry_wait") {
+      status = "waiting";
+    } else if (
+      rawStatus === "completed"
+      || rawStatus === "failed"
+      || rawStatus === "skipped"
+      || rawStatus === "ambiguous"
+      || rawStatus === "running"
+      || rawStatus === "waiting"
+      || rawStatus === "pending"
+    ) {
+      status = rawStatus;
     }
-    if (status === "retry_wait") status = "waiting";
 
     return {
       status,
@@ -247,14 +259,8 @@ export default function FlowExecutionDebugger({
   const [selectedNodeId, setSelectedNodeId] =
     useState<string | null>(null);
 
-  const baseGraph = useMemo(
-    () =>
-      "nodes" in graph
-        ? deserializeFlowGraph(
-            graph as Record<string, unknown>,
-          )
-        : graph,
-    [graph],
+  const baseGraph: FlowGraph = deserializeFlowGraph(
+    graph as Record<string, unknown>,
   );
 
   const executionGroups = useMemo(() => {
