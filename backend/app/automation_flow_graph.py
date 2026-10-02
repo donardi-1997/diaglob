@@ -32,6 +32,8 @@ CONDITION_FIELDS = {
     "customer.needs_attention", "customer.needs_followup",
     "customer.order_count", "customer.country",
     "has_successful_order_since_flow_start",
+    "order.is_cod", "order.payment_status", "order.total",
+    "order.currency", "order.country", "order.fulfillment_status",
 }
 
 CONDITION_OPERATORS = {
@@ -47,6 +49,7 @@ MESSAGE_MODES = {"free_form", "template", "auto"}
 WAIT_UNITS = {"minutes", "hours", "days"}
 
 CALL_OUTCOMES = {"confirmed", "rejected", "no_answer", "failed"}
+CALL_PURPOSES = {"general", "order_confirmation"}
 
 # Read-only / confirmation-free capabilities that may run unattended inside a flow.
 # Write, financial and destructive agent tools stay excluded from the automation
@@ -60,6 +63,7 @@ FLOW_TOOL_NAMES = {
     "suppliers.cj.search",
     "suppliers.cj.quote",
     "analytics.summary",
+    "fulfillment.enqueue_trigger_order",
 }
 
 
@@ -132,10 +136,13 @@ def validate_graph(graph: dict[str, Any]) -> list[str]:
         elif ntype == "call":
             prompt = str(config.get("call_prompt") or "").strip()
             timeout_minutes = config.get("timeout_minutes", 5)
+            purpose = str(config.get("call_purpose") or "general")
             if not prompt:
                 errors.append(f"Node {nid}: call_prompt is required")
             if not isinstance(timeout_minutes, (int, float)) or not 1 <= timeout_minutes <= 60:
                 errors.append(f"Node {nid}: timeout_minutes must be between 1 and 60")
+            if purpose not in CALL_PURPOSES:
+                errors.append(f"Node {nid}: invalid call_purpose '{purpose}'")
 
         elif ntype == "tool":
             tool_name = config.get("tool_name", "")
