@@ -43,7 +43,11 @@ export type ConditionField =
   | "order.total"
   | "order.currency"
   | "order.country"
-  | "order.fulfillment_status";
+  | "order.fulfillment_status"
+  | "shipment.status"
+  | "shipment.carrier"
+  | "shipment.destination_country"
+  | "shipment.provider";
 
 export type ConditionOperator =
   | "equals"
@@ -177,6 +181,10 @@ const CONDITION_FIELDS: ConditionField[] = [
   "order.currency",
   "order.country",
   "order.fulfillment_status",
+  "shipment.status",
+  "shipment.carrier",
+  "shipment.destination_country",
+  "shipment.provider",
 ];
 
 const CONDITION_OPERATORS: ConditionOperator[] = [
