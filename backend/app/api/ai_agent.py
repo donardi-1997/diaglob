@@ -16,6 +16,7 @@ from ..services.agent_approvals import (
 )
 from ..services.agent_tool_executor import execute_agent_tool
 from ..services.ai_tool_registry import list_authorized_tools
+from ..workforce_catalog import get_workforce_catalog
 from .deps import get_current_membership
 
 
@@ -31,6 +32,18 @@ class ToolExecutionRequest(BaseModel):
     store_id: int = Field(ge=1)
     arguments: dict = Field(default_factory=dict)
     approval_id: int | None = Field(default=None, ge=1)
+
+
+@router.get("/api/ai/workforce")
+def list_ai_workforce(
+    membership: OrganizationMembership = Depends(get_current_membership),
+):
+    roles = get_workforce_catalog()
+    return {
+        "organization_id": membership.organization_id,
+        "roles": roles,
+        "total": len(roles),
+    }
 
 
 @router.get("/api/ai/tools")

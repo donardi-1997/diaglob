@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from ..analytics import get_automations_analytics, get_date_range
 from ..db import get_db
-from ..models import OrganizationMembership
+from ..models import OrganizationMembership, Store, WhatsAppConnection
 from .deps import get_current_membership, require_permission
 from ..services.automation_campaigns_service import (
     CampaignConflictError,
@@ -37,6 +37,11 @@ from ..services.automation_campaigns_service import (
     toggle_legacy_automation,
     update_campaign,
     update_legacy_automation,
+)
+from ..automation_flow_templates import (
+    get_flow_template,
+    get_flow_template_categories,
+    get_flow_templates,
 )
 from ..services.automation_flows_service import (
     FlowConflictError,
@@ -336,6 +341,107 @@ def retry_run_recipient_route(recipient_id: int, run_id: int, campaign_id: int, 
         return retry_run_recipient(db, membership.organization_id, store_id, campaign_id, run_id, recipient_id)
     except (StoreNotFoundError, CampaignNotFoundError, RecipientRetryError) as exc:
         raise _map_campaign_error(exc)
+
+
+# ============================================================
+# ROUTES — Durable one-click Flow Templates
+# ============================================================
+
+
+def _flow_template_availability(db: Session, organization_id: int, store_id: int, template: dict) -> dict:
+    missing = []
+    for integration in template.get("required_integrations", []):
+        if integration == "whatsapp":
+            connected = db.query(WhatsAppConnection.id).filter(
+                WhatsAppConnection.organization_id == organization_id,
+                WhatsAppConnection.store_id == store_id,
+                WhatsAppConnection.status == "connected",
+            ).first()
+            if not connected:
+                missing.append("whatsapp")
+    return {
+        "available": not missing,
+        "missing": missing,
+        "status": "ready" if not missing else "integration_required",
+    }
+
+
+@router.get("/api/stores/{store_id}/automation-flow-templates")
+def list_flow_templates_route(
+    store_id: int,
+    category: str | None = None,
+    membership: OrganizationMembership = Depends(require_permission("automations.read")),
+    db: Session = Depends(get_db),
+):
+    store = db.query(Store).filter(
+        Store.id == store_id,
+        Store.organization_id == membership.organization_id,
+        Store.deleted.is_(False),
+    ).first()
+    if not store:
+        raise HTTPException(status_code=404, detail="Store not found")
+
+    items = get_flow_templates(category)
+    for item in items:
+        item["availability"] = _flow_template_availability(
+            db,
+            membership.organization_id,
+            store_id,
+            item,
+        )
+    return {
+        "items": items,
+        "categories": get_flow_template_categories(),
+        "total": len(items),
+    }
+
+
+@router.post("/api/stores/{store_id}/automation-flow-templates/{template_id}")
+def create_flow_from_template_route(
+    store_id: int,
+    template_id: str,
+    membership: OrganizationMembership = Depends(require_permission("automations.write")),
+    db: Session = Depends(get_db),
+):
+    template = get_flow_template(template_id)
+    if not template:
+        raise HTTPException(status_code=404, detail="Flow template not found")
+
+    availability = _flow_template_availability(
+        db,
+        membership.organization_id,
+        store_id,
+        template,
+    )
+    if not availability["available"]:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "FLOW_TEMPLATE_INTEGRATION_REQUIRED",
+                "missing": availability["missing"],
+                "message": "Connect the required integrations before creating this flow.",
+            },
+        )
+
+    try:
+        flow = create_flow(
+            db,
+            membership.organization_id,
+            store_id,
+            membership.user_id,
+            template["name"],
+            template["description"],
+            template["graph"],
+        )
+    except (FlowNotFoundError, FlowConflictError, FlowValidationError) as exc:
+        raise _map_flow_error(exc)
+
+    return {
+        "template_id": template_id,
+        "recommended_role": template.get("recommended_role"),
+        "flow": flow,
+        "next_step": "review_publish_activate",
+    }
 
 
 # ============================================================

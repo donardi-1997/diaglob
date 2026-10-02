@@ -13,6 +13,7 @@ import {
   Star,
   Workflow,
   Clock,
+  ShieldCheck,
 } from "lucide-react";
 
 import { api } from "../services/api";
@@ -24,16 +25,9 @@ interface AutomationTemplate {
   description: string;
   category: string;
   recommended_for: string;
-  trigger: { type: string };
-  actions: Array<{
-    type: string;
-    delay_seconds?: number;
-    message?: string;
-  }>;
+  recommended_role?: string;
+  graph: Record<string, unknown>;
   required_integrations: string[];
-  optional_integrations: string[];
-  supported_store_types: string[];
-  version: number;
   icon: string;
   estimated_setup_minutes: number;
   availability: {
@@ -58,6 +52,7 @@ const ICON_MAP: Record<string, typeof Workflow> = {
   "user-check": Star,
   "alert-triangle": AlertCircle,
   "truck": Truck,
+  "shield": ShieldCheck,
   "workflow": Workflow,
 };
 
@@ -66,7 +61,10 @@ const CATEGORY_LABELS: Record<string, string> = {
   "Sales": "autoTemplateCategorySales",
   "Orders": "autoTemplateCategoryOrders",
   "Customer Retention": "autoTemplateCategoryRetention",
+  "Retention": "autoTemplateCategoryRetention",
   "Operations": "autoTemplateCategoryOperations",
+  "Post-sales": "autoTemplateCategoryPostSales",
+  "Intelligence": "autoTemplateCategoryIntelligence",
 };
 
 
@@ -98,7 +96,7 @@ export default function AutomationTemplates({
         : "";
 
       const response = await api.get(
-        `/api/stores/${storeId}/automation-templates${params}`,
+        `/api/stores/${storeId}/automation-flow-templates${params}`,
       );
 
       const data = response.data;
@@ -124,14 +122,13 @@ export default function AutomationTemplates({
       setSuccess("");
 
       await api.post(
-        `/api/stores/${storeId}/automation-templates`,
-        { template_id: templateId },
+        `/api/stores/${storeId}/automation-flow-templates/${templateId}`
       );
 
       setSuccess(t("autoTemplateCreated"));
     } catch (err: any) {
       const detail = err?.response?.data?.detail;
-      if (typeof detail === "object" && detail.code === "TEMPLATE_INTEGRATION_REQUIRED") {
+      if (typeof detail === "object" && detail.code === "FLOW_TEMPLATE_INTEGRATION_REQUIRED") {
         setError(
           t("autoTemplateMissingIntegration") +
           ": " + (detail.missing || []).join(", ")
@@ -267,7 +264,7 @@ export default function AutomationTemplates({
                     )}
                     {isCreating
                       ? (t("autoTemplateCreating") || "Creating...")
-                      : (t("autoTemplateCreate") || "Create automation")}
+                      : (t("autoTemplateCreate") || "Create flow")}
                   </button>
                 )}
               </div>

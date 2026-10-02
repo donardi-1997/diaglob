@@ -1,0 +1,108 @@
+.workforce-section {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 22px;
+}
+
+.workforce-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: flex-end;
+}
+
+.workforce-heading h2 {
+  margin: 5px 0 6px;
+}
+
+.workforce-heading p {
+  margin: 0;
+  max-width: 760px;
+  opacity: 0.76;
+  line-height: 1.5;
+}
+
+.workforce-count {
+  border: 1px solid var(--border-color, rgba(148, 163, 184, 0.18));
+  border-radius: 999px;
+  padding: 7px 11px;
+  font-size: 0.78rem;
+  opacity: 0.78;
+  white-space: nowrap;
+}
+
+.workforce-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.workforce-card {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  padding: 17px;
+  border: 1px solid var(--border-color, rgba(148, 163, 184, 0.18));
+  background: var(--panel-bg, rgba(15, 23, 42, 0.72));
+  border-radius: 16px;
+}
+
+.workforce-card-top {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.workforce-card-top > div {
+  display: grid;
+  gap: 3px;
+  flex: 1;
+}
+
+.workforce-card-top > div > span {
+  font-size: 0.76rem;
+  opacity: 0.66;
+}
+
+.workforce-card p {
+  margin: 0;
+  line-height: 1.5;
+  opacity: 0.78;
+  font-size: 0.9rem;
+}
+
+.workforce-capabilities {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.workforce-capabilities span {
+  padding: 4px 7px;
+  border-radius: 7px;
+  background: rgba(99, 102, 241, 0.1);
+  font-size: 0.69rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  opacity: 0.86;
+}
+
+.workforce-card .secondary-button {
+  justify-self: start;
+}
+
+@media (max-width: 1100px) {
+  .workforce-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .workforce-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .workforce-grid {
+    grid-template-columns: 1fr;
+  }
+}

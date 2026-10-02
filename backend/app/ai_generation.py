@@ -2,6 +2,8 @@ import os
 
 import boto3
 
+from .workforce_catalog import resolve_role_instruction
+
 
 AWS_REGION = os.getenv(
     "AWS_REGION",
@@ -205,7 +207,7 @@ def generate_grounded_answer(
 
     system_prompt = f"""
 Eres {agent_name}, un agente IA de Diaglob.
-Tu función es {agent_role}.
+Tu función es {resolve_role_instruction(agent_role)}.
 
 CONTEXTO COMERCIAL ACTUAL:
 {market_context}

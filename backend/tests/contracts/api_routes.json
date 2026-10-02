@@ -49,6 +49,10 @@
   ],
   [
     "DELETE",
+    "/api/stores/{store_id}/instagram/disconnect"
+  ],
+  [
+    "DELETE",
     "/api/stores/{store_id}/nuvemshop/disconnect"
   ],
   [
@@ -81,11 +85,11 @@
   ],
   [
     "DELETE",
-    "/api/team/invitations/{invitation_id}"
+    "/api/team/{membership_id}"
   ],
   [
     "DELETE",
-    "/api/team/{membership_id}"
+    "/api/team/invitations/{invitation_id}"
   ],
   [
     "GET",
@@ -145,6 +149,10 @@
   ],
   [
     "GET",
+    "/api/ai/workforce"
+  ],
+  [
+    "GET",
     "/api/billing/ai-packages"
   ],
   [
@@ -169,10 +177,6 @@
   ],
   [
     "GET",
-    "/api/customers/summary"
-  ],
-  [
-    "GET",
     "/api/customers/{customer_id}"
   ],
   [
@@ -182,6 +186,10 @@
   [
     "GET",
     "/api/customers/{customer_id}/risk/disputes/mine"
+  ],
+  [
+    "GET",
+    "/api/customers/summary"
   ],
   [
     "GET",
@@ -329,10 +337,6 @@
   ],
   [
     "GET",
-    "/api/stores/{store_id}/automation-campaigns/audience/customers"
-  ],
-  [
-    "GET",
     "/api/stores/{store_id}/automation-campaigns/{campaign_id}"
   ],
   [
@@ -353,7 +357,15 @@
   ],
   [
     "GET",
+    "/api/stores/{store_id}/automation-campaigns/audience/customers"
+  ],
+  [
+    "GET",
     "/api/stores/{store_id}/automation-executions"
+  ],
+  [
+    "GET",
+    "/api/stores/{store_id}/automation-flow-templates"
   ],
   [
     "GET",
@@ -433,6 +445,10 @@
   ],
   [
     "GET",
+    "/api/stores/{store_id}/instagram"
+  ],
+  [
+    "GET",
     "/api/stores/{store_id}/nuvemshop/status"
   ],
   [
@@ -441,15 +457,27 @@
   ],
   [
     "GET",
-    "/api/stores/{store_id}/payments/providers"
-  ],
-  [
-    "GET",
     "/api/stores/{store_id}/payments/{payment_id}"
   ],
   [
     "GET",
     "/api/stores/{store_id}/payments/{provider}/status"
+  ],
+  [
+    "GET",
+    "/api/stores/{store_id}/payments/providers"
+  ],
+  [
+    "GET",
+    "/api/stores/{store_id}/post-sales/cases"
+  ],
+  [
+    "GET",
+    "/api/stores/{store_id}/post-sales/cases/{case_id}"
+  ],
+  [
+    "GET",
+    "/api/stores/{store_id}/post-sales/summary"
   ],
   [
     "GET",
@@ -510,6 +538,10 @@
   [
     "GET",
     "/api/team/invitations"
+  ],
+  [
+    "GET",
+    "/api/webhooks/instagram"
   ],
   [
     "GET",
@@ -581,6 +613,10 @@
   ],
   [
     "PATCH",
+    "/api/stores/{store_id}/post-sales/cases/{case_id}"
+  ],
+  [
+    "PATCH",
     "/api/team/{membership_id}"
   ],
   [
@@ -649,6 +685,10 @@
   ],
   [
     "POST",
+    "/api/conversations/{conversation_id}/instagram/send"
+  ],
+  [
+    "POST",
     "/api/conversations/{conversation_id}/messages"
   ],
   [
@@ -685,6 +725,18 @@
   ],
   [
     "POST",
+    "/api/knowledge-bases/{knowledge_base_id}/sources/{source_id}/sync"
+  ],
+  [
+    "POST",
+    "/api/knowledge-bases/{knowledge_base_id}/sources/{source_id}/sync-drive-file"
+  ],
+  [
+    "POST",
+    "/api/knowledge-bases/{knowledge_base_id}/sources/{source_id}/sync-folder"
+  ],
+  [
+    "POST",
     "/api/knowledge-bases/{knowledge_base_id}/sources/google-doc"
   ],
   [
@@ -701,18 +753,6 @@
   ],
   [
     "POST",
-    "/api/knowledge-bases/{knowledge_base_id}/sources/{source_id}/sync"
-  ],
-  [
-    "POST",
-    "/api/knowledge-bases/{knowledge_base_id}/sources/{source_id}/sync-drive-file"
-  ],
-  [
-    "POST",
-    "/api/knowledge-bases/{knowledge_base_id}/sources/{source_id}/sync-folder"
-  ],
-  [
-    "POST",
     "/api/register/provision"
   ],
   [
@@ -722,10 +762,6 @@
   [
     "POST",
     "/api/stores/{store_id}/automation-campaigns"
-  ],
-  [
-    "POST",
-    "/api/stores/{store_id}/automation-campaigns/audience/preview"
   ],
   [
     "POST",
@@ -741,11 +777,15 @@
   ],
   [
     "POST",
-    "/api/stores/{store_id}/automation-flows"
+    "/api/stores/{store_id}/automation-campaigns/audience/preview"
   ],
   [
     "POST",
-    "/api/stores/{store_id}/automation-flows/simulate"
+    "/api/stores/{store_id}/automation-flow-templates/{template_id}"
+  ],
+  [
+    "POST",
+    "/api/stores/{store_id}/automation-flows"
   ],
   [
     "POST",
@@ -777,6 +817,10 @@
   ],
   [
     "POST",
+    "/api/stores/{store_id}/automation-flows/simulate"
+  ],
+  [
+    "POST",
     "/api/stores/{store_id}/automation-templates"
   ],
   [
@@ -794,6 +838,10 @@
   [
     "POST",
     "/api/stores/{store_id}/dropi/connect"
+  ],
+  [
+    "POST",
+    "/api/stores/{store_id}/instagram/connect"
   ],
   [
     "POST",
@@ -826,6 +874,14 @@
   [
     "POST",
     "/api/stores/{store_id}/payments/{provider}/connect"
+  ],
+  [
+    "POST",
+    "/api/stores/{store_id}/post-sales/cases"
+  ],
+  [
+    "POST",
+    "/api/stores/{store_id}/post-sales/cases/{case_id}/notes"
   ],
   [
     "POST",
@@ -914,6 +970,10 @@
   [
     "POST",
     "/api/webhooks/dropi/{webhook_token}"
+  ],
+  [
+    "POST",
+    "/api/webhooks/instagram"
   ],
   [
     "POST",

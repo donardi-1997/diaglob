@@ -1,0 +1,105 @@
+.post-sales-page {
+  display: grid;
+  gap: 20px;
+}
+
+.post-sales-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.post-sales-summary > button,
+.post-sales-summary-static {
+  border: 1px solid var(--border-color, rgba(148, 163, 184, 0.18));
+  background: var(--panel-bg, rgba(15, 23, 42, 0.72));
+  border-radius: 16px;
+  padding: 16px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  color: inherit;
+  text-align: left;
+}
+
+.post-sales-summary > button {
+  cursor: pointer;
+}
+
+.post-sales-summary > button.is-active {
+  outline: 2px solid rgba(99, 102, 241, 0.45);
+}
+
+.post-sales-summary strong {
+  font-size: 1.25rem;
+}
+
+.post-sales-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.post-sales-card {
+  display: grid;
+  gap: 16px;
+}
+
+.post-sales-card header,
+.post-sales-card footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.post-sales-card h3 {
+  margin: 8px 0 4px;
+}
+
+.post-sales-card p {
+  margin: 0;
+  opacity: 0.78;
+  line-height: 1.55;
+}
+
+.post-sales-card footer {
+  align-items: center;
+  font-size: 0.82rem;
+  opacity: 0.85;
+}
+
+.post-sales-card select,
+.management-form select,
+.management-form textarea {
+  width: 100%;
+  border: 1px solid var(--border-color, rgba(148, 163, 184, 0.2));
+  border-radius: 10px;
+  background: var(--input-bg, rgba(15, 23, 42, 0.75));
+  color: inherit;
+  padding: 10px 12px;
+}
+
+.post-sales-priority {
+  display: inline-flex;
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: rgba(148, 163, 184, 0.15);
+}
+
+.post-sales-priority.high,
+.post-sales-priority.urgent {
+  background: rgba(245, 158, 11, 0.16);
+}
+
+@media (max-width: 900px) {
+  .post-sales-summary,
+  .post-sales-grid {
+    grid-template-columns: 1fr;
+  }
+}

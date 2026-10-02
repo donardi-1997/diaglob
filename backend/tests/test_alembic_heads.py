@@ -6,4 +6,4 @@ def test_alembic_has_single_head():
     config = Config("alembic.ini")
     script = ScriptDirectory.from_config(config)
 
-    assert script.get_heads() == ["v8d9e0f1a2b3"]
+    assert script.get_heads() == ["x0f1a2b3c4d5"]

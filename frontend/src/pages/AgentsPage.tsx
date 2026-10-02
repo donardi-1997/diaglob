@@ -13,8 +13,10 @@ import {
 import {
   createAgent,
   getAgents,
+  getWorkforceCatalog,
   updateAgent,
   type Agent,
+  type WorkforceRole,
 } from "../services/agents";
 
 import {
@@ -25,6 +27,7 @@ import {
 import {
   type Store,
 } from "../services/stores";
+import "../workforce-catalog.css";
 
 
 interface AgentsPageProps {
@@ -58,6 +61,9 @@ export default function AgentsPage({
   const { t } = useTranslation();
   const [agents, setAgents] =
     useState<Agent[]>([]);
+
+  const [workforceRoles, setWorkforceRoles] =
+    useState<WorkforceRole[]>([]);
 
   const [knowledgeBases, setKnowledgeBases] =
     useState<KnowledgeBase[]>([]);
@@ -96,9 +102,11 @@ export default function AgentsPage({
       const [
         agentsResponse,
         knowledgeResponse,
+        workforceResponse,
       ] = await Promise.all([
         getAgents(),
         getKnowledgeBases(),
+        getWorkforceCatalog(),
       ]);
 
       setAgents(
@@ -107,6 +115,10 @@ export default function AgentsPage({
 
       setKnowledgeBases(
         knowledgeResponse.items,
+      );
+
+      setWorkforceRoles(
+        workforceResponse.roles,
       );
     } catch (err) {
       console.error(err);
@@ -125,6 +137,26 @@ export default function AgentsPage({
 
     setForm({
       ...EMPTY_FORM,
+    });
+
+    setModalOpen(true);
+  }
+
+
+  function openPreset(
+    role: WorkforceRole,
+  ) {
+    setEditingAgent(null);
+
+    setForm({
+      name: role.name,
+      role: role.id,
+      active: true,
+      store_ids:
+        stores.length === 1
+          ? [stores[0].id]
+          : [],
+      knowledge_base_ids: [],
     });
 
     setModalOpen(true);
@@ -344,6 +376,75 @@ export default function AgentsPage({
           {error}
         </div>
       )}
+
+      <section className="workforce-section">
+        <div className="workforce-heading">
+          <div>
+            <span className="eyebrow">AI WORKFORCE</span>
+            <h2>Tu equipo operativo de IA</h2>
+            <p>
+              Roles predefinidos sobre la misma capa de Knowledge, comercio,
+              tracking, automatizaciones y permisos de Diaglob.
+            </p>
+          </div>
+          <span className="workforce-count">
+            {workforceRoles.length} roles
+          </span>
+        </div>
+
+        <div className="workforce-grid">
+          {workforceRoles.map((role) => {
+            const configured = agents.filter(
+              (agent) => agent.role === role.id,
+            ).length;
+
+            return (
+              <article className="workforce-card" key={role.id}>
+                <div className="workforce-card-top">
+                  <span className="management-icon">
+                    <Bot size={19} />
+                  </span>
+                  <div>
+                    <strong>{role.name}</strong>
+                    <span>
+                      {role.customer_facing
+                        ? "Cliente"
+                        : "Operación interna"}
+                    </span>
+                  </div>
+                  {configured > 0 && (
+                    <span className="status-pill active">
+                      {configured} configurado{configured > 1 ? "s" : ""}
+                    </span>
+                  )}
+                </div>
+
+                <p>{role.purpose}</p>
+
+                <div className="workforce-capabilities">
+                  {role.capabilities.slice(0, 4).map(
+                    (capability) => (
+                      <span key={capability}>
+                        {capability}
+                      </span>
+                    ),
+                  )}
+                </div>
+
+                {canWrite && (
+                  <button
+                    className="secondary-button"
+                    onClick={() => openPreset(role)}
+                  >
+                    <Plus size={15} />
+                    Crear desde rol
+                  </button>
+                )}
+              </article>
+            );
+          })}
+        </div>
+      </section>
 
 
       {loading ? (

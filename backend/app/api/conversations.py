@@ -358,15 +358,19 @@ def create_message(
         )
     except ConversationDeliveryError as exc:
         code = str(exc)
-        status = 409 if code == "TELEGRAM_NOT_CONNECTED" else 502
+        if code == "TELEGRAM_NOT_CONNECTED":
+            status = 409
+            message = "Telegram no está conectado para esta tienda."
+        elif code == "INSTAGRAM_NOT_CONNECTED":
+            status = 409
+            message = "Instagram no está conectado para esta tienda."
+        elif code == "INSTAGRAM_SEND_FAILED":
+            status = 502
+            message = "No fue posible enviar el mensaje por Instagram."
+        else:
+            status = 502
+            message = "No fue posible enviar el mensaje por el canal externo."
         raise HTTPException(
             status_code=status,
-            detail={
-                "code": code,
-                "message": (
-                    "Telegram no está conectado para esta tienda."
-                    if code == "TELEGRAM_NOT_CONNECTED"
-                    else "No fue posible enviar el mensaje por Telegram."
-                ),
-            },
+            detail={"code": code, "message": message},
         ) from exc

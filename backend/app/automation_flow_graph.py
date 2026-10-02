@@ -8,7 +8,24 @@ MAX_NODES = 50
 MAX_MESSAGE_NODES = 10
 MAX_WAIT_DAYS = 365
 
-TRIGGER_TYPES = {"manual", "customer_segment", "customer_created", "order_created", "failed_order"}
+TRIGGER_TYPES = {
+    "manual",
+    "customer_segment",
+    "customer_created",
+    "order_created",
+    "failed_order",
+    "post_sales_case_created",
+    "post_sales_case_updated",
+    "post_sales_case_resolved",
+    "shipment_created",
+    "shipment_in_transit",
+    "shipment_out_for_delivery",
+    "shipment_delivered",
+    "shipment_delayed",
+    "shipment_failed",
+    "shipment_delivery_exception",
+    "shipment_returned",
+}
 
 CONDITION_FIELDS = {
     "customer.segment", "customer.health", "customer.priority",

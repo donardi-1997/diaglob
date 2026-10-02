@@ -67,6 +67,17 @@ VALID_TRIGGER_TYPES = frozenset({
     "order.failed",
     "conversation.created",
     "message.received",
+    "post_sales.case_created",
+    "post_sales.case_updated",
+    "post_sales.case_resolved",
+    "shipment.created",
+    "shipment.in_transit",
+    "shipment.out_for_delivery",
+    "shipment.delivered",
+    "shipment.delayed",
+    "shipment.failed",
+    "shipment.delivery_exception",
+    "shipment.returned",
 })
 
 
@@ -738,8 +749,9 @@ def safe_emit_event(
 
     Returns list of executions on success, None on failure (logged).
     """
+    legacy_result: list[AutomationExecution] | None = None
     try:
-        return emit_event(
+        legacy_result = emit_event(
             db=db,
             organization_id=organization_id,
             store_id=store_id,
@@ -749,13 +761,36 @@ def safe_emit_event(
         )
     except Exception as exc:
         logger.error(
-            "safe_emit_event failed for %s (event_id=%s): %s",
+            "safe_emit_event legacy dispatch failed for %s (event_id=%s): %s",
             event_type,
             event_id,
             _sanitize_error(exc),
             exc_info=True,
         )
-        return None
+
+    # The visual Flow Builder is the primary V0.8 automation runtime. Keep this
+    # bridge best-effort so a flow failure can never break the business event.
+    try:
+        from .automation_flow_events import dispatch_flow_event
+
+        dispatch_flow_event(
+            db,
+            organization_id=organization_id,
+            store_id=store_id,
+            event_type=event_type,
+            payload=payload,
+            event_id=event_id,
+        )
+    except Exception as exc:
+        logger.error(
+            "safe_emit_event flow dispatch failed for %s (event_id=%s): %s",
+            event_type,
+            event_id,
+            _sanitize_error(exc),
+            exc_info=True,
+        )
+
+    return legacy_result
 
 
 def emit_event(

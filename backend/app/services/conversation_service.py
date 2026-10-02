@@ -60,6 +60,29 @@ def create_message_with_ai(
         except TelegramSendError as exc:
             raise ConversationDeliveryError(str(exc)) from exc
 
+    if (
+        sender == "human"
+        and (conversation.channel or "").lower() == "instagram"
+    ):
+        from .instagram_service import (
+            InstagramNotConnectedError,
+            InstagramSendError,
+            send_message as send_instagram_message,
+        )
+
+        try:
+            return send_instagram_message(
+                db=db,
+                organization_id=conversation.organization_id,
+                conversation_id=conversation.id,
+                text=text,
+                sender="human",
+            )
+        except InstagramNotConnectedError as exc:
+            raise ConversationDeliveryError("INSTAGRAM_NOT_CONNECTED") from exc
+        except InstagramSendError as exc:
+            raise ConversationDeliveryError(str(exc)) from exc
+
     message = Message(
         conversation_id=conversation.id,
         sender=sender,
