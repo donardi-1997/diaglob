@@ -76,6 +76,7 @@ from .api.automations import router as automations_router  # noqa: E402
 from .api.auth import router as auth_router  # noqa: E402
 from .api.billing import router as billing_router  # noqa: E402
 from .api.ai_usage import router as ai_usage_router  # noqa: E402
+from .api.ai_agent import router as ai_agent_router  # noqa: E402
 from .api.commerce import router as commerce_router  # noqa: E402
 from .api.conversations import router as conversations_router  # noqa: E402
 from .api.customer_risk import router as customer_risk_router  # noqa: E402
@@ -118,6 +119,7 @@ app.include_router(payments_router)
 app.include_router(google_router)
 app.include_router(billing_router)
 app.include_router(ai_usage_router)
+app.include_router(ai_agent_router)
 app.include_router(automations_router)
 app.include_router(whatsapp_router)
 app.include_router(telegram_router)
