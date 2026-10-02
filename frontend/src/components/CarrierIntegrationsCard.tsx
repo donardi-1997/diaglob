@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Check, Copy, Loader2, Truck, Unplug } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -32,7 +32,7 @@ export default function CarrierIntegrationsCard({
 
   const isColombia = (storeCountryCode || "").toUpperCase() === "CO";
 
-  async function load() {
+  const load = useCallback(async () => {
     if (!storeId) return;
     try {
       setLoading(true);
@@ -45,11 +45,11 @@ export default function CarrierIntegrationsCard({
     } finally {
       setLoading(false);
     }
-  }
+  }, [storeId, t]);
 
   useEffect(() => {
     void load();
-  }, [storeId]);
+  }, [load]);
 
   const connectedCount = useMemo(
     () => items.filter((item) => item.connection?.status === "connected").length,
