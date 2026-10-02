@@ -19,7 +19,7 @@ from .models import (
     AutomationFlow, AutomationFlowVersion, AutomationFlowRun,
     AutomationFlowRecipientExecution, AutomationNodeExecution,
     AutomationDeliveryAttempt, AutomationRateLimit,
-    Customer, CustomerStoreProfile, OrganizationMembership, Store, WhatsAppConnection,
+    Customer, CustomerStoreProfile, Order, OrganizationMembership, Store, WhatsAppConnection,
 )
 from .whatsapp_client import WhatsAppDeliveryError, send_whatsapp_template_message, send_whatsapp_text_message
 from .whatsapp_compliance import evaluate_whatsapp_delivery_eligibility, get_last_whatsapp_inbound_by_customer
@@ -343,19 +343,64 @@ def _process_condition_node(db: Session, recipient: AutomationFlowRecipientExecu
     return "advanced"
 
 
-def _resolve_tool_value(value, customer: Customer):
-    """Resolve a small, typed runtime context inside tool arguments."""
-    context = {
+def _flatten_runtime_context(
+    target: dict[str, object],
+    prefix: str,
+    value,
+) -> None:
+    if isinstance(value, dict):
+        for key, child in value.items():
+            child_prefix = f"{prefix}.{key}" if prefix else str(key)
+            _flatten_runtime_context(target, child_prefix, child)
+        return
+    if isinstance(value, list):
+        return
+    target[prefix] = value
+
+
+def _runtime_context(
+    customer: Customer,
+    store: Store | None = None,
+    run: AutomationFlowRun | None = None,
+) -> dict[str, object]:
+    context: dict[str, object] = {
         "customer.id": customer.id,
         "customer.name": customer.name,
         "customer.email": customer.email,
         "customer.phone": customer.phone,
         "customer.country": customer.country_code,
     }
+    if store is not None:
+        context["store.id"] = store.id
+        context["store.name"] = store.name
+        context["store.country"] = store.country_code
+        context["store.currency"] = store.currency
+
+    if run is not None and isinstance(run.trigger_context, dict):
+        for key, value in run.trigger_context.items():
+            _flatten_runtime_context(context, str(key), value)
+
+    return context
+
+
+def _resolve_tool_value(
+    value,
+    customer: Customer,
+    store: Store | None = None,
+    run: AutomationFlowRun | None = None,
+):
+    """Resolve typed runtime variables from customer, store, and trigger context."""
+    context = _runtime_context(customer, store, run)
     if isinstance(value, dict):
-        return {key: _resolve_tool_value(item, customer) for key, item in value.items()}
+        return {
+            key: _resolve_tool_value(item, customer, store, run)
+            for key, item in value.items()
+        }
     if isinstance(value, list):
-        return [_resolve_tool_value(item, customer) for item in value]
+        return [
+            _resolve_tool_value(item, customer, store, run)
+            for item in value
+        ]
     if not isinstance(value, str):
         return value
 
@@ -367,7 +412,10 @@ def _resolve_tool_value(value, customer: Customer):
 
     resolved = value
     for key, replacement in context.items():
-        resolved = resolved.replace("{{" + key + "}}", "" if replacement is None else str(replacement))
+        resolved = resolved.replace(
+            "{{" + key + "}}",
+            "" if replacement is None else str(replacement),
+        )
     return resolved
 
 
