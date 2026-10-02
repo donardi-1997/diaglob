@@ -93,6 +93,43 @@ const privacyEn: LegalDocument = {
   ],
 };
 
+const privacyPtBr: LegalDocument = {
+  eyebrow: "LEGAL",
+  title: "Política de Privacidade",
+  updated: "Última atualização: 2 de outubro de 2026",
+  intro: "Esta política explica como o Diaglob trata informações quando você usa nossa plataforma de conversas, comércio, automação e inteligência para ecommerce, incluindo ferramentas opcionais de medição publicitária.",
+  sections: [
+    { title: "1. Introdução", paragraphs: ["O Diaglob respeita a privacidade das pessoas e empresas que utilizam o serviço. Esta política se aplica ao site, ao aplicativo e às integrações habilitadas pelos usuários."] },
+    { title: "2. Informações que coletamos", paragraphs: ["Coletamos as informações necessárias para criar contas, operar workspaces, fornecer funcionalidades solicitadas, manter a segurança e atender solicitações de suporte."] },
+    { title: "3. Informações de conta e perfil", paragraphs: ["Podem incluir nome, endereço de e-mail, credenciais de acesso administradas por nossos provedores de autenticação, organização, preferências de idioma e configurações da conta."] },
+    { title: "4. Dados de clientes e negócios", paragraphs: ["As organizações podem carregar ou gerar dados de clientes, conversas, pedidos, produtos, agentes, automações e fontes de conhecimento. Tratamos esses dados para prestar o serviço à organização que os controla."] },
+    { title: "5. Dados de ecommerce e integrações", paragraphs: ["Quando você conecta uma loja ou provedor, o Diaglob pode processar os dados que você autorizar, como produtos, pedidos, estoque, clientes ou configurações, apenas para as funcionalidades habilitadas no seu workspace."] },
+    { title: "6. Dados de integrações do Google", paragraphs: ["Quando você conecta Google Drive, Google Docs ou Google Sheets, o Diaglob pode acessar somente os arquivos, documentos, planilhas, metadados e permissões autorizados por OAuth e necessários para a funcionalidade solicitada."] },
+    { title: "7. Como usamos dados de usuários do Google", paragraphs: ["Usamos dados do Google para exibir recursos autorizados, importar conteúdo selecionado, sincronizar alterações solicitadas e criar fontes de conhecimento no Diaglob. Não usamos esses dados para finalidades não relacionadas à funcionalidade solicitada."] },
+    { title: "8. Proteção dos dados do Google", paragraphs: ["Limitamos o acesso aos dados e credenciais do Google aos processos necessários para fornecer as funcionalidades autorizadas. Aplicamos controles técnicos e operacionais razoáveis de acordo com a natureza do serviço."] },
+    { title: "9. Compartilhamento de dados do Google", paragraphs: ["Não vendemos dados de usuários do Google nem os usamos para publicidade. Não compartilhamos dados do Google com terceiros, salvo quando necessário para prestar o serviço solicitado, cumprir obrigação legal ou seguir sua instrução."] },
+    { title: "10. Retenção e exclusão de dados do Google", paragraphs: ["Mantemos dados importados do Google e metadados de conexão enquanto forem necessários para a fonte de conhecimento ou conta correspondente. Você pode desconectar o Google, excluir fontes ou solicitar a exclusão de dados conforme esta política."] },
+    { title: "11. Tratamento de tokens OAuth", paragraphs: ["Tokens OAuth são usados exclusivamente para manter integrações autorizadas. Eles são protegidos por mecanismos de armazenamento destinados a limitar sua exposição e não são exibidos na interface nem incluídos intencionalmente nos registros da aplicação."] },
+    { title: "12. Outras integrações", paragraphs: ["O Diaglob pode integrar-se a serviços como Shopify, WooCommerce ou outros provedores disponíveis. Cada integração está sujeita às permissões concedidas, às configurações da organização e aos termos do respectivo terceiro."] },
+    { title: "13. Cookies, armazenamento local e tecnologias necessárias", paragraphs: ["Usamos armazenamento local, cookies técnicos e sinais semelhantes quando necessários para manter sessões, segurança, idioma, tema, preferências e o funcionamento básico do site. Também armazenamos sua escolha de privacidade para não solicitá-la a cada visita. Essas funções necessárias não dependem do consentimento para medição publicitária."] },
+    { title: "14. Medição publicitária e consentimento", paragraphs: ["Meta Pixel e TikTok Pixel são ferramentas opcionais. Elas permanecem desativadas até que você autorize a categoria Publicidade e medição no aviso de cookies.", "Você pode rejeitar essa categoria e continuar usando o Diaglob. Também pode alterar ou retirar sua autorização posteriormente pelo controle Cookies disponível na interface. Após a retirada, o Diaglob deixa de iniciar novos envios de eventos publicitários e remove do armazenamento local os dados de atribuição de marketing salvos pelo Diaglob. Informações já processadas por um provedor antes da retirada permanecem sujeitas às políticas e obrigações legais desse provedor."] },
+    { title: "15. Meta Pixel", paragraphs: ["Se você autorizar Publicidade e medição e configurarmos o Meta Pixel, poderemos compartilhar com a Meta Platforms eventos como visualizações de página, início ou conclusão de cadastro e sinais de campanha necessários para medir atribuição e desempenho publicitário.", "Dependendo da configuração e do funcionamento das ferramentas empresariais da Meta, o provedor pode receber informações técnicas disponíveis em uma solicitação web, dados do dispositivo ou navegador, URL ou página visitada, horário do evento, identificadores publicitários ou de campanha e cookies associados às suas ferramentas.", "Não enviamos deliberadamente à Meta, por meio de nossos eventos publicitários, o conteúdo de conversas, arquivos do Google, senhas, tokens OAuth, dados completos de pagamento nem outras categorias sensíveis de informações empresariais."] },
+    { title: "16. TikTok Pixel", paragraphs: ["Se você autorizar Publicidade e medição e configurarmos o TikTok Pixel, poderemos compartilhar com o TikTok eventos como visualizações, leads e cadastros concluídos para medir campanhas, atribuir conversões e otimizar publicidade.", "O TikTok informa que seu Pixel pode processar informações do anúncio ou evento, registros de data e hora, endereço IP, user agent, cookies e determinados metadados ou interações do site. Suas tecnologias publicitárias podem incluir identificadores como _ttp, ttcsid, ttcsid_<pixel code> e ttclid, conforme a configuração e a disponibilidade.", "Não enviamos deliberadamente ao TikTok, por meio de nossos eventos publicitários, o conteúdo de conversas, arquivos do Google, senhas, tokens OAuth, dados completos de pagamento nem outras categorias sensíveis de informações empresariais."] },
+    { title: "17. Atribuição de campanhas", paragraphs: ["Quando você autoriza Publicidade e medição, o Diaglob pode armazenar temporariamente no armazenamento local parâmetros de atribuição como utm_source, utm_medium, utm_campaign, utm_content, utm_term, fbclid ou ttclid para relacionar uma campanha a ações posteriores, por exemplo um cadastro. Se você não autorizar publicidade ou retirar o consentimento, o Diaglob não mantém essa atribuição local para fins publicitários."] },
+    { title: "18. Analítica técnica e registros", paragraphs: ["Podemos coletar eventos técnicos, registros de erros, métricas de uso e dados do navegador necessários para operar, proteger, diagnosticar e melhorar o serviço. Esses registros operacionais são distintos da categoria opcional Publicidade e medição. Procuramos limitar os dados ao necessário para essas finalidades."] },
+    { title: "19. Como usamos as informações", paragraphs: ["Usamos as informações para fornecer e manter o Diaglob, autenticar usuários, operar integrações, processar conteúdo solicitado, prevenir abuso, resolver incidentes, medir publicidade quando houver autorização e cumprir obrigações aplicáveis."] },
+    { title: "20. Provedores e subprocessadores", paragraphs: ["Podemos utilizar provedores de infraestrutura, autenticação, pagamentos, comunicações, analítica ou inteligência artificial para operar o serviço. Quando uma funcionalidade habilitada exigir, isso pode incluir o Amazon Bedrock para processar o conteúdo necessário àquela funcionalidade. Para medição publicitária opcional, podemos utilizar Meta Platforms e TikTok somente quando essa categoria estiver autorizada e configurada. Os provedores recebem informações de acordo com a função correspondente e seus próprios termos."] },
+    { title: "21. Segurança", paragraphs: ["Adotamos medidas razoáveis para proteger as informações contra acesso, alteração, perda ou divulgação não autorizados. Nenhum sistema baseado na internet pode garantir segurança absoluta."] },
+    { title: "22. Retenção de dados", paragraphs: ["Mantemos as informações durante a vigência da conta e pelo período razoavelmente necessário para as finalidades descritas, resolver disputas, fazer cumprir acordos e atender obrigações legais. Os dados de atribuição armazenados localmente pelo Diaglob são removidos quando você retira o consentimento publicitário pelo nosso controle de cookies."] },
+    { title: "23. Seus direitos", paragraphs: ["De acordo com a legislação aplicável, você pode solicitar acesso, correção, atualização, exportação, restrição ou exclusão de determinadas informações pessoais. As organizações são responsáveis por atender solicitações relacionadas aos dados de seus próprios clientes."] },
+    { title: "24. Exclusão de conta e dados", paragraphs: ["Você pode solicitar a exclusão de sua conta ou de seus dados entrando em contato conosco. A exclusão pode estar sujeita a prazos razoáveis de processamento, backups temporários e obrigações legais ou de segurança."] },
+    { title: "25. Processamento internacional", paragraphs: ["As informações podem ser processadas em países onde o Diaglob ou seus provedores operam, incluindo provedores de medição publicitária quando você os autorizar. Quando aplicável, buscamos utilizar salvaguardas razoáveis para esse processamento."] },
+    { title: "26. Privacidade de menores", paragraphs: ["O Diaglob é destinado a usuários empresariais e não foi projetado para menores de idade. Não buscamos coletar intencionalmente informações pessoais de menores."] },
+    { title: "27. Alterações desta política", paragraphs: ["Podemos atualizar esta política para refletir mudanças no serviço, na legislação, nas ferramentas publicitárias ou em nossas práticas. Publicaremos a versão atualizada com a data da última atualização."] },
+    { title: "28. Contato", paragraphs: ["O Diaglob é operado por Adrian Felipe Restrepo Guerra a partir de Bogotá, Colômbia. Para dúvidas sobre privacidade, solicitações relacionadas a dados ou esta política, escreva para adrianguerra9703@gmail.com.", "Nosso uso das informações recebidas das APIs do Google segue a Política de Dados de Usuário dos Serviços de API do Google, incluindo os requisitos aplicáveis de Uso Limitado."] },
+  ],
+};
+
 const termsEs: LegalDocument = {
   eyebrow: "LEGAL",
   title: "Términos de servicio",
@@ -165,9 +202,45 @@ const termsEn: LegalDocument = {
   ],
 };
 
+const termsPtBr: LegalDocument = {
+  eyebrow: "LEGAL",
+  title: "Termos de Serviço",
+  updated: "Última atualização: 10 de setembro de 2026",
+  intro: "Estes termos regulam o uso do Diaglob, marca operada por Adrian Felipe Restrepo Guerra, pessoa física com operação principal em Bogotá, Colômbia. Ao criar uma conta, acessar ou usar o serviço, você aceita estes termos em seu próprio nome ou em nome da organização que representa.",
+  sections: [
+    { title: "1. Aceitação dos termos", paragraphs: ["Ao usar o Diaglob, você aceita estes termos e as políticas incorporadas por referência. Se não concordar, não utilize o serviço."] },
+    { title: "2. Descrição do Diaglob", paragraphs: ["O Diaglob oferece ferramentas para conversas, comércio, automação, analítica, inteligência de clientes, agentes e conhecimento para operações de ecommerce."] },
+    { title: "3. Elegibilidade e contas", paragraphs: ["Você deve ter capacidade para aceitar estes termos e fornecer informações de conta verdadeiras. Você é responsável por proteger suas credenciais de acesso."] },
+    { title: "4. Responsabilidades da conta", paragraphs: ["Você é responsável pelas atividades realizadas em sua conta, pelas pessoas às quais concede acesso e por comunicar acessos não autorizados de forma oportuna."] },
+    { title: "5. Organizações e workspaces", paragraphs: ["Quem cria ou administra uma organização controla seus membros, lojas, configurações e dados empresariais. Você deve ter autorização para administrar os dados que incluir."] },
+    { title: "6. Lojas e serviços conectados", paragraphs: ["Você pode conectar lojas e serviços de terceiros somente quando tiver autorização. O Diaglob opera de acordo com as permissões concedidas e não controla a disponibilidade nem as políticas desses terceiros."] },
+    { title: "7. Integrações do Google", paragraphs: ["As integrações do Google são habilitadas por OAuth e acessam apenas os recursos autorizados para a funcionalidade solicitada. Você deve respeitar os termos do Google e administrar suas conexões pelo Diaglob."] },
+    { title: "8. Outras integrações", paragraphs: ["Integrações com Shopify, WooCommerce ou outros provedores estão sujeitas aos próprios termos, permissões, limites e alterações de serviço desses terceiros."] },
+    { title: "9. Conteúdo e dados de clientes", paragraphs: ["Você mantém os direitos sobre seu conteúdo e seus dados. Você concede ao Diaglob as permissões limitadas necessárias para hospedar, processar e exibir esse conteúdo com a finalidade de prestar o serviço."] },
+    { title: "10. Uso aceitável", paragraphs: ["Você deve usar o Diaglob de forma lícita, respeitosa e coerente com estes termos, a documentação disponível e os direitos de terceiros."] },
+    { title: "11. Atividades proibidas", paragraphs: ["Você não pode usar o serviço para violar a lei, infringir direitos, distribuir conteúdo malicioso, interferir no serviço, contornar controles, acessar sistemas sem autorização ou enviar comunicações não permitidas."] },
+    { title: "12. Propriedade intelectual", paragraphs: ["O Diaglob e seus elementos protegidos pertencem aos respectivos titulares. Estes termos não concedem direitos sobre marcas, software ou conteúdo do Diaglob além do uso permitido do serviço."] },
+    { title: "13. Serviços de terceiros", paragraphs: ["Serviços de terceiros podem mudar, ser suspensos ou impor condições próprias. O Diaglob não é responsável por decisões, falhas ou conteúdo desses serviços."] },
+    { title: "14. Planos de assinatura", paragraphs: ["Funcionalidades, limites e preços dependem do plano selecionado e das informações apresentadas ao contratar ou administrar a assinatura."] },
+    { title: "15. Faturamento", paragraphs: ["Você concorda em pagar as cobranças aplicáveis ao seu plano pelo provedor de pagamentos disponível. Quando a Paddle processar o pagamento como Merchant of Record, a cobrança, os impostos, os comprovantes e determinadas obrigações de pagamento serão administrados de acordo com os termos da Paddle e a legislação aplicável."] },
+    { title: "16. Alterações de plano", paragraphs: ["Alterações de plano, período de cobrança e seus efeitos no preço seguem as opções apresentadas no aplicativo e as regras do provedor de pagamentos quando aplicável."] },
+    { title: "17. Cancelamento", paragraphs: ["Você pode cancelar conforme as opções disponíveis em sua conta. Salvo indicação em contrário ou exigência legal, você manterá o acesso até o fim do período já pago e a assinatura não será renovada depois dessa data. O cancelamento não elimina obrigações de pagamento acumuladas antes de produzir efeito. Consulte também nossa Política de Reembolso."] },
+    { title: "18. Disponibilidade do serviço", paragraphs: ["Buscamos manter o Diaglob disponível, mas o serviço pode ser afetado por manutenção, mudanças, provedores externos, internet ou eventos fora do nosso controle."] },
+    { title: "19. Funcionalidades beta ou experimentais", paragraphs: ["Algumas funcionalidades podem ser identificadas como beta, preliminares ou experimentais. Elas podem mudar, ser limitadas ou retiradas e são fornecidas para avaliação sem garantias adicionais."] },
+    { title: "20. Funcionalidades geradas por IA", paragraphs: ["Respostas, recomendações ou automações geradas por IA podem ser incompletas ou imprecisas. Você deve revisá-las antes de utilizá-las em decisões comerciais, comunicações ou ações operacionais."] },
+    { title: "21. Isenções de garantia", paragraphs: ["Na medida permitida pela legislação, o Diaglob é fornecido no estado em que se encontra e conforme disponibilidade. Não garantimos que atenderá a todos os requisitos, funcionará sem interrupções ou estará livre de erros."] },
+    { title: "22. Limitação de responsabilidade", paragraphs: ["Na medida permitida pela legislação aplicável, o Diaglob não será responsável por danos indiretos, incidentais, especiais ou consequenciais, nem por perda de dados, receitas ou lucros decorrentes do uso ou da impossibilidade de uso do serviço."] },
+    { title: "23. Suspensão ou encerramento", paragraphs: ["Podemos suspender ou encerrar o acesso quando isso for razoavelmente necessário para proteger o serviço, cumprir a legislação, responder a riscos de segurança, tratar falta de pagamento ou violações materiais."] },
+    { title: "24. Dados após o encerramento", paragraphs: ["Após o encerramento, o acesso pode terminar e os dados podem ser excluídos de acordo com nossos períodos de retenção, backups e obrigações legais. Recomendamos exportar as informações necessárias antes de cancelar."] },
+    { title: "25. Alterações dos termos", paragraphs: ["Podemos atualizar estes termos. A versão atualizada será publicada nesta página, e o uso continuado após sua entrada em vigor poderá constituir aceitação quando permitido pela legislação."] },
+    { title: "26. Lei aplicável", paragraphs: ["Estes termos são regidos pelas leis da República da Colômbia, sem limitar normas obrigatórias e direitos de proteção ao consumidor que possam ser aplicáveis na jurisdição do cliente."] },
+    { title: "27. Contato", paragraphs: ["O Diaglob é operado por Adrian Felipe Restrepo Guerra a partir de Bogotá, Colômbia. Para dúvidas sobre estes termos, faturamento ou assuntos jurídicos, escreva para adrianguerra9703@gmail.com."] },
+  ],
+};
+
 const documents = {
-  privacy: { es: privacyEs, en: privacyEn },
-  terms: { es: termsEs, en: termsEn },
+  privacy: { es: privacyEs, en: privacyEn, "pt-BR": privacyPtBr },
+  terms: { es: termsEs, en: termsEn, "pt-BR": termsPtBr },
 };
 
 function setMetadata(title: string, description: string, path: string) {
@@ -197,8 +270,7 @@ function setMetadata(title: string, description: string, path: string) {
 export default function LegalPage({ kind }: { kind: LegalPageKind }) {
   const { i18n } = useTranslation();
   const rawLanguage = i18n.language.startsWith("en") ? "en" : i18n.language.startsWith("pt") ? "pt-BR" : "es";
-  // Legal documents fall back to English for pt-BR
-  const language: "es" | "en" = rawLanguage === "pt-BR" ? "en" : rawLanguage as "es" | "en";
+  const language: "es" | "en" | "pt-BR" = rawLanguage;
   const documentContent = documents[kind][language];
   const [theme, setTheme] = useState(
     localStorage.getItem("diaglob-theme") || "dark",
@@ -211,14 +283,33 @@ export default function LegalPage({ kind }: { kind: LegalPageKind }) {
 
   useEffect(() => {
     const isPrivacy = kind === "privacy";
+    const metadata = {
+      es: {
+        privacyTitle: "Política de privacidad | Diaglob",
+        termsTitle: "Términos de servicio | Diaglob",
+        privacyDescription: "Conoce cómo Diaglob trata la información, las integraciones y la medición publicitaria opcional.",
+        termsDescription: "Consulta los términos que regulan el uso de Diaglob.",
+      },
+      en: {
+        privacyTitle: "Privacy Policy | Diaglob",
+        termsTitle: "Terms of Service | Diaglob",
+        privacyDescription: "Learn how Diaglob handles information, integrations, and optional advertising measurement.",
+        termsDescription: "Read the terms governing use of Diaglob.",
+      },
+      "pt-BR": {
+        privacyTitle: "Política de Privacidade | Diaglob",
+        termsTitle: "Termos de Serviço | Diaglob",
+        privacyDescription: "Saiba como o Diaglob trata informações, integrações e a medição publicitária opcional.",
+        termsDescription: "Consulte os termos que regulam o uso do Diaglob.",
+      },
+    }[language];
+
     setMetadata(
-      isPrivacy ? "Privacy Policy | Diaglob" : "Terms of Service | Diaglob",
-      isPrivacy
-        ? "Learn how Diaglob handles information and Google integrations."
-        : "Read the terms governing use of Diaglob.",
+      isPrivacy ? metadata.privacyTitle : metadata.termsTitle,
+      isPrivacy ? metadata.privacyDescription : metadata.termsDescription,
       isPrivacy ? "/privacy" : "/terms",
     );
-  }, [kind]);
+  }, [kind, language]);
 
   const changeLanguage = (nextLanguage: "es" | "en" | "pt-BR") => {
     i18n.changeLanguage(nextLanguage);
