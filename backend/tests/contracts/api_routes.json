@@ -125,6 +125,10 @@
   ],
   [
     "GET",
+    "/api/ai/approvals/{approval_id}"
+  ],
+  [
+    "GET",
     "/api/ai/tools"
   ],
   [
@@ -570,6 +574,18 @@
   [
     "POST",
     "/api/ai/actions/authorize"
+  ],
+  [
+    "POST",
+    "/api/ai/approvals/{approval_id}/approve"
+  ],
+  [
+    "POST",
+    "/api/ai/approvals/{approval_id}/cancel"
+  ],
+  [
+    "POST",
+    "/api/ai/tools/{tool_name}/execute"
   ],
   [
     "POST",
