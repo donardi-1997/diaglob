@@ -44,7 +44,9 @@ CONDITION_OPERATORS = {
 
 MESSAGE_MODES = {"free_form", "template", "auto"}
 
-WAIT_UNITS = {"minutes", "hours", "days"}\n\nCALL_OUTCOMES = {"confirmed", "rejected", "no_answer", "failed"}
+WAIT_UNITS = {"minutes", "hours", "days"}
+
+CALL_OUTCOMES = {"confirmed", "rejected", "no_answer", "failed"}
 
 # Read-only / confirmation-free capabilities that may run unattended inside a flow.
 # Write, financial and destructive agent tools stay excluded from the automation
