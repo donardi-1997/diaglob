@@ -351,9 +351,9 @@ export default function AgentChatPage({
       updated: AgentChatSession,
     ) => {
       const previousIds = new Set(
-        previous.messages.map((message) => message.id),
+        (previous.messages || []).map((message) => message.id),
       );
-      const newestAssistant = [...updated.messages]
+      const newestAssistant = [...(updated.messages || [])]
         .reverse()
         .find(
           (message) =>
