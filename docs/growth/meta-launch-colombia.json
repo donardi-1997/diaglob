@@ -1,0 +1,61 @@
+{
+  "campaign": {
+    "name": "DLB_CO_ACQ_ECOMMERCE_001",
+    "platform": "meta",
+    "market": "CO",
+    "objective": "website_conversions",
+    "status": "PAUSED",
+    "destination_url": "https://diaglob.tech/ecommerce",
+    "optimization_sequence": [
+      "CompleteRegistration",
+      "StartTrial",
+      "Subscribe"
+    ],
+    "daily_budget_cop": null,
+    "note": "Set budget only after explicit approval before activation."
+  },
+  "ad_set": {
+    "name": "CO_BROAD_ECOMMERCE_001",
+    "country": "CO",
+    "language": "es",
+    "status": "PAUSED"
+  },
+  "ads": [
+    {
+      "name": "DLB_CO_CHAOS_TOOLS_V1",
+      "content_id": "chaos_tools_v1",
+      "primary_text": "¿Tu ecommerce vive entre Shopify, Excel, WhatsApp y varias herramientas más? Diaglob reúne operación, automatizaciones, reportes y un copiloto de IA en un solo lugar.",
+      "headline": "Opera tu ecommerce desde un solo lugar",
+      "description": "Conecta tu tienda y prueba el flujo.",
+      "cta": "SIGN_UP",
+      "url": "https://diaglob.tech/ecommerce?utm_source=meta&utm_medium=paid_social&utm_campaign=co_launch_2026_q4&utm_content=chaos_tools_v1"
+    },
+    {
+      "name": "DLB_CO_AUTOMATION_V1",
+      "content_id": "shopify_automation_v1",
+      "primary_text": "Menos tareas manuales. Más control. Centraliza pedidos, clientes y automatizaciones para que tu operación no dependa de revisar cinco pantallas.",
+      "headline": "Automatiza la operación de tu ecommerce",
+      "description": "Empieza conectando tu tienda.",
+      "cta": "SIGN_UP",
+      "url": "https://diaglob.tech/ecommerce?utm_source=meta&utm_medium=paid_social&utm_campaign=co_launch_2026_q4&utm_content=shopify_automation_v1"
+    },
+    {
+      "name": "DLB_CO_COPILOT_V1",
+      "content_id": "ai_copilot_v1",
+      "primary_text": "Pregúntale a tu ecommerce qué está pasando: pedidos detenidos, clientes pendientes y tareas por automatizar. Diaglob convierte información en acciones.",
+      "headline": "Un copiloto para tu operación ecommerce",
+      "description": "Prueba Diaglob con tu tienda.",
+      "cta": "SIGN_UP",
+      "url": "https://diaglob.tech/ecommerce?utm_source=meta&utm_medium=paid_social&utm_campaign=co_launch_2026_q4&utm_content=ai_copilot_v1"
+    },
+    {
+      "name": "DLB_CO_PRODUCT_DEMO_V1",
+      "content_id": "product_demo_v1",
+      "primary_text": "Shopify es tu tienda. Diaglob puede ser tu centro de operaciones: pedidos, clientes, automatizaciones, reportes e IA conectados.",
+      "headline": "Tu centro de operaciones ecommerce",
+      "description": "Mira cómo funciona y empieza la prueba.",
+      "cta": "SIGN_UP",
+      "url": "https://diaglob.tech/ecommerce?utm_source=meta&utm_medium=paid_social&utm_campaign=co_launch_2026_q4&utm_content=product_demo_v1"
+    }
+  ]
+}
