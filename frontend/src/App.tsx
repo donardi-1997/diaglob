@@ -9,6 +9,7 @@ import {
   Navigate,
   Route,
   Routes,
+  useLocation,
   useNavigate,
 } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -34,8 +35,15 @@ import AppShellV2, {
 import FloatingCopilotButton from "./components/FloatingCopilotButton";
 import type { GlobalSearchResult } from "./services/globalSearch";
 import LoginPage from "./pages/LoginPage";
+import RouteStatePage from "./pages/RouteStatePage";
 import CookieConsent from "./components/CookieConsent";
 import { useWorkspace } from "./hooks/useWorkspace";
+import {
+  getAppPageFromPath,
+  getAppPath,
+  isAppRoot,
+  sanitizeReturnTo,
+} from "./routing";
 import "./App.css";
 import "./landing.css";
 
@@ -198,6 +206,7 @@ function LoadingScreen({ session = false }: { session?: boolean }) {
 
 function App() {
   const { t, i18n } = useTranslation();
+  const location = useLocation();
   const navigate = useNavigate();
   const {
     authenticated,
@@ -216,7 +225,7 @@ function App() {
   const [theme, setTheme] = useState(
     localStorage.getItem("diaglob-theme") || "dark",
   );
-  const [activePage, setActivePage] = useState("overview");
+  const activePage = getAppPageFromPath(location.pathname);
   const [searchTarget, setSearchTarget] = useState<SearchTarget | null>(null);
   const [copilotOpen, setCopilotOpen] = useState(false);
 
@@ -238,16 +247,6 @@ function App() {
     [can, t],
   );
 
-  useEffect(() => {
-    if (!sessionReady || visibleNavigation.length === 0) {
-      return;
-    }
-
-    if (!visibleNavigation.some((item) => item.key === activePage)) {
-      setActivePage(visibleNavigation[0].key);
-    }
-  }, [activePage, sessionReady, visibleNavigation]);
-
   const toggleTheme = () => {
     setTheme((current) => (current === "dark" ? "light" : "dark"));
   };
@@ -259,7 +258,7 @@ function App() {
 
   const handleNavigate = (page: string) => {
     setSearchTarget(null);
-    setActivePage(page);
+    navigate(getAppPath(page));
   };
 
   const handleSearchResult = (result: GlobalSearchResult) => {
@@ -271,7 +270,7 @@ function App() {
       result,
       requestKey: (current?.requestKey || 0) + 1,
     }));
-    setActivePage(result.page);
+    navigate(getAppPath(result.page));
   };
 
   const selectedSearchResult = searchTarget?.result;
@@ -285,10 +284,18 @@ function App() {
   const currentNavigationItem = visibleNavigation.find(
     (item) => item.key === activePage,
   );
+  const requestedNavigationItem = navigation.find(
+    (item) => item.key === activePage,
+  );
+  const appRouteAllowed = Boolean(
+    activePage
+    && requestedNavigationItem
+    && can(requestedNavigationItem.permission),
+  );
   const copilotPageContext = useMemo(
     () => ({
-      page: activePage,
-      pageLabel: currentNavigationItem?.label || activePage,
+      page: activePage || "not-found",
+      pageLabel: currentNavigationItem?.label || activePage || "Ruta no encontrada",
       entityType: selectedSearchResult?.kind,
       entityId: selectedSearchResult?.entityId,
       searchQuery: selectedSearchResult?.query,
@@ -304,7 +311,21 @@ function App() {
 
   const appContent = (
     <Suspense fallback={<LoadingScreen />}>
-      {activePage === "overview" && (
+      {!activePage && (
+        <RouteStatePage
+          kind="not-found"
+          inApp
+          onPrimaryAction={() => navigate(getAppPath(visibleNavigation[0]?.key || "overview"))}
+        />
+      )}
+      {activePage && !appRouteAllowed && (
+        <RouteStatePage
+          kind="forbidden"
+          inApp
+          onPrimaryAction={() => navigate(getAppPath(visibleNavigation[0]?.key || "overview"))}
+        />
+      )}
+      {appRouteAllowed && activePage === "overview" && (
         <DashboardPage
           stores={stores}
           storeId={selectedStoreId ? Number(selectedStoreId) : null}
@@ -315,8 +336,8 @@ function App() {
           onNavigateToAutomations={() => handleNavigate("automations")}
         />
       )}
-      {activePage === "plans" && <PlansPage />}
-      {activePage === "conversations" && (
+      {appRouteAllowed && activePage === "plans" && <PlansPage />}
+      {appRouteAllowed && activePage === "conversations" && (
         <ConversationsPage
           stores={stores}
           canWrite={can("conversations.write")}
@@ -337,7 +358,7 @@ function App() {
           }
         />
       )}
-      {activePage === "customers" && (
+      {appRouteAllowed && activePage === "customers" && (
         <CustomersWorkspacePage
           canWrite={can("customers.write")}
           storeId={Number(selectedStoreId) || 0}
@@ -353,25 +374,25 @@ function App() {
           }
         />
       )}
-      {activePage === "team" && (
+      {appRouteAllowed && activePage === "team" && (
         <TeamPage stores={stores} canWrite={can("users.write")} />
       )}
-      {activePage === "agents" && (
+      {appRouteAllowed && activePage === "agents" && (
         <AgentsPage stores={stores} canWrite={can("agents.write")} />
       )}
-      {activePage === "knowledge" && (
+      {appRouteAllowed && activePage === "knowledge" && (
         <KnowledgeBasesPage
           stores={stores}
           canWrite={can("knowledge.write")}
         />
       )}
-      {activePage === "settings" && (
+      {appRouteAllowed && activePage === "settings" && (
         <StoresPage
           canWrite={can("stores.write")}
           onStoresChanged={loadStores}
         />
       )}
-      {activePage === "commerce" && (
+      {appRouteAllowed && activePage === "commerce" && (
         <CommercePage
           canWrite={can("commerce.write")}
           storeId={Number(selectedStoreId) || 0}
@@ -381,13 +402,13 @@ function App() {
           searchRequestKey={commerceSearchKind ? searchRequestKey : undefined}
         />
       )}
-      {activePage === "post-sales" && (
+      {appRouteAllowed && activePage === "post-sales" && (
         <PostSalesPage
           storeId={Number(selectedStoreId) || 0}
           canWrite={can("post_sales.write")}
         />
       )}
-      {activePage === "integrations" && (
+      {appRouteAllowed && activePage === "integrations" && (
         <IntegrationsHubPage
           storeId={Number(selectedStoreId) || 0}
           storeName={selectedStore?.name}
@@ -398,13 +419,13 @@ function App() {
           onNavigateToStores={() => handleNavigate("settings")}
         />
       )}
-      {activePage === "automations" && (
+      {appRouteAllowed && activePage === "automations" && (
         <AutomationsPage
           canWrite={can("automations.write")}
           storeId={Number(selectedStoreId) || 0}
         />
       )}
-      {activePage === "analytics" && (
+      {appRouteAllowed && activePage === "analytics" && (
         <AnalyticsPage
           canWrite={can("analytics.write")}
           storeId={Number(selectedStoreId) || 0}
@@ -422,42 +443,51 @@ function App() {
       <Route
         path="/"
         element={
-          authenticated ? (
-            <Navigate to="/app" replace />
-          ) : (
-            <Suspense fallback={<LoadingScreen />}>
-              <PublicLandingPage
-                onNavigateToLogin={() => navigate("/login")}
-                onNavigateToRegister={() => navigate("/register")}
-              />
-            </Suspense>
-          )
+          <Suspense fallback={<LoadingScreen />}>
+            <PublicLandingPage
+              onNavigateToLogin={() => navigate("/login")}
+              onNavigateToRegister={() => navigate("/register")}
+            />
+          </Suspense>
         }
       />
       <Route
         path="/ecommerce"
         element={
-          authenticated ? (
-            <Navigate to="/app" replace />
-          ) : (
-            <Suspense fallback={<LoadingScreen />}>
-              <PublicLandingPage
-                campaignVariant="paid-ecommerce"
-                onNavigateToLogin={() => navigate("/login")}
-                onNavigateToRegister={() => navigate("/register")}
-              />
-            </Suspense>
-          )
+          <Suspense fallback={<LoadingScreen />}>
+            <PublicLandingPage
+              campaignVariant="paid-ecommerce"
+              onNavigateToLogin={() => navigate("/login")}
+              onNavigateToRegister={() => navigate("/register")}
+            />
+          </Suspense>
         }
       />
       <Route
         path="/login"
         element={
           authenticated ? (
-            <Navigate to="/app" replace />
+            <Navigate
+              to={sanitizeReturnTo(
+                (location.state as { returnTo?: unknown } | null)?.returnTo,
+              )}
+              replace
+            />
           ) : (
             <LoginPage
-              onAuthenticated={handleAuthenticated}
+              onAuthenticated={() => {
+                handleAuthenticated();
+                navigate(
+                  sanitizeReturnTo(
+                    (location.state as { returnTo?: unknown } | null)?.returnTo,
+                  ),
+                  { replace: true },
+                );
+              }}
+              onNavigateHome={() => navigate("/")}
+              onNavigateToRegister={() =>
+                navigate("/register", { replace: true, state: location.state })
+              }
               initialMode="login"
             />
           )
@@ -467,10 +497,27 @@ function App() {
         path="/register"
         element={
           authenticated ? (
-            <Navigate to="/app" replace />
+            <Navigate
+              to={sanitizeReturnTo(
+                (location.state as { returnTo?: unknown } | null)?.returnTo,
+              )}
+              replace
+            />
           ) : (
             <LoginPage
-              onAuthenticated={handleAuthenticated}
+              onAuthenticated={() => {
+                handleAuthenticated();
+                navigate(
+                  sanitizeReturnTo(
+                    (location.state as { returnTo?: unknown } | null)?.returnTo,
+                  ),
+                  { replace: true },
+                );
+              }}
+              onNavigateHome={() => navigate("/")}
+              onNavigateToLogin={() =>
+                navigate("/login", { replace: true, state: location.state })
+              }
               initialMode="register"
             />
           )
@@ -505,14 +552,26 @@ function App() {
         path="/app/*"
         element={
           !authenticated ? (
-            <Navigate to="/login" replace />
+            <Navigate
+              to="/login"
+              replace
+              state={{
+                returnTo: `${location.pathname}${location.search}${location.hash}`,
+              }}
+            />
           ) : !sessionReady ? (
             <LoadingScreen session />
+          ) : isAppRoot(location.pathname) ? (
+            visibleNavigation.length > 0 ? (
+              <Navigate to={getAppPath(visibleNavigation[0].key)} replace />
+            ) : (
+              <RouteStatePage kind="empty" onPrimaryAction={handleLogout} />
+            )
           ) : (
             <>
             <AppShellV2
               navigation={visibleNavigation}
-              activePage={activePage}
+              activePage={activePage || ""}
               onNavigate={handleNavigate}
               onSearchResult={handleSearchResult}
               stores={stores}
@@ -550,7 +609,15 @@ function App() {
           )
         }
       />
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route
+        path="*"
+        element={
+          <RouteStatePage
+            kind="not-found"
+            onPrimaryAction={() => navigate("/")}
+          />
+        }
+      />
       </Routes>
       <CookieConsent />
     </>

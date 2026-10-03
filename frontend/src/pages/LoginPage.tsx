@@ -37,6 +37,8 @@ interface LoginPageProps {
   onAuthenticated: () => void;
   initialMode?: AuthMode;
   onNavigateHome?: () => void;
+  onNavigateToLogin?: () => void;
+  onNavigateToRegister?: () => void;
 }
 
 type AuthMode = "login" | "register" | "confirm";
@@ -45,6 +47,8 @@ export default function LoginPage({
   onAuthenticated,
   initialMode,
   onNavigateHome = () => window.location.assign("/"),
+  onNavigateToLogin,
+  onNavigateToRegister,
 }: LoginPageProps) {
   const { t, i18n } = useTranslation();
   const copy = useMemo(() => getMarketingCopy(i18n.language), [i18n.language]);
@@ -93,6 +97,12 @@ export default function LoginPage({
   const [theme, setTheme] = useState(() => localStorage.getItem("diaglob-theme") || "dark");
 
   useEffect(() => {
+    if (initialMode) {
+      setMode(initialMode);
+    }
+  }, [initialMode]);
+
+  useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
     localStorage.setItem("diaglob-theme", theme);
   }, [theme]);
@@ -114,6 +124,12 @@ export default function LoginPage({
   function changeMode(nextMode: AuthMode) {
     clearFeedback();
     setMode(nextMode);
+
+    if (nextMode === "login") {
+      onNavigateToLogin?.();
+    } else if (nextMode === "register") {
+      onNavigateToRegister?.();
+    }
   }
 
   function changeLanguage(language: string) {
