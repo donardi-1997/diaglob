@@ -1,4 +1,5 @@
 import { Handle, Position } from "@xyflow/react";
+import { useTranslation } from "react-i18next";
 import {
   Clock,
   GitBranch,
@@ -92,6 +93,7 @@ export default function FlowNode({
   data: Record<string, unknown>;
   selected?: boolean;
 }) {
+  const { t } = useTranslation();
   const nodeData = data as unknown as FlowNodeData;
   const nodeType = nodeData.type as FlowNodeType;
   const Icon = TYPE_ICONS[nodeType] || Square;
@@ -168,7 +170,7 @@ export default function FlowNode({
             color: "var(--text-muted)",
           }}
         >
-          {humanizeNodeType(nodeType, (key: string) => key)}
+          {humanizeNodeType(nodeType, t)}
         </span>
       </div>
 
@@ -184,12 +186,12 @@ export default function FlowNode({
         }}
         title={humanizeNodeSummary(
           nodeData,
-          (key: string) => key,
+          t,
         )}
       >
         {humanizeNodeSummary(
           nodeData,
-          (key: string) => key,
+          t,
         )}
       </p>
 
@@ -232,7 +234,7 @@ export default function FlowNode({
             }}
           />
           <span className="flow-condition-label yes">
-            YES
+            {t("flowBranchYes")}
           </span>
           <Handle
             type="source"
@@ -247,7 +249,7 @@ export default function FlowNode({
             }}
           />
           <span className="flow-condition-label no">
-            NO
+            {t("flowBranchNo")}
           </span>
         </>
       ) : nodeType === "call" ? (
