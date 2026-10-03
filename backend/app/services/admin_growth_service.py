@@ -235,6 +235,120 @@ def get_admin_growth_metrics(db: Session, days: int = 30) -> dict:
     start_trials = funnel_counts.get("StartTrial", 0)
     paid_subscriptions = funnel_counts.get("Subscribe", 0)
 
+    campaign_registration_counts: dict[str, int] = {}
+    creative_registration_counts: dict[tuple[str, str], int] = {}
+    for row in acquisition_rows:
+        campaign_key = row.campaign or "direct_or_unknown"
+        content_key = row.content or "unknown_creative"
+        campaign_registration_counts[campaign_key] = (
+            campaign_registration_counts.get(campaign_key, 0) + 1
+        )
+        creative_key = (campaign_key, content_key)
+        creative_registration_counts[creative_key] = (
+            creative_registration_counts.get(creative_key, 0) + 1
+        )
+
+    lifecycle_rows = (
+        db.query(
+            MarketingFunnelEvent.event_name,
+            MarketingFunnelEvent.campaign,
+            MarketingFunnelEvent.content,
+            func.count(MarketingFunnelEvent.id),
+        )
+        .filter(
+            MarketingFunnelEvent.occurred_at >= start,
+            MarketingFunnelEvent.occurred_at < end,
+            MarketingFunnelEvent.event_name.in_(["StartTrial", "Subscribe"]),
+        )
+        .group_by(
+            MarketingFunnelEvent.event_name,
+            MarketingFunnelEvent.campaign,
+            MarketingFunnelEvent.content,
+        )
+        .all()
+    )
+    campaign_lifecycle: dict[str, dict[str, int]] = {}
+    creative_lifecycle: dict[tuple[str, str], dict[str, int]] = {}
+    for event_name, campaign, content, count in lifecycle_rows:
+        campaign_key = campaign or "direct_or_unknown"
+        content_key = content or "unknown_creative"
+        campaign_bucket = campaign_lifecycle.setdefault(
+            campaign_key,
+            {"trials": 0, "paid": 0},
+        )
+        creative_bucket = creative_lifecycle.setdefault(
+            (campaign_key, content_key),
+            {"trials": 0, "paid": 0},
+        )
+        target_key = "trials" if event_name == "StartTrial" else "paid"
+        campaign_bucket[target_key] += int(count or 0)
+        creative_bucket[target_key] += int(count or 0)
+
+    def _conversion_rate(value: int, registrations: int) -> float:
+        if not registrations:
+            return 0.0
+        return round((value / registrations) * 100, 2)
+
+    campaign_keys = set(campaign_registration_counts) | set(campaign_lifecycle)
+    campaign_performance = []
+    for campaign in campaign_keys:
+        registrations = campaign_registration_counts.get(campaign, 0)
+        lifecycle = campaign_lifecycle.get(campaign, {"trials": 0, "paid": 0})
+        campaign_performance.append(
+            {
+                "campaign": campaign,
+                "registrations": registrations,
+                "trials": lifecycle["trials"],
+                "paid_subscriptions": lifecycle["paid"],
+                "registration_to_trial_pct": _conversion_rate(
+                    lifecycle["trials"], registrations
+                ),
+                "registration_to_paid_pct": _conversion_rate(
+                    lifecycle["paid"], registrations
+                ),
+            }
+        )
+    campaign_performance.sort(
+        key=lambda item: (
+            item["paid_subscriptions"],
+            item["trials"],
+            item["registrations"],
+        ),
+        reverse=True,
+    )
+
+    creative_keys = set(creative_registration_counts) | set(creative_lifecycle)
+    creative_performance = []
+    for campaign, content in creative_keys:
+        registrations = creative_registration_counts.get((campaign, content), 0)
+        lifecycle = creative_lifecycle.get(
+            (campaign, content),
+            {"trials": 0, "paid": 0},
+        )
+        creative_performance.append(
+            {
+                "campaign": campaign,
+                "content": content,
+                "registrations": registrations,
+                "trials": lifecycle["trials"],
+                "paid_subscriptions": lifecycle["paid"],
+                "registration_to_trial_pct": _conversion_rate(
+                    lifecycle["trials"], registrations
+                ),
+                "registration_to_paid_pct": _conversion_rate(
+                    lifecycle["paid"], registrations
+                ),
+            }
+        )
+    creative_performance.sort(
+        key=lambda item: (
+            item["paid_subscriptions"],
+            item["trials"],
+            item["registrations"],
+        ),
+        reverse=True,
+    )
+
     series = [
         {"date": day, **values}
         for day, values in sorted(daily.items())
@@ -305,5 +419,7 @@ def get_admin_growth_metrics(db: Session, days: int = 30) -> dict:
                 (status or "unknown"): int(count or 0)
                 for status, count in meta_delivery_rows
             },
+            "campaign_performance": campaign_performance[:20],
+            "creative_performance": creative_performance[:30],
         },
     }
