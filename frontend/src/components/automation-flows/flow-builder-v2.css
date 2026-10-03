@@ -195,6 +195,11 @@
   background: var(--bg);
 }
 
+.flow-canvas-container .react-flow__edge-path,
+.flow-canvas-container .react-flow__connection-path {
+  fill: none;
+}
+
 .flow-canvas-container .react-flow__controls,
 .flow-canvas-container .react-flow__minimap {
   overflow: hidden;
@@ -710,12 +715,14 @@
 }
 
 .flow-condition-label.yes {
-  left: 63%;
+  left: 70%;
+  transform: translateX(-50%);
   color: var(--green);
 }
 
 .flow-condition-label.no {
-  left: 20%;
+  left: 30%;
+  transform: translateX(-50%);
   color: #ef4444;
 }
 
