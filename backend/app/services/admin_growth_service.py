@@ -10,7 +10,10 @@ from datetime import datetime, timedelta
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from ..model_domains.marketing import MarketingRegistrationAttribution
+from ..model_domains.marketing import (
+    MarketingFunnelEvent,
+    MarketingRegistrationAttribution,
+)
 from ..models import Conversation, Message, Order, Organization, User
 
 
@@ -200,18 +203,37 @@ def get_admin_growth_metrics(db: Session, days: int = 30) -> dict:
         .limit(10)
         .all()
     )
-    meta_delivery_rows = (
+    funnel_rows = (
         db.query(
-            MarketingRegistrationAttribution.meta_delivery_status,
-            func.count(MarketingRegistrationAttribution.id),
+            MarketingFunnelEvent.event_name,
+            func.count(MarketingFunnelEvent.id),
         )
         .filter(
-            MarketingRegistrationAttribution.created_at >= start,
-            MarketingRegistrationAttribution.created_at < end,
+            MarketingFunnelEvent.occurred_at >= start,
+            MarketingFunnelEvent.occurred_at < end,
         )
-        .group_by(MarketingRegistrationAttribution.meta_delivery_status)
+        .group_by(MarketingFunnelEvent.event_name)
         .all()
     )
+    funnel_counts = {
+        event_name: int(count or 0)
+        for event_name, count in funnel_rows
+    }
+    meta_delivery_rows = (
+        db.query(
+            MarketingFunnelEvent.meta_delivery_status,
+            func.count(MarketingFunnelEvent.id),
+        )
+        .filter(
+            MarketingFunnelEvent.occurred_at >= start,
+            MarketingFunnelEvent.occurred_at < end,
+        )
+        .group_by(MarketingFunnelEvent.meta_delivery_status)
+        .all()
+    )
+    tracked_registrations = len(acquisition_rows)
+    start_trials = funnel_counts.get("StartTrial", 0)
+    paid_subscriptions = funnel_counts.get("Subscribe", 0)
 
     series = [
         {"date": day, **values}
@@ -252,7 +274,19 @@ def get_admin_growth_metrics(db: Session, days: int = 30) -> dict:
             ),
         },
         "acquisition": {
-            "tracked_registrations": len(acquisition_rows),
+            "tracked_registrations": tracked_registrations,
+            "start_trials": start_trials,
+            "paid_subscriptions": paid_subscriptions,
+            "registration_to_trial_pct": (
+                round((start_trials / tracked_registrations) * 100, 2)
+                if tracked_registrations
+                else 0.0
+            ),
+            "registration_to_paid_pct": (
+                round((paid_subscriptions / tracked_registrations) * 100, 2)
+                if tracked_registrations
+                else 0.0
+            ),
             "by_source": [
                 {
                     "source": source or "direct_or_unknown",
