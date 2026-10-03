@@ -243,6 +243,7 @@ jobs:
           check_url "Frontend landing" "https://diaglob.tech/"
           check_url "Frontend login" "https://diaglob.tech/login"
           check_url "Frontend register" "https://diaglob.tech/register"
+          check_url "Paid ecommerce landing" "https://diaglob.tech/ecommerce"
           check_url "Privacy policy" "https://diaglob.tech/privacy"
           check_url "Terms of service" "https://diaglob.tech/terms"
           check_url "Refund policy" "https://diaglob.tech/refund-policy"
