@@ -459,22 +459,6 @@
   background: var(--dg-shell-surface-strong);
 }
 
-.dg-copilot-trigger {
-  color: var(--dg-shell-accent);
-  background: color-mix(in srgb, var(--dg-shell-accent) 7%, var(--dg-shell-surface));
-}
-
-.dg-copilot-trigger:hover,
-.dg-copilot-trigger.is-active {
-  color: var(--dg-shell-accent);
-  border-color: rgba(109, 93, 252, 0.28);
-  background: var(--dg-shell-accent-soft);
-}
-
-.dg-copilot-trigger.is-active {
-  box-shadow: 0 0 0 3px rgba(109, 93, 252, 0.08);
-}
-
 .dg-mobile-menu {
   display: none;
   margin-right: 9px;
