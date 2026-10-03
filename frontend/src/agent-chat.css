@@ -335,6 +335,22 @@
   overflow-wrap: anywhere;
 }
 
+.copilot-typing-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1.05em;
+  margin-left: 2px;
+  vertical-align: -0.14em;
+  border-radius: 999px;
+  background: var(--accent);
+  animation: copilot-cursor-blink 720ms steps(1, end) infinite;
+}
+
+@keyframes copilot-cursor-blink {
+  0%, 48% { opacity: 1; }
+  49%, 100% { opacity: 0; }
+}
+
 .copilot-message-body > small {
   display: block;
   margin-top: 5px;
@@ -644,8 +660,48 @@
   border-top: 0;
   border-right: 0;
   border-bottom: 0;
-  box-shadow: -18px 0 50px rgba(15, 23, 42, 0.16);
+  border-left: 1px solid var(--border);
+  background: var(--panel);
+  box-shadow: -16px 0 42px rgba(15, 23, 42, 0.14);
   animation: copilot-panel-in 180ms ease-out;
+}
+
+.copilot-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -7px;
+  z-index: 8;
+  width: 14px;
+  display: grid;
+  place-items: center;
+  touch-action: none;
+  cursor: col-resize;
+  outline: none;
+}
+
+.copilot-resize-handle > span {
+  width: 3px;
+  height: 48px;
+  border-radius: 999px;
+  background: transparent;
+  transition: background 140ms ease, height 140ms ease;
+}
+
+.copilot-resize-handle:hover > span,
+.copilot-resize-handle:focus-visible > span,
+body.copilot-panel-resizing .copilot-resize-handle > span {
+  height: 68px;
+  background: color-mix(in srgb, var(--accent) 58%, transparent);
+}
+
+body.copilot-panel-resizing {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+
+body.copilot-panel-resizing * {
+  cursor: col-resize !important;
 }
 
 .copilot-panel-root .copilot-workspace {
@@ -654,7 +710,10 @@
 
 .copilot-panel-root .copilot-header {
   min-height: 64px;
-  padding: 0 14px;
+  padding: 0 14px 0 16px;
+  border-bottom-color: color-mix(in srgb, var(--border) 72%, transparent);
+  background: color-mix(in srgb, var(--panel) 96%, transparent);
+  backdrop-filter: blur(18px);
 }
 
 .copilot-panel-root .copilot-header > div:nth-child(2) {
@@ -776,8 +835,23 @@
 }
 
 .copilot-panel-root .copilot-messages {
-  width: calc(100% - 24px);
-  padding: 20px 0 28px;
+  width: calc(100% - 28px);
+  padding: 22px 0 30px;
+}
+
+.copilot-panel-root .copilot-message.assistant .copilot-message-body {
+  padding-top: 3px;
+}
+
+.copilot-panel-root .copilot-message-text {
+  font-size: 13px;
+  line-height: 1.68;
+}
+
+.copilot-panel-root .copilot-message.user .copilot-message-body {
+  border: 0;
+  border-radius: 18px 18px 4px 18px;
+  background: color-mix(in srgb, var(--accent) 10%, var(--panel));
 }
 
 .copilot-panel-root .copilot-message {
@@ -801,7 +875,25 @@
 }
 
 .copilot-panel-root .copilot-composer {
-  padding: 10px 12px 12px;
+  padding: 10px 14px 14px;
+  border-top: 0;
+  background: linear-gradient(
+    to top,
+    var(--panel) 78%,
+    color-mix(in srgb, var(--panel) 88%, transparent)
+  );
+}
+
+.copilot-panel-root .copilot-composer-box {
+  padding: 8px 8px 8px 14px;
+  border-radius: 20px;
+  border-color: color-mix(in srgb, var(--border) 90%, transparent);
+  background: color-mix(in srgb, var(--bg) 70%, var(--panel));
+  box-shadow: 0 7px 24px rgba(15, 23, 42, 0.06);
+}
+
+.copilot-panel-root .copilot-composer textarea {
+  font-size: 12px;
 }
 
 @keyframes copilot-panel-in {
@@ -817,8 +909,12 @@
 
 @media (max-width: 640px) {
   .copilot-panel-root {
-    width: 100vw;
+    width: 100vw !important;
     border-left: 0;
+  }
+
+  .copilot-resize-handle {
+    display: none;
   }
 
   .copilot-panel-root .copilot-online {
@@ -827,7 +923,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .copilot-panel-root {
+  .copilot-panel-root,
+  .copilot-typing-cursor {
     animation: none;
   }
 }
