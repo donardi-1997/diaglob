@@ -1,0 +1,120 @@
+.copilot-floating-button {
+  position: fixed;
+  z-index: 230;
+  width: 56px;
+  height: 56px;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(124, 92, 255, 0.34);
+  border-radius: 18px;
+  background:
+    linear-gradient(145deg, rgba(124, 92, 255, 0.96), rgba(93, 66, 224, 0.98));
+  color: #fff;
+  box-shadow:
+    0 14px 32px rgba(76, 55, 190, 0.3),
+    0 3px 10px rgba(15, 23, 42, 0.14);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  transition:
+    box-shadow 160ms ease,
+    border-color 160ms ease,
+    transform 160ms ease;
+}
+
+.copilot-floating-button:hover {
+  border-color: rgba(255, 255, 255, 0.46);
+  box-shadow:
+    0 18px 38px rgba(76, 55, 190, 0.36),
+    0 4px 12px rgba(15, 23, 42, 0.16);
+  transform: translateY(-1px);
+}
+
+.copilot-floating-button:active {
+  cursor: grabbing;
+  transform: scale(0.97);
+}
+
+.copilot-floating-button:focus-visible {
+  outline: 3px solid rgba(124, 92, 255, 0.24);
+  outline-offset: 4px;
+}
+
+.copilot-floating-button.is-open {
+  background: color-mix(in srgb, var(--panel) 92%, var(--accent));
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 44%, var(--border));
+  box-shadow:
+    0 12px 30px rgba(15, 23, 42, 0.18),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.copilot-floating-button-glow {
+  position: absolute;
+  inset: -7px;
+  z-index: -1;
+  border-radius: 22px;
+  background: rgba(124, 92, 255, 0.16);
+  filter: blur(8px);
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+.copilot-floating-button:hover .copilot-floating-button-glow,
+.copilot-floating-button:not(.is-open) .copilot-floating-button-glow {
+  opacity: 1;
+}
+
+.copilot-floating-button-icon {
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.copilot-floating-button-label {
+  position: absolute;
+  right: calc(100% + 9px);
+  top: 50%;
+  transform: translateY(-50%) translateX(4px);
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--panel) 96%, transparent);
+  color: var(--text);
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.12);
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.copilot-floating-button:hover .copilot-floating-button-label,
+.copilot-floating-button:focus-visible .copilot-floating-button-label {
+  opacity: 1;
+  transform: translateY(-50%) translateX(0);
+}
+
+@media (max-width: 640px) {
+  .copilot-floating-button {
+    width: 52px;
+    height: 52px;
+    border-radius: 17px;
+  }
+
+  .copilot-floating-button-label {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .copilot-floating-button,
+  .copilot-floating-button-glow,
+  .copilot-floating-button-label {
+    transition: none;
+  }
+}
