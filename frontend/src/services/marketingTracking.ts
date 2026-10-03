@@ -23,6 +23,16 @@ export interface MarketingAttribution {
   capturedAt: string;
 }
 
+export interface MarketingProvisionContext extends Record<string, unknown> {
+  consented: true;
+  event_id: string;
+  event_source_url: string;
+  fbp?: string;
+  fbc?: string;
+  first_touch?: Record<string, string>;
+  last_touch?: Record<string, string>;
+}
+
 type MarketingEventParams = Record<string, string | number | boolean | undefined>;
 
 const FIRST_TOUCH_KEY = "diaglob-marketing-first-touch";
@@ -69,6 +79,67 @@ function safeParseAttribution(raw: string | null): MarketingAttribution | null {
 
 function storageAvailable() {
   return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
+}
+
+function readCookie(name: string) {
+  if (typeof document === "undefined") return undefined;
+  const prefix = `${encodeURIComponent(name)}=`;
+  const item = document.cookie
+    .split(";")
+    .map((value) => value.trim())
+    .find((value) => value.startsWith(prefix));
+  return item ? decodeURIComponent(item.slice(prefix.length)) : undefined;
+}
+
+function serializeTouchpoint(
+  attribution: MarketingAttribution | null,
+): Record<string, string> | undefined {
+  if (!attribution) return undefined;
+  const entries = {
+    source: attribution.source,
+    medium: attribution.medium,
+    campaign: attribution.campaign,
+    content: attribution.content,
+    term: attribution.term,
+    fbclid: attribution.fbclid,
+    ttclid: attribution.ttclid,
+    landing_path: attribution.landingPath,
+    captured_at: attribution.capturedAt,
+  };
+  return Object.fromEntries(
+    Object.entries(entries).filter(([, value]) => Boolean(value)),
+  ) as Record<string, string>;
+}
+
+export function createMarketingEventId(event: MarketingEventName) {
+  const suffix =
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `${event}:${suffix}`;
+}
+
+export function buildRegistrationMarketingContext(
+  eventId: string,
+): MarketingProvisionContext | null {
+  if (
+    typeof window === "undefined"
+    || !advertisingTrackingActive
+    || !hasAdvertisingConsent()
+  ) {
+    return null;
+  }
+
+  const attribution = getMarketingAttribution();
+  return {
+    consented: true,
+    event_id: eventId,
+    event_source_url: window.location.href,
+    fbp: readCookie("_fbp"),
+    fbc: readCookie("_fbc"),
+    first_touch: serializeTouchpoint(attribution.firstTouch),
+    last_touch: serializeTouchpoint(attribution.lastTouch),
+  };
 }
 
 export function clearMarketingAttribution() {
@@ -267,6 +338,7 @@ function tiktokEventFor(event: MarketingEventName) {
 export function trackMarketingEvent(
   event: MarketingEventName,
   params: MarketingEventParams = {},
+  eventId?: string,
 ) {
   if (typeof window === "undefined") return;
 
@@ -282,7 +354,7 @@ export function trackMarketingEvent(
 
   window.dispatchEvent(
     new CustomEvent("diaglob:marketing-event", {
-      detail: { event, payload, advertisingAllowed },
+      detail: { event, payload, advertisingAllowed, eventId },
     }),
   );
 
@@ -290,7 +362,11 @@ export function trackMarketingEvent(
 
   const metaEvent = metaEventFor(event);
   if (metaEvent && window.fbq) {
-    window.fbq("track", metaEvent, payload);
+    if (eventId) {
+      window.fbq("track", metaEvent, payload, { eventID: eventId });
+    } else {
+      window.fbq("track", metaEvent, payload);
+    }
   } else if (window.fbq) {
     window.fbq("trackCustom", event, payload);
   }

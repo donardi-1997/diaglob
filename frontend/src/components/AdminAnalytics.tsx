@@ -4,6 +4,7 @@ import {
   Bot,
   Building2,
   DollarSign,
+  Megaphone,
   MessageSquareText,
   ShoppingBag,
   Users,
@@ -228,6 +229,51 @@ export default function AdminAnalytics() {
               <span className="analytics-metric-value">{point.ai_responses} IA</span>
             </div>
           ))}
+        </div>
+      </div>
+
+      <div className="analytics-row">
+        <div className="analytics-card">
+          <h3><Megaphone size={17} /> Adquisición pagada · 30d</h3>
+          <div className="analytics-metrics-list">
+            <div className="analytics-metric-row">
+              <span>Registros con atribución</span>
+              <span className="analytics-metric-value">
+                {overview.growth.acquisition.tracked_registrations}
+              </span>
+            </div>
+            {overview.growth.acquisition.by_source.slice(0, 5).map((item) => (
+              <div className="analytics-metric-row" key={item.source}>
+                <span>Fuente: {item.source}</span>
+                <span className="analytics-metric-value">{item.registrations}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="analytics-card">
+          <h3>Meta CAPI y campañas</h3>
+          <div className="analytics-metrics-list">
+            {Object.entries(overview.growth.acquisition.meta_delivery_statuses).map(
+              ([status, count]) => (
+                <div className="analytics-metric-row" key={status}>
+                  <span>CAPI: {status}</span>
+                  <span className="analytics-metric-value">{count}</span>
+                </div>
+              ),
+            )}
+            {overview.growth.acquisition.top_campaigns.slice(0, 5).map((item) => (
+              <div className="analytics-metric-row" key={item.campaign}>
+                <span>Campaña: {item.campaign}</span>
+                <span className="analytics-metric-value">{item.registrations}</span>
+              </div>
+            ))}
+            {overview.growth.acquisition.tracked_registrations === 0 && (
+              <div className="commerce-empty">
+                Aún no hay registros atribuidos en esta ventana.
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

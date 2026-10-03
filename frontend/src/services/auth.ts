@@ -168,6 +168,7 @@ export async function provisionAccount(
   accessToken: string,
   name: string,
   organizationName: string,
+  marketingContext?: Record<string, unknown> | null,
 ) {
   const apiUrl =
     import.meta.env.VITE_API_URL ||
@@ -190,6 +191,8 @@ export async function provisionAccount(
         name,
         organization_name:
           organizationName,
+        marketing_context:
+          marketingContext || undefined,
       }),
     },
   );
