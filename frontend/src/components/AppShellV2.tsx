@@ -45,8 +45,6 @@ interface AppShellV2Props {
   onChangeLanguage: (language: string) => void;
   onLogout: () => void;
   supportUrl?: string;
-  copilotOpen?: boolean;
-  onToggleCopilot?: () => void;
 }
 
 const GROUP_LABELS: Record<string, Record<AppNavigationItem["group"], string>> = {
@@ -111,8 +109,6 @@ export default function AppShellV2({
   onChangeLanguage,
   onLogout,
   supportUrl,
-  copilotOpen = false,
-  onToggleCopilot,
 }: AppShellV2Props) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [storeMenuOpen, setStoreMenuOpen] = useState(false);
@@ -292,19 +288,6 @@ export default function AppShellV2({
           </div>
 
           <div className="dg-topbar-actions">
-            {onToggleCopilot && (
-              <button
-                type="button"
-                className={`dg-icon-button dg-copilot-trigger ${copilotOpen ? "is-active" : ""}`}
-                onClick={onToggleCopilot}
-                aria-pressed={copilotOpen}
-                aria-label="Preguntar al Copiloto sobre esta vista"
-                title="Preguntar al Copiloto sobre esta vista"
-              >
-                <Sparkles size={17} />
-              </button>
-            )}
-
             <div className="dg-store-switcher">
               <button
                 type="button"
