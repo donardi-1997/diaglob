@@ -244,6 +244,8 @@ jobs:
           check_url "Frontend login" "https://diaglob.tech/login"
           check_url "Frontend register" "https://diaglob.tech/register"
           check_url "Paid ecommerce landing" "https://diaglob.tech/ecommerce"
+          check_url "Deep app route" "https://diaglob.tech/app/analytics"
+          check_url "Unknown public route SPA fallback" "https://diaglob.tech/this-route-should-not-exist"
           check_url "Privacy policy" "https://diaglob.tech/privacy"
           check_url "Terms of service" "https://diaglob.tech/terms"
           check_url "Refund policy" "https://diaglob.tech/refund-policy"
