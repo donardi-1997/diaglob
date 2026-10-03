@@ -11966,3 +11966,63 @@ button:disabled {
   }
 }
 
+
+
+/* =========================================================
+   ROUTE STATES
+   ========================================================= */
+
+.route-state {
+  min-height: 100vh;
+  padding: 32px;
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+}
+
+.route-state-in-app {
+  min-height: min(560px, calc(100vh - 150px));
+  padding: 24px;
+}
+
+.route-state-card {
+  width: min(560px, 100%);
+  padding: 34px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background:
+    linear-gradient(155deg, rgba(124, 108, 255, 0.08), transparent 55%),
+    var(--panel);
+  box-shadow: 0 18px 70px rgba(0, 0, 0, 0.16);
+}
+
+.route-state-card > span {
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+}
+
+.route-state-card h1 {
+  margin: 12px 0 0;
+  color: var(--text);
+  font-size: clamp(27px, 4vw, 42px);
+  letter-spacing: -0.04em;
+}
+
+.route-state-card p {
+  max-width: 480px;
+  margin: 12px 0 24px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+@media (max-width: 600px) {
+  .route-state {
+    padding: 18px;
+  }
+
+  .route-state-card {
+    padding: 26px 22px;
+  }
+}
