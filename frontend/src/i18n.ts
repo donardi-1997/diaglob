@@ -1934,6 +1934,8 @@ const resources = {
       flowNodeTypeCall: "Llamada IA",
       flowNodeTypeTool: "Herramienta",
       flowNodeTypeEnd: "Fin",
+      flowBranchYes: "SÍ",
+      flowBranchNo: "NO",
       flowTriggerType: "Tipo de disparador",
       flowTriggerType_manual: "Manual",
       flowTriggerType_customer_segment: "Segmento de cliente",
@@ -2098,7 +2100,7 @@ const resources = {
       flowValidationTooManyMessages: "Demasiados nodos de mensaje (máximo 10).",
       flowValidationEndHasOutgoing: "El nodo de fin no puede tener conexiones de salida.",
       flowValidationTriggerHasIncoming: "El nodo de disparador no puede tener conexiones de entrada.",
-      flowValidationConditionMissingBranch: "La condición debe tener ramas YES y NO.",
+      flowValidationConditionMissingBranch: "La condición debe tener las ramas SÍ y NO.",
       flowValidationConditionTooManyBranches: "La condición solo puede tener 2 ramas.",
       flowValidationCallMissingPrompt: "La llamada necesita un guion u objetivo.",
       flowValidationCallInvalidTimeout: "El timeout de la llamada debe estar entre 1 y 60 minutos.",
@@ -2111,6 +2113,9 @@ const resources = {
       flowValidationEdgeInvalidTarget: "Una conexión tiene un destino inválido.",
       flowValidationSelfEdge: "Un nodo no puede conectarse a sí mismo.",
       flowValidationCycle: "El flujo contiene un ciclo.",
+      flowValidationDuplicateNodeIds: "Hay nodos duplicados en el flujo.",
+      flowValidationMissingOutgoing: "Hay un nodo sin conexión de salida.",
+      flowValidationOrphanNodes: "Hay nodos sin conectar al disparador.",
 
       // Onboarding
       onboardingTitle: "Primeros pasos",
@@ -4124,6 +4129,8 @@ const resources = {
       flowNodeTypeCall: "AI call",
       flowNodeTypeTool: "Tool",
       flowNodeTypeEnd: "End",
+      flowBranchYes: "YES",
+      flowBranchNo: "NO",
       flowTriggerType: "Trigger type",
       flowTriggerType_manual: "Manual",
       flowTriggerType_customer_segment: "Customer segment",
@@ -4301,6 +4308,9 @@ const resources = {
       flowValidationEdgeInvalidTarget: "A connection has an invalid target.",
       flowValidationSelfEdge: "A node cannot connect to itself.",
       flowValidationCycle: "The flow contains a cycle.",
+      flowValidationDuplicateNodeIds: "The flow contains duplicate nodes.",
+      flowValidationMissingOutgoing: "A node is missing an outgoing connection.",
+      flowValidationOrphanNodes: "Some nodes are not connected to the trigger.",
 
       // Onboarding
       onboardingTitle: "Getting started",
