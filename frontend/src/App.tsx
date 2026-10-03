@@ -509,6 +509,7 @@ function App() {
           ) : !sessionReady ? (
             <LoadingScreen session />
           ) : (
+            <>
             <AppShellV2
               navigation={visibleNavigation}
               activePage={activePage}
@@ -545,6 +546,7 @@ function App() {
                 />
               </Suspense>
             )}
+            </>
           )
         }
       />
