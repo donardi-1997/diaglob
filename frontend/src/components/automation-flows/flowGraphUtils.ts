@@ -529,6 +529,41 @@ export function humanizeNodeType(
   return map[type] || type;
 }
 
+const CONDITION_FIELD_LABEL_KEYS: Partial<Record<ConditionField, string>> = {
+  "customer.segment": "flowField_customer_segment",
+  "customer.health": "flowField_customer_health",
+  "customer.priority": "flowField_customer_priority",
+  "customer.needs_attention": "flowField_needs_attention",
+  "customer.needs_followup": "flowField_needs_followup",
+  "customer.order_count": "flowField_orders_count",
+  "customer.country": "flowField_country_code",
+  has_successful_order_since_flow_start:
+    "flowField_successful_order_since_start",
+  "order.is_cod": "flowField_order_is_cod",
+  "order.payment_status": "flowField_order_payment_status",
+  "order.total": "flowField_order_total",
+  "order.currency": "flowField_order_currency",
+  "order.country": "flowField_order_country",
+  "order.fulfillment_status": "flowField_order_fulfillment_status",
+  "shipment.status": "flowField_shipment_status",
+  "shipment.carrier": "flowField_shipment_carrier",
+  "shipment.destination_country": "flowField_shipment_destination_country",
+  "shipment.provider": "flowField_shipment_provider",
+};
+
+const CONDITION_OPERATOR_LABEL_KEYS: Partial<Record<ConditionOperator, string>> = {
+  equals: "flowOperator_equals",
+  not_equals: "flowOperator_not_equals",
+  greater_than: "flowOperator_gt",
+  greater_or_equal: "flowOperator_gte",
+  less_than: "flowOperator_lt",
+  less_or_equal: "flowOperator_lte",
+  in: "flowOperator_in",
+  not_in: "flowOperator_not_in",
+  is_true: "flowOperator_is_true",
+  is_false: "flowOperator_is_false",
+};
+
 export function humanizeNodeSummary(
   node: FlowNode,
   t: (key: string) => string,
@@ -541,8 +576,28 @@ export function humanizeNodeSummary(
       const unit = node.config.unit || "hours";
       return `${value} ${t(`flowUnit_${unit}`)}`;
     }
-    case "condition":
-      return `${node.config.field || ""} ${node.config.operator || ""} ${String(node.config.value ?? "")}`.trim();
+    case "condition": {
+      const field = node.config.field;
+      const operator = node.config.operator;
+      const fieldLabel = field
+        ? t(CONDITION_FIELD_LABEL_KEYS[field] || field)
+        : "";
+      const operatorLabel = operator
+        ? t(CONDITION_OPERATOR_LABEL_KEYS[operator] || operator)
+        : "";
+      const includeValue =
+        operator !== "is_true"
+        && operator !== "is_false"
+        && node.config.value !== undefined
+        && node.config.value !== null
+        && String(node.config.value).trim() !== "";
+      const valueLabel = includeValue
+        ? String(node.config.value)
+        : "";
+      return [fieldLabel, operatorLabel, valueLabel]
+        .filter(Boolean)
+        .join(" ");
+    }
     case "message":
       return (
         node.config.message_template
