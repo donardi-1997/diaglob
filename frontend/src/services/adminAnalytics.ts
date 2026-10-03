@@ -42,6 +42,18 @@ export interface AdminGrowth {
     top_orders: AdminRankingItem[];
     top_conversations: AdminRankingItem[];
   };
+  acquisition: {
+    tracked_registrations: number;
+    by_source: Array<{
+      source: string;
+      registrations: number;
+    }>;
+    top_campaigns: Array<{
+      campaign: string;
+      registrations: number;
+    }>;
+    meta_delivery_statuses: Record<string, number>;
+  };
 }
 
 export interface AdminOverview {
