@@ -34,6 +34,7 @@ import FlowSimulation from "./FlowSimulation";
 import FlowCopilotPanel from "./FlowCopilotPanel";
 import type { FlowNodeConfig } from "./flowGraphUtils";
 import { validateFlowGraph } from "./flowGraphUtils";
+import "@xyflow/react/dist/style.css";
 import "./flow-builder-v2.css";
 
 interface Props {
