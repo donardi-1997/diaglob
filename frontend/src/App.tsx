@@ -225,6 +225,7 @@ function App() {
   );
   const [activePage, setActivePage] = useState("overview");
   const [searchTarget, setSearchTarget] = useState<SearchTarget | null>(null);
+  const [copilotOpen, setCopilotOpen] = useState(false);
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -266,6 +267,9 @@ function App() {
   const handleNavigate = (page: string) => {
     setSearchTarget(null);
     setActivePage(page);
+    if (page === "copilot") {
+      setCopilotOpen(false);
+    }
   };
 
   const handleSearchResult = (result: GlobalSearchResult) => {
@@ -287,6 +291,26 @@ function App() {
     || selectedSearchResult?.kind === "order"
       ? selectedSearchResult.kind
       : undefined;
+
+  const currentNavigationItem = visibleNavigation.find(
+    (item) => item.key === activePage,
+  );
+  const copilotPageContext = useMemo(
+    () => ({
+      page: activePage,
+      pageLabel: currentNavigationItem?.label || activePage,
+      entityType: selectedSearchResult?.kind,
+      entityId: selectedSearchResult?.entityId,
+      searchQuery: selectedSearchResult?.query,
+    }),
+    [
+      activePage,
+      currentNavigationItem?.label,
+      selectedSearchResult?.entityId,
+      selectedSearchResult?.kind,
+      selectedSearchResult?.query,
+    ],
+  );
 
   const appContent = (
     <Suspense fallback={<LoadingScreen />}>
@@ -501,9 +525,26 @@ function App() {
               onChangeLanguage={changeLanguage}
               onLogout={handleLogout}
               supportUrl={import.meta.env.VITE_SUPPORT_URL}
+              copilotOpen={copilotOpen}
+              onToggleCopilot={
+                activePage === "copilot"
+                  ? undefined
+                  : () => setCopilotOpen((open) => !open)
+              }
             >
               {appContent}
             </AppShellV2>
+            {copilotOpen && activePage !== "copilot" && (
+              <Suspense fallback={null}>
+                <AgentChatPage
+                  mode="panel"
+                  storeId={Number(selectedStoreId) || 0}
+                  storeName={selectedStore?.name}
+                  pageContext={copilotPageContext}
+                  onClose={() => setCopilotOpen(false)}
+                />
+              </Suspense>
+            )}
           )
         }
       />
