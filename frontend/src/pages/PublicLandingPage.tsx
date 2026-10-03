@@ -30,6 +30,7 @@ import { trackMarketingEvent } from "../services/marketingTracking";
 interface PublicLandingPageProps {
   onNavigateToLogin: () => void;
   onNavigateToRegister: () => void;
+  campaignVariant?: "paid-ecommerce";
 }
 
 const plans = [
@@ -42,6 +43,40 @@ const plans = [
 const productIcons = [BrainCircuit, ShoppingBag, BarChart3, Workflow, Store, Bot];
 const problemIcons = [Database, Workflow, TrendingUp];
 const outcomeIcons = [MessageSquare, Globe, BarChart3];
+
+const paidHero = {
+  es: {
+    eyebrow: "PARA ECOMMERCE Y DROPSHIPPING",
+    titleLead: "Deja de operar tu ecommerce ",
+    titleAccent: "entre cinco herramientas.",
+    subtitle: "Centraliza pedidos, clientes, automatizaciones, reportes y un copiloto de IA en un solo lugar. Empieza conectando tu tienda.",
+    primary: "Probar Diaglob",
+    secondary: "Ver cómo funciona",
+    note: "Prueba el flujo con tu tienda antes de decidir.",
+    trust: ["Shopify", "Nuvemshop", "Automatizaciones", "Copiloto IA"],
+  },
+  en: {
+    eyebrow: "FOR ECOMMERCE & DROPSHIPPING",
+    titleLead: "Stop running your ecommerce ",
+    titleAccent: "across five different tools.",
+    subtitle: "Bring orders, customers, automations, reporting and an AI copilot into one workspace. Start by connecting your store.",
+    primary: "Try Diaglob",
+    secondary: "See how it works",
+    note: "Test the workflow with your store before deciding.",
+    trust: ["Shopify", "Nuvemshop", "Automations", "AI Copilot"],
+  },
+  "pt-BR": {
+    eyebrow: "PARA ECOMMERCE E DROPSHIPPING",
+    titleLead: "Pare de operar seu ecommerce ",
+    titleAccent: "em cinco ferramentas diferentes.",
+    subtitle: "Centralize pedidos, clientes, automações, relatórios e um copiloto de IA em um só lugar. Comece conectando sua loja.",
+    primary: "Testar Diaglob",
+    secondary: "Ver como funciona",
+    note: "Teste o fluxo com sua loja antes de decidir.",
+    trust: ["Shopify", "Nuvemshop", "Automações", "Copiloto IA"],
+  },
+} as const;
+
 
 const landingUi = {
   es: {
@@ -148,18 +183,25 @@ const landingUi = {
 export default function PublicLandingPage({
   onNavigateToLogin,
   onNavigateToRegister,
+  campaignVariant,
 }: PublicLandingPageProps) {
   const { i18n } = useTranslation();
   const copy = useMemo(() => getMarketingCopy(i18n.language), [i18n.language]);
   const locale = resolveMarketingLocale(i18n.language);
   const ui = landingUi[locale];
+  const hero = campaignVariant === "paid-ecommerce"
+    ? paidHero[locale]
+    : copy.hero;
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(0);
   const [theme, setTheme] = useState(() => localStorage.getItem("diaglob-theme") || "dark");
 
   useEffect(() => {
-    trackMarketingEvent("landing_view", { locale });
-  }, [locale]);
+    trackMarketingEvent("landing_view", {
+      locale,
+      campaign_variant: campaignVariant || "organic",
+    });
+  }, [campaignVariant, locale]);
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -167,13 +209,21 @@ export default function PublicLandingPage({
   }, [theme]);
 
   useEffect(() => {
-    const title =
+    const paidTitle =
       locale === "en"
-        ? "Diaglob — Sell and run your ecommerce with AI"
+        ? "Diaglob — Ecommerce operations in one place"
         : locale === "pt-BR"
-          ? "Diaglob — Venda e opere seu ecommerce com IA"
-          : "Diaglob — Vende y opera tu ecommerce con IA";
-    const description = copy.hero.subtitle;
+          ? "Diaglob — Operação de ecommerce em um só lugar"
+          : "Diaglob — Opera tu ecommerce desde un solo lugar";
+    const title =
+      campaignVariant === "paid-ecommerce"
+        ? paidTitle
+        : locale === "en"
+          ? "Diaglob — Sell and run your ecommerce with AI"
+          : locale === "pt-BR"
+            ? "Diaglob — Venda e opere seu ecommerce com IA"
+            : "Diaglob — Vende y opera tu ecommerce con IA";
+    const description = hero.subtitle;
 
     document.title = title;
     let meta = document.querySelector('meta[name="description"]');
@@ -183,13 +233,21 @@ export default function PublicLandingPage({
       document.head.appendChild(meta);
     }
     meta.setAttribute("content", description);
-  }, [copy.hero.subtitle, locale]);
+  }, [campaignVariant, hero.subtitle, locale]);
 
   const beginRegistration = (placement: string, planId?: string) => {
     if (planId) {
-      trackMarketingEvent("pricing_plan_interest", { placement, plan_id: planId });
+      trackMarketingEvent("pricing_plan_interest", {
+        placement,
+        plan_id: planId,
+        campaign_variant: campaignVariant || "organic",
+      });
     }
-    trackMarketingEvent("registration_started", { placement, plan_id: planId });
+    trackMarketingEvent("registration_started", {
+      placement,
+      plan_id: planId,
+      campaign_variant: campaignVariant || "organic",
+    });
     onNavigateToRegister();
   };
 
@@ -313,23 +371,23 @@ export default function PublicLandingPage({
           <div className="marketing-orb orb-two" />
           <div className="marketing-shell marketing-hero-grid">
             <div className="marketing-hero-copy">
-              <div className="marketing-eyebrow"><Sparkles size={15} />{copy.hero.eyebrow}</div>
+              <div className="marketing-eyebrow"><Sparkles size={15} />{hero.eyebrow}</div>
               <h1>
-                {copy.hero.titleLead}
-                <span>{copy.hero.titleAccent}</span>
+                {hero.titleLead}
+                <span>{hero.titleAccent}</span>
               </h1>
-              <p className="marketing-hero-subtitle">{copy.hero.subtitle}</p>
+              <p className="marketing-hero-subtitle">{hero.subtitle}</p>
               <div className="marketing-hero-actions">
                 <button className="marketing-primary-button large" onClick={() => beginRegistration("hero")}>
-                  {copy.hero.primary}<ArrowRight size={18} />
+                  {hero.primary}<ArrowRight size={18} />
                 </button>
                 <button className="marketing-secondary-button large" onClick={() => scrollTo("workflow")}>
-                  {copy.hero.secondary}
+                  {hero.secondary}
                 </button>
               </div>
-              <p className="marketing-hero-note"><Check size={15} />{copy.hero.note}</p>
+              <p className="marketing-hero-note"><Check size={15} />{hero.note}</p>
               <div className="marketing-trust-row">
-                {copy.hero.trust.map((item) => <span key={item}>{item}</span>)}
+                {hero.trust.map((item) => <span key={item}>{item}</span>)}
               </div>
             </div>
 
