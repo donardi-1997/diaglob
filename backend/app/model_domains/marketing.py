@@ -5,6 +5,7 @@ only campaign attribution needed to understand how Diaglob registrations were
 acquired; raw email, IP address, and user-agent values are never persisted here.
 """
 from datetime import datetime
+from decimal import Decimal
 
 from sqlalchemy import Boolean, DateTime, Integer, JSON, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
@@ -69,7 +70,7 @@ class MarketingFunnelEvent(Base):
         String(255), nullable=True, index=True
     )
     content: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    value: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    value: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     currency: Mapped[str | None] = mapped_column(String(10), nullable=True)
     event_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     meta_delivery_status: Mapped[str] = mapped_column(
