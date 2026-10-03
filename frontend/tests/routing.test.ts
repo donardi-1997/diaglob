@@ -11,6 +11,7 @@ import {
 
 test("app page keys map to stable canonical paths", () => {
   assert.equal(getAppPath("overview"), "/app/overview");
+  assert.equal(getAppPath("growth"), "/app/growth");
   assert.equal(getAppPath("settings"), "/app/stores");
   assert.equal(getAppPath("post-sales"), "/app/post-sales");
   assert.equal(getAppPath("unknown"), "/app");
@@ -18,6 +19,7 @@ test("app page keys map to stable canonical paths", () => {
 
 test("canonical app paths resolve back to page keys", () => {
   assert.equal(getAppPageFromPath("/app/overview"), "overview");
+  assert.equal(getAppPageFromPath("/app/growth"), "growth");
   assert.equal(getAppPageFromPath("/app/stores"), "settings");
   assert.equal(getAppPageFromPath("/app/post-sales/"), "post-sales");
   assert.equal(getAppPageFromPath("/app/not-real"), null);
