@@ -26,11 +26,19 @@ import {
   type AgentChatSession,
   type AgentToolCall,
 } from "../services/agentChat";
+import {
+  buildCopilotPageContext,
+  captureCopilotPageText,
+  type CopilotPageContextInput,
+} from "../services/copilotPageContext";
 import "../agent-chat.css";
 
 interface Props {
   storeId: number;
   storeName?: string;
+  mode?: "page" | "panel";
+  pageContext?: CopilotPageContextInput;
+  onClose?: () => void;
 }
 
 const suggestions = [
@@ -39,6 +47,63 @@ const suggestions = [
   "Ayúdame a crear una automatización para pedidos de alto valor.",
   "Muéstrame las automatizaciones activas y explícame qué hacen.",
 ];
+
+function suggestionsForPage(page?: string, label?: string) {
+  const pageLabel = label || "esta vista";
+  const contextual: Record<string, string[]> = {
+    overview: [
+      "Resume lo más importante de este tablero.",
+      "¿Qué necesita atención ahora mismo?",
+      "Dame tres acciones concretas para mejorar la operación.",
+    ],
+    analytics: [
+      "Explícame las métricas que estoy viendo.",
+      "¿Qué tendencia o anomalía debería revisar primero?",
+      "Resume esta vista para una decisión comercial.",
+    ],
+    customers: [
+      "Resume los clientes visibles y qué requiere atención.",
+      "¿Qué señales de riesgo o seguimiento ves aquí?",
+      "Ayúdame a priorizar los clientes de esta vista.",
+    ],
+    commerce: [
+      "Explícame los pedidos o productos visibles en esta vista.",
+      "¿Qué debería atender primero aquí?",
+      "Resume los datos visibles y dame próximos pasos.",
+    ],
+    "post-sales": [
+      "Resume los casos visibles y priorízalos por urgencia.",
+      "¿Qué casos requieren intervención humana?",
+      "¿Qué acción recomiendas para esta vista?",
+    ],
+    integrations: [
+      "Explícame el estado de las integraciones visibles.",
+      "¿Qué integración parece requerir atención?",
+      "Guíame para completar la configuración de esta vista.",
+    ],
+    automations: [
+      "Explícame la automatización que estoy viendo.",
+      "¿Qué está incompleto o puede fallar en este flujo?",
+      "Ayúdame a mejorar esta automatización.",
+    ],
+    agents: [
+      "Explícame los agentes visibles y sus funciones.",
+      "¿Qué agente debería usar para esta tarea?",
+      "¿Ves alguna configuración que deba revisar?",
+    ],
+    knowledge: [
+      "Resume el estado de esta base de conocimiento.",
+      "¿Qué fuente o sincronización requiere atención?",
+      "Explícame lo que estoy viendo sin lenguaje técnico.",
+    ],
+  };
+
+  return contextual[page || ""] || [
+    `Explícame lo que estoy viendo en ${pageLabel}.`,
+    "¿Qué información de esta vista requiere atención?",
+    "Resume esta página y dame los próximos pasos.",
+  ];
+}
 
 function errorMessage(error: unknown, fallback: string) {
   const candidate = error as {
@@ -161,8 +226,16 @@ function ApprovalCard({
   );
 }
 
-export default function AgentChatPage({ storeId, storeName }: Props) {
+export default function AgentChatPage({
+  storeId,
+  storeName,
+  mode = "page",
+  pageContext,
+  onClose,
+}: Props) {
   const { t } = useTranslation();
+  const panelMode = mode === "panel";
+  const [includePageContext, setIncludePageContext] = useState(panelMode);
   const [sessions, setSessions] = useState<AgentChatSession[]>([]);
   const [session, setSession] = useState<AgentChatSession | null>(null);
   const [input, setInput] = useState("");
@@ -172,6 +245,25 @@ export default function AgentChatPage({ storeId, storeName }: Props) {
   const [error, setError] = useState("");
   const endRef = useRef<HTMLDivElement | null>(null);
 
+  const messageContext = useCallback(() => {
+    if (!panelMode || !includePageContext || !pageContext) {
+      return { page: "copilot" };
+    }
+
+    const root = document.querySelector(".dg-main-content");
+    const pageText = captureCopilotPageText(root);
+
+    return buildCopilotPageContext(pageContext, pageText);
+  }, [includePageContext, pageContext, panelMode]);
+
+  const activeSuggestions = useMemo(
+    () =>
+      panelMode
+        ? suggestionsForPage(pageContext?.page, pageContext?.pageLabel)
+        : suggestions,
+    [pageContext?.page, pageContext?.pageLabel, panelMode],
+  );
+
   const copy = useMemo(
     () => ({
       title: t("copilotTitle", { defaultValue: "Copiloto IA" }),
@@ -179,10 +271,14 @@ export default function AgentChatPage({ storeId, storeName }: Props) {
         defaultValue: "Consulta tu operación y ejecuta acciones con los permisos de tu usuario.",
       }),
       newChat: t("copilotNewChat", { defaultValue: "Nuevo chat" }),
-      emptyTitle: t("copilotEmptyTitle", { defaultValue: "¿Qué quieres hacer hoy?" }),
-      emptyBody: t("copilotEmptyBody", {
-        defaultValue: "Puedo consultar pedidos, clientes, productos, tracking, CJ y ayudarte a construir automatizaciones.",
-      }),
+      emptyTitle: panelMode
+        ? "¿Qué quieres saber de esta vista?"
+        : t("copilotEmptyTitle", { defaultValue: "¿Qué quieres hacer hoy?" }),
+      emptyBody: panelMode
+        ? `Puedo usar el contenido visible de ${pageContext?.pageLabel || "esta página"} y combinarlo con los datos permitidos de Diaglob.`
+        : t("copilotEmptyBody", {
+            defaultValue: "Puedo consultar pedidos, clientes, productos, tracking, CJ y ayudarte a construir automatizaciones.",
+          }),
       placeholder: t("copilotPlaceholder", {
         defaultValue: "Pregunta por tu operación o pide una acción...",
       }),
@@ -190,7 +286,7 @@ export default function AgentChatPage({ storeId, storeName }: Props) {
       loadError: t("copilotLoadError", { defaultValue: "No pudimos cargar el Copiloto." }),
       sendError: t("copilotSendError", { defaultValue: "No pudimos procesar el mensaje." }),
     }),
-    [t],
+    [pageContext?.pageLabel, panelMode, t],
   );
 
   const loadSessions = useCallback(async () => {
@@ -248,7 +344,7 @@ export default function AgentChatPage({ storeId, storeName }: Props) {
     setLoadingChat(true);
     setError("");
     try {
-      const created = await createAgentChatSession(storeId, { page: "copilot" });
+      const created = await createAgentChatSession(storeId, messageContext());
       await refreshSessionList(created);
       setInput("");
     } catch (err) {
@@ -260,7 +356,7 @@ export default function AgentChatPage({ storeId, storeName }: Props) {
 
   async function ensureSession() {
     if (session) return session;
-    const created = await createAgentChatSession(storeId, { page: "copilot" });
+    const created = await createAgentChatSession(storeId, messageContext());
     setSession(created);
     return created;
   }
@@ -274,9 +370,11 @@ export default function AgentChatPage({ storeId, storeName }: Props) {
     if (!textOverride) setInput("");
     try {
       const current = await ensureSession();
-      const updated = await sendAgentChatMessage(current.id, text, {
-        page: "copilot",
-      });
+      const updated = await sendAgentChatMessage(
+        current.id,
+        text,
+        messageContext(),
+      );
       await refreshSessionList(updated);
     } catch (err) {
       setError(errorMessage(err, copy.sendError));
@@ -317,7 +415,7 @@ export default function AgentChatPage({ storeId, storeName }: Props) {
 
   if (!storeId) {
     return (
-      <section className="copilot-page">
+      <section className={`copilot-page ${panelMode ? "copilot-panel-root" : ""}`}>
         <div className="copilot-no-store">
           <Bot size={28} />
           <h2>{copy.title}</h2>
@@ -331,7 +429,8 @@ export default function AgentChatPage({ storeId, storeName }: Props) {
   const pendingActions = session?.pending_actions || [];
 
   return (
-    <section className="copilot-page">
+    <section className={`copilot-page ${panelMode ? "copilot-panel-root" : ""}`}>
+      {!panelMode && (
       <aside className="copilot-sessions">
         <div className="copilot-sessions-header">
           <div>
@@ -370,6 +469,7 @@ export default function AgentChatPage({ storeId, storeName }: Props) {
           ))}
         </div>
       </aside>
+      )}
 
       <div className="copilot-workspace">
         <header className="copilot-header">
@@ -382,8 +482,19 @@ export default function AgentChatPage({ storeId, storeName }: Props) {
           </div>
           <div className="copilot-header-meta">
             <span className="copilot-online"><span /> Permisos protegidos</span>
-            <span>{storeName || `Tienda #${storeId}`}</span>
-            {session && !session.has_pending_turn && (
+            {!panelMode && <span>{storeName || `Tienda #${storeId}`}</span>}
+            {panelMode && (
+              <button
+                type="button"
+                className="icon-button"
+                title="Cerrar Copiloto"
+                aria-label="Cerrar Copiloto"
+                onClick={onClose}
+              >
+                <X size={16} />
+              </button>
+            )}
+            {!panelMode && session && !session.has_pending_turn && (
               <button className="icon-button" title="Archivar chat" onClick={() => void archiveCurrent()}>
                 <Archive size={15} />
               </button>
@@ -392,6 +503,29 @@ export default function AgentChatPage({ storeId, storeName }: Props) {
         </header>
 
         {error && <div className="copilot-error">{error}</div>}
+
+        {panelMode && (
+          <div className="copilot-context-strip" data-copilot-private>
+            <button
+              type="button"
+              className={`copilot-context-toggle ${includePageContext ? "is-active" : ""}`}
+              aria-pressed={includePageContext}
+              onClick={() => setIncludePageContext((current) => !current)}
+            >
+              <Sparkles size={14} />
+              <span>
+                <strong>Contexto de esta vista</strong>
+                <small>{pageContext?.pageLabel || "Página actual"}</small>
+              </span>
+              <em>{includePageContext ? "Activo" : "Desactivado"}</em>
+            </button>
+            <p>
+              {includePageContext
+                ? "Se enviará texto visible de esta vista. No se incluyen formularios, campos de entrada, código ni elementos marcados como privados."
+                : "El Copiloto responderá sin leer el contenido visible de esta vista."}
+            </p>
+          </div>
+        )}
 
         <div className="copilot-transcript">
           {messages.length === 0 && !loadingChat ? (
@@ -402,7 +536,7 @@ export default function AgentChatPage({ storeId, storeName }: Props) {
               <h2>{copy.emptyTitle}</h2>
               <p>{copy.emptyBody}</p>
               <div className="copilot-suggestions">
-                {suggestions.map((suggestion) => (
+                {activeSuggestions.map((suggestion) => (
                   <button key={suggestion} onClick={() => void send(suggestion)}>
                     <Sparkles size={14} />
                     <span>{suggestion}</span>
@@ -455,7 +589,7 @@ export default function AgentChatPage({ storeId, storeName }: Props) {
           )}
         </div>
 
-        <footer className="copilot-composer">
+        <footer className="copilot-composer" data-copilot-private>
           <div className="copilot-composer-box">
             <textarea
               value={input}
@@ -483,7 +617,9 @@ export default function AgentChatPage({ storeId, storeName }: Props) {
             </button>
           </div>
           <p>
-            El Copiloto solo puede usar herramientas permitidas para tu rol y tienda. Las acciones sensibles requieren tu aprobación.
+            {panelMode && includePageContext
+              ? `Usando contexto de ${pageContext?.pageLabel || "esta vista"} · Las acciones sensibles siguen requiriendo aprobación.`
+              : "El Copiloto solo puede usar herramientas permitidas para tu rol y tienda. Las acciones sensibles requieren tu aprobación."}
           </p>
         </footer>
       </div>

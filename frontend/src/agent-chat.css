@@ -122,8 +122,8 @@
 .copilot-workspace {
   min-width: 0;
   min-height: 0;
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  display: flex;
+  flex-direction: column;
   background:
     radial-gradient(circle at 50% 0%, rgba(124, 92, 255, 0.05), transparent 35%),
     var(--bg);
@@ -200,6 +200,7 @@
 }
 
 .copilot-transcript {
+  flex: 1;
   min-height: 0;
   overflow-y: auto;
 }
@@ -626,6 +627,209 @@
 .copilot-no-store p {
   color: var(--text-muted);
   font-size: 11px;
+}
+
+
+/* Contextual side-panel mode */
+.copilot-panel-root {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 180;
+  width: min(460px, 100vw);
+  height: 100dvh;
+  min-height: 0;
+  grid-template-columns: 1fr;
+  border-radius: 0;
+  border-top: 0;
+  border-right: 0;
+  border-bottom: 0;
+  box-shadow: -18px 0 50px rgba(15, 23, 42, 0.16);
+  animation: copilot-panel-in 180ms ease-out;
+}
+
+.copilot-panel-root .copilot-workspace {
+  min-height: 100dvh;
+}
+
+.copilot-panel-root .copilot-header {
+  min-height: 64px;
+  padding: 0 14px;
+}
+
+.copilot-panel-root .copilot-header > div:nth-child(2) {
+  min-width: 0;
+}
+
+.copilot-panel-root .copilot-header h1,
+.copilot-panel-root .copilot-header p {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.copilot-panel-root .copilot-header-meta {
+  gap: 7px;
+}
+
+.copilot-panel-root .copilot-online {
+  font-size: 8px;
+}
+
+.copilot-context-strip {
+  padding: 10px 12px 0;
+}
+
+.copilot-context-toggle {
+  width: 100%;
+  min-height: 48px;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--panel);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.copilot-context-toggle > svg {
+  color: var(--text-muted);
+}
+
+.copilot-context-toggle.is-active {
+  border-color: rgba(124, 92, 255, 0.32);
+  background: color-mix(in srgb, var(--accent) 7%, var(--panel));
+}
+
+.copilot-context-toggle.is-active > svg {
+  color: var(--accent);
+}
+
+.copilot-context-toggle > span {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.copilot-context-toggle strong {
+  font-size: 10px;
+}
+
+.copilot-context-toggle small {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.copilot-context-toggle em {
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: var(--control-bg);
+  color: var(--text-muted);
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 750;
+}
+
+.copilot-context-toggle.is-active em {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.copilot-context-strip > p {
+  margin: 6px 3px 0;
+  color: var(--text-muted);
+  font-size: 8px;
+  line-height: 1.4;
+}
+
+.copilot-panel-root .copilot-empty {
+  width: calc(100% - 28px);
+  padding: 36px 0 28px;
+}
+
+.copilot-panel-root .copilot-empty-mark {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+}
+
+.copilot-panel-root .copilot-empty h2 {
+  margin-top: 14px;
+  font-size: 18px;
+}
+
+.copilot-panel-root .copilot-suggestions {
+  grid-template-columns: 1fr;
+  margin-top: 20px;
+}
+
+.copilot-panel-root .copilot-suggestions button {
+  min-height: 52px;
+}
+
+.copilot-panel-root .copilot-messages {
+  width: calc(100% - 24px);
+  padding: 20px 0 28px;
+}
+
+.copilot-panel-root .copilot-message {
+  margin-bottom: 16px;
+}
+
+.copilot-panel-root .copilot-message.user .copilot-message-body {
+  max-width: 86%;
+}
+
+.copilot-panel-root .copilot-tool {
+  grid-template-columns: 26px minmax(0, 1fr);
+}
+
+.copilot-panel-root .copilot-tool-status {
+  grid-column: 2;
+}
+
+.copilot-panel-root .copilot-approval {
+  margin-left: 0;
+}
+
+.copilot-panel-root .copilot-composer {
+  padding: 10px 12px 12px;
+}
+
+@keyframes copilot-panel-in {
+  from {
+    opacity: 0.5;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@media (max-width: 640px) {
+  .copilot-panel-root {
+    width: 100vw;
+    border-left: 0;
+  }
+
+  .copilot-panel-root .copilot-online {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .copilot-panel-root {
+    animation: none;
+  }
 }
 
 @media (max-width: 900px) {

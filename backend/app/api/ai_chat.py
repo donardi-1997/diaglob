@@ -1,5 +1,7 @@
 """HTTP API for the Diaglob operations copilot."""
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -20,6 +22,9 @@ from ..services.bedrock_agent_chat import AgentModelError
 from .deps import get_current_membership
 
 
+logger = logging.getLogger(__name__)
+
+
 router = APIRouter()
 
 
@@ -37,9 +42,16 @@ class ChatMessageRequest(BaseModel):
 def _map_chat_error(exc: Exception):
     code = str(exc)
     if isinstance(exc, AgentModelError):
+        logger.error("Copilot model unavailable: %s", exc)
         raise HTTPException(
             status_code=503,
-            detail={"code": "AGENT_MODEL_UNAVAILABLE", "message": code},
+            detail={
+                "code": "AGENT_MODEL_UNAVAILABLE",
+                "message": (
+                    "El Copiloto no pudo conectarse con el modelo de IA. "
+                    "Intenta nuevamente en unos segundos."
+                ),
+            },
         ) from exc
 
     status = 409
