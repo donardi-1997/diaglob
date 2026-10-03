@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from ..model_domains.marketing import MarketingRegistrationAttribution
 from ..models import Conversation, Message, Order, Organization, User
 
 
@@ -163,6 +164,55 @@ def get_admin_growth_metrics(db: Session, days: int = 30) -> dict:
         .all()
     )
 
+    acquisition_rows = (
+        db.query(MarketingRegistrationAttribution)
+        .filter(
+            MarketingRegistrationAttribution.created_at >= start,
+            MarketingRegistrationAttribution.created_at < end,
+        )
+        .all()
+    )
+    source_rows = (
+        db.query(
+            MarketingRegistrationAttribution.source,
+            func.count(MarketingRegistrationAttribution.id),
+        )
+        .filter(
+            MarketingRegistrationAttribution.created_at >= start,
+            MarketingRegistrationAttribution.created_at < end,
+        )
+        .group_by(MarketingRegistrationAttribution.source)
+        .order_by(func.count(MarketingRegistrationAttribution.id).desc())
+        .all()
+    )
+    campaign_rows = (
+        db.query(
+            MarketingRegistrationAttribution.campaign,
+            func.count(MarketingRegistrationAttribution.id),
+        )
+        .filter(
+            MarketingRegistrationAttribution.created_at >= start,
+            MarketingRegistrationAttribution.created_at < end,
+            MarketingRegistrationAttribution.campaign.isnot(None),
+        )
+        .group_by(MarketingRegistrationAttribution.campaign)
+        .order_by(func.count(MarketingRegistrationAttribution.id).desc())
+        .limit(10)
+        .all()
+    )
+    meta_delivery_rows = (
+        db.query(
+            MarketingRegistrationAttribution.meta_delivery_status,
+            func.count(MarketingRegistrationAttribution.id),
+        )
+        .filter(
+            MarketingRegistrationAttribution.created_at >= start,
+            MarketingRegistrationAttribution.created_at < end,
+        )
+        .group_by(MarketingRegistrationAttribution.meta_delivery_status)
+        .all()
+    )
+
     series = [
         {"date": day, **values}
         for day, values in sorted(daily.items())
@@ -200,5 +250,26 @@ def get_admin_growth_metrics(db: Session, days: int = 30) -> dict:
                 org_map,
                 "conversations",
             ),
+        },
+        "acquisition": {
+            "tracked_registrations": len(acquisition_rows),
+            "by_source": [
+                {
+                    "source": source or "direct_or_unknown",
+                    "registrations": int(count or 0),
+                }
+                for source, count in source_rows
+            ],
+            "top_campaigns": [
+                {
+                    "campaign": campaign,
+                    "registrations": int(count or 0),
+                }
+                for campaign, count in campaign_rows
+            ],
+            "meta_delivery_statuses": {
+                (status or "unknown"): int(count or 0)
+                for status, count in meta_delivery_rows
+            },
         },
     }
