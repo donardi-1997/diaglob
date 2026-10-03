@@ -435,6 +435,22 @@ function App() {
         }
       />
       <Route
+        path="/ecommerce"
+        element={
+          authenticated ? (
+            <Navigate to="/app" replace />
+          ) : (
+            <Suspense fallback={<LoadingScreen />}>
+              <PublicLandingPage
+                campaignVariant="paid-ecommerce"
+                onNavigateToLogin={() => navigate("/login")}
+                onNavigateToRegister={() => navigate("/register")}
+              />
+            </Suspense>
+          )
+        }
+      />
+      <Route
         path="/login"
         element={
           authenticated ? (
