@@ -40,6 +40,11 @@
   color: var(--dg-shell-text);
   display: grid;
   grid-template-columns: 264px minmax(0, 1fr);
+  transition: grid-template-columns 180ms ease;
+}
+
+.dg-shell.is-sidebar-collapsed {
+  grid-template-columns: 80px minmax(0, 1fr);
 }
 
 .dg-sidebar {
@@ -61,6 +66,93 @@
   align-items: center;
   gap: 11px;
   padding: 5px 8px 15px;
+}
+
+.dg-sidebar-collapse {
+  position: absolute;
+  top: 29px;
+  right: -13px;
+  z-index: 5;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--dg-shell-border-strong);
+  border-radius: 8px;
+  background: var(--dg-shell-surface-strong);
+  color: var(--dg-shell-muted);
+  box-shadow: var(--dg-shell-shadow-soft);
+  cursor: pointer;
+  transition: color 150ms ease, border-color 150ms ease, transform 180ms ease;
+}
+
+.dg-sidebar-collapse:hover {
+  color: var(--dg-shell-accent);
+  border-color: rgba(109, 93, 252, 0.28);
+}
+
+.dg-shell.is-sidebar-collapsed .dg-sidebar {
+  padding-inline: 10px;
+}
+
+.dg-shell.is-sidebar-collapsed .dg-sidebar-brand {
+  justify-content: center;
+  padding-inline: 0;
+}
+
+.dg-shell.is-sidebar-collapsed .dg-brand-copy,
+.dg-shell.is-sidebar-collapsed .dg-nav-group-label,
+.dg-shell.is-sidebar-collapsed .dg-nav-item > span:nth-child(2),
+.dg-shell.is-sidebar-collapsed .dg-nav-active-dot,
+.dg-shell.is-sidebar-collapsed .dg-support-link span,
+.dg-shell.is-sidebar-collapsed .dg-powered-by,
+.dg-shell.is-sidebar-collapsed .dg-user-copy {
+  display: none;
+}
+
+.dg-shell.is-sidebar-collapsed .dg-nav {
+  gap: 10px;
+  padding-inline: 0;
+}
+
+.dg-shell.is-sidebar-collapsed .dg-nav-group {
+  gap: 3px;
+}
+
+.dg-shell.is-sidebar-collapsed .dg-nav-group + .dg-nav-group {
+  padding-top: 10px;
+  border-top: 1px solid var(--dg-shell-border);
+}
+
+.dg-shell.is-sidebar-collapsed .dg-nav-item {
+  position: relative;
+  min-height: 44px;
+  grid-template-columns: 1fr;
+  justify-items: center;
+  padding: 7px;
+}
+
+.dg-shell.is-sidebar-collapsed .dg-nav-icon {
+  width: 30px;
+  height: 30px;
+}
+
+.dg-shell.is-sidebar-collapsed .dg-sidebar-footer {
+  justify-items: center;
+}
+
+.dg-shell.is-sidebar-collapsed .dg-support-link {
+  width: 42px;
+  height: 42px;
+  min-height: 42px;
+  justify-content: center;
+  padding: 0;
+}
+
+.dg-shell.is-sidebar-collapsed .dg-sidebar-user {
+  width: 44px;
+  justify-content: center;
+  padding: 5px;
 }
 
 .dg-brand-mark {
@@ -737,8 +829,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .dg-shell,
   .dg-nav-item,
   .dg-icon-button,
+  .dg-sidebar-collapse,
   .dg-mobile-drawer {
     transition: none;
     animation: none;

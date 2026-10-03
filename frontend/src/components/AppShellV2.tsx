@@ -2,6 +2,8 @@ import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import {
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   HelpCircle,
   LogOut,
   Menu,
@@ -115,6 +117,9 @@ export default function AppShellV2({
   const [mobileOpen, setMobileOpen] = useState(false);
   const [storeMenuOpen, setStoreMenuOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    () => localStorage.getItem("diaglob-sidebar-collapsed") === "true",
+  );
 
   const locale = language === "pt-BR" ? "pt-BR" : language === "en" ? "en" : "es";
   const labels = GROUP_LABELS[locale];
@@ -131,6 +136,13 @@ export default function AppShellV2({
       })).filter((section) => section.items.length > 0),
     [navigation],
   );
+
+  useEffect(() => {
+    localStorage.setItem(
+      "diaglob-sidebar-collapsed",
+      String(sidebarCollapsed),
+    );
+  }, [sidebarCollapsed]);
 
   useEffect(() => {
     if (!mobileOpen) return;
@@ -167,6 +179,7 @@ export default function AppShellV2({
                 className={`dg-nav-item ${activePage === key ? "is-active" : ""}`}
                 onClick={() => navigate(key)}
                 aria-current={activePage === key ? "page" : undefined}
+                title={sidebarCollapsed ? label : undefined}
               >
                 <span className="dg-nav-icon"><Icon size={18} /></span>
                 <span>{label}</span>
@@ -198,7 +211,7 @@ export default function AppShellV2({
   );
 
   return (
-    <div className="dg-shell">
+    <div className={`dg-shell ${sidebarCollapsed ? "is-sidebar-collapsed" : ""}`}>
       <aside className="dg-sidebar">
         <div className="dg-sidebar-brand">
           <div className="dg-brand-mark"><Sparkles size={19} /></div>
@@ -206,6 +219,15 @@ export default function AppShellV2({
             <strong>DIAGLOB</strong>
             <span>Commerce OS</span>
           </div>
+          <button
+            type="button"
+            className="dg-sidebar-collapse"
+            onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
+            aria-label={sidebarCollapsed ? "Expandir menú lateral" : "Contraer menú lateral"}
+            title={sidebarCollapsed ? "Expandir menú" : "Contraer menú"}
+          >
+            {sidebarCollapsed ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}
+          </button>
         </div>
 
         <div className="dg-sidebar-scroll">{renderNavigation()}</div>

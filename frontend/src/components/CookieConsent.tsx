@@ -113,11 +113,6 @@ export default function CookieConsent() {
         </aside>
       )}
 
-      {consent && !preferencesOpen && (
-        <button className="cookie-settings-trigger" type="button" onClick={openPreferences}>
-          <Cookie size={15} />{labels.settings}
-        </button>
-      )}
 
       {preferencesOpen && (
         <div className="cookie-preferences-backdrop" role="presentation">
