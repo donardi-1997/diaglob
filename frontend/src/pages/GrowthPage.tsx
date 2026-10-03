@@ -11,6 +11,7 @@ import {
   Rocket,
   Target,
   Users,
+  type LucideIcon,
 } from "lucide-react";
 
 import {
@@ -55,7 +56,7 @@ function EmptyMetric({
   label,
   helper,
 }: {
-  icon: typeof CircleDollarSign;
+  icon: LucideIcon;
   label: string;
   helper: string;
 }) {
