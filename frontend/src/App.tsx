@@ -242,6 +242,7 @@ function App() {
   const [searchTarget, setSearchTarget] = useState<SearchTarget | null>(null);
   const [copilotOpen, setCopilotOpen] = useState(false);
   const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
+  const [platformAdminReady, setPlatformAdminReady] = useState(false);
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -251,16 +252,24 @@ function App() {
   useEffect(() => {
     if (!authenticated || !sessionReady) {
       setIsPlatformAdmin(false);
+      setPlatformAdminReady(false);
       return;
     }
 
     let cancelled = false;
+    setPlatformAdminReady(false);
     getAdminStatus()
       .then((status) => {
-        if (!cancelled) setIsPlatformAdmin(status.platform_admin === true);
+        if (!cancelled) {
+          setIsPlatformAdmin(status.platform_admin === true);
+          setPlatformAdminReady(true);
+        }
       })
       .catch(() => {
-        if (!cancelled) setIsPlatformAdmin(false);
+        if (!cancelled) {
+          setIsPlatformAdmin(false);
+          setPlatformAdminReady(true);
+        }
       });
 
     return () => {
@@ -325,6 +334,9 @@ function App() {
   const requestedNavigationItem = navigation.find(
     (item) => item.key === activePage,
   );
+  const platformAdminRoutePending = Boolean(
+    requestedNavigationItem?.platformAdminOnly && !platformAdminReady,
+  );
   const appRouteAllowed = Boolean(
     activePage
     && requestedNavigationItem
@@ -350,14 +362,15 @@ function App() {
 
   const appContent = (
     <Suspense fallback={<LoadingScreen />}>
-      {!activePage && (
+      {platformAdminRoutePending && <LoadingScreen />}
+      {!platformAdminRoutePending && !activePage && (
         <RouteStatePage
           kind="not-found"
           inApp
           onPrimaryAction={() => navigate(getAppPath(visibleNavigation[0]?.key || "overview"))}
         />
       )}
-      {activePage && !appRouteAllowed && (
+      {!platformAdminRoutePending && activePage && !appRouteAllowed && (
         <RouteStatePage
           kind="forbidden"
           inApp
