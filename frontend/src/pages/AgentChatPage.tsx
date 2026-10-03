@@ -1,4 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type {
+  KeyboardEvent as ReactKeyboardEvent,
+  PointerEvent as ReactPointerEvent,
+} from "react";
 import { useTranslation } from "react-i18next";
 import {
   AlertTriangle,
@@ -299,6 +303,7 @@ export default function AgentChatPage({
   const [loadingChat, setLoadingChat] = useState(false);
   const [approvalBusy, setApprovalBusy] = useState<number | null>(null);
   const [error, setError] = useState("");
+  const [optimisticUserText, setOptimisticUserText] = useState("");
   const [typingMessageId, setTypingMessageId] = useState<number | null>(null);
   const [panelWidth, setPanelWidth] = useState(() => {
     const saved = Number(localStorage.getItem("diaglob-copilot-panel-width"));
@@ -523,6 +528,7 @@ export default function AgentChatPage({
 
     setLoadingChat(true);
     setError("");
+    setOptimisticUserText(text);
     if (!textOverride) setInput("");
     try {
       const current = await ensureSession();
@@ -537,6 +543,7 @@ export default function AgentChatPage({
       setError(errorMessage(err, copy.sendError));
       if (!textOverride) setInput(text);
     } finally {
+      setOptimisticUserText("");
       setLoadingChat(false);
     }
   }
@@ -771,6 +778,16 @@ export default function AgentChatPage({
                   </div>
                 </article>
               ))}
+
+              {optimisticUserText && (
+                <article className="copilot-message user copilot-message-optimistic">
+                  <div className="copilot-avatar"><span>Tú</span></div>
+                  <div className="copilot-message-body">
+                    <div className="copilot-message-text">{optimisticUserText}</div>
+                    <small>Enviado ahora</small>
+                  </div>
+                </article>
+              )}
 
               {pendingActions.map((call) => (
                 <ApprovalCard
