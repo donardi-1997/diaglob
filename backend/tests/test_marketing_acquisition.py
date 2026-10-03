@@ -6,9 +6,14 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.db import Base
-from app.model_domains.marketing import MarketingRegistrationAttribution
+from app.model_domains.marketing import (
+    MarketingFunnelEvent,
+    MarketingRegistrationAttribution,
+)
+from app.models import User
 from app.services.marketing_acquisition import (
     build_meta_conversion_event,
+    record_lifecycle_conversion,
     record_registration_conversion,
 )
 
@@ -135,8 +140,103 @@ def test_registration_attribution_persists_campaign_and_deduplicates(db):
     assert second["deduplicated"] is True
 
     row = db.query(MarketingRegistrationAttribution).one()
+    funnel_event = db.query(MarketingFunnelEvent).one()
+    assert funnel_event.event_name == "CompleteRegistration"
+    assert funnel_event.event_key == "complete_registration:dedupe"
+    assert funnel_event.meta_delivery_status == "disabled"
     assert row.source == "meta"
     assert row.medium == "paid_social"
     assert row.campaign == "launch_colombia"
     assert row.content == "product_demo_v1"
     assert row.fbclid == "click-123"
+
+
+
+def test_build_meta_conversion_event_supports_trial_event():
+    event = build_meta_conversion_event(
+        event_id="start_trial:7",
+        event_name="StartTrial",
+        email="merchant@example.com",
+        user_id=7,
+        event_source_url="https://diaglob.tech/register",
+        first_touch={"fbclid": "click-123"},
+        last_touch=None,
+        fbp=None,
+        fbc=None,
+        client_ip=None,
+        client_user_agent=None,
+        custom_data={"commerce_provider": "shopify"},
+        event_time=1234567890,
+    )
+
+    assert event["event_name"] == "StartTrial"
+    assert event["event_id"] == "start_trial:7"
+    assert event["custom_data"] == {"commerce_provider": "shopify"}
+
+
+def test_lifecycle_conversion_uses_registration_attribution_and_deduplicates(db):
+    user = User(
+        email="funnel@example.com",
+        name="Funnel User",
+        active=True,
+    )
+    db.add(user)
+    db.flush()
+
+    attribution = MarketingRegistrationAttribution(
+        organization_id=77,
+        user_id=user.id,
+        event_id="complete_registration:funnel",
+        source="meta",
+        medium="paid_social",
+        campaign="launch_colombia",
+        content="ai_copilot_v1",
+        fbclid="click-funnel",
+        first_touch={
+            "source": "meta",
+            "campaign": "launch_colombia",
+            "fbclid": "click-funnel",
+            "captured_at": "2026-10-03T12:00:00Z",
+        },
+        last_touch={
+            "source": "meta",
+            "campaign": "launch_colombia",
+            "fbclid": "click-funnel",
+            "captured_at": "2026-10-03T12:05:00Z",
+        },
+        event_source_url="https://diaglob.tech/register",
+        consented=True,
+        meta_delivery_status="disabled",
+    )
+    db.add(attribution)
+    db.commit()
+
+    first = record_lifecycle_conversion(
+        db,
+        organization_id=77,
+        event_name="StartTrial",
+        event_key="start_trial:77",
+        provider_event_id="shopify:merchant.myshopify.com",
+        event_data={"commerce_provider": "shopify"},
+    )
+    second = record_lifecycle_conversion(
+        db,
+        organization_id=77,
+        event_name="StartTrial",
+        event_key="start_trial:77",
+        provider_event_id="shopify:merchant.myshopify.com",
+    )
+
+    assert first["recorded"] is True
+    assert first["meta_delivery_status"] == "disabled"
+    assert second["deduplicated"] is True
+
+    event = (
+        db.query(MarketingFunnelEvent)
+        .filter(MarketingFunnelEvent.event_name == "StartTrial")
+        .one()
+    )
+    assert event.organization_id == 77
+    assert event.campaign == "launch_colombia"
+    assert event.content == "ai_copilot_v1"
+    assert event.provider_event_id == "shopify:merchant.myshopify.com"
