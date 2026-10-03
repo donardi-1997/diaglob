@@ -23,7 +23,7 @@ export interface MarketingAttribution {
   capturedAt: string;
 }
 
-export interface MarketingProvisionContext {
+export interface MarketingProvisionContext extends Record<string, unknown> {
   consented: true;
   event_id: string;
   event_source_url: string;
