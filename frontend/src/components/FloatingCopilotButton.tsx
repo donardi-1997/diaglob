@@ -43,6 +43,7 @@ export default function FloatingCopilotButton({
   onToggle,
 }: FloatingCopilotButtonProps) {
   const [position, setPosition] = useState<FloatingPosition>(initialPosition);
+  const positionRef = useRef(position);
   const dragRef = useRef<DragState | null>(null);
   const draggedRef = useRef(false);
   const suppressClickRef = useRef(false);
@@ -55,6 +56,7 @@ export default function FloatingCopilotButton({
           window.innerWidth,
           window.innerHeight,
         );
+        positionRef.current = next;
         localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
         return next;
       });
@@ -93,16 +95,16 @@ export default function FloatingCopilotButton({
 
     if (!draggedRef.current) return;
 
-    setPosition(
-      clampFloatingPosition(
-        {
-          x: drag.origin.x + deltaX,
-          y: drag.origin.y + deltaY,
-        },
-        window.innerWidth,
-        window.innerHeight,
-      ),
+    const next = clampFloatingPosition(
+      {
+        x: drag.origin.x + deltaX,
+        y: drag.origin.y + deltaY,
+      },
+      window.innerWidth,
+      window.innerHeight,
     );
+    positionRef.current = next;
+    setPosition(next);
   };
 
   const finishDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
@@ -116,7 +118,10 @@ export default function FloatingCopilotButton({
     dragRef.current = null;
     if (draggedRef.current) {
       suppressClickRef.current = true;
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(position));
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify(positionRef.current),
+      );
     }
   };
 
