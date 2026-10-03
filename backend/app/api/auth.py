@@ -1,3 +1,4 @@
+import logging
 import os
 from datetime import datetime, timedelta, timezone
 
@@ -5,11 +6,12 @@ from fastapi import (
     APIRouter,
     Depends,
     HTTPException,
+    Request,
 )
 from fastapi.security import (
     HTTPAuthorizationCredentials,
 )
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ..auth import verify_cognito_access_token
@@ -21,6 +23,7 @@ from ..models import (
     User,
 )
 from ..permissions import get_permissions_for_role
+from ..services.marketing_acquisition import record_registration_conversion
 from ..services.trial_service import create_pending_trial
 from .deps import (
     bearer_scheme,
@@ -28,9 +31,35 @@ from .deps import (
 )
 
 
+logger = logging.getLogger(__name__)
+
+
+class RegistrationMarketingTouchpoint(BaseModel):
+    source: str | None = Field(default=None, max_length=120)
+    medium: str | None = Field(default=None, max_length=120)
+    campaign: str | None = Field(default=None, max_length=255)
+    content: str | None = Field(default=None, max_length=255)
+    term: str | None = Field(default=None, max_length=255)
+    fbclid: str | None = Field(default=None, max_length=500)
+    ttclid: str | None = Field(default=None, max_length=500)
+    landing_path: str | None = Field(default=None, max_length=2048)
+    captured_at: str | None = Field(default=None, max_length=80)
+
+
+class RegistrationMarketingContext(BaseModel):
+    consented: bool = False
+    event_id: str = Field(max_length=120)
+    event_source_url: str | None = Field(default=None, max_length=2048)
+    fbp: str | None = Field(default=None, max_length=500)
+    fbc: str | None = Field(default=None, max_length=500)
+    first_touch: RegistrationMarketingTouchpoint | None = None
+    last_touch: RegistrationMarketingTouchpoint | None = None
+
+
 class RegistrationProvisionRequest(BaseModel):
     name: str
     organization_name: str | None = None
+    marketing_context: RegistrationMarketingContext | None = None
 
 
 router = APIRouter()
@@ -38,6 +67,7 @@ router = APIRouter()
 
 @router.post("/api/register/provision")
 def provision_registration(
+    request: Request,
     payload: RegistrationProvisionRequest,
     credentials: HTTPAuthorizationCredentials
     | None = Depends(
@@ -643,6 +673,32 @@ def provision_registration(
         organization_id=organization.id,
         role=membership.role,
     )
+
+    if payload.marketing_context is not None:
+        forwarded_for = request.headers.get("x-forwarded-for", "")
+        client_ip = (
+            forwarded_for.split(",", 1)[0].strip()
+            if forwarded_for
+            else (request.client.host if request.client else None)
+        )
+        try:
+            record_registration_conversion(
+                db,
+                organization_id=organization.id,
+                user_id=user.id,
+                email=user.email,
+                marketing_context=payload.marketing_context.model_dump(
+                    exclude_none=True
+                ),
+                client_ip=client_ip,
+                client_user_agent=request.headers.get("user-agent"),
+            )
+        except Exception:
+            db.rollback()
+            logger.exception(
+                "marketing.registration_conversion_failed organization_id=%s",
+                organization.id,
+            )
 
     return {
         "created": True,
