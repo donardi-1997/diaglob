@@ -28,6 +28,7 @@ from ..integrations.nuvemshop.client import (
 )
 from ..models import CommerceConnection, Customer, NuvemshopOAuthState, Order, OrderItem, Product, ProductVariant, Store
 from ..nuvemshop_security import encrypt_secret, decrypt_secret
+from .marketing_acquisition import record_lifecycle_conversion
 from .trial_service import (
     TrialIdentityAlreadyUsed,
     activate_trial_for_verified_store,
@@ -211,7 +212,7 @@ def connect_account(
         raise NuvemshopConnectionError("NUVEMSHOP_STORE_ALREADY_CONNECTED")
 
     try:
-        activate_trial_for_verified_store(
+        trial_result = activate_trial_for_verified_store(
             db,
             organization_id=organization_id,
             store_id=store_id,
@@ -240,6 +241,24 @@ def connect_account(
     db.add(connection)
     db.commit()
     db.refresh(connection)
+
+    if trial_result.get("trial_activated"):
+        try:
+            record_lifecycle_conversion(
+                db,
+                organization_id=organization_id,
+                event_name="StartTrial",
+                event_key=f"start_trial:{organization_id}",
+                provider_event_id=f"nuvemshop:{nuvemshop_store_id}",
+                event_data={"commerce_provider": "nuvemshop"},
+            )
+        except Exception:
+            logger.exception(
+                "Unable to record Nuvemshop trial acquisition conversion "
+                "for organization %s",
+                organization_id,
+            )
+            db.rollback()
 
     return {
         "ok": True,

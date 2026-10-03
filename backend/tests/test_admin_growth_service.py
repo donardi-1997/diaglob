@@ -6,7 +6,10 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.db import Base
-from app.model_domains.marketing import MarketingRegistrationAttribution
+from app.model_domains.marketing import (
+    MarketingFunnelEvent,
+    MarketingRegistrationAttribution,
+)
 from app.models import Conversation, Customer, Message, Order, Organization, Store, User
 from app.services.admin_growth_service import get_admin_growth_metrics
 
@@ -130,20 +133,69 @@ def test_admin_growth_tracks_recent_activity_and_billing_health(db):
             updated_at=recent,
         )
     )
-    db.add(
-        MarketingRegistrationAttribution(
-            organization_id=active_org.id,
-            user_id=1,
-            event_id="complete_registration:admin-growth",
-            source="meta",
-            medium="paid_social",
-            campaign="launch_colombia",
-            content="product_demo_v1",
-            consented=True,
-            meta_delivery_status="delivered",
-            created_at=recent,
-            updated_at=recent,
-        )
+    attribution = MarketingRegistrationAttribution(
+        organization_id=active_org.id,
+        user_id=1,
+        event_id="complete_registration:admin-growth",
+        source="meta",
+        medium="paid_social",
+        campaign="launch_colombia",
+        content="product_demo_v1",
+        consented=True,
+        meta_delivery_status="delivered",
+        created_at=recent,
+        updated_at=recent,
+    )
+    db.add(attribution)
+    db.flush()
+    db.add_all(
+        [
+            MarketingFunnelEvent(
+                registration_attribution_id=attribution.id,
+                organization_id=active_org.id,
+                user_id=1,
+                event_key="complete_registration:admin-growth",
+                event_name="CompleteRegistration",
+                source="meta",
+                medium="paid_social",
+                campaign="launch_colombia",
+                content="product_demo_v1",
+                meta_delivery_status="delivered",
+                occurred_at=recent,
+                created_at=recent,
+                updated_at=recent,
+            ),
+            MarketingFunnelEvent(
+                registration_attribution_id=attribution.id,
+                organization_id=active_org.id,
+                user_id=1,
+                event_key=f"start_trial:{active_org.id}",
+                event_name="StartTrial",
+                source="meta",
+                medium="paid_social",
+                campaign="launch_colombia",
+                content="product_demo_v1",
+                meta_delivery_status="delivered",
+                occurred_at=recent,
+                created_at=recent,
+                updated_at=recent,
+            ),
+            MarketingFunnelEvent(
+                registration_attribution_id=attribution.id,
+                organization_id=active_org.id,
+                user_id=1,
+                event_key=f"subscribe:{active_org.id}",
+                event_name="Subscribe",
+                source="meta",
+                medium="paid_social",
+                campaign="launch_colombia",
+                content="product_demo_v1",
+                meta_delivery_status="delivered",
+                occurred_at=recent,
+                created_at=recent,
+                updated_at=recent,
+            ),
+        ]
     )
     db.commit()
 
@@ -168,11 +220,15 @@ def test_admin_growth_tracks_recent_activity_and_billing_health(db):
 
     acquisition = result["acquisition"]
     assert acquisition["tracked_registrations"] == 1
+    assert acquisition["start_trials"] == 1
+    assert acquisition["paid_subscriptions"] == 1
+    assert acquisition["registration_to_trial_pct"] == 100.0
+    assert acquisition["registration_to_paid_pct"] == 100.0
     assert acquisition["by_source"] == [{"source": "meta", "registrations": 1}]
     assert acquisition["top_campaigns"] == [
         {"campaign": "launch_colombia", "registrations": 1}
     ]
-    assert acquisition["meta_delivery_statuses"] == {"delivered": 1}
+    assert acquisition["meta_delivery_statuses"] == {"delivered": 3}
 
 
 def test_admin_growth_excludes_activity_outside_window(db):

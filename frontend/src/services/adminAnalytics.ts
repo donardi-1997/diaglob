@@ -44,6 +44,10 @@ export interface AdminGrowth {
   };
   acquisition: {
     tracked_registrations: number;
+    start_trials: number;
+    paid_subscriptions: number;
+    registration_to_trial_pct: number;
+    registration_to_paid_pct: number;
     by_source: Array<{
       source: string;
       registrations: number;

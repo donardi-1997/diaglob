@@ -25,6 +25,7 @@ from ..shopify_oauth import (
 )
 from ..shopify_security import encrypt_shopify_secret
 from ..shopify_webhook_subscriptions import ensure_shopify_order_webhooks
+from .marketing_acquisition import record_lifecycle_conversion
 from .trial_service import (
     TrialIdentityAlreadyUsed,
     activate_trial_for_verified_store,
@@ -341,7 +342,7 @@ def process_oauth_callback(db: Session, query_params: dict) -> str:
         return _shopify_connect_frontend_url(connected=True)
 
     try:
-        activate_trial_for_verified_store(
+        trial_result = activate_trial_for_verified_store(
             db,
             organization_id=oauth_state.organization_id,
             store_id=oauth_state.store_id,
@@ -377,6 +378,24 @@ def process_oauth_callback(db: Session, query_params: dict) -> str:
     )
 
     db.commit()
+
+    if trial_result.get("trial_activated"):
+        try:
+            record_lifecycle_conversion(
+                db,
+                organization_id=oauth_state.organization_id,
+                event_name="StartTrial",
+                event_key=f"start_trial:{oauth_state.organization_id}",
+                provider_event_id=f"shopify:{normalized_shop}",
+                event_data={"commerce_provider": "shopify"},
+            )
+        except Exception:
+            logger.exception(
+                "Unable to record Shopify trial acquisition conversion "
+                "for organization %s",
+                oauth_state.organization_id,
+            )
+            db.rollback()
 
     # Ensure order webhooks after OAuth. Connection success is preserved if
     # Shopify temporarily rejects subscription setup; Integrations can retry.

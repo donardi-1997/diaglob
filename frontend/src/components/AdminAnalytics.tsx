@@ -242,6 +242,30 @@ export default function AdminAnalytics() {
                 {overview.growth.acquisition.tracked_registrations}
               </span>
             </div>
+            <div className="analytics-metric-row">
+              <span>Trials activados</span>
+              <span className="analytics-metric-value">
+                {overview.growth.acquisition.start_trials}
+              </span>
+            </div>
+            <div className="analytics-metric-row">
+              <span>Suscripciones pagas</span>
+              <span className="analytics-metric-value">
+                {overview.growth.acquisition.paid_subscriptions}
+              </span>
+            </div>
+            <div className="analytics-metric-row">
+              <span>Registro → trial</span>
+              <span className="analytics-metric-value">
+                {overview.growth.acquisition.registration_to_trial_pct.toFixed(1)}%
+              </span>
+            </div>
+            <div className="analytics-metric-row">
+              <span>Registro → pago</span>
+              <span className="analytics-metric-value">
+                {overview.growth.acquisition.registration_to_paid_pct.toFixed(1)}%
+              </span>
+            </div>
             {overview.growth.acquisition.by_source.slice(0, 5).map((item) => (
               <div className="analytics-metric-row" key={item.source}>
                 <span>Fuente: {item.source}</span>

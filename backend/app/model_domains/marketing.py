@@ -5,8 +5,9 @@ only campaign attribution needed to understand how Diaglob registrations were
 acquired; raw email, IP address, and user-agent values are never persisted here.
 """
 from datetime import datetime
+from decimal import Decimal
 
-from sqlalchemy import Boolean, DateTime, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Integer, JSON, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..db import Base
@@ -44,4 +45,47 @@ class MarketingRegistrationAttribution(Base):
     )
 
 
-__all__ = ["MarketingRegistrationAttribution"]
+class MarketingFunnelEvent(Base):
+    __tablename__ = "marketing_funnel_events"
+    __table_args__ = (
+        UniqueConstraint("event_key", name="uq_marketing_funnel_event_key"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    registration_attribution_id: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, index=True
+    )
+    organization_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    event_key: Mapped[str] = mapped_column(String(160), nullable=False)
+    event_name: Mapped[str] = mapped_column(
+        String(60), nullable=False, index=True
+    )
+    provider_event_id: Mapped[str | None] = mapped_column(
+        String(255), nullable=True
+    )
+    source: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    medium: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    campaign: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, index=True
+    )
+    content: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    value: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    currency: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    event_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    meta_delivery_status: Mapped[str] = mapped_column(
+        String(30), default="pending", nullable=False, index=True
+    )
+    meta_error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+
+__all__ = ["MarketingFunnelEvent", "MarketingRegistrationAttribution"]
