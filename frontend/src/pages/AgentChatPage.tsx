@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { useTranslation } from "react-i18next";
 import {
   AlertTriangle,
@@ -31,6 +31,11 @@ import {
   captureCopilotPageText,
   type CopilotPageContextInput,
 } from "../services/copilotPageContext";
+import {
+  COPILOT_PANEL_DEFAULT_WIDTH,
+  clampCopilotPanelWidth,
+  nextTypewriterLength,
+} from "../services/copilotPanelUi";
 import "../agent-chat.css";
 
 interface Props {
@@ -169,6 +174,57 @@ function ToolActivity({ call }: { call: AgentToolCall }) {
   );
 }
 
+function ProgressiveMessageText({
+  messageId,
+  text,
+  animate,
+  onComplete,
+}: {
+  messageId: number;
+  text: string;
+  animate: boolean;
+  onComplete: (messageId: number) => void;
+}) {
+  const [visibleLength, setVisibleLength] = useState(
+    animate ? 0 : text.length,
+  );
+
+  useEffect(() => {
+    const reducedMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+
+    if (!animate || reducedMotion) {
+      setVisibleLength(text.length);
+      if (animate) onComplete(messageId);
+      return;
+    }
+
+    setVisibleLength(0);
+    const timer = window.setInterval(() => {
+      setVisibleLength((current) => {
+        const next = nextTypewriterLength(current, text.length);
+        if (next >= text.length) {
+          window.clearInterval(timer);
+          window.setTimeout(() => onComplete(messageId), 0);
+        }
+        return next;
+      });
+    }, 16);
+
+    return () => window.clearInterval(timer);
+  }, [animate, messageId, onComplete, text]);
+
+  const isTyping = animate && visibleLength < text.length;
+
+  return (
+    <div className="copilot-message-text">
+      {text.slice(0, visibleLength)}
+      {isTyping && <span className="copilot-typing-cursor" aria-hidden="true" />}
+    </div>
+  );
+}
+
 function ApprovalCard({
   call,
   busy,
@@ -243,7 +299,15 @@ export default function AgentChatPage({
   const [loadingChat, setLoadingChat] = useState(false);
   const [approvalBusy, setApprovalBusy] = useState<number | null>(null);
   const [error, setError] = useState("");
+  const [typingMessageId, setTypingMessageId] = useState<number | null>(null);
+  const [panelWidth, setPanelWidth] = useState(() => {
+    const saved = Number(localStorage.getItem("diaglob-copilot-panel-width"));
+    return Number.isFinite(saved) && saved > 0
+      ? saved
+      : COPILOT_PANEL_DEFAULT_WIDTH;
+  });
   const endRef = useRef<HTMLDivElement | null>(null);
+  const resizingRef = useRef(false);
 
   const messageContext = useCallback(() => {
     if (!panelMode || !includePageContext || !pageContext) {
@@ -255,6 +319,98 @@ export default function AgentChatPage({
 
     return buildCopilotPageContext(pageContext, pageText);
   }, [includePageContext, pageContext, panelMode]);
+
+  useEffect(() => {
+    if (!panelMode) return;
+    const clamped = clampCopilotPanelWidth(panelWidth, window.innerWidth);
+    if (clamped !== panelWidth) setPanelWidth(clamped);
+  }, [panelMode, panelWidth]);
+
+  useEffect(() => {
+    if (!panelMode) return;
+    localStorage.setItem(
+      "diaglob-copilot-panel-width",
+      String(panelWidth),
+    );
+  }, [panelMode, panelWidth]);
+
+  const finishTyping = useCallback((messageId: number) => {
+    setTypingMessageId((current) =>
+      current === messageId ? null : current,
+    );
+  }, []);
+
+  const markLatestAssistantForTyping = useCallback(
+    (
+      previous: AgentChatSession,
+      updated: AgentChatSession,
+    ) => {
+      const previousIds = new Set(
+        previous.messages.map((message) => message.id),
+      );
+      const newestAssistant = [...updated.messages]
+        .reverse()
+        .find(
+          (message) =>
+            message.role === "assistant"
+            && Boolean(message.text)
+            && !previousIds.has(message.id),
+        );
+      if (newestAssistant) setTypingMessageId(newestAssistant.id);
+    },
+    [],
+  );
+
+  const resizePanel = useCallback((clientX: number) => {
+    setPanelWidth(
+      clampCopilotPanelWidth(
+        window.innerWidth - clientX,
+        window.innerWidth,
+      ),
+    );
+  }, []);
+
+  const handleResizePointerDown = (
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) => {
+    if (!panelMode || window.innerWidth <= 640) return;
+    resizingRef.current = true;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    document.body.classList.add("copilot-panel-resizing");
+    resizePanel(event.clientX);
+  };
+
+  const handleResizePointerMove = (
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) => {
+    if (!resizingRef.current) return;
+    resizePanel(event.clientX);
+  };
+
+  const stopPanelResize = (
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) => {
+    if (!resizingRef.current) return;
+    resizingRef.current = false;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    document.body.classList.remove("copilot-panel-resizing");
+  };
+
+  const handleResizeKeyDown = (
+    event: ReactKeyboardEvent<HTMLDivElement>,
+  ) => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    const delta = event.key === "ArrowLeft" ? 24 : -24;
+    setPanelWidth((current) =>
+      clampCopilotPanelWidth(
+        current + delta,
+        window.innerWidth,
+      ),
+    );
+  };
 
   const activeSuggestions = useMemo(
     () =>
@@ -375,6 +531,7 @@ export default function AgentChatPage({
         text,
         messageContext(),
       );
+      markLatestAssistantForTyping(current, updated);
       await refreshSessionList(updated);
     } catch (err) {
       setError(errorMessage(err, copy.sendError));
@@ -389,9 +546,11 @@ export default function AgentChatPage({
     setApprovalBusy(call.approval.id);
     setError("");
     try {
+      const previous = session;
       const updated = approve
         ? await approveAgentChatAction(session.id, call.approval.id)
         : await cancelAgentChatAction(session.id, call.approval.id);
+      markLatestAssistantForTyping(previous, updated);
       await refreshSessionList(updated);
     } catch (err) {
       setError(errorMessage(err, copy.sendError));
@@ -415,7 +574,29 @@ export default function AgentChatPage({
 
   if (!storeId) {
     return (
-      <section className={`copilot-page ${panelMode ? "copilot-panel-root" : ""}`}>
+      <section
+      className={`copilot-page ${panelMode ? "copilot-panel-root" : ""}`}
+      style={panelMode ? { width: `${panelWidth}px` } : undefined}
+    >
+      {panelMode && (
+        <div
+          className="copilot-resize-handle"
+          role="separator"
+          aria-label="Cambiar ancho del Copiloto"
+          aria-orientation="vertical"
+          aria-valuemin={360}
+          aria-valuemax={820}
+          aria-valuenow={panelWidth}
+          tabIndex={0}
+          onPointerDown={handleResizePointerDown}
+          onPointerMove={handleResizePointerMove}
+          onPointerUp={stopPanelResize}
+          onPointerCancel={stopPanelResize}
+          onKeyDown={handleResizeKeyDown}
+        >
+          <span />
+        </div>
+      )}
         <div className="copilot-no-store">
           <Bot size={28} />
           <h2>{copy.title}</h2>
@@ -484,15 +665,27 @@ export default function AgentChatPage({
             <span className="copilot-online"><span /> Permisos protegidos</span>
             {!panelMode && <span>{storeName || `Tienda #${storeId}`}</span>}
             {panelMode && (
-              <button
-                type="button"
-                className="icon-button"
-                title="Cerrar Copiloto"
-                aria-label="Cerrar Copiloto"
-                onClick={onClose}
-              >
-                <X size={16} />
-              </button>
+              <>
+                <button
+                  type="button"
+                  className="icon-button"
+                  title={copy.newChat}
+                  aria-label={copy.newChat}
+                  onClick={() => void newChat()}
+                  disabled={loadingChat}
+                >
+                  <MessageSquarePlus size={16} />
+                </button>
+                <button
+                  type="button"
+                  className="icon-button"
+                  title="Cerrar Copiloto"
+                  aria-label="Cerrar Copiloto"
+                  onClick={onClose}
+                >
+                  <X size={16} />
+                </button>
+              </>
             )}
             {!panelMode && session && !session.has_pending_turn && (
               <button className="icon-button" title="Archivar chat" onClick={() => void archiveCurrent()}>
@@ -553,7 +746,18 @@ export default function AgentChatPage({
                     {message.role === "assistant" ? <Bot size={16} /> : <span>Tú</span>}
                   </div>
                   <div className="copilot-message-body">
-                    {message.text && <div className="copilot-message-text">{message.text}</div>}
+                    {message.text && (
+                      message.role === "assistant" ? (
+                        <ProgressiveMessageText
+                          messageId={message.id}
+                          text={message.text}
+                          animate={message.id === typingMessageId}
+                          onComplete={finishTyping}
+                        />
+                      ) : (
+                        <div className="copilot-message-text">{message.text}</div>
+                      )
+                    )}
                     {message.tool_calls.length > 0 && (
                       <div className="copilot-tools">
                         {message.tool_calls.map((call) => (
