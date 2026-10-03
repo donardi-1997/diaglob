@@ -15,6 +15,7 @@ from ..billing import (
     get_subscription_price_id,
 )
 from ..models import Organization, Store
+from .marketing_acquisition import record_lifecycle_conversion
 
 logger = logging.getLogger(__name__)
 
@@ -144,6 +145,8 @@ def process_transaction_event(
     data: dict,
     db: Session,
 ) -> dict:
+    previous_plan = organization.plan
+
     if (
         organization.pending_plan
         and organization.pending_plan_effective_at
@@ -268,6 +271,31 @@ def process_transaction_event(
         plan=organization.plan or "",
         subscription_id=organization.billing_subscription_id,
     )
+
+    if (
+        previous_plan not in BILLING_PLAN_ORDER
+        and organization.plan in BILLING_PLAN_ORDER
+    ):
+        try:
+            record_lifecycle_conversion(
+                db,
+                organization_id=organization.id,
+                event_name="Subscribe",
+                event_key=f"subscribe:{organization.id}",
+                provider_event_id=data.get("id") or event_id,
+                occurred_at=occurred_at,
+                event_data={
+                    "billing_provider": "paddle",
+                    "plan": organization.plan,
+                },
+            )
+        except Exception:
+            logger.exception(
+                "Unable to record paid acquisition conversion "
+                "for organization %s",
+                organization.id,
+            )
+            db.rollback()
 
     return {
         "ok": True,
