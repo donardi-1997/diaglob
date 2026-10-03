@@ -429,7 +429,7 @@ export default function AgentChatPage({
   const pendingActions = session?.pending_actions || [];
 
   return (
-    <section className="copilot-page">
+    <section className={`copilot-page ${panelMode ? "copilot-panel-root" : ""}`}>
       {!panelMode && (
       <aside className="copilot-sessions">
         <div className="copilot-sessions-header">
