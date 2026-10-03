@@ -57,6 +57,23 @@ export interface AdminGrowth {
       registrations: number;
     }>;
     meta_delivery_statuses: Record<string, number>;
+    campaign_performance: Array<{
+      campaign: string;
+      registrations: number;
+      trials: number;
+      paid_subscriptions: number;
+      registration_to_trial_pct: number;
+      registration_to_paid_pct: number;
+    }>;
+    creative_performance: Array<{
+      campaign: string;
+      content: string;
+      registrations: number;
+      trials: number;
+      paid_subscriptions: number;
+      registration_to_trial_pct: number;
+      registration_to_paid_pct: number;
+    }>;
   };
 }
 
@@ -108,6 +125,13 @@ export async function getAdminStatus() {
 
 export async function getAdminOverview() {
   const response = await api.get<AdminOverview>("/api/admin/overview");
+  return response.data;
+}
+
+export async function getAdminGrowth(days: 7 | 30 | 90 = 30) {
+  const response = await api.get<AdminGrowth>("/api/admin/growth", {
+    params: { days },
+  });
   return response.data;
 }
 

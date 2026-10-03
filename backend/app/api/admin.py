@@ -88,6 +88,16 @@ def admin_overview(
     return overview
 
 
+@router.get("/growth")
+def admin_growth(
+    days: int = 30,
+    user: User = Depends(_require_platform_admin),
+    db: Session = Depends(get_db),
+):
+    """Dedicated acquisition/growth metrics for the internal Growth workspace."""
+    return get_admin_growth_metrics(db, days=days)
+
+
 @router.get("/organizations")
 def admin_organizations(
     page: int = 1,

@@ -24,6 +24,7 @@ const resources = {
       brandTagline: "Conversaciones inteligentes para comercio global",
 
       overview: "Resumen",
+      growth: "Adquisición",
     plans: "Planes",
 
       plansTitle: "Planes",
@@ -2264,6 +2265,7 @@ const resources = {
       brandTagline: "Intelligent conversations for global commerce",
 
       overview: "Overview",
+      growth: "Growth",
       plans: "Plans",
 
       plansTitle: "Plans",
@@ -4459,6 +4461,7 @@ const resources = {
       brandTagline: "Conversas inteligentes para comércio global",
 
       overview: "Visão geral",
+      growth: "Aquisição",
       plans: "Planos",
 
       plansTitle: "Planos",

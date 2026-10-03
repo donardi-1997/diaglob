@@ -125,6 +125,10 @@
   ],
   [
     "GET",
+    "/api/admin/growth"
+  ],
+  [
+    "GET",
     "/api/admin/organizations"
   ],
   [

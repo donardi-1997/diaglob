@@ -229,6 +229,27 @@ def test_admin_growth_tracks_recent_activity_and_billing_health(db):
         {"campaign": "launch_colombia", "registrations": 1}
     ]
     assert acquisition["meta_delivery_statuses"] == {"delivered": 3}
+    assert acquisition["campaign_performance"] == [
+        {
+            "campaign": "launch_colombia",
+            "registrations": 1,
+            "trials": 1,
+            "paid_subscriptions": 1,
+            "registration_to_trial_pct": 100.0,
+            "registration_to_paid_pct": 100.0,
+        }
+    ]
+    assert acquisition["creative_performance"] == [
+        {
+            "campaign": "launch_colombia",
+            "content": "product_demo_v1",
+            "registrations": 1,
+            "trials": 1,
+            "paid_subscriptions": 1,
+            "registration_to_trial_pct": 100.0,
+            "registration_to_paid_pct": 100.0,
+        }
+    ]
 
 
 def test_admin_growth_excludes_activity_outside_window(db):

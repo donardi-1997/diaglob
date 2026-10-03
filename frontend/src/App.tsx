@@ -19,6 +19,7 @@ import {
   BrainCircuit,
   CreditCard,
   LayoutDashboard,
+  Megaphone,
   MessageSquareText,
   Plug,
   ShoppingBag,
@@ -37,6 +38,7 @@ import type { GlobalSearchResult } from "./services/globalSearch";
 import LoginPage from "./pages/LoginPage";
 import RouteStatePage from "./pages/RouteStatePage";
 import CookieConsent from "./components/CookieConsent";
+import { getAdminStatus } from "./services/adminAnalytics";
 import { useWorkspace } from "./hooks/useWorkspace";
 import {
   getAppPageFromPath,
@@ -61,6 +63,7 @@ const CommercePage = lazy(() => import("./pages/CommercePage"));
 const AutomationsPage = lazy(() => import("./pages/AutomationsPage"));
 const AgentChatPage = lazy(() => import("./pages/AgentChatPage"));
 const AnalyticsPage = lazy(() => import("./pages/AnalyticsPage"));
+const GrowthPage = lazy(() => import("./pages/GrowthPage"));
 const CustomersWorkspacePage = lazy(() => import("./pages/CustomersWorkspacePage"));
 const IntegrationsHubPage = lazy(() => import("./pages/IntegrationsHubPage"));
 const PostSalesPage = lazy(() => import("./pages/PostSalesPage"));
@@ -72,6 +75,7 @@ interface NavigationDefinition {
   group: AppNavigationItem["group"];
   icon: AppNavigationItem["icon"];
   permission: string;
+  platformAdminOnly?: boolean;
 }
 
 interface SearchTarget {
@@ -95,6 +99,15 @@ const navigation: NavigationDefinition[] = [
     group: "overview",
     icon: BarChart3,
     permission: "analytics.read",
+  },
+  {
+    key: "growth",
+    labelKey: "growth",
+    fallback: "Growth",
+    group: "overview",
+    icon: Megaphone,
+    permission: "analytics.read",
+    platformAdminOnly: true,
   },
   {
     key: "conversations",
@@ -228,23 +241,57 @@ function App() {
   const activePage = getAppPageFromPath(location.pathname);
   const [searchTarget, setSearchTarget] = useState<SearchTarget | null>(null);
   const [copilotOpen, setCopilotOpen] = useState(false);
+  const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
+  const [platformAdminReady, setPlatformAdminReady] = useState(false);
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
     localStorage.setItem("diaglob-theme", theme);
   }, [theme]);
 
+  useEffect(() => {
+    if (!authenticated || !sessionReady) {
+      setIsPlatformAdmin(false);
+      setPlatformAdminReady(false);
+      return;
+    }
+
+    let cancelled = false;
+    setPlatformAdminReady(false);
+    getAdminStatus()
+      .then((status) => {
+        if (!cancelled) {
+          setIsPlatformAdmin(status.platform_admin === true);
+          setPlatformAdminReady(true);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setIsPlatformAdmin(false);
+          setPlatformAdminReady(true);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authenticated, sessionReady]);
+
   const visibleNavigation = useMemo<AppNavigationItem[]>(
     () =>
       navigation
-        .filter((item) => can(item.permission))
+        .filter(
+          (item) =>
+            can(item.permission)
+            && (!item.platformAdminOnly || isPlatformAdmin),
+        )
         .map((item) => ({
           key: item.key,
           label: t(item.labelKey) || item.fallback,
           group: item.group,
           icon: item.icon,
         })),
-    [can, t],
+    [can, isPlatformAdmin, t],
   );
 
   const toggleTheme = () => {
@@ -287,10 +334,14 @@ function App() {
   const requestedNavigationItem = navigation.find(
     (item) => item.key === activePage,
   );
+  const platformAdminRoutePending = Boolean(
+    requestedNavigationItem?.platformAdminOnly && !platformAdminReady,
+  );
   const appRouteAllowed = Boolean(
     activePage
     && requestedNavigationItem
-    && can(requestedNavigationItem.permission),
+    && can(requestedNavigationItem.permission)
+    && (!requestedNavigationItem.platformAdminOnly || isPlatformAdmin),
   );
   const copilotPageContext = useMemo(
     () => ({
@@ -311,14 +362,15 @@ function App() {
 
   const appContent = (
     <Suspense fallback={<LoadingScreen />}>
-      {!activePage && (
+      {platformAdminRoutePending && <LoadingScreen />}
+      {!platformAdminRoutePending && !activePage && (
         <RouteStatePage
           kind="not-found"
           inApp
           onPrimaryAction={() => navigate(getAppPath(visibleNavigation[0]?.key || "overview"))}
         />
       )}
-      {activePage && !appRouteAllowed && (
+      {!platformAdminRoutePending && activePage && !appRouteAllowed && (
         <RouteStatePage
           kind="forbidden"
           inApp
@@ -434,6 +486,7 @@ function App() {
           onNavigateToIntegrations={() => handleNavigate("integrations")}
         />
       )}
+      {appRouteAllowed && activePage === "growth" && <GrowthPage />}
     </Suspense>
   );
 
