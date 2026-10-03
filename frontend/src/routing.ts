@@ -1,6 +1,7 @@
 export const APP_PAGE_SEGMENTS = {
   overview: "overview",
   analytics: "analytics",
+  growth: "growth",
   conversations: "conversations",
   customers: "customers",
   commerce: "commerce",
