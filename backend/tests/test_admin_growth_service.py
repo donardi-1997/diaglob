@@ -6,6 +6,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.db import Base
+from app.model_domains.marketing import MarketingRegistrationAttribution
 from app.models import Conversation, Customer, Message, Order, Organization, Store, User
 from app.services.admin_growth_service import get_admin_growth_metrics
 
@@ -129,6 +130,21 @@ def test_admin_growth_tracks_recent_activity_and_billing_health(db):
             updated_at=recent,
         )
     )
+    db.add(
+        MarketingRegistrationAttribution(
+            organization_id=active_org.id,
+            user_id=1,
+            event_id="complete_registration:admin-growth",
+            source="meta",
+            medium="paid_social",
+            campaign="launch_colombia",
+            content="product_demo_v1",
+            consented=True,
+            meta_delivery_status="delivered",
+            created_at=recent,
+            updated_at=recent,
+        )
+    )
     db.commit()
 
     result = get_admin_growth_metrics(db, days=30)
@@ -149,6 +165,14 @@ def test_admin_growth_tracks_recent_activity_and_billing_health(db):
     assert result["rankings"]["top_ai_usage"][0]["ai_responses"] == 1
     assert result["rankings"]["top_orders"][0]["orders"] == 1
     assert result["rankings"]["top_conversations"][0]["conversations"] == 1
+
+    acquisition = result["acquisition"]
+    assert acquisition["tracked_registrations"] == 1
+    assert acquisition["by_source"] == [{"source": "meta", "registrations": 1}]
+    assert acquisition["top_campaigns"] == [
+        {"campaign": "launch_colombia", "registrations": 1}
+    ]
+    assert acquisition["meta_delivery_statuses"] == {"delivered": 1}
 
 
 def test_admin_growth_excludes_activity_outside_window(db):
