@@ -31,6 +31,7 @@ import {
 import AppShellV2, {
   type AppNavigationItem,
 } from "./components/AppShellV2";
+import FloatingCopilotButton from "./components/FloatingCopilotButton";
 import type { GlobalSearchResult } from "./services/globalSearch";
 import LoginPage from "./pages/LoginPage";
 import CookieConsent from "./components/CookieConsent";
@@ -134,14 +135,6 @@ const navigation: NavigationDefinition[] = [
     group: "operations",
     icon: Workflow,
     permission: "automations.read",
-  },
-  {
-    key: "copilot",
-    labelKey: "copilot",
-    fallback: "Copiloto IA",
-    group: "intelligence",
-    icon: Sparkles,
-    permission: "dashboard.read",
   },
   {
     key: "agents",
@@ -267,9 +260,6 @@ function App() {
   const handleNavigate = (page: string) => {
     setSearchTarget(null);
     setActivePage(page);
-    if (page === "copilot") {
-      setCopilotOpen(false);
-    }
   };
 
   const handleSearchResult = (result: GlobalSearchResult) => {
@@ -365,12 +355,6 @@ function App() {
       )}
       {activePage === "team" && (
         <TeamPage stores={stores} canWrite={can("users.write")} />
-      )}
-      {activePage === "copilot" && (
-        <AgentChatPage
-          storeId={Number(selectedStoreId) || 0}
-          storeName={selectedStore?.name}
-        />
       )}
       {activePage === "agents" && (
         <AgentsPage stores={stores} canWrite={can("agents.write")} />
@@ -526,16 +510,10 @@ function App() {
               onChangeLanguage={changeLanguage}
               onLogout={handleLogout}
               supportUrl={import.meta.env.VITE_SUPPORT_URL}
-              copilotOpen={copilotOpen}
-              onToggleCopilot={
-                activePage === "copilot"
-                  ? undefined
-                  : () => setCopilotOpen((open) => !open)
-              }
             >
               {appContent}
             </AppShellV2>
-            {copilotOpen && activePage !== "copilot" && (
+            {copilotOpen && can("dashboard.read") && (
               <Suspense fallback={null}>
                 <AgentChatPage
                   mode="panel"
@@ -545,6 +523,12 @@ function App() {
                   onClose={() => setCopilotOpen(false)}
                 />
               </Suspense>
+            )}
+            {can("dashboard.read") && (
+              <FloatingCopilotButton
+                open={copilotOpen}
+                onToggle={() => setCopilotOpen((open) => !open)}
+              />
             )}
             </>
           )
