@@ -1,0 +1,10 @@
+{
+  "name": "diaglob-cognito-email-sender",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@aws-crypto/client-node": "^4.2.1",
+    "@aws-sdk/client-secrets-manager": "^3.901.0",
+    "nodemailer": "^7.0.6"
+  }
+}
