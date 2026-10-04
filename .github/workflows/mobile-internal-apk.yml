@@ -17,9 +17,9 @@ concurrency:
 
 jobs:
   android:
-    name: Android internal APK
+    name: Android standalone APK
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 40
 
     steps:
       - name: Checkout
@@ -53,7 +53,7 @@ jobs:
           EXPO_PUBLIC_COGNITO_CLIENT_ID: "7gas2mvvovukjpk05jhbku4303"
         run: npx expo prebuild --platform android --clean --no-install
 
-      - name: Build debug APK
+      - name: Build standalone release APK
         working-directory: mobile/android
         env:
           EXPO_PUBLIC_API_URL: "https://api.diaglob.tech"
@@ -61,20 +61,30 @@ jobs:
           EXPO_PUBLIC_COGNITO_CLIENT_ID: "7gas2mvvovukjpk05jhbku4303"
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon --stacktrace
+          ./gradlew assembleRelease --no-daemon --stacktrace
 
-      - name: Rename APK
+      - name: Verify embedded JavaScript bundle
         shell: bash
         run: |
-          cp mobile/android/app/build/outputs/apk/debug/app-debug.apk             mobile/diaglob-mobile-v0.1-internal.apk
-          sha256sum mobile/diaglob-mobile-v0.1-internal.apk             > mobile/diaglob-mobile-v0.1-internal.apk.sha256
+          APK="mobile/android/app/build/outputs/apk/release/app-release.apk"
+          test -f "$APK"
+          unzip -l "$APK" | grep -q "assets/index.android.bundle"
+          echo "Standalone JS bundle is embedded in the APK."
+
+      - name: Prepare artifact
+        shell: bash
+        run: |
+          cp mobile/android/app/build/outputs/apk/release/app-release.apk \
+            mobile/diaglob-mobile-v0.1.1-standalone.apk
+          sha256sum mobile/diaglob-mobile-v0.1.1-standalone.apk \
+            > mobile/diaglob-mobile-v0.1.1-standalone.apk.sha256
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: diaglob-mobile-v0.1-internal
+          name: diaglob-mobile-v0.1.1-standalone
           path: |
-            mobile/diaglob-mobile-v0.1-internal.apk
-            mobile/diaglob-mobile-v0.1-internal.apk.sha256
+            mobile/diaglob-mobile-v0.1.1-standalone.apk
+            mobile/diaglob-mobile-v0.1.1-standalone.apk.sha256
           retention-days: 14
           if-no-files-found: error

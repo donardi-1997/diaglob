@@ -40,8 +40,8 @@ Los tokens Cognito se almacenan en SecureStore, no en almacenamiento plano.
 Cada cambio en `mobile/**` que llega a `main` genera un APK de prueba mediante GitHub Actions:
 
 - Workflow: `Build Diaglob Mobile APK`
-- Artifact: `diaglob-mobile-v0.1-internal`
-- APK: `diaglob-mobile-v0.1-internal.apk`
+- Artifact: `diaglob-mobile-v0.1.1-standalone`
+- APK: `diaglob-mobile-v0.1.1-standalone.apk`
 - Retención: 14 días
 
-Este APK usa firma de debug y está pensado únicamente para pruebas internas. No es el build destinado a Google Play.
+El APK se compila en modo release con el bundle JavaScript embebido, por lo que funciona sin Metro ni computador. La firma sigue siendo de pruebas internas; no es todavía el build destinado a Google Play.
