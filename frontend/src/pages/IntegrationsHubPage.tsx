@@ -522,7 +522,7 @@ export default function IntegrationsHubPage({
 
   if (!storeId) {
     return (
-      <div className="integrations-hub-v3">
+      <div className="integrations-hub-v2">
         <section className="integrations-hub-empty">
           <div className="integrations-hub-empty-icon">
             <StoreIcon size={28} />
@@ -539,7 +539,7 @@ export default function IntegrationsHubPage({
   }
 
   return (
-    <div className="integrations-hub-v3">
+    <div className="integrations-hub-v2">
       <section className="integrations-hub-hero">
         <div className="integrations-hub-hero-copy">
           <div className="integrations-hub-eyebrow">
