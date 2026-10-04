@@ -164,6 +164,46 @@ export async function resendConfirmationCode(
 }
 
 
+export async function requestPasswordReset(
+  email: string,
+) {
+  return cognitoRequest(
+    "ForgotPassword",
+    {
+      ClientId:
+        CLIENT_ID,
+
+      Username:
+        email,
+    },
+  );
+}
+
+
+export async function confirmPasswordReset(
+  email: string,
+  code: string,
+  newPassword: string,
+) {
+  return cognitoRequest(
+    "ConfirmForgotPassword",
+    {
+      ClientId:
+        CLIENT_ID,
+
+      Username:
+        email,
+
+      ConfirmationCode:
+        code,
+
+      Password:
+        newPassword,
+    },
+  );
+}
+
+
 export async function provisionAccount(
   accessToken: string,
   name: string,
