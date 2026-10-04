@@ -13,6 +13,7 @@ export const APP_PAGE_SEGMENTS = {
   settings: "stores",
   team: "team",
   plans: "plans",
+  learn: "learn",
 } as const;
 
 export type AppPageKey = keyof typeof APP_PAGE_SEGMENTS;
