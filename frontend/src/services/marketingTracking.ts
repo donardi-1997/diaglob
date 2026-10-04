@@ -202,7 +202,7 @@ function initializeMetaPixel(pixelId: string) {
 
   const fbq = function (...args: unknown[]) {
     if (fbq.callMethod) {
-      fbq.callMethod.apply(fbq, args);
+      fbq.callMethod(...args);
       return;
     }
     fbq.queue?.push(args);
