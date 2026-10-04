@@ -4,7 +4,6 @@ import boto3
 from botocore.exceptions import ClientError
 from sqlalchemy.orm import Session
 
-from ..auth import COGNITO_USER_POOL_ID
 from ..models import User
 
 
@@ -27,13 +26,16 @@ def relink_local_user_from_access_token(
     cognito_sub: str,
     cognito=None,
 ) -> User | None:
-    """Recover a local user after its old Cognito identity was deleted.
+    """Recover a local Diaglob user from a verified Cognito identity.
 
-    The relink is intentionally fail-closed:
-    - the current Cognito token must resolve to a verified email;
-    - a local active user with that email must already exist;
-    - if the local user points to another Cognito identity, that old identity
-      must be confirmed deleted before the new sub can replace it.
+    This intentionally avoids Cognito admin APIs so the normal login path
+    does not depend on instance IAM permissions.
+
+    The relink is allowed only when:
+    - Cognito accepts the access token;
+    - Cognito says the email is verified;
+    - exactly one active local user owns that email;
+    - no different local user is already linked to the current Cognito sub.
     """
     client = cognito or _cognito_client()
 
@@ -58,40 +60,35 @@ def relink_local_user_from_access_token(
     if not email or not email_verified:
         return None
 
-    local_user = (
+    email_users = (
         db.query(User)
         .filter(
             User.email == email,
             User.active.is_(True),
         )
+        .all()
+    )
+
+    if len(email_users) != 1:
+        return None
+
+    local_user = email_users[0]
+
+    conflicting_sub_user = (
+        db.query(User)
+        .filter(
+            User.external_auth_id == cognito_sub,
+            User.id != local_user.id,
+        )
         .first()
     )
 
-    if not local_user:
+    if conflicting_sub_user:
         return None
 
-    previous_sub = local_user.external_auth_id
+    if local_user.external_auth_id != cognito_sub:
+        local_user.external_auth_id = cognito_sub
+        db.commit()
+        db.refresh(local_user)
 
-    if previous_sub == cognito_sub:
-        return local_user
-
-    if previous_sub:
-        try:
-            client.admin_get_user(
-                UserPoolId=COGNITO_USER_POOL_ID,
-                Username=previous_sub,
-            )
-        except ClientError as exc:
-            code = (
-                exc.response.get("Error", {})
-                .get("Code")
-            )
-            if code != "UserNotFoundException":
-                return None
-        else:
-            return None
-
-    local_user.external_auth_id = cognito_sub
-    db.commit()
-    db.refresh(local_user)
     return local_user
