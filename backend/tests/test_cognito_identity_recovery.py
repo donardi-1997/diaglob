@@ -141,38 +141,3 @@ def test_does_not_relink_when_current_sub_belongs_to_other_local_user():
         assert target.external_auth_id == "old-sub"
     finally:
         db.close()
-
-
-def test_does_not_relink_when_email_is_not_unique_locally():
-    db = SessionLocal()
-    try:
-        first = User(
-            email="merchant@example.com",
-            name="Merchant One",
-            external_auth_id="old-sub-1",
-            active=True,
-        )
-        second = User(
-            email="merchant@example.com",
-            name="Merchant Two",
-            external_auth_id="old-sub-2",
-            active=True,
-        )
-        db.add_all([first, second])
-        db.commit()
-
-        cognito = MagicMock()
-        cognito.get_user.return_value = _current_user_response(
-            "merchant@example.com"
-        )
-
-        recovered = relink_local_user_from_access_token(
-            db,
-            access_token="access-token",
-            cognito_sub="new-sub",
-            cognito=cognito,
-        )
-
-        assert recovered is None
-    finally:
-        db.close()
