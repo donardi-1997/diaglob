@@ -105,6 +105,11 @@ function suggestionsForPage(page?: string, label?: string) {
       "¿Qué fuente o sincronización requiere atención?",
       "Explícame lo que estoy viendo sin lenguaje técnico.",
     ],
+    learn: [
+      "¿Qué debería aprender primero en Diaglob?",
+      "Recomiéndame una ruta según lo que quiero lograr.",
+      "Explícame cómo usar Diaglob sin lenguaje técnico.",
+    ],
   };
 
   return contextual[page || ""] || [
