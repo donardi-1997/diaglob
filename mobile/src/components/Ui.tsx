@@ -1,9 +1,9 @@
+import type { ReactNode } from "react";
 import {
   ActivityIndicator,
   StyleSheet,
   Text,
   View,
-  type ReactNode,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
