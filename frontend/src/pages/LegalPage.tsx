@@ -22,7 +22,7 @@ type LegalDocument = {
 const privacyEs: LegalDocument = {
   eyebrow: "LEGAL",
   title: "Política de privacidad",
-  updated: "Última actualización: 2 de octubre de 2026",
+  updated: "Última actualización: 3 de octubre de 2026",
   intro: "Esta política explica cómo Diaglob trata la información cuando usas nuestra plataforma de conversaciones, comercio, automatización e inteligencia para ecommerce, incluyendo las herramientas opcionales de medición publicitaria.",
   sections: [
     { title: "1. Introducción", paragraphs: ["Diaglob respeta la privacidad de las personas y empresas que usan el servicio. Esta política aplica al sitio web, la aplicación y las integraciones habilitadas por los usuarios."] },
@@ -52,14 +52,14 @@ const privacyEs: LegalDocument = {
     { title: "25. Procesamiento internacional", paragraphs: ["La información puede procesarse en países donde operen Diaglob o sus proveedores, incluidos proveedores de medición publicitaria cuando los autorices. Cuando aplica, buscamos usar salvaguardas razonables para ese procesamiento."] },
     { title: "26. Privacidad de menores", paragraphs: ["Diaglob está dirigido a usuarios empresariales y no está diseñado para menores. No buscamos recopilar deliberadamente información personal de menores."] },
     { title: "27. Cambios a esta política", paragraphs: ["Podemos actualizar esta política para reflejar cambios en el servicio, la ley, las herramientas publicitarias o nuestras prácticas. Publicaremos la versión actualizada con una fecha de última actualización."] },
-    { title: "28. Contacto", paragraphs: ["Diaglob es operado por Adrian Felipe Restrepo Guerra desde Bogotá, Colombia. Para preguntas sobre privacidad, solicitudes de datos o esta política, escribe a adrianguerra9703@gmail.com.", "El uso de datos recibidos de las API de Google se ajusta a la Política de Datos de Usuario de los Servicios API de Google, incluidos los requisitos de Uso Limitado aplicables."] },
+    { title: "28. Contacto", paragraphs: ["Diaglob es operado por Adrian Felipe Restrepo Guerra desde Bogotá, Colombia. Para preguntas sobre privacidad, solicitudes de datos o esta política, escribe a privacy@diaglob.tech.", "El uso de datos recibidos de las API de Google se ajusta a la Política de Datos de Usuario de los Servicios API de Google, incluidos los requisitos de Uso Limitado aplicables."] },
   ],
 };
 
 const privacyEn: LegalDocument = {
   eyebrow: "LEGAL",
   title: "Privacy Policy",
-  updated: "Last updated: October 2, 2026",
+  updated: "Last updated: October 3, 2026",
   intro: "This policy explains how Diaglob handles information when you use our ecommerce conversations, commerce, automation, and intelligence platform, including optional advertising measurement tools.",
   sections: [
     { title: "1. Introduction", paragraphs: ["Diaglob respects the privacy of people and businesses using the service. This policy applies to our website, application, and integrations enabled by users."] },
@@ -89,14 +89,14 @@ const privacyEn: LegalDocument = {
     { title: "25. International processing", paragraphs: ["Information may be processed in countries where Diaglob or its providers operate, including advertising-measurement providers when you authorize them. Where applicable, we seek to use reasonable safeguards for that processing."] },
     { title: "26. Children's privacy", paragraphs: ["Diaglob is intended for business users and is not designed for children. We do not knowingly seek to collect personal information from children."] },
     { title: "27. Changes to this policy", paragraphs: ["We may update this policy to reflect changes in the service, law, advertising tools, or our practices. We will publish the updated version with a last-updated date."] },
-    { title: "28. Contact", paragraphs: ["Diaglob is operated by Adrian Felipe Restrepo Guerra from Bogotá, Colombia. For privacy questions, data requests, or questions about this policy, contact adrianguerra9703@gmail.com.", "Our use of information received from Google APIs adheres to the Google API Services User Data Policy, including applicable Limited Use requirements."] },
+    { title: "28. Contact", paragraphs: ["Diaglob is operated by Adrian Felipe Restrepo Guerra from Bogotá, Colombia. For privacy questions, data requests, or questions about this policy, contact privacy@diaglob.tech.", "Our use of information received from Google APIs adheres to the Google API Services User Data Policy, including applicable Limited Use requirements."] },
   ],
 };
 
 const privacyPtBr: LegalDocument = {
   eyebrow: "LEGAL",
   title: "Política de Privacidade",
-  updated: "Última atualização: 2 de outubro de 2026",
+  updated: "Última atualização: 3 de outubro de 2026",
   intro: "Esta política explica como o Diaglob trata informações quando você usa nossa plataforma de conversas, comércio, automação e inteligência para ecommerce, incluindo ferramentas opcionais de medição publicitária.",
   sections: [
     { title: "1. Introdução", paragraphs: ["O Diaglob respeita a privacidade das pessoas e empresas que utilizam o serviço. Esta política se aplica ao site, ao aplicativo e às integrações habilitadas pelos usuários."] },
@@ -126,14 +126,14 @@ const privacyPtBr: LegalDocument = {
     { title: "25. Processamento internacional", paragraphs: ["As informações podem ser processadas em países onde o Diaglob ou seus provedores operam, incluindo provedores de medição publicitária quando você os autorizar. Quando aplicável, buscamos utilizar salvaguardas razoáveis para esse processamento."] },
     { title: "26. Privacidade de menores", paragraphs: ["O Diaglob é destinado a usuários empresariais e não foi projetado para menores de idade. Não buscamos coletar intencionalmente informações pessoais de menores."] },
     { title: "27. Alterações desta política", paragraphs: ["Podemos atualizar esta política para refletir mudanças no serviço, na legislação, nas ferramentas publicitárias ou em nossas práticas. Publicaremos a versão atualizada com a data da última atualização."] },
-    { title: "28. Contato", paragraphs: ["O Diaglob é operado por Adrian Felipe Restrepo Guerra a partir de Bogotá, Colômbia. Para dúvidas sobre privacidade, solicitações relacionadas a dados ou esta política, escreva para adrianguerra9703@gmail.com.", "Nosso uso das informações recebidas das APIs do Google segue a Política de Dados de Usuário dos Serviços de API do Google, incluindo os requisitos aplicáveis de Uso Limitado."] },
+    { title: "28. Contato", paragraphs: ["O Diaglob é operado por Adrian Felipe Restrepo Guerra a partir de Bogotá, Colômbia. Para dúvidas sobre privacidade, solicitações relacionadas a dados ou esta política, escreva para privacy@diaglob.tech.", "Nosso uso das informações recebidas das APIs do Google segue a Política de Dados de Usuário dos Serviços de API do Google, incluindo os requisitos aplicáveis de Uso Limitado."] },
   ],
 };
 
 const termsEs: LegalDocument = {
   eyebrow: "LEGAL",
   title: "Términos de servicio",
-  updated: "Última actualización: 10 de septiembre de 2026",
+  updated: "Última actualización: 3 de octubre de 2026",
   intro: "Estos términos regulan el uso de Diaglob, marca operada por Adrian Felipe Restrepo Guerra, persona natural con operación principal en Bogotá, Colombia. Al crear una cuenta, acceder o usar el servicio, aceptas estos términos en nombre propio o de la organización que representas.",
   sections: [
     { title: "1. Aceptación de los términos", paragraphs: ["Al usar Diaglob aceptas estos términos y las políticas incorporadas por referencia. Si no estás de acuerdo, no uses el servicio."] },
@@ -162,14 +162,14 @@ const termsEs: LegalDocument = {
     { title: "24. Datos después de la terminación", paragraphs: ["Tras la terminación, el acceso puede finalizar y los datos pueden eliminarse conforme a nuestros plazos de retención, respaldos y obligaciones legales. Recomendamos exportar lo que necesites antes de cancelar."] },
     { title: "25. Cambios a los términos", paragraphs: ["Podemos actualizar estos términos. La versión actualizada se publicará en esta página y el uso continuado después de su vigencia puede constituir aceptación cuando la ley lo permita."] },
     { title: "26. Ley aplicable", paragraphs: ["Estos términos se rigen por las leyes de la República de Colombia, sin perjuicio de las normas imperativas y derechos de protección al consumidor que resulten aplicables en la jurisdicción del cliente."] },
-    { title: "27. Contacto", paragraphs: ["Diaglob es operado por Adrian Felipe Restrepo Guerra desde Bogotá, Colombia. Para preguntas sobre estos términos, facturación o asuntos legales, escribe a adrianguerra9703@gmail.com."] },
+    { title: "27. Contacto", paragraphs: ["Diaglob es operado por Adrian Felipe Restrepo Guerra desde Bogotá, Colombia. Para preguntas sobre estos términos o asuntos legales, escribe a legal@diaglob.tech. Para facturación, escribe a billing@diaglob.tech."] },
   ],
 };
 
 const termsEn: LegalDocument = {
   eyebrow: "LEGAL",
   title: "Terms of Service",
-  updated: "Last updated: September 10, 2026",
+  updated: "Last updated: October 3, 2026",
   intro: "These terms govern the use of Diaglob, a brand operated by Adrian Felipe Restrepo Guerra, an individual based in Bogotá, Colombia. By creating an account, accessing, or using the service, you accept them for yourself or the organization you represent.",
   sections: [
     { title: "1. Acceptance of terms", paragraphs: ["By using Diaglob, you accept these terms and policies incorporated by reference. Do not use the service if you do not agree."] },
@@ -198,14 +198,14 @@ const termsEn: LegalDocument = {
     { title: "24. Data after termination", paragraphs: ["After termination, access may end and data may be deleted under retention periods, backups, and legal obligations. Export information you need before cancellation."] },
     { title: "25. Changes to terms", paragraphs: ["We may update these terms. The updated version will be posted here, and continued use after its effective date may constitute acceptance where law permits."] },
     { title: "26. Governing law", paragraphs: ["These terms are governed by the laws of the Republic of Colombia, without limiting any mandatory consumer-protection rights that may apply in the customer jurisdiction."] },
-    { title: "27. Contact", paragraphs: ["Diaglob is operated by Adrian Felipe Restrepo Guerra from Bogotá, Colombia. For questions about these terms, billing, or legal matters, contact adrianguerra9703@gmail.com."] },
+    { title: "27. Contact", paragraphs: ["Diaglob is operated by Adrian Felipe Restrepo Guerra from Bogotá, Colombia. For questions about these terms or legal matters, contact legal@diaglob.tech. For billing, contact billing@diaglob.tech."] },
   ],
 };
 
 const termsPtBr: LegalDocument = {
   eyebrow: "LEGAL",
   title: "Termos de Serviço",
-  updated: "Última atualização: 10 de setembro de 2026",
+  updated: "Última atualização: 3 de outubro de 2026",
   intro: "Estes termos regulam o uso do Diaglob, marca operada por Adrian Felipe Restrepo Guerra, pessoa física com operação principal em Bogotá, Colômbia. Ao criar uma conta, acessar ou usar o serviço, você aceita estes termos em seu próprio nome ou em nome da organização que representa.",
   sections: [
     { title: "1. Aceitação dos termos", paragraphs: ["Ao usar o Diaglob, você aceita estes termos e as políticas incorporadas por referência. Se não concordar, não utilize o serviço."] },
@@ -234,7 +234,7 @@ const termsPtBr: LegalDocument = {
     { title: "24. Dados após o encerramento", paragraphs: ["Após o encerramento, o acesso pode terminar e os dados podem ser excluídos de acordo com nossos períodos de retenção, backups e obrigações legais. Recomendamos exportar as informações necessárias antes de cancelar."] },
     { title: "25. Alterações dos termos", paragraphs: ["Podemos atualizar estes termos. A versão atualizada será publicada nesta página, e o uso continuado após sua entrada em vigor poderá constituir aceitação quando permitido pela legislação."] },
     { title: "26. Lei aplicável", paragraphs: ["Estes termos são regidos pelas leis da República da Colômbia, sem limitar normas obrigatórias e direitos de proteção ao consumidor que possam ser aplicáveis na jurisdição do cliente."] },
-    { title: "27. Contato", paragraphs: ["O Diaglob é operado por Adrian Felipe Restrepo Guerra a partir de Bogotá, Colômbia. Para dúvidas sobre estes termos, faturamento ou assuntos jurídicos, escreva para adrianguerra9703@gmail.com."] },
+    { title: "27. Contato", paragraphs: ["O Diaglob é operado por Adrian Felipe Restrepo Guerra a partir de Bogotá, Colômbia. Para dúvidas sobre estes termos ou assuntos jurídicos, escreva para legal@diaglob.tech. Para faturamento, escreva para billing@diaglob.tech."] },
   ],
 };
 
