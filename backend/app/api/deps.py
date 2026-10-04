@@ -20,6 +20,9 @@ from ..models import (
 )
 from ..organization_entitlements import memberships_allow_multi_org_access
 from ..permissions import has_permission
+from ..services.cognito_identity_recovery import (
+    relink_local_user_from_access_token,
+)
 from ..services.trial_service import (
     pending_trial_can_bootstrap_store,
     refresh_trial_state,
@@ -65,6 +68,13 @@ def get_current_user(
         )
         .first()
     )
+
+    if not user:
+        user = relink_local_user_from_access_token(
+            db,
+            access_token=credentials.credentials,
+            cognito_sub=cognito_sub,
+        )
 
     if not user:
         raise HTTPException(
