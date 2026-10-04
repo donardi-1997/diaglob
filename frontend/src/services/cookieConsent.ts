@@ -1,5 +1,6 @@
 export const COOKIE_CONSENT_STORAGE_KEY = "diaglob-cookie-consent-v1";
 export const COOKIE_CONSENT_EVENT = "diaglob:cookie-consent-changed";
+export const OPEN_COOKIE_PREFERENCES_EVENT = "diaglob:open-cookie-preferences";
 export const COOKIE_CONSENT_VERSION = 1;
 
 export interface CookieConsentPreferences {

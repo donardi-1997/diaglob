@@ -26,6 +26,7 @@ import {
 
 import { getMarketingCopy, resolveMarketingLocale } from "../marketingCopy";
 import { trackMarketingEvent } from "../services/marketingTracking";
+import { OPEN_COOKIE_PREFERENCES_EVENT } from "../services/cookieConsent";
 
 interface PublicLandingPageProps {
   onNavigateToLogin: () => void;
@@ -670,7 +671,7 @@ export default function PublicLandingPage({
             <p>{copy.footer.tagline}</p>
           </div>
           <div><strong>{copy.footer.product}</strong><button onClick={() => scrollTo("product")}>{copy.nav.product}</button><button onClick={() => scrollTo("integrations")}>{copy.nav.integrations}</button><button onClick={() => scrollTo("pricing")}>{copy.nav.pricing}</button></div>
-          <div><strong>{copy.footer.legal}</strong><a href="/privacy">{copy.footer.privacy}</a><a href="/terms">{copy.footer.terms}</a><a href="/refund-policy">{locale === "en" ? "Refund Policy" : locale === "pt-BR" ? "Política de reembolso" : "Política de reembolsos"}</a></div>
+          <div><strong>{copy.footer.legal}</strong><a href="/privacy">{copy.footer.privacy}</a><a href="/terms">{copy.footer.terms}</a><a href="/refund-policy">{locale === "en" ? "Refund Policy" : locale === "pt-BR" ? "Política de reembolso" : "Política de reembolsos"}</a><button type="button" onClick={() => window.dispatchEvent(new Event(OPEN_COOKIE_PREFERENCES_EVENT))}>{locale === "en" ? "Cookie preferences" : locale === "pt-BR" ? "Preferências de cookies" : "Preferencias de cookies"}</button></div>
           <div><strong>{copy.footer.account}</strong><button onClick={onNavigateToLogin}>{copy.nav.login}</button><button onClick={() => beginRegistration("footer")}>{copy.nav.start}</button><a href="mailto:support@diaglob.tech">support@diaglob.tech</a></div>
         </div>
         <div className="marketing-shell marketing-footer-bottom">© {new Date().getFullYear()} Diaglob. {copy.footer.rights}</div>

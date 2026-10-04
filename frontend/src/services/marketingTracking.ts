@@ -200,13 +200,13 @@ export function getMarketingAttribution() {
 function initializeMetaPixel(pixelId: string) {
   if (typeof window === "undefined" || !pixelId || window.fbq) return;
 
-  const fbq: Fbq = (...args: unknown[]) => {
+  const fbq = function (...args: unknown[]) {
     if (fbq.callMethod) {
       fbq.callMethod(...args);
       return;
     }
     fbq.queue?.push(args);
-  };
+  } as Fbq;
   fbq.queue = [];
   fbq.loaded = true;
   fbq.version = "2.0";
@@ -219,7 +219,13 @@ function initializeMetaPixel(pixelId: string) {
   script.async = true;
   script.src = "https://connect.facebook.net/en_US/fbevents.js";
   script.dataset.diaglobAdvertising = "meta";
-  document.head.appendChild(script);
+
+  const firstScript = document.getElementsByTagName("script")[0];
+  if (firstScript?.parentNode) {
+    firstScript.parentNode.insertBefore(script, firstScript);
+  } else {
+    document.head.appendChild(script);
+  }
 
   fbq("init", pixelId);
   fbq("track", "PageView");

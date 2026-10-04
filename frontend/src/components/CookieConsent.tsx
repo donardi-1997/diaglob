@@ -1,9 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Cookie, ShieldCheck, SlidersHorizontal } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import {
   getCookieConsent,
+  OPEN_COOKIE_PREFERENCES_EVENT,
   saveCookieConsent,
   type CookieConsentPreferences,
 } from "../services/cookieConsent";
@@ -89,6 +90,14 @@ export default function CookieConsent() {
     setAdvertising(consent?.advertising ?? false);
     setPreferencesOpen(true);
   };
+
+  useEffect(() => {
+    const handleOpenPreferences = () => openPreferences();
+    window.addEventListener(OPEN_COOKIE_PREFERENCES_EVENT, handleOpenPreferences);
+    return () => {
+      window.removeEventListener(OPEN_COOKIE_PREFERENCES_EVENT, handleOpenPreferences);
+    };
+  }, [consent]);
 
   return (
     <>
