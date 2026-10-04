@@ -1,6 +1,5 @@
 from unittest.mock import MagicMock
 
-from botocore.exceptions import ClientError
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -20,18 +19,6 @@ SessionLocal = sessionmaker(
     autoflush=False,
     bind=engine,
 )
-
-
-def _not_found() -> ClientError:
-    return ClientError(
-        {
-            "Error": {
-                "Code": "UserNotFoundException",
-                "Message": "not found",
-            }
-        },
-        "AdminGetUser",
-    )
 
 
 def setup_function():
@@ -55,7 +42,7 @@ def _current_user_response(email: str, *, verified: bool = True):
     }
 
 
-def test_relinks_verified_email_when_old_identity_is_deleted():
+def test_relinks_verified_email_without_admin_cognito_permission():
     db = SessionLocal()
     try:
         user = User(
@@ -71,7 +58,6 @@ def test_relinks_verified_email_when_old_identity_is_deleted():
         cognito.get_user.return_value = _current_user_response(
             "merchant@example.com"
         )
-        cognito.admin_get_user.side_effect = _not_found()
 
         recovered = relink_local_user_from_access_token(
             db,
@@ -83,6 +69,7 @@ def test_relinks_verified_email_when_old_identity_is_deleted():
         assert recovered is not None
         assert recovered.id == user.id
         assert recovered.external_auth_id == "new-sub"
+        cognito.admin_get_user.assert_not_called()
     finally:
         db.close()
 
@@ -119,25 +106,28 @@ def test_does_not_relink_unverified_email():
         db.close()
 
 
-def test_does_not_relink_while_old_identity_still_exists():
+def test_does_not_relink_when_current_sub_belongs_to_other_local_user():
     db = SessionLocal()
     try:
-        user = User(
+        target = User(
             email="merchant@example.com",
             name="Merchant",
             external_auth_id="old-sub",
             active=True,
         )
-        db.add(user)
+        conflict = User(
+            email="other@example.com",
+            name="Other",
+            external_auth_id="new-sub",
+            active=True,
+        )
+        db.add_all([target, conflict])
         db.commit()
 
         cognito = MagicMock()
         cognito.get_user.return_value = _current_user_response(
             "merchant@example.com"
         )
-        cognito.admin_get_user.return_value = {
-            "Username": "old-sub"
-        }
 
         recovered = relink_local_user_from_access_token(
             db,
@@ -147,7 +137,42 @@ def test_does_not_relink_while_old_identity_still_exists():
         )
 
         assert recovered is None
-        db.refresh(user)
-        assert user.external_auth_id == "old-sub"
+        db.refresh(target)
+        assert target.external_auth_id == "old-sub"
+    finally:
+        db.close()
+
+
+def test_does_not_relink_when_email_is_not_unique_locally():
+    db = SessionLocal()
+    try:
+        first = User(
+            email="merchant@example.com",
+            name="Merchant One",
+            external_auth_id="old-sub-1",
+            active=True,
+        )
+        second = User(
+            email="merchant@example.com",
+            name="Merchant Two",
+            external_auth_id="old-sub-2",
+            active=True,
+        )
+        db.add_all([first, second])
+        db.commit()
+
+        cognito = MagicMock()
+        cognito.get_user.return_value = _current_user_response(
+            "merchant@example.com"
+        )
+
+        recovered = relink_local_user_from_access_token(
+            db,
+            access_token="access-token",
+            cognito_sub="new-sub",
+            cognito=cognito,
+        )
+
+        assert recovered is None
     finally:
         db.close()
