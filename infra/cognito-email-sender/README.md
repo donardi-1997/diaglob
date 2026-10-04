@@ -16,10 +16,10 @@ Expected value:
 {
   "host": "mail.spacemail.com",
   "port": 465,
-  "username": "admin@diaglob.tech",
+  "username": "support@diaglob.tech",
   "password": "REPLACE_IN_SECRETS_MANAGER",
-  "from": "DIAGLOB <admin@diaglob.tech>",
-  "reply_to": "admin@diaglob.tech"
+  "from": "DIAGLOB <support@diaglob.tech>",
+  "reply_to": "support@diaglob.tech"
 }
 ```
 
