@@ -47,7 +47,6 @@ import {
 
 import CJIntegrationCard from "./CJIntegrationCard";
 import CarrierIntegrationsCard from "./CarrierIntegrationsCard";
-import ShopifyOrders from "./ShopifyOrders";
 import TelegramIntegrationCard from "./TelegramIntegrationCard";
 import InstagramIntegrationCard from "./InstagramIntegrationCard";
 
@@ -156,6 +155,9 @@ export default function StoreIntegrations({
     useState<ShopifySyncResult | null>(null);
 
   const [whatsappCopied, setWhatsAppCopied] =
+    useState(false);
+
+  const [showWhatsAppForm, setShowWhatsAppForm] =
     useState(false);
 
   const [error, setError] =
@@ -621,6 +623,7 @@ export default function StoreIntegrations({
       setWhatsAppToken("");
       setWhatsAppPhoneId("");
       setWhatsAppBizId("");
+      setShowWhatsAppForm(false);
 
       setWhatsApp({
         connected: true,
@@ -841,14 +844,6 @@ export default function StoreIntegrations({
       </div>
 
 
-      <ShopifyOrders
-        storeId={storeId}
-        canWrite={canWrite}
-        shopConnected={!!commerce?.connected}
-        syncedProducts={[]}
-      />
-
-
       <div className="store-integration-block nuvemshop">
         <div className="store-integration-header">
           <div className="store-integration-title">
@@ -984,8 +979,8 @@ export default function StoreIntegrations({
                 y pueden ser recomendados por la IA cuando un cliente pregunta.
               </p>
               <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginTop: 8 }}>
-                <strong>Próximamente:</strong> sincronización directa de productos,
-                gestión de pedidos, y actualización automática de inventario.
+                <strong>Integración API directa pendiente:</strong> mantendremos esta conexión
+                en modo detección hasta recibir acceso y documentación oficial de Dropi.
               </p>
             </>
           ) : commerce?.connected ? (
@@ -994,8 +989,8 @@ export default function StoreIntegrations({
                 Shopify está conectado, pero no se detectó Dropi como proveedor.
               </p>
               <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginTop: 8 }}>
-                Si usas Dropi, asegúrate de que tu tienda Shopify tenga
-                productos importados desde Dropi.
+                Si usas Dropi, importa al menos un producto a Shopify para que Diaglob
+                pueda identificarlo. La conexión API directa se habilitará únicamente con acceso oficial.
               </p>
             </>
           ) : (
@@ -1300,7 +1295,20 @@ export default function StoreIntegrations({
         ) : null}
 
 
-        {canWrite && !whatsapp?.connected && (
+        {canWrite && !whatsapp?.connected && !showWhatsAppForm && (
+          <div className="store-integration-actions">
+            <button
+              type="button"
+              className="store-integration-button primary"
+              onClick={() => setShowWhatsAppForm(true)}
+            >
+              <Plug size={15} />
+              {t("integrationsConnect")}
+            </button>
+          </div>
+        )}
+
+        {canWrite && !whatsapp?.connected && showWhatsAppForm && (
           <form
             className="store-integration-whatsapp-form"
             onSubmit={handleConnectWhatsApp}
@@ -1309,9 +1317,7 @@ export default function StoreIntegrations({
               type="text"
               value={whatsappPhoneId}
               onChange={(event) =>
-                setWhatsAppPhoneId(
-                  event.target.value,
-                )
+                setWhatsAppPhoneId(event.target.value)
               }
               placeholder={t("integrationsWhatsAppPhonePlaceholder")}
               autoComplete="off"
@@ -1321,9 +1327,7 @@ export default function StoreIntegrations({
               type="text"
               value={whatsappBizId}
               onChange={(event) =>
-                setWhatsAppBizId(
-                  event.target.value,
-                )
+                setWhatsAppBizId(event.target.value)
               }
               placeholder={t("integrationsWhatsAppBizPlaceholder")}
               autoComplete="off"
@@ -1333,25 +1337,37 @@ export default function StoreIntegrations({
               type="password"
               value={whatsappToken}
               onChange={(event) =>
-                setWhatsAppToken(
-                  event.target.value,
-                )
+                setWhatsAppToken(event.target.value)
               }
               placeholder={t("integrationsWhatsAppTokenPlaceholder")}
-              autoComplete="off"
+              autoComplete="new-password"
             />
 
-            <button
-              type="submit"
-              className="store-integration-button primary"
-              disabled={connectingWhatsApp}
-            >
-              {connectingWhatsApp
-                ? <Loader2 className="spin" size={15} />
-                : <Plug size={15} />}
+            <div className="store-integration-actions">
+              <button
+                type="submit"
+                className="store-integration-button primary"
+                disabled={connectingWhatsApp}
+              >
+                {connectingWhatsApp
+                  ? <Loader2 className="spin" size={15} />
+                  : <Check size={15} />}
+                {t("integrationsConnect")}
+              </button>
 
-              {t("integrationsConnect")}
-            </button>
+              <button
+                type="button"
+                className="store-integration-button secondary"
+                onClick={() => {
+                  setShowWhatsAppForm(false);
+                  setWhatsAppPhoneId("");
+                  setWhatsAppBizId("");
+                  setWhatsAppToken("");
+                }}
+              >
+                {t("integrationsCancel")}
+              </button>
+            </div>
           </form>
         )}
       </div>
