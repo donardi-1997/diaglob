@@ -18,9 +18,11 @@ import {
 } from "lucide-react";
 
 import {
+  confirmPasswordReset,
   confirmSignUp,
   login,
   provisionAccount,
+  requestPasswordReset,
   resendConfirmationCode,
   signUp,
 } from "../services/auth";
@@ -41,7 +43,7 @@ interface LoginPageProps {
   onNavigateToRegister?: () => void;
 }
 
-type AuthMode = "login" | "register" | "confirm";
+type AuthMode = "login" | "register" | "confirm" | "forgot" | "reset";
 
 export default function LoginPage({
   onAuthenticated,
@@ -84,11 +86,77 @@ export default function LoginPage({
     };
   }, [locale]);
 
+  const recoveryCopy = useMemo(() => {
+    if (locale === "en") {
+      return {
+        forgotTitle: "Recover your password",
+        forgotSubtitle: "Enter your email and we’ll send you a security code.",
+        sendCode: "Send recovery code",
+        sendingCode: "Sending code...",
+        codeSent: "If the account is eligible, we sent a code to your email.",
+        resetTitle: "Create a new password",
+        resetSubtitle: "Enter the code from your email and choose a new password.",
+        codeLabel: "Security code",
+        newPassword: "New password",
+        confirmPassword: "Confirm password",
+        updatePassword: "Update password",
+        updatingPassword: "Updating password...",
+        passwordsMismatch: "Passwords do not match.",
+        passwordUpdated: "Password updated. You can now sign in.",
+        resendCode: "Resend code",
+        backToLogin: "Back to sign in",
+        forgotLink: "Forgot your password?",
+      };
+    }
+    if (locale === "pt-BR") {
+      return {
+        forgotTitle: "Recupere sua senha",
+        forgotSubtitle: "Digite seu e-mail e enviaremos um código de segurança.",
+        sendCode: "Enviar código de recuperação",
+        sendingCode: "Enviando código...",
+        codeSent: "Se a conta estiver habilitada, enviamos um código para seu e-mail.",
+        resetTitle: "Crie uma nova senha",
+        resetSubtitle: "Digite o código recebido por e-mail e escolha uma nova senha.",
+        codeLabel: "Código de segurança",
+        newPassword: "Nova senha",
+        confirmPassword: "Confirmar senha",
+        updatePassword: "Atualizar senha",
+        updatingPassword: "Atualizando senha...",
+        passwordsMismatch: "As senhas não coincidem.",
+        passwordUpdated: "Senha atualizada. Agora você pode entrar.",
+        resendCode: "Reenviar código",
+        backToLogin: "Voltar para entrar",
+        forgotLink: "Esqueceu sua senha?",
+      };
+    }
+    return {
+      forgotTitle: "Recupera tu contraseña",
+      forgotSubtitle: "Escribe tu correo y te enviaremos un código de seguridad.",
+      sendCode: "Enviar código de recuperación",
+      sendingCode: "Enviando código...",
+      codeSent: "Si la cuenta está habilitada, enviamos un código a tu correo.",
+      resetTitle: "Crea una nueva contraseña",
+      resetSubtitle: "Escribe el código que enviamos a tu correo y elige una nueva contraseña.",
+      codeLabel: "Código de seguridad",
+      newPassword: "Nueva contraseña",
+      confirmPassword: "Confirmar contraseña",
+      updatePassword: "Actualizar contraseña",
+      updatingPassword: "Actualizando contraseña...",
+      passwordsMismatch: "Las contraseñas no coinciden.",
+      passwordUpdated: "Contraseña actualizada. Ya puedes iniciar sesión.",
+      resendCode: "Reenviar código",
+      backToLogin: "Volver al inicio de sesión",
+      forgotLink: "¿Olvidaste tu contraseña?",
+    };
+  }, [locale]);
+
   const [mode, setMode] = useState<AuthMode>(initialMode || "login");
   const [name, setName] = useState("");
   const [organizationName, setOrganizationName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
   const [confirmationCode, setConfirmationCode] = useState("");
   const [acceptedLegal, setAcceptedLegal] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -113,7 +181,9 @@ export default function LoginPage({
         ? "Diaglob — Create your workspace"
         : mode === "confirm"
           ? "Diaglob — Confirm your account"
-          : "Diaglob — Sign in";
+          : mode === "forgot" || mode === "reset"
+            ? "Diaglob — Recover your password"
+            : "Diaglob — Sign in";
   }, [mode]);
 
   function clearFeedback() {
@@ -246,6 +316,80 @@ export default function LoginPage({
     }
   }
 
+  async function handleForgotPassword(event: FormEvent) {
+    event.preventDefault();
+    const cleanEmail = email.trim().toLowerCase();
+
+    try {
+      setLoading(true);
+      clearFeedback();
+      await requestPasswordReset(cleanEmail);
+      setConfirmationCode("");
+      setNewPassword("");
+      setConfirmNewPassword("");
+      setMode("reset");
+      setMessage(recoveryCopy.codeSent);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : recoveryCopy.codeSent,
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handlePasswordReset(event: FormEvent) {
+    event.preventDefault();
+
+    if (newPassword !== confirmNewPassword) {
+      setError(recoveryCopy.passwordsMismatch);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      clearFeedback();
+      await confirmPasswordReset(
+        email.trim().toLowerCase(),
+        confirmationCode.trim(),
+        newPassword,
+      );
+      setPassword("");
+      setNewPassword("");
+      setConfirmNewPassword("");
+      setConfirmationCode("");
+      setMode("login");
+      setMessage(recoveryCopy.passwordUpdated);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : recoveryCopy.passwordsMismatch,
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleResendPasswordReset() {
+    try {
+      setLoading(true);
+      clearFeedback();
+      await requestPasswordReset(email.trim().toLowerCase());
+      setMessage(recoveryCopy.codeSent);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : recoveryCopy.codeSent,
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
   const isLogin = mode === "login";
   const authHeadline = isLogin ? copy.auth.loginTitle : copy.auth.registerTitle;
   const authSubtitle = isLogin ? copy.auth.loginSubtitle : copy.auth.registerSubtitle;
@@ -348,6 +492,10 @@ export default function LoginPage({
                   <span>{t("loginI18nPassword")}</span>
                   <div className="marketing-auth-input"><LockKeyhole size={18} /><input type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required /></div>
                 </label>
+                <div className="marketing-auth-secondary-actions">
+                  <button type="button" onClick={() => changeMode("forgot")}>{recoveryCopy.forgotLink}</button>
+                </div>
+                {message && <div className="marketing-auth-message">{message}</div>}
                 {error && <div className="marketing-auth-error">{error}</div>}
                 <button className="marketing-primary-button auth-submit" type="submit" disabled={loading}>
                   {loading ? t("loginI18nSigningIn") : t("loginI18nSignIn")}
@@ -355,6 +503,63 @@ export default function LoginPage({
                 <div className="marketing-auth-switch">
                   <span>{locale === "en" ? "New to Diaglob?" : locale === "pt-BR" ? "Novo no Diaglob?" : "¿Nuevo en Diaglob?"}</span>
                   <button type="button" onClick={() => changeMode("register")}>{t("loginI18nCreateNewAccount")}</button>
+                </div>
+              </form>
+            </>
+          )}
+
+          {mode === "forgot" && (
+            <>
+              <div className="marketing-auth-heading">
+                <span>{locale === "en" ? "Account security" : locale === "pt-BR" ? "Segurança da conta" : "Seguridad de la cuenta"}</span>
+                <h2>{recoveryCopy.forgotTitle}</h2>
+                <p>{recoveryCopy.forgotSubtitle}</p>
+              </div>
+              <form className="marketing-auth-form" onSubmit={handleForgotPassword}>
+                <label>
+                  <span>{t("loginI18nEmail")}</span>
+                  <div className="marketing-auth-input"><Mail size={18} /><input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required autoFocus /></div>
+                </label>
+                {error && <div className="marketing-auth-error">{error}</div>}
+                <button className="marketing-primary-button auth-submit" type="submit" disabled={loading}>
+                  {loading ? recoveryCopy.sendingCode : recoveryCopy.sendCode}
+                </button>
+                <div className="marketing-auth-secondary-actions">
+                  <button type="button" onClick={() => changeMode("login")} disabled={loading}>{recoveryCopy.backToLogin}</button>
+                </div>
+              </form>
+            </>
+          )}
+
+          {mode === "reset" && (
+            <>
+              <div className="marketing-auth-heading">
+                <span>{locale === "en" ? "Account security" : locale === "pt-BR" ? "Segurança da conta" : "Seguridad de la cuenta"}</span>
+                <h2>{recoveryCopy.resetTitle}</h2>
+                <p>{recoveryCopy.resetSubtitle} <strong>{email}</strong>.</p>
+              </div>
+              <form className="marketing-auth-form" onSubmit={handlePasswordReset}>
+                <label>
+                  <span>{recoveryCopy.codeLabel}</span>
+                  <div className="marketing-auth-input verification"><KeyRound size={18} /><input type="text" inputMode="numeric" autoComplete="one-time-code" value={confirmationCode} onChange={(event) => setConfirmationCode(event.target.value)} placeholder="123456" required autoFocus /></div>
+                </label>
+                <label>
+                  <span>{recoveryCopy.newPassword}</span>
+                  <div className="marketing-auth-input"><LockKeyhole size={18} /><input type="password" autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} minLength={8} required /></div>
+                  <small>{t("loginI18nPasswordHint")}</small>
+                </label>
+                <label>
+                  <span>{recoveryCopy.confirmPassword}</span>
+                  <div className="marketing-auth-input"><LockKeyhole size={18} /><input type="password" autoComplete="new-password" value={confirmNewPassword} onChange={(event) => setConfirmNewPassword(event.target.value)} minLength={8} required /></div>
+                </label>
+                {message && <div className="marketing-auth-message">{message}</div>}
+                {error && <div className="marketing-auth-error">{error}</div>}
+                <button className="marketing-primary-button auth-submit" type="submit" disabled={loading}>
+                  {loading ? recoveryCopy.updatingPassword : recoveryCopy.updatePassword}
+                </button>
+                <div className="marketing-auth-secondary-actions">
+                  <button type="button" onClick={handleResendPasswordReset} disabled={loading}>{recoveryCopy.resendCode}</button>
+                  <button type="button" onClick={() => changeMode("login")} disabled={loading}>{recoveryCopy.backToLogin}</button>
                 </div>
               </form>
             </>
