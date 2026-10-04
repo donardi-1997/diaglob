@@ -18,6 +18,7 @@ jobs:
     outputs:
       backend: ${{ steps.scope.outputs.backend }}
       frontend: ${{ steps.scope.outputs.frontend }}
+      mobile: ${{ steps.scope.outputs.mobile }}
 
     steps:
       - name: Checkout
@@ -53,6 +54,7 @@ jobs:
           files="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
           backend=false
           frontend=false
+          mobile=false
 
           while IFS= read -r file; do
             case "$file" in
@@ -62,18 +64,24 @@ jobs:
               frontend/*)
                 frontend=true
                 ;;
+              mobile/*)
+                mobile=true
+                ;;
               .github/workflows/*.yml)
                 backend=true
                 frontend=true
+                mobile=true
                 ;;
             esac
           done <<< "$files"
 
           echo "backend=$backend" >> "$GITHUB_OUTPUT"
           echo "frontend=$frontend" >> "$GITHUB_OUTPUT"
+          echo "mobile=$mobile" >> "$GITHUB_OUTPUT"
 
           echo "Backend validation required: $backend"
           echo "Frontend validation required: $frontend"
+          echo "Mobile validation required: $mobile"
 
   backend:
     name: Backend validation (shard ${{ matrix.shard }})
@@ -179,10 +187,37 @@ jobs:
         working-directory: frontend
         run: npm run build
 
+  mobile:
+    name: Mobile validation
+    needs: changes
+    if: needs.changes.outputs.mobile == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install mobile dependencies
+        working-directory: mobile
+        run: npm install --no-audit --no-fund
+
+      - name: Mobile typecheck
+        working-directory: mobile
+        run: npm run typecheck
+
+      - name: Mobile Android bundle
+        working-directory: mobile
+        run: npm run export:android
+
   validate:
-    name: Backend + Frontend validation
+    name: Backend + Frontend + Mobile validation
     if: always()
-    needs: [changes, backend, frontend]
+    needs: [changes, backend, frontend, mobile]
     runs-on: ubuntu-latest
 
     steps:
@@ -192,6 +227,7 @@ jobs:
           CHANGES_RESULT: ${{ needs.changes.result }}
           BACKEND_RESULT: ${{ needs.backend.result }}
           FRONTEND_RESULT: ${{ needs.frontend.result }}
+          MOBILE_RESULT: ${{ needs.mobile.result }}
         run: |
           set -euo pipefail
 
@@ -200,7 +236,7 @@ jobs:
             exit 1
           fi
 
-          for result in "$BACKEND_RESULT" "$FRONTEND_RESULT"; do
+          for result in "$BACKEND_RESULT" "$FRONTEND_RESULT" "$MOBILE_RESULT"; do
             if [[ "$result" != "success" && "$result" != "skipped" ]]; then
               echo "Validation job failed or was cancelled: $result"
               exit 1
