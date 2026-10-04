@@ -4,6 +4,7 @@ import {
   StyleSheet,
   Text,
   View,
+  type ColorValue,
 } from "react-native";
 
 import { useSession } from "../../src/providers/SessionProvider";
@@ -14,7 +15,7 @@ function TabIcon({
   color,
 }: {
   symbol: string;
-  color: string;
+  color: ColorValue;
 }) {
   return (
     <Text style={[styles.icon, { color }]}>
