@@ -16,6 +16,7 @@ import { useTranslation } from "react-i18next";
 import {
   BarChart3,
   Bot,
+  BookOpenCheck,
   BrainCircuit,
   CreditCard,
   LayoutDashboard,
@@ -67,6 +68,7 @@ const GrowthPage = lazy(() => import("./pages/GrowthPage"));
 const CustomersWorkspacePage = lazy(() => import("./pages/CustomersWorkspacePage"));
 const IntegrationsHubPage = lazy(() => import("./pages/IntegrationsHubPage"));
 const PostSalesPage = lazy(() => import("./pages/PostSalesPage"));
+const LearnDiaglobPage = lazy(() => import("./pages/LearnDiaglobPage"));
 
 interface NavigationDefinition {
   key: string;
@@ -197,6 +199,14 @@ const navigation: NavigationDefinition[] = [
     icon: CreditCard,
     permission: "stores.read",
   },
+  {
+    key: "learn",
+    labelKey: "learnDiaglob",
+    fallback: "Aprende Diaglob",
+    group: "workspace",
+    icon: BookOpenCheck,
+    permission: "dashboard.read",
+  },
 ];
 
 function LoadingScreen({ session = false }: { session?: boolean }) {
@@ -287,7 +297,7 @@ function App() {
         )
         .map((item) => ({
           key: item.key,
-          label: t(item.labelKey) || item.fallback,
+          label: t(item.labelKey, { defaultValue: item.fallback }),
           group: item.group,
           icon: item.icon,
         })),
@@ -487,6 +497,9 @@ function App() {
         />
       )}
       {appRouteAllowed && activePage === "growth" && <GrowthPage />}
+      {appRouteAllowed && activePage === "learn" && (
+        <LearnDiaglobPage onNavigate={handleNavigate} />
+      )}
     </Suspense>
   );
 
