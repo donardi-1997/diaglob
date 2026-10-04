@@ -11,10 +11,11 @@ from fastapi import (
 from fastapi.security import (
     HTTPAuthorizationCredentials,
 )
+from botocore.exceptions import ClientError
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from ..auth import verify_cognito_access_token
+from ..auth import COGNITO_USER_POOL_ID, verify_cognito_access_token
 from ..db import get_db
 from ..models import (
     Organization,
@@ -63,6 +64,39 @@ class RegistrationProvisionRequest(BaseModel):
 
 
 router = APIRouter()
+
+
+def _relink_deleted_cognito_identity(
+    *,
+    cognito,
+    email_user: User,
+    cognito_sub: str,
+    name: str,
+) -> bool:
+    """Relink a local user only when its previous Cognito identity is gone."""
+    previous_sub = email_user.external_auth_id
+
+    if not previous_sub or previous_sub == cognito_sub:
+        return False
+
+    try:
+        cognito.admin_get_user(
+            UserPoolId=COGNITO_USER_POOL_ID,
+            Username=previous_sub,
+        )
+    except ClientError as exc:
+        error_code = (
+            exc.response.get("Error", {}).get("Code")
+        )
+        if error_code != "UserNotFoundException":
+            raise
+    else:
+        return False
+
+    email_user.external_auth_id = cognito_sub
+    email_user.name = name
+    email_user.active = True
+    return True
 
 
 @router.post("/api/register/provision")
@@ -282,13 +316,79 @@ def provision_registration(
         and email_user.external_auth_id
         != cognito_sub
     ):
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "Email is already linked "
-                "to another account"
-            ),
+        try:
+            recovered_identity = (
+                _relink_deleted_cognito_identity(
+                    cognito=cognito,
+                    email_user=email_user,
+                    cognito_sub=cognito_sub,
+                    name=name,
+                )
+            )
+        except ClientError as exc:
+            logger.exception(
+                "registration.identity_recovery_check_failed email=%s",
+                email,
+            )
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Unable to verify the existing "
+                    "account identity"
+                ),
+            ) from exc
+
+        if not recovered_identity:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "EMAIL_ALREADY_LINKED",
+                    "message": (
+                        "Este correo ya está vinculado "
+                        "a otra cuenta activa."
+                    ),
+                },
+            )
+
+        db.commit()
+        db.refresh(email_user)
+
+        recovered_membership = (
+            db.query(OrganizationMembership)
+            .filter(
+                OrganizationMembership.user_id
+                == email_user.id,
+                OrganizationMembership.active.is_(True),
+            )
+            .first()
         )
+
+        if recovered_membership:
+            recovered_organization = (
+                db.query(Organization)
+                .filter(
+                    Organization.id
+                    == recovered_membership.organization_id
+                )
+                .first()
+            )
+
+            if recovered_organization:
+                return {
+                    "created": False,
+                    "recovered": True,
+                    "user": {
+                        "id": email_user.id,
+                        "name": email_user.name,
+                        "email": email_user.email,
+                    },
+                    "organization": {
+                        "id": recovered_organization.id,
+                        "name": recovered_organization.name,
+                        "slug": recovered_organization.slug,
+                    },
+                    "role": recovered_membership.role,
+                }
 
     # ========================================================
     # PENDING ORGANIZATION INVITATION
