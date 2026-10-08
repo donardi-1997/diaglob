@@ -250,6 +250,15 @@ function App() {
     localStorage.setItem("diaglob-theme", theme);
   }, [theme]);
 
+  // Public pages own a theme toggle. Rehydrate it when navigating into the
+  // workspace so the toolbar always matches the currently rendered theme.
+  useEffect(() => {
+    const persistedTheme = localStorage.getItem("diaglob-theme");
+    if (persistedTheme === "light" || persistedTheme === "dark") {
+      setTheme((current) => current === persistedTheme ? current : persistedTheme);
+    }
+  }, [location.pathname]);
+
   useEffect(() => {
     if (!authenticated || !sessionReady) {
       setIsPlatformAdmin(false);
