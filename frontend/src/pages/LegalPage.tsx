@@ -273,7 +273,7 @@ export default function LegalPage({ kind }: { kind: LegalPageKind }) {
   const language: "es" | "en" | "pt-BR" = rawLanguage;
   const documentContent = documents[kind][language];
   const [theme, setTheme] = useState(
-    localStorage.getItem("diaglob-theme") || "dark",
+    localStorage.getItem("diaglob-theme") || "light",
   );
 
   useEffect(() => {
