@@ -471,3 +471,203 @@
     transform: none;
   }
 }
+
+
+/*
+ * Public marketing landing (actual PublicLandingPage.tsx).
+ * The current page uses marketing-* rather than the legacy landing-* hooks.
+ * These overrides apply to organic and paid-ecommerce campaigns.
+ */
+:root[data-theme="light"] {
+  --marketing-bg: #f8f8f6;
+  --marketing-surface: #ffffff;
+  --marketing-surface-strong: #ffffff;
+  --marketing-card: #ffffff;
+  --marketing-border: #e7e7eb;
+  --marketing-border-strong: #bdb5f4;
+  --marketing-text: #212231;
+  --marketing-muted: #5d6271;
+  --marketing-soft: #727888;
+  --marketing-accent: #6553eb;
+  --marketing-accent-2: #8d79f4;
+  --marketing-shadow: 0 14px 45px rgba(25, 25, 47, .07);
+}
+.marketing-page {
+  background: var(--marketing-bg);
+  color: var(--marketing-text);
+}
+.marketing-page .marketing-shell {
+  width: min(1230px, calc(100% - 48px));
+}
+.marketing-page .marketing-nav {
+  background: color-mix(in srgb, var(--marketing-surface-strong) 92%, transparent);
+  border-color: var(--marketing-border);
+}
+.marketing-page .marketing-brand-mark {
+  border-radius: 13px;
+  box-shadow: 0 9px 22px rgba(101,83,235,.16);
+}
+.marketing-page .marketing-hero {
+  padding-block: clamp(55px, 6vw, 90px);
+  background:
+    radial-gradient(circle at 86% 25%, color-mix(in srgb, var(--marketing-accent) 11%, transparent), transparent 34%),
+    radial-gradient(circle at 7% 86%, color-mix(in srgb, #88cfae 10%, transparent), transparent 34%);
+}
+.marketing-page .marketing-hero::before {
+  opacity: .13;
+}
+.marketing-page .marketing-hero-grid {
+  gap: clamp(28px, 5vw, 68px);
+  grid-template-columns: minmax(0, .99fr) minmax(0, 1.01fr);
+}
+.marketing-page .marketing-hero-copy h1 {
+  font-size: clamp(2.6rem, 4.4vw, 4.4rem);
+  line-height: 1.065;
+  letter-spacing: -.056em;
+  font-weight: 790;
+  margin: 22px 0 18px;
+}
+.marketing-page .marketing-hero-copy h1 span {
+  background-image: linear-gradient(93deg, #6553eb, #907ff1);
+}
+[data-theme="dark"] .marketing-page .marketing-hero-copy h1 span {
+  background-image: linear-gradient(93deg, #b2a8ff, #80c6ff);
+}
+.marketing-page .marketing-eyebrow {
+  letter-spacing: .045em;
+  padding: 9px 13px;
+  border-color: color-mix(in srgb, var(--marketing-accent) 23%, transparent);
+  background: color-mix(in srgb, var(--marketing-accent) 9%, transparent);
+  color: var(--marketing-accent);
+}
+[data-theme="dark"] .marketing-page .marketing-eyebrow {
+  color: #b8a9ff;
+}
+.marketing-page .marketing-hero-subtitle {
+  max-width: 610px;
+  font-size: clamp(1rem, 1.35vw, 1.15rem);
+  line-height: 1.65;
+}
+.marketing-page .marketing-hero-actions {
+  margin-top: 27px;
+}
+.marketing-page .marketing-primary-button {
+  min-height: 44px;
+  border-radius: 12px;
+  border-color: transparent;
+  background: var(--marketing-accent);
+  box-shadow: 0 9px 22px rgba(101,83,235,.17);
+  font-weight: 750;
+}
+.marketing-page .marketing-primary-button:hover {
+  box-shadow: 0 13px 28px rgba(101,83,235,.25);
+}
+.marketing-page .marketing-primary-button.inverse {
+  color: #312e81;
+  background: #ffffff;
+  box-shadow: none;
+}
+.marketing-page .marketing-secondary-button {
+  min-height: 44px;
+  border-radius: 12px;
+  background: var(--marketing-surface-strong);
+}
+.marketing-page .demo-window {
+  border-radius: 20px;
+  border-color: var(--marketing-border);
+  box-shadow: 0 9px 32px rgba(23, 25, 50, .09), 0 26px 56px rgba(23, 25, 50, .07);
+}
+.marketing-page .marketing-trust-row span {
+  background: var(--marketing-surface-strong);
+}
+.marketing-page .marketing-section {
+  padding-block: clamp(64px, 7vw, 95px);
+}
+.marketing-page .marketing-section-heading h2 {
+  font-size: clamp(1.95rem, 3.4vw, 2.8rem);
+  line-height: 1.14;
+  letter-spacing: -.045em;
+}
+.marketing-page :is(.marketing-problem-card, .marketing-outcome-card, .marketing-product-card, .marketing-price-card, .integration-group, .marketing-faq-item) {
+  background: var(--marketing-card);
+  border-color: var(--marketing-border);
+  border-radius: var(--ds-radius-lg);
+  box-shadow: var(--ds-shadow-card);
+}
+.marketing-page :is(.marketing-problem-card, .marketing-outcome-card, .marketing-product-card, .marketing-step) p {
+  font-size: .875rem;
+  line-height: 1.65;
+}
+.marketing-page :is(.marketing-product-card, .marketing-price-card):hover {
+  box-shadow: 0 16px 34px rgba(25, 25, 47, .09);
+}
+.marketing-page .marketing-card-icon {
+  color: var(--marketing-accent);
+  background: color-mix(in srgb, var(--marketing-accent) 10%, var(--marketing-surface-strong));
+  border-color: color-mix(in srgb, var(--marketing-accent) 18%, transparent);
+}
+.marketing-page .marketing-card-icon.muted {
+  color: var(--marketing-soft);
+  background: var(--marketing-surface-strong);
+  border-color: var(--marketing-border);
+}
+.marketing-page .marketing-product-card {
+  min-height: 306px;
+}
+.marketing-page .marketing-faq-item button {
+  min-height: 58px;
+  font-size: .875rem;
+}
+.marketing-page :is(button, a, input, select, textarea):focus-visible {
+  outline: 3px solid var(--ds-focus);
+  outline-offset: 3px;
+}
+@media (max-width: 1080px) {
+  .marketing-page .marketing-hero-grid {
+    grid-template-columns: 1fr;
+    gap: 44px;
+  }
+  .marketing-page .marketing-product-demo {
+    width: 100%;
+    max-width: 760px;
+    margin-inline: auto;
+  }
+}
+@media (max-width: 820px) {
+  .marketing-page .marketing-shell {
+    width: min(100% - 30px, 720px);
+  }
+  .marketing-page .marketing-hero {
+    padding-block: 57px;
+  }
+}
+@media (max-width: 580px) {
+  .marketing-page .marketing-shell {
+    width: min(100% - 22px, 520px);
+  }
+  .marketing-page .marketing-hero {
+    padding-block: 42px 54px;
+  }
+  .marketing-page .marketing-hero-copy h1 {
+    font-size: clamp(2.45rem, 11vw, 3.15rem);
+    line-height: 1.08;
+  }
+  .marketing-page .marketing-hero-actions > * {
+    min-height: 46px;
+  }
+  .marketing-page .marketing-section {
+    padding-block: 58px;
+  }
+  .marketing-page .marketing-section-heading h2 {
+    font-size: clamp(1.75rem, 8vw, 2.15rem);
+  }
+  .marketing-page .marketing-hero-grid {
+    gap: 36px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .marketing-page :is(.marketing-product-card, .marketing-primary-button, .marketing-secondary-button) {
+    transform: none;
+    transition: none;
+  }
+}
