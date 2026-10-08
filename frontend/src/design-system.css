@@ -31,7 +31,7 @@
   --border: #e7e7e9;
   --text: #212231;
   --text-secondary: #5d6271;
-  --text-muted: #727888;
+  --text-muted: #667084;
   --accent: #6553eb;
   --accent-soft: #edeafe;
   --control-bg: #f6f6f7;
@@ -46,7 +46,7 @@
   --dg-shell-border-strong: #d8d9e2;
   --dg-shell-text: #212231;
   --dg-shell-muted: #616778;
-  --dg-shell-subtle: #82879a;
+  --dg-shell-subtle: #666f7e;
   --dg-shell-accent: #6553eb;
   --dg-shell-accent-2: #8d79f4;
   --dg-shell-accent-soft: #edeafe;
@@ -487,7 +487,7 @@
   --marketing-border-strong: #bdb5f4;
   --marketing-text: #212231;
   --marketing-muted: #5d6271;
-  --marketing-soft: #727888;
+  --marketing-soft: #646b79;
   --marketing-accent: #6553eb;
   --marketing-accent-2: #8d79f4;
   --marketing-shadow: 0 14px 45px rgba(25, 25, 47, .07);
@@ -604,6 +604,13 @@
 }
 .marketing-page :is(.marketing-product-card, .marketing-price-card):hover {
   box-shadow: 0 16px 34px rgba(25, 25, 47, .09);
+}
+.marketing-page .marketing-product-tag,
+.marketing-page .marketing-kicker {
+  color: var(--marketing-accent);
+}
+.marketing-page .marketing-kicker.light {
+  color: #ffffff;
 }
 .marketing-page .marketing-card-icon {
   color: var(--marketing-accent);
