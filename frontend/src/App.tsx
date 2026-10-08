@@ -48,6 +48,7 @@ import {
 } from "./routing";
 import "./App.css";
 import "./landing.css";
+import "./design-system.css";
 
 const DashboardPage = lazy(() => import("./pages/DashboardPage"));
 const ConversationsPage = lazy(() => import("./pages/ConversationsPage"));
@@ -236,7 +237,7 @@ function App() {
   } = useWorkspace();
 
   const [theme, setTheme] = useState(
-    localStorage.getItem("diaglob-theme") || "dark",
+    localStorage.getItem("diaglob-theme") || "light",
   );
   const activePage = getAppPageFromPath(location.pathname);
   const [searchTarget, setSearchTarget] = useState<SearchTarget | null>(null);
