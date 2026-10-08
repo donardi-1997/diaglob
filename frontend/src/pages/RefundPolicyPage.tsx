@@ -73,7 +73,7 @@ export default function RefundPolicyPage() {
       ? "pt-BR"
       : "es";
   const documentContent = useMemo(() => copy[locale], [locale]);
-  const [theme, setTheme] = useState(localStorage.getItem("diaglob-theme") || "dark");
+  const [theme, setTheme] = useState(localStorage.getItem("diaglob-theme") || "light");
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);

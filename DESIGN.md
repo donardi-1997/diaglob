@@ -58,6 +58,14 @@ Los tokens viven en `frontend/src/design-system.css` y sobreescriben de manera c
 - Mantener contenido y navegación disponibles tanto en tema claro como oscuro.
 - Evitar gráficos o métricas simuladas fuera de los ejemplos declaradamente ilustrativos.
 
+## Coherencia con las páginas públicas
+
+La landing activa se renderiza desde `PublicLandingPage.tsx` y sus clases empiezan por `marketing-*`. Los estilos `landing-*` pertenecen a una capa anterior y no deben considerarse suficientes para validar cambios en la página pública.
+
+La configuración visual compartida afecta `/` y `/ecommerce`. En landing, login, documentos legales y política de reembolsos, **el tema claro debe ser el predeterminado cuando no existe preferencia almacenada**; el tema oscuro sigue disponible.
+
+Las pruebas de diseño deben comprobar tanto la presencia de los selectores **reales** como la preferencia coherente de cada ruta pública.
+
 ## Aplicación en el repositorio
 
 - `frontend/src/design-system.css`: nueva capa de diseño con selectores acotados.

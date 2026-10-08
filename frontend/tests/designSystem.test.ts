@@ -37,3 +37,42 @@ test("visual refinements cover core product workspaces", () => {
     assert.ok(styles.includes(selector), `Missing design coverage for ${selector}`);
   }
 });
+
+
+test("current marketing landing receives design-system overrides", () => {
+  const landing = readFileSync(new URL("../src/pages/PublicLandingPage.tsx", import.meta.url), "utf8");
+  assert.match(landing, /className="marketing-page"/);
+  for (const selector of [
+    ".marketing-page .marketing-nav",
+    ".marketing-page .marketing-hero",
+    ".marketing-page .marketing-hero-copy h1",
+    ".marketing-page .marketing-primary-button",
+    ".marketing-page .marketing-product-demo",
+    ".marketing-page .marketing-price-card",
+  ]) {
+    assert.ok(styles.includes(selector), `Missing active marketing design selector: ${selector}`);
+  }
+});
+
+test("public routes honor the same initial theme preference as the app", () => {
+  for (const page of [
+    "PublicLandingPage.tsx",
+    "LoginPage.tsx",
+    "LegalPage.tsx",
+    "RefundPolicyPage.tsx",
+  ]) {
+    const source = readFileSync(new URL(`../src/pages/${page}`, import.meta.url), "utf8");
+    assert.ok(
+      source.includes('localStorage.getItem("diaglob-theme") || "light"'),
+      `${page} must respect the shared light default`,
+    );
+    assert.ok(!source.includes('localStorage.getItem("diaglob-theme") || "dark"'));
+  }
+});
+
+
+test("workspace theme rehydrates when returning from a public route", () => {
+  assert.match(app, /const persistedTheme = localStorage\.getItem\("diaglob-theme"\)/);
+  assert.match(app, /\}, \[location\.pathname\]\)/);
+  assert.match(app, /setTheme\(\(current\) => current === persistedTheme \? current : persistedTheme\)/);
+});
