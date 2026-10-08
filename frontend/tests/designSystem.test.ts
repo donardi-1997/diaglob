@@ -69,3 +69,10 @@ test("public routes honor the same initial theme preference as the app", () => {
     assert.ok(!source.includes('localStorage.getItem("diaglob-theme") || "dark"'));
   }
 });
+
+
+test("workspace theme rehydrates when returning from a public route", () => {
+  assert.match(app, /const persistedTheme = localStorage\.getItem\("diaglob-theme"\)/);
+  assert.match(app, /\}, \[location\.pathname\]\)/);
+  assert.match(app, /setTheme\(\(current\) => current === persistedTheme \? current : persistedTheme\)/);
+});
