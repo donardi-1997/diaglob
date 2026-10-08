@@ -195,7 +195,7 @@ export default function PublicLandingPage({
     : copy.hero;
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(0);
-  const [theme, setTheme] = useState(() => localStorage.getItem("diaglob-theme") || "dark");
+  const [theme, setTheme] = useState(() => localStorage.getItem("diaglob-theme") || "light");
 
   useEffect(() => {
     trackMarketingEvent("landing_view", {
