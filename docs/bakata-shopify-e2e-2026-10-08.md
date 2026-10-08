@@ -15,11 +15,19 @@ the production integration is **not complete**.
   inventory and `inventoryPolicy=CONTINUE`. This allows backorders, but is not
   evidence of supplier stock. The eight draft variants have zero price.
 - Copilot read-only request scoped to Bakatá failed to connect to its AI model.
+  Production logs identify a Bedrock ValidationException: dotted tool names
+  were sent in conversation history. This is an adapter bug, not evidence of
+  missing AWS permissions. The patch normalizes history names before Converse.
 - Public E2E preflight: 8 PASS, zero FAIL; API health reports database connected.
 - Personal AWS account confirms `diaglob-prod` running in us-east-2. The
   configured default Nova 2 Lite inference profile exists and is ACTIVE. This
-  does not verify the backend's credentials or effective IAM permissions.
+  does not alone verify the backend's credentials or effective IAM permissions.
   No Diaglob CloudWatch log group or SSM managed instance was available.
+- Authenticated browser SSH verified the running API environment: Shopify
+  client ID/secret, token encryption key and AWS credentials are present;
+  the encryption key parses as Fernet and Shopify API version is 2026-07.
+  Only presence booleans and nonsecret version were printed. Values were not
+  disclosed. No runtime settings, services or production code were changed.
 
 ## Corrections
 
@@ -34,6 +42,9 @@ the production integration is **not complete**.
 - Draft orders check organization ownership and aggregate repeated variant
   quantities before checking stock.
 - Blank API version configuration falls back to 2026-07, matching the default.
+- Bedrock Converse normalizes persisted dotted toolUse names to provider-safe
+  names on a copied history. Stored messages and tool-use correlation IDs stay
+  unchanged; model output still maps back to internal tool names.
 - OAuth regression tests cover bad HMAC, expired state, wrong shop, encrypted
   token persistence and replay refusal. Provider calls are mocked.
 
@@ -41,11 +52,14 @@ the production integration is **not complete**.
 
 - Related backend suite: 198 PASS (Shopify, AI tools, integrations,
   conversational checkout, Flow Builder and templates).
+- Copilot adapter/chat/tool suite: 18 PASS after reproducing the model-history
+  regression. No live external order or customer messaging was involved.
 - Frontend: 88 PASS, lint PASS, build PASS.
 - Backend Ruff and `git diff --check`: PASS.
 - Static independent review: no critical/important regression identified.
-- Full backend suite and PR CI are tracked separately; do not infer full-suite
-  success from the related suite above.
+- Initial full backend run: 1395 PASS, three fixture errors caused by sandbox
+  temp directory access. The affected CI test files reran with a writable
+  basetemp: 7 PASS. PR CI validates the final committed head independently.
 
 ## Flow Builder limitations
 
@@ -76,8 +90,9 @@ execution tests. They are engineering gaps, not external authorization steps.
   unverified until installation; do not report them as registered.
 - Local stock has no freshness guarantee or reservation. No positive Dropi
   availability was verified; Dropify installation alone is insufficient.
-- Production secret presence/encryption configuration and effective model
-  permission require backend access. Secret values must never be logged.
+- Runtime secret presence and encryption-key validity were verified without
+  revealing values. Persistence for Bakatá still requires successful OAuth.
+  The live Copilot service still needs the adapter patch deployed and retested.
 - This change must not be merged/deployed as a completed E2E integration while
   approval or critical Shopify/AI/automation blocks remain.
 
@@ -85,11 +100,9 @@ execution tests. They are engineering gaps, not external authorization steps.
 
 1. Resolve DIAGLOB's Shopify review/distribution eligibility; then authorize
    installation using the official Diaglob Connect Shopify flow.
-2. Provide an authenticated AWS console session to inspect backend logs and
-   runtime configuration without revealing credentials in chat.
-3. Confirm Dropi/Dropify's authoritative stock semantics/access with supplier
+2. Confirm Dropi/Dropify's authoritative stock semantics/access with supplier
    support before allowing stock-zero items to be purchased.
-4. Review the PR. Merge requires approval, green CI and no critical blockers.
+3. Review the PR. Merge requires approval, green CI and no critical blockers.
 
 References: [Shopify inventory policy](https://help.shopify.com/en/manual/products/inventory/getting-started-with-inventory/selling-when-out-of-stock),
 [app distribution](https://shopify.dev/docs/apps/launch/distribution/select-distribution-method),

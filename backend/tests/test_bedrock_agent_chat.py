@@ -5,6 +5,38 @@ from app.services.bedrock_agent_chat import (
 )
 
 
+def test_converse_normalizes_tool_names_in_history_without_mutating_storage(monkeypatch):
+    from copy import deepcopy
+    from types import SimpleNamespace
+    from app.services import bedrock_agent_chat as adapter
+    messages = [
+        {"role": "user", "content": [{"text": "Consulta productos y pedidos"}]},
+        {"role": "assistant", "content": [{"toolUse": {
+            "toolUseId": "call-1", "name": "products.list", "input": {},
+        }}]},
+        {"role": "user", "content": [{"toolResult": {
+            "toolUseId": "call-1", "content": [{"json": {"items": []}}],
+        }}]},
+    ]
+    original = deepcopy(messages)
+
+    class Client:
+        def converse(self, **kwargs):
+            assert kwargs["messages"][1]["content"][0]["toolUse"]["name"] == "products_list"
+            assert kwargs["messages"][2] == original[2]
+            return {"output": {"message": {"role": "assistant", "content": [{"toolUse": {
+                "toolUseId": "call-2", "name": "orders_list", "input": {},
+            }}]}}}
+
+    monkeypatch.setattr(adapter, "_client", lambda region: Client())
+    monkeypatch.setattr(adapter, "get_settings", lambda: SimpleNamespace(
+        agent_model_id="test-model", agent_model_region="us-east-2", agent_max_tokens=1200,
+    ))
+    result = adapter.converse(messages=messages, tools=[{"name": "orders.list"}], store_id=7)
+    assert messages == original
+    assert result["message"]["content"][0]["toolUse"]["name"] == "orders.list"
+
+
 def test_bedrock_tool_names_are_provider_safe():
     assert provider_tool_name("automations.create") == "automations_create"
     assert provider_tool_name("suppliers.cj.quote") == "suppliers_cj_quote"
