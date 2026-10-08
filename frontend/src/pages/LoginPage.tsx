@@ -162,7 +162,7 @@ export default function LoginPage({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
-  const [theme, setTheme] = useState(() => localStorage.getItem("diaglob-theme") || "dark");
+  const [theme, setTheme] = useState(() => localStorage.getItem("diaglob-theme") || "light");
 
   useEffect(() => {
     if (initialMode) {
