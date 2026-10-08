@@ -598,6 +598,10 @@
   font-size: .875rem;
   line-height: 1.65;
 }
+.marketing-page .marketing-price-card {
+  border-radius: var(--ds-radius-lg);
+  background: var(--marketing-card);
+}
 .marketing-page :is(.marketing-product-card, .marketing-price-card):hover {
   box-shadow: 0 16px 34px rgba(25, 25, 47, .09);
 }
