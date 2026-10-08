@@ -1,0 +1,473 @@
+/*
+ * Diaglob visual system — 2026
+ * Editorial clarity (Notion) + data hierarchy (Stripe) + conversational UX (Intercom).
+ * Loaded after the legacy styles; specificity intentionally stays component-scoped.
+ * This stylesheet does not change application flows or API behavior.
+ */
+
+:root {
+  --ds-radius-sm: 10px;
+  --ds-radius-md: 14px;
+  --ds-radius-lg: 20px;
+  --ds-radius-xl: 26px;
+  --ds-space-1: 4px;
+  --ds-space-2: 8px;
+  --ds-space-3: 12px;
+  --ds-space-4: 16px;
+  --ds-space-6: 24px;
+  --ds-space-8: 32px;
+  --ds-space-12: 48px;
+  --ds-focus: #6553eb;
+  --ds-shadow-card: 0 1px 2px rgba(21, 24, 39, .035), 0 10px 28px rgba(21, 24, 39, .035);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f8f8f6;
+  --sidebar: #ffffff;
+  --panel: #ffffff;
+  --panel-hover: #f7f7f4;
+  --elevated: #f2f2f9;
+  --border: #e7e7e9;
+  --text: #212231;
+  --text-secondary: #5d6271;
+  --text-muted: #727888;
+  --accent: #6553eb;
+  --accent-soft: #edeafe;
+  --control-bg: #f6f6f7;
+  --control-hover: #f0effc;
+  --topbar-bg: rgba(255,255,255,.94);
+  --sidebar-bg: #fff;
+  --dg-shell-bg: #f8f8f6;
+  --dg-shell-surface: #fff;
+  --dg-shell-surface-strong: #fff;
+  --dg-shell-sidebar: #fff;
+  --dg-shell-border: #e7e7eb;
+  --dg-shell-border-strong: #d8d9e2;
+  --dg-shell-text: #212231;
+  --dg-shell-muted: #616778;
+  --dg-shell-subtle: #82879a;
+  --dg-shell-accent: #6553eb;
+  --dg-shell-accent-2: #8d79f4;
+  --dg-shell-accent-soft: #edeafe;
+  --dg-shell-shadow: 0 8px 32px rgba(22, 24, 39, .05);
+  --dg-shell-shadow-soft: var(--ds-shadow-card);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --ds-focus: #b4a9ff;
+  --ds-shadow-card: 0 2px 18px rgba(0, 0, 0, .16);
+  --dg-shell-accent: #a497ff;
+  --dg-shell-accent-soft: rgba(164, 151, 255, .13);
+  --text-muted: #8e99ad;
+}
+
+/* Controls and keyboard affordances: do not suppress component-specific outlines. */
+:where(.dg-shell, .landing-page, .copilot-panel-root) :is(button, a, input, select, textarea):focus-visible,
+:where(.flow-builder-v2) :is(button, input, select, textarea):focus-visible {
+  outline: 3px solid var(--ds-focus);
+  outline-offset: 3px;
+}
+:where(.dg-shell, .landing-page, .copilot-panel-root) :is(button, a)[disabled] {
+  cursor: not-allowed;
+}
+:where(.dg-shell, .landing-page) :is(button, a) {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Notion-like calm application shell — retain existing navigation behavior. */
+.dg-shell {
+  background: var(--dg-shell-bg);
+}
+.dg-shell .dg-sidebar {
+  border-right-color: var(--dg-shell-border);
+}
+.dg-shell .dg-sidebar-brand {
+  margin-bottom: 8px;
+}
+.dg-shell .dg-brand-mark {
+  border-radius: 13px;
+}
+.dg-shell .dg-nav {
+  gap: 22px;
+}
+.dg-shell .dg-nav-group-label {
+  font-size: .67rem;
+  font-weight: 750;
+  letter-spacing: .075em;
+  color: var(--dg-shell-muted);
+}
+.dg-shell .dg-nav-item {
+  min-height: 44px;
+  border-radius: var(--ds-radius-sm);
+  font-size: .84rem;
+  font-weight: 570;
+  letter-spacing: -.006em;
+}
+.dg-shell .dg-nav-item:hover {
+  background: color-mix(in srgb, var(--dg-shell-accent) 7%, var(--dg-shell-surface-strong));
+}
+.dg-shell .dg-nav-item.is-active {
+  background: var(--dg-shell-accent-soft);
+  color: var(--dg-shell-accent);
+  box-shadow: none;
+  font-weight: 700;
+}
+.dg-shell .dg-nav-item.is-active .dg-nav-icon {
+  background: color-mix(in srgb, var(--dg-shell-accent) 10%, transparent);
+}
+.dg-shell .dg-topbar {
+  min-height: 76px;
+  background: color-mix(in srgb, var(--dg-shell-surface-strong) 93%, transparent);
+}
+.dg-shell .dg-search-trigger {
+  min-height: 42px;
+  border-radius: 12px;
+  background: var(--dg-shell-bg);
+}
+.dg-shell .dg-main-content {
+  padding: 28px clamp(16px, 2.5vw, 38px) 52px;
+}
+.dg-shell .dg-main-content .page-heading h1 {
+  letter-spacing: -.045em;
+}
+.dg-shell .dg-main-content :is(.panel, .stat-card, .empty-state, .loading-state, .error-state) {
+  border-radius: var(--ds-radius-lg);
+  box-shadow: var(--ds-shadow-card);
+}
+
+/* Stripe-like dashboard hierarchy and metric scannability. */
+.dg-shell .dg-dashboard {
+  gap: 20px;
+  max-width: 1500px;
+  margin-inline: auto;
+}
+.dg-shell .dg-dashboard-hero {
+  min-height: 164px;
+  padding: clamp(20px, 2.5vw, 32px);
+  border-radius: var(--ds-radius-xl);
+  background: linear-gradient(112deg, var(--dg-shell-surface-strong) 36%, color-mix(in srgb, var(--dg-shell-accent) 8%, var(--dg-shell-surface-strong)) 100%);
+  box-shadow: var(--ds-shadow-card);
+}
+.dg-shell .dg-dashboard-hero::after {
+  width: 170px;
+  height: 170px;
+  top: -84px;
+  right: -52px;
+}
+.dg-shell .dg-dashboard-hero h1 {
+  font-size: clamp(1.85rem, 3vw, 2.6rem);
+  line-height: 1.12;
+  letter-spacing: -.045em;
+}
+.dg-shell .dg-dashboard-hero p {
+  line-height: 1.55;
+}
+.dg-shell .dg-dashboard-metrics {
+  gap: 14px;
+}
+.dg-shell .dg-metric-card {
+  min-height: 156px;
+  border-radius: var(--ds-radius-lg);
+  padding: 21px;
+  gap: 16px;
+  box-shadow: var(--ds-shadow-card);
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+.dg-shell .dg-metric-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 32px rgba(24, 24, 47, .09);
+}
+.dg-shell .dg-metric-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+}
+.dg-shell .dg-metric-card:nth-child(2) .dg-metric-icon {
+  background: #e7f7ee;
+  color: #168350;
+}
+.dg-shell .dg-metric-card:nth-child(3) .dg-metric-icon {
+  background: #fff0df;
+  color: #9d5d12;
+}
+.dg-shell .dg-metric-card:nth-child(4) .dg-metric-icon {
+  background: #e6f3ff;
+  color: #2474ad;
+}
+[data-theme="dark"] .dg-shell .dg-metric-card:nth-child(2) .dg-metric-icon { background: #173d32; color: #86e4b2; }
+[data-theme="dark"] .dg-shell .dg-metric-card:nth-child(3) .dg-metric-icon { background: #453322; color: #f2b96e; }
+[data-theme="dark"] .dg-shell .dg-metric-card:nth-child(4) .dg-metric-icon { background: #1a3449; color: #9ed5ff; }
+.dg-shell .dg-metric-value {
+  font-size: clamp(1.8rem, 2.15vw, 2.3rem);
+  font-weight: 790;
+  letter-spacing: -.05em;
+}
+.dg-shell .dg-metric-label {
+  font-size: .79rem;
+  font-weight: 650;
+}
+.dg-shell .dg-dashboard-panel {
+  border-radius: var(--ds-radius-lg);
+  box-shadow: var(--ds-shadow-card);
+}
+.dg-shell .dg-dashboard-panel-header {
+  padding: 19px 22px;
+}
+.dg-shell .dg-activity-row,
+.dg-shell .dg-integration-row {
+  min-height: 62px;
+}
+.dg-shell .dg-dashboard-action {
+  min-height: 42px;
+  border-radius: 11px;
+}
+.dg-shell .dg-dashboard-action.is-primary {
+  background: var(--dg-shell-accent);
+  border-color: var(--dg-shell-accent);
+  color: #fff;
+}
+
+/* Marketing: friendly editorial compositions, not a developer console. */
+.landing-page {
+  background: var(--bg);
+}
+.landing-page .landing-container {
+  max-width: 1240px;
+}
+.landing-page .landing-section {
+  scroll-margin-top: 84px;
+}
+.landing-page .landing-section-title {
+  letter-spacing: -.045em;
+  line-height: 1.16;
+  font-size: clamp(1.85rem, 3.25vw, 2.7rem);
+}
+.landing-page .landing-section-subtitle {
+  max-width: 660px;
+  line-height: 1.65;
+}
+.landing-page .landing-navbar {
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  border-bottom-color: var(--border);
+}
+.landing-page .landing-hero {
+  min-height: auto;
+  padding-top: clamp(108px, 11vw, 150px);
+  background:
+    radial-gradient(circle at 85% 28%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 32%),
+    radial-gradient(circle at 8% 80%, #dceee0 0, transparent 27%);
+}
+[data-theme="dark"] .landing-page .landing-hero {
+  background: radial-gradient(circle at 82% 25%, rgba(124,108,255,.15), transparent 38%);
+}
+.landing-page .landing-hero .landing-container {
+  gap: clamp(32px, 4vw, 64px);
+}
+.landing-page .landing-hero-content {
+  max-width: 620px;
+}
+.landing-page .landing-hero-eyebrow {
+  font-size: .73rem;
+  padding: 9px 14px;
+  margin-bottom: 23px;
+  letter-spacing: .035em;
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.landing-page .landing-hero-title {
+  font-size: clamp(2.4rem, 4.5vw, 4.55rem);
+  font-weight: 790;
+  letter-spacing: -.06em;
+  line-height: 1.06;
+  max-width: 780px;
+}
+.landing-page .landing-hero-subtitle {
+  max-width: 550px;
+  color: var(--text-secondary);
+  line-height: 1.65;
+}
+.landing-page .landing-btn-primary {
+  background: var(--accent);
+  color: #fff;
+  border-radius: 12px;
+  box-shadow: 0 8px 22px rgba(101, 83, 235, .18);
+}
+.landing-page .landing-btn-primary:hover {
+  box-shadow: 0 12px 28px rgba(101, 83, 235, .26);
+}
+.landing-page .landing-btn-outline {
+  border-radius: 12px;
+  background: var(--panel);
+}
+.landing-page .landing-mock-ui {
+  border-radius: 20px;
+  box-shadow: 0 6px 22px rgba(24,24,47,.08), 0 28px 74px rgba(24,24,47,.11);
+  transform: rotateY(-2deg) rotateX(1deg);
+}
+.landing-page .landing-mock-stat,
+.landing-page .landing-mock-chart {
+  border-radius: 12px;
+  background: var(--panel);
+}
+.landing-page :is(.landing-innovation-card, .landing-feature-card, .landing-problem-card, .landing-integration-card, .landing-target-card, .landing-benefit-card, .landing-social-proof-card, .landing-pricing-card) {
+  border-radius: var(--ds-radius-lg);
+  box-shadow: var(--ds-shadow-card);
+}
+.landing-page .landing-innovation-card {
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+.landing-page .landing-innovation-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 18px 34px rgba(24,24,47,.1);
+}
+.landing-page .landing-innovation-grid .landing-innovation-card:nth-child(3n + 1) .landing-innovation-icon {
+  background: #edeafe;
+  color: #6553eb;
+}
+.landing-page .landing-innovation-grid .landing-innovation-card:nth-child(3n + 2) .landing-innovation-icon {
+  background: #e5f7eb;
+  color: #188050;
+}
+.landing-page .landing-innovation-grid .landing-innovation-card:nth-child(3n) .landing-innovation-icon {
+  background: #fff0dd;
+  color: #92560e;
+}
+.landing-page .landing-pricing-card.recommended {
+  border-color: var(--accent);
+  box-shadow: 0 18px 40px rgba(101,83,235,.12);
+}
+
+/* Integration cards: consistent with the app's shared surfaces. */
+.dg-shell .integrations-hub-hero {
+  border-radius: var(--ds-radius-xl);
+  box-shadow: var(--ds-shadow-card);
+}
+.dg-shell :is(.integrations-hub-card, .integrations-hub-health-card, .integrations-hub-panel) {
+  border-radius: var(--ds-radius-lg);
+  box-shadow: var(--ds-shadow-card);
+}
+.dg-shell .integrations-hub-card:hover {
+  transform: translateY(-2px);
+}
+
+/* Linear-inspired automation workspace. Keep canvas controls and node DnD intact. */
+.dg-shell .flow-builder-v2 {
+  border-radius: var(--ds-radius-xl);
+  background: var(--panel);
+  box-shadow: var(--ds-shadow-card);
+}
+.dg-shell .flow-palette {
+  background: var(--panel);
+}
+.dg-shell .flow-palette-item {
+  min-height: 52px;
+  border-radius: 12px;
+  background: var(--panel);
+}
+.dg-shell .flow-palette-item:hover:not(:disabled) {
+  background: var(--accent-soft);
+}
+.dg-shell .flow-canvas-workspace {
+  background: var(--panel);
+}
+.dg-shell .flow-canvas-container {
+  border-radius: var(--ds-radius-lg);
+  background-color: var(--bg);
+  background-image: radial-gradient(color-mix(in srgb, var(--text-muted) 23%, transparent) .8px, transparent .8px);
+  background-size: 20px 20px;
+}
+.dg-shell .flow-canvas-container :is(.react-flow__controls, .react-flow__minimap) {
+  border-radius: 12px;
+  box-shadow: var(--ds-shadow-card);
+}
+
+/* Intercom-like conversational workspace; never modify conversation logic. */
+.dg-shell .copilot-page {
+  border-radius: var(--ds-radius-xl);
+  border-color: var(--border);
+  background: var(--panel);
+  box-shadow: var(--ds-shadow-card);
+}
+.dg-shell .copilot-sessions {
+  background: var(--panel);
+}
+.dg-shell .copilot-session-item {
+  border-radius: 12px;
+}
+.dg-shell .copilot-session-item.active {
+  background: var(--accent-soft);
+}
+.dg-shell .copilot-suggestions button {
+  border-radius: 14px;
+}
+.dg-shell .copilot-message-body {
+  border-radius: 16px;
+}
+.dg-shell .copilot-composer-box {
+  border-radius: 16px;
+  box-shadow: var(--ds-shadow-card);
+}
+.copilot-floating-button {
+  border-radius: 19px;
+  background: linear-gradient(145deg, var(--accent), #4c39d3);
+}
+.copilot-panel-root .copilot-composer-box:focus-within {
+  border-color: var(--accent);
+}
+
+/* Tablet and phone: prioritize content visibility and tappable controls. */
+@media (min-width: 760px) and (max-width: 1023px) {
+  .landing-page .landing-hero-visual {
+    display: block;
+    max-width: 680px;
+    margin: 0 auto 42px;
+  }
+  .landing-page .landing-mock-ui {
+    transform: none;
+  }
+}
+@media (max-width: 780px) {
+  .dg-shell .dg-main-content {
+    padding: 20px 16px 36px;
+  }
+  .dg-shell .dg-dashboard-hero {
+    padding: 22px;
+  }
+  .landing-page .landing-hero {
+    padding-top: 104px;
+  }
+}
+@media (max-width: 560px) {
+  .landing-page .landing-hero-title {
+    font-size: clamp(2.25rem, 10vw, 3rem);
+  }
+  .landing-page .landing-hero-ctas {
+    align-items: stretch;
+  }
+  .landing-page .landing-hero-ctas :is(button, a) {
+    min-height: 44px;
+  }
+  .dg-shell .dg-metric-card {
+    min-height: 138px;
+  }
+  .dg-shell .dg-dashboard-hero h1 {
+    font-size: 1.85rem;
+  }
+  .dg-shell .dg-dashboard-hero-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .dg-shell .dg-dashboard-hero-actions :is(button, a) {
+    min-height: 44px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .landing-page .landing-mock-ui,
+  .landing-page .landing-innovation-card,
+  .dg-shell .dg-metric-card,
+  .copilot-floating-button {
+    transition: none;
+    transform: none;
+  }
+}
