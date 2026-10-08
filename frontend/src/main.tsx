@@ -10,6 +10,11 @@ import { initializeMarketingTracking } from './services/marketingTracking'
 import './index.css'
 import './conversations-layout-fix.css'
 
+// Set the saved theme before React paints, preventing a dark-to-light flash.
+// Existing choices always take precedence over the new light default.
+const storedTheme = localStorage.getItem('diaglob-theme')
+document.documentElement.setAttribute('data-theme', storedTheme === 'dark' ? 'dark' : 'light')
+
 initializeFrontendObservability(import.meta.env, (options) => Sentry.init(options))
 initializeMarketingTracking()
 
