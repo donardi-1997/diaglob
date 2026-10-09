@@ -16,7 +16,7 @@ from urllib.parse import urlparse
 
 from sqlalchemy.orm import Session
 
-from ..models import CommerceConnection
+from .shopify_webhook_service import resolve_shopify_connection
 
 logger = logging.getLogger(__name__)
 
@@ -68,14 +68,7 @@ def process_shopify_compliance_webhook(
     ):
         raise ValueError("INVALID_SHOP_IDENTITY")
 
-    connection = (
-        db.query(CommerceConnection)
-        .filter(
-            CommerceConnection.provider == "shopify",
-            CommerceConnection.external_store_url == shop_domain,
-        )
-        .first()
-    )
+    connection = resolve_shopify_connection(db, shop_domain)
     # Shopify expects a 2xx for a shop already uninstalled. The receipt is
     # logged as a digest only so repeated delivery remains safe and private.
     digest = _event_key(topic, payload)

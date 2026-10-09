@@ -1,7 +1,7 @@
 # DIAGLOB Shopify App Store readiness
 
 Audit date: 2026-10-09  
-Scope: repository state on `main` commit `2c65900`, plus draft PR #147 reviewed separately.  
+Scope: `shopify-compliance-prep` at local commit `b9e3c303` plus its current uncommitted regression fixes; `main` at `2c65900`; draft PR #147 reviewed separately.
 This document is an engineering readiness record, not confirmation that Shopify has approved the app or that the live Partner Dashboard is configured correctly.
 
 ## Compliance matrix
@@ -11,8 +11,8 @@ This document is an engineering readiness record, not confirmation that Shopify 
 | Public app distribution | BLOCKED | Partner listing still reports Draft and zero public plans in the supplied context; draft PR #147 says installation is disabled pending review. | Finish submission requirements and obtain Shopify review approval. |
 | Shopify billing for App Store customers | FAIL | `backend/app/billing_providers/registry.py` registers Paddle only; existing billing orchestration is provider-neutral. Shopify policy requires Shopify App Pricing for new public apps. | Implement Shopify App Pricing subscription lifecycle as a separate provider; do not route App Store merchants to Paddle. |
 | Paddle for independent customers | PASS | Existing provider remains the default for legacy organizations; contract tests assert that behavior. | Preserve Paddle channel and document organization/provider assignment before Shopify merchant onboarding. |
-| Mandatory privacy webhooks | FAIL → PARTIAL | Added signed compliance callback and subscription setup for `customers/data_request`, `customers/redact`, and `shop/redact`. Handler records a private digest and intentionally does not delete source data. | Define data inventory/retention/legal-hold rules; implement reviewed access export and scoped redaction; test against isolated fixtures; confirm effective subscriptions in Dev Dashboard. |
-| OAuth HMAC and state | NOT VERIFIED | Existing OAuth service validates callback HMAC and one-use stored state; current repository tests cover OAuth; full current-head execution remains pending. | Re-run OAuth suite and inspect all states/reinstall paths after PR #147 lands. |
+| Mandatory privacy webhooks | BLOCKED | The signed callback and subscription setup cover `customers/data_request`, `customers/redact`, and `shop/redact`. The handler only records an event digest and does not export, anonymize, or erase personal/shop data. | Define the data inventory, retention schedule, legal holds, and scope for each event; implement effective export/redaction; test against isolated fixtures; confirm subscriptions in Dev Dashboard. Do not claim privacy fulfillment until all applicable handlers act on data. |
+| OAuth HMAC and state | PARTIAL | Existing OAuth service validates callback HMAC and one-use stored state; the backend regression suite passes on this checkout. The actual Partner Dashboard configuration and full live installation flow remain unverified. | Verify active Dev Dashboard callback/scopes and exercise install/reinstall in a development store after the app is distributable. |
 | Token encryption | PARTIAL | `shopify_security.py` encrypts persisted access tokens with Fernet; configuration depends on production key. | Confirm secret rotation and key presence through approved secret management; no production credential was read or changed for this audit. |
 | Embedded app/session authentication | FAIL / NOT VERIFIED | Existing platform uses DIAGLOB login and OAuth connection flow. No evidence of embedded App Bridge ID-token/session-token flow was found in reviewed entrypoints. | Confirm app architecture in Dev Dashboard; if embedded, implement App Bridge authentication without third-party cookies/localStorage dependencies. |
 | Minimum API scopes | FAIL | `backend/app/shopify_oauth.py` requests order/draft-order and merchant-fulfillment write scopes plus customer/order reads. | Map each scope to a merchant-visible feature; remove unnecessary write scopes or make optional where supported. Explain Protected Customer Data need in the listing/review form. |
@@ -21,6 +21,14 @@ This document is an engineering readiness record, not confirmation that Shopify 
 | Uninstall and reinstall | PARTIAL | OAuth state and connection deletion paths exist. The mandatory `shop/redact` callback now acknowledges and records only; it does not clean stored shop data. | Implement lifecycle revocation/redaction after retention analysis; exercise reinstall and revocation in a development store. |
 | Listing, demo and reviewer credentials | FAIL | No confirmed English listing package, screencast, or verified review account was found during this repository audit. | Use the prepared copy below; capture real interface/demo and supply functioning reviewer credentials in Partner Dashboard. |
 | TLS / public links | NOT VERIFIED | Production domain details were supplied, but endpoints and terms/privacy content were not fetched in this run. | Verify `https://diaglob.tech/privacy`, `/terms`, frontend and API health externally before submission. |
+
+## Verification on this checkout
+
+- Backend: `pytest -q --tb=short` from `backend/` — **1388 passed**, 7413 warnings, 810.97 seconds. The working temporary directory was under `work/pytest-tmp`.
+- Backend lint: Ruff on `backend/app` and `backend/tests` — **passed**.
+- Route contract and compliance webhook regression tests — passed after adding the compliance route to the route snapshot and aligning the handler with the shared Shopify connection resolver.
+- Frontend lint/build/tests and Shopify CLI self-review — **not run**: the bundled pnpm launcher fails with Windows `EPERM` while resolving the frontend directory; no npm executable is available in the workspace runtime.
+- GitHub Actions for the current checkout — **not run**: the branch has not been pushed. Existing PR #147 CI is separate and is not evidence for this branch.
 
 ## Billing design and plan catalog
 

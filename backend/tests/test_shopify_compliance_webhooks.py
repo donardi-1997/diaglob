@@ -5,6 +5,43 @@ import json
 import os
 from unittest.mock import patch
 
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from app.api.shopify import router
+from app.db import Base, get_db
+from app.main import app
+from app.services.shopify_compliance_webhooks import (
+    process_shopify_compliance_webhook,
+)
+from app.services.shopify_webhook_service import verify_shopify_webhook_hmac
+
+
+TEST_ENGINE = create_engine("sqlite://", connect_args={"check_same_thread": False})
+TEST_SESSION = sessionmaker(autocommit=False, autoflush=False, bind=TEST_ENGINE)
+
+
+@pytest.fixture()
+def client():
+    Base.metadata.create_all(bind=TEST_ENGINE)
+    db = TEST_SESSION()
+
+    def _override_get_db():
+        yield db
+
+    original_overrides = dict(app.dependency_overrides)
+    app.dependency_overrides[get_db] = _override_get_db
+    app.include_router(router)
+    try:
+        with TestClient(app) as test_client:
+            yield test_client
+    finally:
+        app.dependency_overrides.clear()
+        app.dependency_overrides.update(original_overrides)
+        db.close()
+        Base.metadata.drop_all(bind=TEST_ENGINE)
 
 def _signed_headers(body: bytes, topic: str) -> tuple[str, dict[str, str]]:
     secret = "test-shopify-secret"
@@ -40,13 +77,12 @@ class TestShopifyComplianceWebhooks:
         ).encode()
         secret, headers = _signed_headers(body, "customers/data_request")
 
-        with patch.dict(os.environ, {"SHOPIFY_CLIENT_SECRET": secret}, clear=False):
-            first = client.post(
-                "/api/webhooks/shopify/compliance", content=body, headers=headers
-            )
-            second = client.post(
-                "/api/webhooks/shopify/compliance", content=body, headers=headers
-            )
+        with patch.dict(os.environ, {"SHOPIFY_CLIENT_SECRET": secret}, clear=False), patch(
+            "app.services.shopify_compliance_webhooks.resolve_shopify_connection",
+            return_value=None,
+        ):
+            first = client.post("/api/webhooks/shopify/compliance", content=body, headers=headers)
+            second = client.post("/api/webhooks/shopify/compliance", content=body, headers=headers)
 
         assert first.status_code == second.status_code == 200
         assert first.json()["request_id"] == second.json()["request_id"]
@@ -64,7 +100,10 @@ class TestShopifyComplianceWebhooks:
         ).encode()
         secret, headers = _signed_headers(body, "customers/redact")
 
-        with patch.dict(os.environ, {"SHOPIFY_CLIENT_SECRET": secret}, clear=False):
+        with patch.dict(os.environ, {"SHOPIFY_CLIENT_SECRET": secret}, clear=False), patch(
+            "app.services.shopify_compliance_webhooks.resolve_shopify_connection",
+            return_value=None,
+        ):
             response = client.post(
                 "/api/webhooks/shopify/compliance", content=body, headers=headers
             )

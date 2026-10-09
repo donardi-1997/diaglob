@@ -1041,6 +1041,10 @@
   ],
   [
     "POST",
+    "/api/webhooks/shopify/compliance"
+  ],
+  [
+    "POST",
     "/api/webhooks/telegram/{webhook_path_token}"
   ],
   [
