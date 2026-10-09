@@ -53,6 +53,9 @@ from ..services.shopify_webhook_service import (
     resolve_shopify_connection,
     verify_shopify_webhook_hmac,
 )
+from ..services.shopify_compliance_webhooks import (
+    process_shopify_compliance_webhook,
+)
 
 router = APIRouter()
 
@@ -534,4 +537,38 @@ async def shopify_order_webhook(
             status_code=500,
             detail="Shopify webhook processing failed",
         )
+
+
+@router.post("/api/webhooks/shopify/compliance")
+async def shopify_compliance_webhook(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Acknowledge and process Shopify App Store privacy webhooks."""
+    raw_body = await request.body()
+    if not verify_shopify_webhook_hmac(
+        raw_body,
+        request.headers.get("x-shopify-hmac-sha256"),
+    ):
+        raise HTTPException(status_code=401, detail="Invalid Shopify webhook signature")
+
+    topic = request.headers.get("x-shopify-topic", "").strip().lower()
+    if topic not in {"customers/data_request", "customers/redact", "shop/redact"}:
+        raise HTTPException(status_code=400, detail="Unsupported Shopify compliance topic")
+
+    try:
+        payload = json.loads(raw_body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=400, detail="Invalid JSON payload") from exc
+
+    try:
+        return process_shopify_compliance_webhook(db, topic=topic, payload=payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        db.rollback()
+        logging.getLogger(__name__).exception(
+            "Shopify compliance webhook processing failed for topic=%s", topic
+        )
+        raise HTTPException(status_code=500, detail="Shopify compliance webhook processing failed") from exc
 
