@@ -27,7 +27,9 @@ This document is an engineering readiness record, not confirmation that Shopify 
 - Backend: `pytest -q --tb=short` from `backend/` — **1388 passed**, 7413 warnings, 810.97 seconds. The working temporary directory was under `work/pytest-tmp`.
 - Backend lint: Ruff on `backend/app` and `backend/tests` — **passed**.
 - Route contract and compliance webhook regression tests — passed after adding the compliance route to the route snapshot and aligning the handler with the shared Shopify connection resolver.
-- Frontend lint/build/tests and Shopify CLI self-review — **not run**: the bundled pnpm launcher fails with Windows `EPERM` while resolving the frontend directory; no npm executable is available in the workspace runtime.
+- Frontend tests: `npm test` — **88 passed**. Frontend build: `npm run build` — **passed**; Vite reported existing large-chunk and ineffective dynamic-import warnings. Frontend lint: **0 errors, 156 warnings**.
+- Frontend dependency installation used the committed `package-lock.json`; npm reported **2 high-severity dependency advisories**. No dependency upgrades were applied.
+- Shopify CLI self-review — **not run**: Shopify CLI is not installed, and the package-manager launcher failed with Windows `EPERM` while resolving the frontend directory.
 - GitHub Actions for the current checkout — **not run**: the branch has not been pushed. Existing PR #147 CI is separate and is not evidence for this branch.
 
 ## Billing design and plan catalog
