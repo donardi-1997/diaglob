@@ -79,3 +79,144 @@ def test_preview_rejects_invalid_store_binding(setup):
     receipt.shop_domain = "wrong.myshopify.com"
     with pytest.raises(ShopifyPrivacyScopeError, match="STORE_MISMATCH"):
         preview_shopify_privacy_scope(db, receipt)
+
+
+def test_synthetic_export_encrypts_only_requested_store_data(setup, monkeypatch):
+    from app.models import Conversation, Message, OrderItem
+    from app.services.shopify_privacy_synthetic_processor import (
+        build_synthetic_customer_export,
+    )
+    from app.shopify_security import decrypt_shopify_secret
+
+    db, receipt = setup
+    monkeypatch.setenv("DIAGLOB_SHOPIFY_PRIVACY_SYNTHETIC_TESTS", "1")
+    receipt.topic = "customers/data_request"
+    orders = db.query(Order).order_by(Order.id).all()
+    orders[0].note = "SCOPED_ORDER_PRIVATE"
+    orders[0].shipping_address = {"address1": "SCOPED_ADDRESS"}
+    orders[1].note = "FOREIGN_STORE_PRIVATE"
+    db.add(OrderItem(
+        organization_id=orders[0].organization_id,
+        store_id=orders[0].store_id,
+        order_id=orders[0].id,
+        title="Synthetic product",
+        quantity=1,
+        unit_price=4,
+    ))
+    profile = db.query(CustomerStoreProfile).filter(
+        CustomerStoreProfile.store_id == receipt.store_id
+    ).one()
+    convo = Conversation(
+        organization_id=receipt.organization_id,
+        store_id=receipt.store_id,
+        customer_id=profile.customer_id,
+        preview="SCOPED_PREVIEW",
+    )
+    db.add(convo)
+    db.flush()
+    db.add(Message(
+        conversation_id=convo.id,
+        sender="customer",
+        text="SCOPED_MESSAGE_PRIVATE",
+    ))
+    db.commit()
+
+    result = build_synthetic_customer_export(db, receipt)
+    assert result.completeness == "partial_requires_review"
+    assert (result.profile_count, result.order_count) == (1, 1)
+    assert (result.conversation_count, result.message_count) == (1, 1)
+    assert "SCOPED_ADDRESS" not in result.encrypted_payload
+    assert "SCOPED_MESSAGE_PRIVATE" not in result.encrypted_payload
+
+    data = json.loads(decrypt_shopify_secret(result.encrypted_payload))
+    plaintext = json.dumps(data)
+    assert data["complete"] is False
+    assert data["scope"] == "single_verified_shop"
+    assert data["orders"][0]["shipping_address"]["address1"] == "SCOPED_ADDRESS"
+    assert len(data["orders"][0]["items"]) == 1
+    assert data["conversations"][0]["messages"][0]["text"] == "SCOPED_MESSAGE_PRIVATE"
+    assert "FOREIGN_STORE_PRIVATE" not in plaintext
+    assert db.query(Order).count() == 2
+    assert db.query(CustomerStoreProfile).count() == 2
+
+
+def test_synthetic_export_and_planner_fail_closed_without_test_gate(setup, monkeypatch):
+    from app.services.shopify_privacy_synthetic_processor import (
+        ShopifyPrivacySyntheticError,
+        build_synthetic_customer_export,
+        plan_synthetic_redaction,
+    )
+
+    db, receipt = setup
+    monkeypatch.delenv("DIAGLOB_SHOPIFY_PRIVACY_SYNTHETIC_TESTS", raising=False)
+    with pytest.raises(ShopifyPrivacySyntheticError, match="SYNTHETIC_TEST_ONLY"):
+        plan_synthetic_redaction(db, receipt)
+    receipt.topic = "customers/data_request"
+    with pytest.raises(ShopifyPrivacySyntheticError, match="SYNTHETIC_TEST_ONLY"):
+        build_synthetic_customer_export(db, receipt)
+
+
+def test_synthetic_redaction_plan_never_modifies_shared_customer(setup, monkeypatch):
+    from app.services.shopify_privacy_synthetic_processor import (
+        plan_synthetic_redaction,
+    )
+
+    db, receipt = setup
+    monkeypatch.setenv("DIAGLOB_SHOPIFY_PRIVACY_SYNTHETIC_TESTS", "1")
+    result = plan_synthetic_redaction(db, receipt)
+    assert result.topic == "customers/redact"
+    assert result.profile_candidates == 1
+    assert result.order_candidates == 1
+    assert result.global_customer_records_protected == 1
+    assert result.action == "review_only_no_mutations"
+    assert result.legal_hold_clearance is False
+    assert db.query(Customer).count() == 1
+    assert db.query(Order).count() == 2
+    assert db.query(CustomerStoreProfile).count() == 2
+
+
+def test_shop_scope_isolated_from_other_store_in_plan(setup, monkeypatch):
+    from app.services.shopify_privacy_synthetic_processor import (
+        plan_synthetic_redaction,
+    )
+
+    db, receipt = setup
+    monkeypatch.setenv("DIAGLOB_SHOPIFY_PRIVACY_SYNTHETIC_TESTS", "1")
+    receipt.topic = "shop/redact"
+    result = plan_synthetic_redaction(db, receipt)
+    assert result.profile_candidates == 1
+    assert result.order_candidates == 1
+    assert result.global_customer_records_protected == 1
+    assert db.query(Order).count() == 2
+
+
+def test_synthetic_export_fails_on_untrusted_scope(setup, monkeypatch):
+    from app.services.shopify_privacy_synthetic_processor import (
+        build_synthetic_customer_export,
+    )
+
+    db, receipt = setup
+    monkeypatch.setenv("DIAGLOB_SHOPIFY_PRIVACY_SYNTHETIC_TESTS", "1")
+    receipt.topic = "customers/data_request"
+    receipt.shop_domain = "other.myshopify.com"
+    with pytest.raises(ShopifyPrivacyScopeError, match="STORE_MISMATCH"):
+        build_synthetic_customer_export(db, receipt)
+
+
+def test_synthetic_export_unresolved_customer_is_incomplete(setup, monkeypatch):
+    from app.services.shopify_privacy_synthetic_processor import (
+        build_synthetic_customer_export,
+    )
+    from app.shopify_security import decrypt_shopify_secret
+
+    db, receipt = setup
+    monkeypatch.setenv("DIAGLOB_SHOPIFY_PRIVACY_SYNTHETIC_TESTS", "1")
+    receipt.topic = "customers/data_request"
+    receipt.selector_encrypted = encrypt_shopify_secret(
+        json.dumps({"customer": {"id": 123456789}})
+    )
+    result = build_synthetic_customer_export(db, receipt)
+    data = json.loads(decrypt_shopify_secret(result.encrypted_payload))
+    assert data["complete"] is False
+    assert data["orders"] == []
+    assert result.order_count == 0
