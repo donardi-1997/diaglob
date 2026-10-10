@@ -48,6 +48,18 @@ DECLARED_COVERAGE: tuple[PrivacyTableCoverage, ...] = (
     PrivacyTableCoverage("customer_risk_reports", "shared_and_organization", "uncovered"),
     PrivacyTableCoverage("customer_risk_disputes", "shared_and_organization", "uncovered"),
     PrivacyTableCoverage("auto_fulfillment_jobs", "store_or_order", "uncovered"),
+    PrivacyTableCoverage("automations", "store_or_organization", "uncovered"),
+    PrivacyTableCoverage("automation_executions", "store_or_organization", "uncovered"),
+    PrivacyTableCoverage("automation_campaigns", "store", "uncovered"),
+    PrivacyTableCoverage("automation_audience_members", "store_via_campaign", "uncovered"),
+    PrivacyTableCoverage("automation_runs", "store_via_campaign", "uncovered"),
+    PrivacyTableCoverage("automation_recipient_executions", "store_via_campaign_run", "uncovered"),
+    PrivacyTableCoverage("automation_delivery_attempts", "store_via_recipient", "uncovered"),
+    PrivacyTableCoverage("automation_flows", "store", "uncovered"),
+    PrivacyTableCoverage("automation_flow_versions", "store_via_flow", "uncovered"),
+    PrivacyTableCoverage("automation_flow_runs", "store", "uncovered"),
+    PrivacyTableCoverage("automation_flow_recipient_executions", "store_via_flow_run", "uncovered"),
+    PrivacyTableCoverage("automation_node_executions", "store_via_recipient", "uncovered"),
 )
 
 EXTERNAL_REVIEW_AREAS: tuple[str, ...] = (

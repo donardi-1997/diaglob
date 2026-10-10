@@ -50,3 +50,13 @@ There is no API endpoint, worker, permission change, merge to `main` or
 production deployment associated with this inventory.
 
 Tracking: issue #148 and Shopify privacy draft PR #149.
+
+
+## Automation linkage inspection (2026-10-10)
+
+`shopify_privacy_automation_provenance.py` provides an aggregate-only scope
+preview for explicitly linked campaign and visual-flow recipients. All
+automation content remains **uncovered** for real export/redaction, as does
+merchant Copilot content without a verified Shopify customer relationship.
+See `docs/shopify-privacy-automation-provenance.md`. No production processor
+is activated by this change.
