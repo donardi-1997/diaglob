@@ -115,32 +115,47 @@ def preview_shopify_billing_reconciliation(
             detail={"code": "SHOPIFY_BILLING_PROVENANCE_REQUIRED"},
         )
 
-    connections = (
+    # Count ALL Shopify bindings in the tenant, including paused/deleted
+    # stores and revoked/error connections. Filtering inactive stores first
+    # can disguise a multi-shop organization as a single-shop subscription,
+    # silently applying one merchant's plan to the whole organization.
+    bindings = (
         db.query(CommerceConnection)
-        .join(Store, Store.id == CommerceConnection.store_id)
         .filter(
             CommerceConnection.organization_id == membership.organization_id,
             CommerceConnection.provider == "shopify",
-            CommerceConnection.status == "connected",
-            Store.organization_id == membership.organization_id,
-            Store.active.is_(True),
-            Store.deleted.is_(False),
         )
+        .limit(2)
         .all()
     )
-    # The existing reconciliation service cannot safely infer billing from
-    # zero or multiple connected Shopify stores. Reject before provider calls.
-    if len(connections) != 1:
+    if len(bindings) != 1:
         raise HTTPException(
             status_code=409,
             detail={"code": "SHOPIFY_MULTISTORE_BILLING_REVIEW_REQUIRED"},
         )
 
+    connection = bindings[0]
+    eligible_store = (
+        db.query(Store)
+        .filter(
+            Store.id == connection.store_id,
+            Store.organization_id == membership.organization_id,
+            Store.active.is_(True),
+            Store.deleted.is_(False),
+        )
+        .first()
+    )
+    if eligible_store is None or connection.status != "connected":
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "SHOPIFY_BILLING_CONNECTION_REVIEW_REQUIRED"},
+        )
+
     try:
         preview = preview_shopify_entitlement_reconciliation(
             organization,
-            connections[0],
-            connected_shopify_store_count=len(connections),
+            connection,
+            connected_shopify_store_count=len(bindings),
         )
     except ShopifyAppPricingError as exc:
         code = str(exc)
