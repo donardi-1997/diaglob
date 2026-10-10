@@ -59,6 +59,22 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+def _reject_shopify_managed_billing(organization: Organization) -> None:
+    """Never route Shopify App Store subscriptions through Paddle operations.
+
+    The billing-provider flag must be set server-side using verified install
+    provenance. Legacy unassigned organizations keep the Paddle channel.
+    """
+    if (organization.billing_provider or "").strip().lower() == "shopify":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "SHOPIFY_MANAGED_BILLING",
+                "message": "Manage this subscription through Shopify App Pricing.",
+            },
+        )
+
+
 class BillingAutoRenewRequest(BaseModel):
     enabled: bool
 
@@ -134,6 +150,15 @@ async def paddle_billing_webhook(
             "ok": True,
             "ignored": True,
             "reason": "organization_not_found",
+            "event_type": event_type,
+        }
+
+    if (organization.billing_provider or "").strip().lower() == "shopify":
+        # Authenticated Paddle events must not change Shopify-managed access.
+        return {
+            "ok": True,
+            "ignored": True,
+            "reason": "shopify_managed_billing",
             "event_type": event_type,
         }
 
@@ -242,6 +267,8 @@ def update_billing_auto_renew(
     if membership.role not in {"owner", "manager"}:
         raise HTTPException(status_code=403, detail="Billing access denied")
 
+    _reject_shopify_managed_billing(membership.organization)
+
     organization = membership.organization
     if not organization.billing_subscription_id:
         raise HTTPException(
@@ -279,6 +306,8 @@ def preview_billing_upgrade(
 ):
     if membership.role not in {"owner", "manager"}:
         raise HTTPException(status_code=403, detail="Billing access denied")
+
+    _reject_shopify_managed_billing(membership.organization)
 
     organization = db.query(Organization).filter(
         Organization.id == membership.organization_id
@@ -321,6 +350,8 @@ def apply_billing_upgrade(
     if membership.role not in {"owner", "manager"}:
         raise HTTPException(status_code=403, detail="Billing access denied")
 
+    _reject_shopify_managed_billing(membership.organization)
+
     organization = db.query(Organization).filter(
         Organization.id == membership.organization_id
     ).first()
@@ -352,6 +383,8 @@ def preview_billing_downgrade(
 ):
     if membership.role not in {"owner", "manager"}:
         raise HTTPException(status_code=403, detail="Billing access denied")
+
+    _reject_shopify_managed_billing(membership.organization)
 
     organization = membership.organization
     try:
@@ -401,6 +434,8 @@ def apply_billing_downgrade(
 ):
     if membership.role not in {"owner", "manager"}:
         raise HTTPException(status_code=403, detail="Billing access denied")
+
+    _reject_shopify_managed_billing(membership.organization)
 
     organization = membership.organization
     try:
@@ -452,6 +487,7 @@ def cancel_billing_downgrade(
 ):
     if membership.role not in {"owner", "manager"}:
         raise HTTPException(status_code=403, detail="Billing access denied")
+    _reject_shopify_managed_billing(membership.organization)
     return cancel_downgrade(membership.organization, db)
 
 
@@ -479,6 +515,8 @@ def create_billing_checkout(
 ):
     if membership.role not in {"owner", "manager"}:
         raise HTTPException(status_code=403, detail="Billing access denied")
+
+    _reject_shopify_managed_billing(membership.organization)
 
     organization = membership.organization
     if (
