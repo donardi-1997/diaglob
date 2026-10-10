@@ -28,7 +28,7 @@ def _revision():
 
 def test_privacy_inbox_upgrade_and_downgrade():
     module = _revision()
-    assert module.down_revision == "z2b3c4d5e6f7"
+    assert module.down_revision == "b4d5e6f7g8h9"
     engine = create_engine("sqlite:///:memory:")
     with engine.begin() as connection:
         operations = Operations(MigrationContext.configure(connection))
