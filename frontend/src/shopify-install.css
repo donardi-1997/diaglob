@@ -1,0 +1,19 @@
+.shopify-install-page{min-height:100vh;display:grid;place-items:center;padding:2rem 1rem;background:var(--surface-background,#f5f7fa);color:var(--text-primary,#202a35)}
+.shopify-install-card{width:min(100%,570px);padding:clamp(1.5rem,4vw,2.7rem);border-radius:22px;border:1px solid var(--border-color,#dbe3ec);background:var(--surface-primary,#fff);box-shadow:0 14px 55px rgba(18,38,61,.08)}
+.shopify-install-icon{display:inline-grid;place-items:center;width:52px;height:52px;border-radius:16px;background:#e8f4f3;color:#106f71}
+.shopify-install-eyebrow{font-size:.74rem;font-weight:800;letter-spacing:.12em;color:#106f71;margin:1.3rem 0 .55rem}
+.shopify-install-card h1{font-size:clamp(1.6rem,4vw,2.15rem);line-height:1.18;margin:0 0 .85rem}
+.shopify-install-card p{line-height:1.55}
+.shopify-install-shop{display:grid;grid-template-columns:auto 1fr;align-items:center;gap:.25rem .65rem;background:var(--surface-secondary,#f0f4f8);padding:1rem;border-radius:12px;margin-top:1.4rem}
+.shopify-install-shop strong{grid-column:2;overflow-wrap:anywhere;font-size:1.02rem}
+.shopify-install-hint{font-size:.85rem;color:var(--text-secondary,#566477)}
+.shopify-install-label{display:grid;gap:.5rem;font-weight:700;margin:1.2rem 0}
+.shopify-install-label select{width:100%;border:1px solid #b7c6d3;padding:.85rem 1rem;border-radius:10px;background:var(--surface-primary,#fff);color:inherit;font:inherit}
+.shopify-install-primary{width:100%;display:flex;align-items:center;justify-content:center;gap:.65rem;background:#0b7474;color:white;font:inherit;font-weight:750;border:0;border-radius:11px;padding:.95rem;margin:1.25rem 0 .5rem;cursor:pointer}
+.shopify-install-primary:hover:not(:disabled){background:#095b5b}
+.shopify-install-primary:disabled{opacity:.52;cursor:not-allowed}
+.shopify-install-secondary{width:100%;background:transparent;color:inherit;border:0;padding:.75rem;font:inherit;text-decoration:underline;cursor:pointer}
+.shopify-install-error{color:#b91c1c;font-weight:600}
+.shopify-install-footer{display:flex;align-items:flex-start;gap:.65rem;color:var(--text-secondary,#566477);font-size:.8rem;border-top:1px solid var(--border-color,#dbe3ec);padding-top:1rem;margin-top:1.35rem}
+.shopify-install-footer svg{flex-shrink:0;margin-top:2px}
+@media(max-width:540px){.shopify-install-page{padding:1rem .75rem}.shopify-install-card{border-radius:16px}}
