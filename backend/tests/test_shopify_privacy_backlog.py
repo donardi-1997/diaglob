@@ -161,3 +161,16 @@ def test_exact_operational_thresholds_have_no_overlap(sandbox):
     assert summary.due_within_7_days_total == 2  # 23 through <30 days.
     assert summary.topics[1].overdue == 2
     assert summary.topics[1].due_within_7_days == 2
+
+
+def test_nonpositive_tenant_ids_are_unresolved(sandbox):
+    now = datetime(2026, 10, 10, 12, 0)
+    _receipt(sandbox, n=8, topic="customers/redact", age_days=1,
+             now=now, organization_id=0, store_id=34)
+    _receipt(sandbox, n=9, topic="shop/redact", age_days=1,
+             now=now, organization_id=12, store_id=-1)
+    sandbox.commit()
+    result = summarize_shopify_privacy_backlog(sandbox, now=now)
+    assert result.outstanding_total == 2
+    assert result.tenant_unresolved_total == 2
+    assert result.live_processing_ready is False
