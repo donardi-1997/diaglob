@@ -16,7 +16,7 @@ def test_inventory_explicitly_flags_shared_customer_and_uncovered_ai():
     assert by_table["orders"].coverage == "partial"
     assert by_table["messages"].coverage == "partial"
     assert by_table["agent_chat_messages"].coverage == "uncovered"
-    assert by_table["conversational_checkouts"].coverage == "uncovered"
+    assert by_table["conversational_checkouts"].coverage == "partial"
     assert by_table["knowledge_sources"].coverage == "uncovered"
     assert inventory.ready_for_live_privacy_processing is False
     assert "application_logs_monitoring_and_backups" in inventory.external_review_areas

@@ -39,7 +39,7 @@ DECLARED_COVERAGE: tuple[PrivacyTableCoverage, ...] = (
     PrivacyTableCoverage("order_items", "store_via_order", "partial"),
     PrivacyTableCoverage("conversations", "store", "partial"),
     PrivacyTableCoverage("messages", "store_via_conversation", "partial"),
-    PrivacyTableCoverage("conversational_checkouts", "store", "uncovered"),
+    PrivacyTableCoverage("conversational_checkouts", "store", "partial"),
     PrivacyTableCoverage("agent_action_approvals", "store_and_organization", "uncovered"),
     PrivacyTableCoverage("agent_chat_sessions", "store_and_organization", "uncovered"),
     PrivacyTableCoverage("agent_chat_messages", "store_via_session", "uncovered"),

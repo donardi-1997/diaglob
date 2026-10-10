@@ -14,8 +14,12 @@ Copilot sessions/messages/tool calls, AI agent approvals, customer risk reports
 and disputes, knowledge sources, and fulfillment automation jobs.
 
 - `partial` means the synthetic-only privacy export/redaction proof of concept
-  includes **some** store-bound fields, not that a complete export, deletion
-  policy, legal retention or merchant delivery process exists.
+  includes **some** store-bound fields (now including conversational checkout
+  delivery identity linked to the exact Shopify customer ID), not that a
+  complete export, deletion policy, legal retention or merchant delivery process exists.
+- Merchant Copilot sessions/tools, automation execution payloads and AI prompts
+  remain `uncovered`: a merchant session is not the Shopify data subject,
+  and text/JSON must never be matched by email or phone to infer provenance.
 - `uncovered` means fields, tenant/store ownership, source provenance,
   retention and erasure are **not yet implemented**.
 - A table with customer/email/phone/address/message/content/session/payload

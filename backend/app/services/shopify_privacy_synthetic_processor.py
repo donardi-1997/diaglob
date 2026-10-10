@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from ..models import (
     Conversation,
+    ConversationalCheckout,
     CustomerStoreProfile,
     Message,
     Order,
@@ -54,6 +55,7 @@ class SyntheticExport:
     conversation_count: int
     message_count: int
     item_count: int
+    checkout_count: int = 0
     completeness: str = "partial_requires_review"
     # Export never contains another store's records, even within one tenant.
 
@@ -65,6 +67,7 @@ class SyntheticRedactionPlan:
     profile_candidates: int
     order_candidates: int
     conversation_candidates: int
+    checkout_candidates: int
     global_customer_records_protected: int
     action: str = "review_only_no_mutations"
     legal_hold_clearance: bool = False
@@ -78,6 +81,7 @@ class SyntheticRedactionResult:
     redacted_orders: int
     redacted_conversations: int
     redacted_messages: int
+    redacted_checkouts: int
     remaining_shared_customer_records: int
     complete: bool = False
     # Never claims fulfillment; no retained legal-hold or external checks.
@@ -142,6 +146,7 @@ def build_synthetic_customer_export(
     profiles = []
     orders = []
     conversations = []
+    checkouts = []
     item_count = 0
     message_count = 0
 
@@ -242,6 +247,37 @@ def build_synthetic_customer_export(
             for convo in conversation_rows
         ]
 
+        checkout_rows = _limited(
+            db.query(ConversationalCheckout).filter(
+                ConversationalCheckout.organization_id == receipt.organization_id,
+                ConversationalCheckout.store_id == receipt.store_id,
+                ConversationalCheckout.customer_id.in_(customer_ids),
+            ).order_by(ConversationalCheckout.id),
+            kind="checkouts",
+        )
+        # The Shopify subject is resolved only through the exact store-local
+        # external customer identifier; never infer identity from phone/email.
+        checkouts = [
+            {
+                "status": row.status,
+                "customer_name": row.customer_name,
+                "phone": row.phone,
+                "address_raw": row.address_raw,
+                "address_line": row.address_line,
+                "address_complement": row.address_complement,
+                "neighborhood": row.neighborhood,
+                "city": row.city,
+                "region": row.region,
+                "country_code": row.country_code,
+                "postal_code": row.postal_code,
+                "delivery_reference": row.delivery_reference,
+                "failure_reason": row.failure_reason,
+                "total": str(row.total) if row.total is not None else None,
+                "currency": row.currency,
+            }
+            for row in checkout_rows
+        ]
+
     document = {
         "schema": "diaglob.shopify.synthetic_export.v1",
         "request_id": receipt.request_id,
@@ -251,6 +287,7 @@ def build_synthetic_customer_export(
         "profiles": profiles,
         "orders": orders,
         "conversations": conversations,
+        "conversational_checkouts": checkouts,
     }
     plaintext = json.dumps(
         document, ensure_ascii=False, separators=(",", ":")
@@ -265,6 +302,7 @@ def build_synthetic_customer_export(
         conversation_count=len(conversations),
         message_count=message_count,
         item_count=item_count,
+        checkout_count=len(checkouts),
     )
 
 
@@ -286,6 +324,7 @@ def plan_synthetic_redaction(
         profile_candidates=preview.matched_customer_profiles,
         order_candidates=preview.matched_store_orders,
         conversation_candidates=preview.matched_store_conversations,
+        checkout_candidates=preview.matched_conversational_checkouts,
         global_customer_records_protected=preview.shared_customers_protected,
     )
 
@@ -330,6 +369,10 @@ def execute_synthetic_field_redaction(
             Conversation.organization_id == receipt.organization_id,
             Conversation.store_id == receipt.store_id,
         )
+        checkout_query = db.query(ConversationalCheckout).filter(
+            ConversationalCheckout.organization_id == receipt.organization_id,
+            ConversationalCheckout.store_id == receipt.store_id,
+        )
     elif customer_ids:
         profile_query = db.query(CustomerStoreProfile).filter(
             CustomerStoreProfile.organization_id == receipt.organization_id,
@@ -346,6 +389,11 @@ def execute_synthetic_field_redaction(
             Conversation.store_id == receipt.store_id,
             Conversation.customer_id.in_(customer_ids),
         )
+        checkout_query = db.query(ConversationalCheckout).filter(
+            ConversationalCheckout.organization_id == receipt.organization_id,
+            ConversationalCheckout.store_id == receipt.store_id,
+            ConversationalCheckout.customer_id.in_(customer_ids),
+        )
     else:
         return SyntheticRedactionResult(
             request_id=receipt.request_id,
@@ -353,11 +401,15 @@ def execute_synthetic_field_redaction(
             redacted_orders=0,
             redacted_conversations=0,
             redacted_messages=0,
+            redacted_checkouts=0,
             remaining_shared_customer_records=0,
         )
 
     profiles = _limited(profile_query.order_by(CustomerStoreProfile.id), kind="profiles")
     orders = _limited(order_query.order_by(Order.id), kind="orders")
+    checkouts = _limited(
+        checkout_query.order_by(ConversationalCheckout.id), kind="checkouts"
+    )
     conversations = _limited(
         convo_query.order_by(Conversation.id), kind="conversations"
     )
@@ -387,6 +439,20 @@ def execute_synthetic_field_redaction(
     for message in messages:
         message.text = "[redacted]"
         message.external_message_id = None
+    for checkout in checkouts:
+        # Suppress delivery identity/free text, retain financial state for
+        # separate legally reviewed retention processing. No commit here.
+        checkout.customer_name = None
+        checkout.phone = None
+        checkout.address_raw = None
+        checkout.address_line = None
+        checkout.address_complement = None
+        checkout.neighborhood = None
+        checkout.city = None
+        checkout.region = None
+        checkout.postal_code = None
+        checkout.delivery_reference = None
+        checkout.failure_reason = None
     db.flush()
 
     return SyntheticRedactionResult(
@@ -395,5 +461,6 @@ def execute_synthetic_field_redaction(
         redacted_orders=len(orders),
         redacted_conversations=len(conversations),
         redacted_messages=len(messages),
+        redacted_checkouts=len(checkouts),
         remaining_shared_customer_records=preview.shared_customers_protected,
     )

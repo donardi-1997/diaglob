@@ -321,3 +321,151 @@ def test_synthetic_field_redaction_rejects_data_request_topic(setup, monkeypatch
     assert db.query(CustomerStoreProfile).filter(
         CustomerStoreProfile.external_customer_id == "700"
     ).count() == 2
+
+
+def _add_two_synthetic_checkouts(db, receipt):
+    """Shared organization customer, different Shopify stores, distinct PII."""
+    from datetime import datetime, timedelta
+    from app.models import ConversationalCheckout, Conversation, Store
+
+    customer = db.query(Customer).one()
+    stores = db.query(Store).order_by(Store.id).all()
+    added = []
+    for index, store in enumerate(stores):
+        convo = Conversation(
+            organization_id=receipt.organization_id,
+            store_id=store.id,
+            customer_id=customer.id,
+            preview=f"checkout_convo_{index}",
+        )
+        db.add(convo)
+        db.flush()
+        checkout = ConversationalCheckout(
+            organization_id=receipt.organization_id,
+            store_id=store.id,
+            conversation_id=convo.id,
+            customer_id=customer.id,
+            status="collecting_address",
+            currency="COP",
+            country_code="CO",
+            expires_at=datetime.utcnow() + timedelta(hours=1),
+            customer_name=f"NAME_PRIVATE_STORE_{index}",
+            phone=f"PHONE_PRIVATE_STORE_{index}",
+            address_raw=f"ADDRESS_PRIVATE_STORE_{index}",
+            address_line=f"LINE_PRIVATE_STORE_{index}",
+            address_complement=f"COMPLEMENT_PRIVATE_STORE_{index}",
+            neighborhood=f"NEIGHBORHOOD_PRIVATE_STORE_{index}",
+            city=f"CITY_PRIVATE_STORE_{index}",
+            region=f"REGION_PRIVATE_STORE_{index}",
+            postal_code=f"POSTAL_PRIVATE_STORE_{index}",
+            delivery_reference=f"REFERENCE_PRIVATE_STORE_{index}",
+            failure_reason=f"FAILURE_PRIVATE_STORE_{index}",
+        )
+        db.add(checkout)
+        added.append(checkout)
+    db.commit()
+    return added
+
+
+def test_synthetic_customer_checkout_export_is_encrypted_and_scoped(
+    setup, monkeypatch
+):
+    from app.services.shopify_privacy_synthetic_processor import (
+        build_synthetic_customer_export,
+        plan_synthetic_redaction,
+    )
+    from app.shopify_security import decrypt_shopify_secret
+
+    db, receipt = setup
+    rows = _add_two_synthetic_checkouts(db, receipt)
+    monkeypatch.setenv("DIAGLOB_SHOPIFY_PRIVACY_SYNTHETIC_TESTS", "1")
+    receipt.topic = "customers/data_request"
+    preview = preview_shopify_privacy_scope(db, receipt)
+    assert preview.matched_conversational_checkouts == 1
+    result = build_synthetic_customer_export(db, receipt)
+    assert result.checkout_count == 1
+    assert "NAME_PRIVATE_STORE_0" not in result.encrypted_payload
+    assert "PHONE_PRIVATE_STORE_0" not in result.encrypted_payload
+    exported = json.loads(decrypt_shopify_secret(result.encrypted_payload))
+    checkouts = exported["conversational_checkouts"]
+    assert len(checkouts) == 1
+    assert checkouts[0]["customer_name"] == "NAME_PRIVATE_STORE_0"
+    assert checkouts[0]["phone"] == "PHONE_PRIVATE_STORE_0"
+    assert checkouts[0]["delivery_reference"] == "REFERENCE_PRIVATE_STORE_0"
+    assert exported["complete"] is False
+    assert "NAME_PRIVATE_STORE_1" not in json.dumps(exported)
+    assert "ADDRESS_PRIVATE_STORE_1" not in json.dumps(exported)
+    assert rows[0].customer_name == "NAME_PRIVATE_STORE_0"
+
+    receipt.topic = "customers/redact"
+    plan = plan_synthetic_redaction(db, receipt)
+    assert plan.checkout_candidates == 1
+    assert plan.global_customer_records_protected == 1
+
+
+def test_synthetic_checkout_redaction_preserves_other_store_and_shared_customer(
+    setup, monkeypatch
+):
+    from app.services.shopify_privacy_synthetic_processor import (
+        execute_synthetic_field_redaction,
+    )
+
+    db, receipt = setup
+    source, other = _add_two_synthetic_checkouts(db, receipt)
+    monkeypatch.setenv("DIAGLOB_SHOPIFY_PRIVACY_SYNTHETIC_TESTS", "1")
+    result = execute_synthetic_field_redaction(db, receipt)
+    assert result.redacted_checkouts == 1
+    assert result.complete is False
+    assert receipt.status == "pending_policy_review"
+    db.commit()
+    db.refresh(source)
+    db.refresh(other)
+    for field in (
+        "customer_name", "phone", "address_raw", "address_line",
+        "address_complement", "neighborhood", "city", "region",
+        "postal_code", "delivery_reference", "failure_reason",
+    ):
+        assert getattr(source, field) is None
+        assert getattr(other, field) is not None
+    assert source.country_code == "CO"
+    assert source.status == "collecting_address"
+    assert db.query(Customer).one().name == "Test"
+
+
+def test_shop_redaction_includes_all_store_checkouts_not_other_stores(
+    setup, monkeypatch
+):
+    from app.services.shopify_privacy_synthetic_processor import (
+        execute_synthetic_field_redaction, plan_synthetic_redaction,
+    )
+
+    db, receipt = setup
+    source, other = _add_two_synthetic_checkouts(db, receipt)
+    monkeypatch.setenv("DIAGLOB_SHOPIFY_PRIVACY_SYNTHETIC_TESTS", "1")
+    receipt.topic = "shop/redact"
+    plan = plan_synthetic_redaction(db, receipt)
+    assert plan.checkout_candidates == 1
+    result = execute_synthetic_field_redaction(db, receipt)
+    assert result.redacted_checkouts == 1
+    assert result.complete is False
+    db.commit()
+    db.refresh(source)
+    db.refresh(other)
+    assert source.customer_name is None
+    assert other.customer_name == "NAME_PRIVATE_STORE_1"
+
+
+def test_checkout_protection_stays_disabled_without_synthetic_gate(
+    setup, monkeypatch
+):
+    from app.services.shopify_privacy_synthetic_processor import (
+        ShopifyPrivacySyntheticError, execute_synthetic_field_redaction,
+    )
+
+    db, receipt = setup
+    source, other = _add_two_synthetic_checkouts(db, receipt)
+    monkeypatch.delenv("DIAGLOB_SHOPIFY_PRIVACY_SYNTHETIC_TESTS", raising=False)
+    with pytest.raises(ShopifyPrivacySyntheticError, match="SYNTHETIC_TEST_ONLY"):
+        execute_synthetic_field_redaction(db, receipt)
+    assert source.phone == "PHONE_PRIVATE_STORE_0"
+    assert other.phone == "PHONE_PRIVATE_STORE_1"
