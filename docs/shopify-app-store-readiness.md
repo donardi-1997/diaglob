@@ -1,3 +1,21 @@
+> **Release status update — 2026-10-10 (PR #149)**
+>
+> PR #147 was merged on 2026-10-10. This document's original audit matrix
+> below describes the earlier b9e3c30 checkout and must not be read as a
+> fresh certification of the current PR head. The PR now contains additional
+> privacy backlog, synthetic export/redaction, review-workflow and billing
+> reconciliation **preview** components. These do not provide an audited live
+> privacy-fulfillment or subscription-activation workflow.
+>
+> The release-evidence evaluator in
+> `backend/app/services/shopify_release_readiness.py` deliberately defaults
+> to **NOT READY**. Tests enforce that missing, partial or non-boolean evidence
+> cannot clear a release gate. Do not claim Shopify compliance, merge for
+> production, deploy, charge merchants or submit the app based on passing CI
+> alone. Independent verification of legal retention, all processors/backups,
+> redaction/export, billing entitlements, OAuth E2E, scopes, checkout policy,
+> live Partner Dashboard and final-head CI remains required.
+
 # DIAGLOB Shopify App Store readiness
 
 Audit date: 2026-10-09  
