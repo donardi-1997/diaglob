@@ -106,3 +106,16 @@ def test_normal_params_are_forwarded_to_service_for_actual_hmac_verification():
         "state": "s",
         "hmac": "abc",
     }
+
+
+def test_oversized_raw_query_is_rejected_before_service_lookup():
+    query = (
+        b"shop=test.myshopify.com&code=c&state=s&hmac=abc&unused="
+        + b"x" * (MAX_CALLBACK_QUERY_BYTES + 1)
+    )
+    with patch("app.api.shopify.svc_process_oauth_callback") as svc:
+        with pytest.raises(HTTPException) as exc:
+            shopify_oauth_callback(_request(query), db=Mock())
+    assert exc.value.status_code == 400
+    assert exc.value.detail == "INVALID_SHOPIFY_CALLBACK_QUERY"
+    svc.assert_not_called()
