@@ -16,7 +16,7 @@ from typing import Any
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from ..models import ShopifyPrivacyRequest
+from ..models import ShopifyPrivacyAuditEvent, ShopifyPrivacyRequest
 from ..shopify_oauth import normalize_shop_domain
 from ..shopify_security import encrypt_shopify_secret
 from .shopify_webhook_service import resolve_shopify_connection
@@ -142,7 +142,22 @@ def process_shopify_compliance_webhook(
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow(),
     )
+    # The event and receipt share one transaction. Retries are deduplicated
+    # by the receipt key, so no duplicate received audit is emitted.
     db.add(request)
+    db.add(
+        ShopifyPrivacyAuditEvent(
+            request_id=receipt_id,
+            event_type="received",
+            from_status=None,
+            to_status="pending_policy_review",
+            reason_code=(
+                "tenant_bound" if connection else "tenant_unresolved"
+            ),
+            actor_type="shopify_hmac_verified",
+            created_at=datetime.utcnow(),
+        )
+    )
     try:
         db.commit()
     except IntegrityError:

@@ -56,7 +56,10 @@ from .model_domains.knowledge import (  # noqa: F401
 # This import preserves the historical app.models import surface.
 from .model_domains.customers import Customer, CustomerStoreProfile
 from .model_domains.post_sales import PostSalesCase, PostSalesCaseEvent
-from .model_domains.shopify_privacy import ShopifyPrivacyRequest  # noqa: F401
+from .model_domains.shopify_privacy import (  # noqa: F401
+    ShopifyPrivacyAuditEvent,
+    ShopifyPrivacyRequest,
+)
 
 
 # ============================================================

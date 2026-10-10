@@ -44,4 +44,26 @@ class ShopifyPrivacyRequest(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
-__all__ = ["ShopifyPrivacyRequest"]
+
+class ShopifyPrivacyAuditEvent(Base):
+    """PII-free append-only evidence for authenticated privacy requests.
+
+    No tenant FK: evidence survives storefront unlink/deletion. The request
+    identifier is the deterministic receipt digest, not Shopify's customer ID.
+    """
+
+    __tablename__ = "shopify_privacy_audit_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    request_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    event_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    from_status: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    to_status: Mapped[str] = mapped_column(String(40), nullable=False)
+    reason_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    actor_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+
+
+__all__ = ["ShopifyPrivacyRequest", "ShopifyPrivacyAuditEvent"]
