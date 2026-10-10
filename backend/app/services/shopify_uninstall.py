@@ -88,9 +88,9 @@ def process_shopify_uninstall(
 
     if connection.status == "revoked":
         return {"ok": True, "action": "already_revoked"}
-    if connection.status != "connected":
-        # Do not consume any pending or errored installation without proof
-        # its lifecycle is the one represented by the event.
+    if connection.status not in {"connected", "error"}:
+        # A previously disconnected store has no current live installation.
+        # An API-error connection may still hold a token and must be revoked.
         return {"ok": True, "action": "not_connected"}
     if trigger < connection.connected_at:
         return {"ok": True, "action": "stale_uninstall"}
