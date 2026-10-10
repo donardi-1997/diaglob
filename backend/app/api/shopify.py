@@ -57,6 +57,10 @@ from ..services.shopify_compliance_webhooks import (
     process_shopify_compliance_webhook,
 )
 
+# Compliance payloads contain minimal customer/order selectors. The bounded
+# streaming read protects memory and rejects unexpectedly large signed payloads.
+MAX_COMPLIANCE_BODY_BYTES = 256 * 1024
+
 router = APIRouter()
 
 
@@ -545,7 +549,16 @@ async def shopify_compliance_webhook(
     db: Session = Depends(get_db),
 ):
     """Acknowledge and process Shopify App Store privacy webhooks."""
-    raw_body = await request.body()
+    # Read the request incrementally: a forged Content-Length must never
+    # allow an unbounded body allocation before HMAC verification.
+    chunks = []
+    body_size = 0
+    async for chunk in request.stream():
+        body_size += len(chunk)
+        if body_size > MAX_COMPLIANCE_BODY_BYTES:
+            raise HTTPException(status_code=413, detail="Shopify compliance payload too large")
+        chunks.append(chunk)
+    raw_body = b"".join(chunks)
     if not verify_shopify_webhook_hmac(
         raw_body,
         request.headers.get("x-shopify-hmac-sha256"),
