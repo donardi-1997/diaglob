@@ -4887,23 +4887,6 @@ class TestShopifyWebhookSubscriptions:
         ), patch(
             "app.shopify_webhook_subscriptions.ShopifyGraphQLClient.query",
             side_effect=[
-                {"webhookSubscriptions": {"edges": []}},
-                *[
-                    {
-                        "webhookSubscriptionCreate": {
-                            "webhookSubscription": {
-                                "id": f"gid://shopify/WebhookSubscription/privacy-{index}",
-                                "topic": topic,
-                                "uri": "https://api.diaglob.tech/api/webhooks/shopify/compliance",
-                            },
-                            "userErrors": [],
-                        },
-                    }
-                    for index, topic in enumerate(
-                        ("CUSTOMERS_DATA_REQUEST", "CUSTOMERS_REDACT", "SHOP_REDACT"),
-                        start=1,
-                    )
-                ],
                 existing,
                 create_updated,
                 create_cancelled,
@@ -4921,7 +4904,12 @@ class TestShopifyWebhookSubscriptions:
             "ORDERS_UPDATED",
             "ORDERS_CANCELLED",
         ]
-        assert query.call_count == 7
+        # Required privacy topics are configured at app level, never through
+        # shop-scoped GraphQL mutations on connect/reconnect.
+        assert query.call_count == 3
+        assert [
+            call.args[1]["topic"] for call in query.call_args_list[1:]
+        ] == ["ORDERS_UPDATED", "ORDERS_CANCELLED"]
 
     def test_ensure_webhooks_provider_error_is_visible_and_recorded(
         self,

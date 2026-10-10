@@ -3,23 +3,33 @@ import hashlib
 import hmac
 import json
 import os
+from types import SimpleNamespace
+
+from cryptography.fernet import Fernet
 from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from app.api.shopify import router
 from app.db import Base, get_db
 from app.main import app
+from app.models import ShopifyPrivacyRequest
+from app.shopify_security import decrypt_shopify_secret
 from app.services.shopify_compliance_webhooks import (
     process_shopify_compliance_webhook,
 )
 from app.services.shopify_webhook_service import verify_shopify_webhook_hmac
 
 
-TEST_ENGINE = create_engine("sqlite://", connect_args={"check_same_thread": False})
+TEST_ENGINE = create_engine(
+    "sqlite://",
+    connect_args={"check_same_thread": False},
+    poolclass=StaticPool,
+)
 TEST_SESSION = sessionmaker(autocommit=False, autoflush=False, bind=TEST_ENGINE)
 
 
@@ -35,8 +45,11 @@ def client():
     app.dependency_overrides[get_db] = _override_get_db
     app.include_router(router)
     try:
-        with TestClient(app) as test_client:
-            yield test_client
+        with patch.dict(os.environ, {
+            "SHOPIFY_TOKEN_ENCRYPTION_KEY": Fernet.generate_key().decode(),
+        }):
+            with TestClient(app) as test_client:
+                yield test_client
     finally:
         app.dependency_overrides.clear()
         app.dependency_overrides.update(original_overrides)
@@ -63,6 +76,17 @@ class TestShopifyComplianceWebhooks:
             headers={
                 "X-Shopify-Hmac-Sha256": "invalid",
                 "X-Shopify-Topic": "shop/redact",
+            },
+        )
+        assert response.status_code == 401
+
+    def test_missing_hmac_is_rejected(self, client):
+        response = client.post(
+            "/api/webhooks/shopify/compliance",
+            content=b'{"shop_id":123,"shop_domain":"test.myshopify.com"}',
+            headers={
+                "X-Shopify-Topic": "customers/redact",
+                "Content-Type": "application/json",
             },
         )
         assert response.status_code == 401
@@ -121,3 +145,98 @@ class TestShopifyComplianceWebhooks:
             )
 
         assert response.status_code == 400
+
+    def test_receipt_is_durable_encrypted_and_deduplicated(self, client):
+        body = json.dumps({
+            "shop_id": 123,
+            "shop_domain": "test-store.myshopify.com",
+            "customer": {"id": 456, "email": "private@example.com"},
+        }).encode()
+        secret, headers = _signed_headers(body, "customers/data_request")
+        headers["X-Shopify-Webhook-Id"] = "event-abc"
+        with patch.dict(os.environ, {"SHOPIFY_CLIENT_SECRET": secret}), patch(
+            "app.services.shopify_compliance_webhooks.resolve_shopify_connection",
+            return_value=None,
+        ):
+            first = client.post("/api/webhooks/shopify/compliance", content=body, headers=headers)
+            again = client.post("/api/webhooks/shopify/compliance", content=body, headers=headers)
+
+        assert first.status_code == again.status_code == 200
+        assert first.json()["action"] == "recorded"
+        assert again.json()["action"] == "duplicate"
+        assert first.json()["request_id"] == again.json()["request_id"]
+        with TEST_SESSION() as session:
+            records = session.query(ShopifyPrivacyRequest).all()
+            assert len(records) == 1
+            record = records[0]
+            assert record.organization_id is None
+            assert record.store_id is None
+            assert record.status == "pending_policy_review"
+            assert record.attempts == 0
+            assert "private@example.com" not in record.selector_encrypted
+            decoded = json.loads(decrypt_shopify_secret(record.selector_encrypted))
+            assert decoded["customer"]["email"] == "private@example.com"
+
+    def test_distinct_shopify_webhook_ids_do_not_collapse_requests(self, client):
+        body = json.dumps({
+            "shop_id": 123,
+            "shop_domain": "test-store.myshopify.com",
+            "customer": {"id": 456},
+        }).encode()
+        secret, headers = _signed_headers(body, "customers/data_request")
+        with patch.dict(os.environ, {"SHOPIFY_CLIENT_SECRET": secret}), patch(
+            "app.services.shopify_compliance_webhooks.resolve_shopify_connection",
+            return_value=None,
+        ):
+            headers["X-Shopify-Webhook-Id"] = "first-delivery"
+            first = client.post("/api/webhooks/shopify/compliance", content=body, headers=headers)
+            headers["X-Shopify-Webhook-Id"] = "second-delivery"
+            second = client.post("/api/webhooks/shopify/compliance", content=body, headers=headers)
+        assert first.status_code == second.status_code == 200
+        assert first.json()["request_id"] != second.json()["request_id"]
+        with TEST_SESSION() as session:
+            assert session.query(ShopifyPrivacyRequest).count() == 2
+
+    def test_reject_shop_domain_header_mismatch_without_creating_receipt(self, client):
+        body = json.dumps({
+            "shop_id": 123,
+            "shop_domain": "shop-one.myshopify.com",
+        }).encode()
+        secret, headers = _signed_headers(body, "shop/redact")
+        headers["X-Shopify-Shop-Domain"] = "shop-two.myshopify.com"
+        with patch.dict(os.environ, {"SHOPIFY_CLIENT_SECRET": secret}):
+            response = client.post(
+                "/api/webhooks/shopify/compliance", content=body, headers=headers
+            )
+        assert response.status_code == 400
+        with TEST_SESSION() as session:
+            assert session.query(ShopifyPrivacyRequest).count() == 0
+
+    def test_tenant_binding_uses_only_resolved_shopify_connection(self, client):
+        body = json.dumps({
+            "shop_id": 321,
+            "shop_domain": "known.myshopify.com",
+            "customer": {"id": 999},
+        }).encode()
+        secret, headers = _signed_headers(body, "customers/redact")
+        with patch.dict(os.environ, {"SHOPIFY_CLIENT_SECRET": secret}), patch(
+            "app.services.shopify_compliance_webhooks.resolve_shopify_connection",
+            return_value=SimpleNamespace(organization_id=19, store_id=47),
+        ):
+            response = client.post("/api/webhooks/shopify/compliance", content=body, headers=headers)
+        assert response.status_code == 200
+        with TEST_SESSION() as session:
+            item = session.query(ShopifyPrivacyRequest).one()
+            assert (item.organization_id, item.store_id) == (19, 47)
+            assert item.topic == "customers/redact"
+
+    def test_reject_invalid_signature_without_persisting_anything(self, client):
+        body = b'{"shop_id":123,"shop_domain":"known.myshopify.com"}'
+        response = client.post(
+            "/api/webhooks/shopify/compliance",
+            content=body,
+            headers={"X-Shopify-Topic": "shop/redact", "X-Shopify-Hmac-Sha256": "fake"},
+        )
+        assert response.status_code == 401
+        with TEST_SESSION() as session:
+            assert session.query(ShopifyPrivacyRequest).count() == 0

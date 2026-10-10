@@ -562,7 +562,13 @@ async def shopify_compliance_webhook(
         raise HTTPException(status_code=400, detail="Invalid JSON payload") from exc
 
     try:
-        return process_shopify_compliance_webhook(db, topic=topic, payload=payload)
+        return process_shopify_compliance_webhook(
+            db,
+            topic=topic,
+            payload=payload,
+            webhook_id=request.headers.get("x-shopify-webhook-id"),
+            header_shop_domain=request.headers.get("x-shopify-shop-domain"),
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
