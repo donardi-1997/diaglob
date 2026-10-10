@@ -16,32 +16,6 @@ ORDER_WEBHOOK_TOPICS = (
     "ORDERS_CANCELLED",
 )
 
-COMPLIANCE_WEBHOOK_TOPICS = (
-    "CUSTOMERS_DATA_REQUEST",
-    "CUSTOMERS_REDACT",
-    "SHOP_REDACT",
-)
-
-COMPLIANCE_WEBHOOK_SUBSCRIPTIONS = """
-query DiaglobComplianceWebhookSubscriptions {
-  webhookSubscriptions(first: 100) {
-    edges { node { id topic uri } }
-  }
-}
-"""
-
-CREATE_COMPLIANCE_WEBHOOK_MUTATION = """
-mutation DiaglobComplianceWebhookCreate(
-  $topic: WebhookSubscriptionTopic!,
-  $webhookSubscription: WebhookSubscriptionInput!
-) {
-  webhookSubscriptionCreate(topic: $topic, webhookSubscription: $webhookSubscription) {
-    webhookSubscription { id topic uri }
-    userErrors { field message }
-  }
-}
-"""
-
 LIST_WEBHOOKS_QUERY = """
 query DiaglobWebhookSubscriptions {
   webhookSubscriptions(first: 100) {
@@ -93,7 +67,8 @@ def ensure_shopify_order_webhooks(
     callback URI are retained, while only missing subscriptions are created.
     """
 
-    ensure_shopify_compliance_webhooks(connection)
+    # Mandatory GDPR topics are configured at app level (shopify.app.toml),
+    # not with GraphQL's shop-scoped webhookSubscriptionCreate mutation.
 
     token = decrypt_shopify_secret(
         connection.access_token_encrypted
@@ -172,65 +147,3 @@ def ensure_shopify_order_webhooks(
     }
 
 
-def shopify_compliance_webhook_callback_url() -> str:
-    base = get_settings().public_api_base_url.rstrip("/") + "/"
-    return urljoin(base, "api/webhooks/shopify/compliance")
-
-
-def ensure_shopify_compliance_webhooks(
-    connection: CommerceConnection,
-) -> dict:
-    """Ensure Shopify's three required App Store compliance hooks exist."""
-    token = decrypt_shopify_secret(connection.access_token_encrypted)
-    client = ShopifyGraphQLClient(
-        shop_domain=connection.external_store_url,
-        access_token=token,
-    )
-    callback_url = shopify_compliance_webhook_callback_url()
-    data = client.query(COMPLIANCE_WEBHOOK_SUBSCRIPTIONS)
-    edges = (data.get("webhookSubscriptions") or {}).get("edges") or []
-    existing = {
-        (
-            str((edge.get("node") or {}).get("topic") or ""),
-            str((edge.get("node") or {}).get("uri") or ""),
-        )
-        for edge in edges
-        if isinstance(edge, dict)
-    }
-
-    created: list[dict] = []
-    retained: list[str] = []
-    for topic in COMPLIANCE_WEBHOOK_TOPICS:
-        if (topic, callback_url) in existing:
-            retained.append(topic)
-            continue
-        response = client.query(
-            CREATE_COMPLIANCE_WEBHOOK_MUTATION,
-            {"topic": topic, "webhookSubscription": {"uri": callback_url}},
-        )
-        result = response.get("webhookSubscriptionCreate") or {}
-        errors = result.get("userErrors") or []
-        if errors:
-            raise ShopifyUserError(
-                errors[0].get("message")
-                or "Unable to create Shopify compliance webhook"
-            )
-        subscription = result.get("webhookSubscription") or {}
-        if not subscription.get("id"):
-            raise ShopifyUserError(
-                "Shopify did not return the compliance webhook subscription"
-            )
-        created.append(
-            {
-                "id": subscription.get("id"),
-                "topic": subscription.get("topic") or topic,
-                "uri": subscription.get("uri") or callback_url,
-            }
-        )
-    return {
-        "ok": True,
-        "callback_url": callback_url,
-        "created": created,
-        "retained": retained,
-        "topics": list(COMPLIANCE_WEBHOOK_TOPICS),
-    }
