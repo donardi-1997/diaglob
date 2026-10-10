@@ -247,3 +247,37 @@ class TestShopifyComplianceWebhooks:
         assert response.status_code == 401
         with TEST_SESSION() as session:
             assert session.query(ShopifyPrivacyRequest).count() == 0
+
+
+    def test_oversized_signed_compliance_payload_is_rejected_without_receipt(self, client):
+        # A signed payload must not bypass the bounded-body safety check.
+        from app.api.shopify import MAX_COMPLIANCE_BODY_BYTES
+
+        body = json.dumps({
+            "shop_id": 123,
+            "shop_domain": "known.myshopify.com",
+            "unexpected": "x" * MAX_COMPLIANCE_BODY_BYTES,
+        }).encode()
+        assert len(body) > MAX_COMPLIANCE_BODY_BYTES
+        secret, headers = _signed_headers(body, "customers/data_request")
+        with patch.dict(os.environ, {"SHOPIFY_CLIENT_SECRET": secret}):
+            response = client.post(
+                "/api/webhooks/shopify/compliance",
+                content=body,
+                headers=headers,
+            )
+        assert response.status_code == 413
+        with TEST_SESSION() as session:
+            assert session.query(ShopifyPrivacyRequest).count() == 0
+
+    def test_oversized_unsigned_compliance_payload_is_rejected_without_receipt(self, client):
+        from app.api.shopify import MAX_COMPLIANCE_BODY_BYTES
+
+        response = client.post(
+            "/api/webhooks/shopify/compliance",
+            content=b"x" * (MAX_COMPLIANCE_BODY_BYTES + 1),
+            headers={"X-Shopify-Topic": "shop/redact"},
+        )
+        assert response.status_code == 413
+        with TEST_SESSION() as session:
+            assert session.query(ShopifyPrivacyRequest).count() == 0
