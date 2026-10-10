@@ -469,3 +469,29 @@ def test_checkout_protection_stays_disabled_without_synthetic_gate(
         execute_synthetic_field_redaction(db, receipt)
     assert source.phone == "PHONE_PRIVATE_STORE_0"
     assert other.phone == "PHONE_PRIVATE_STORE_1"
+
+
+def test_unknown_external_customer_id_never_selects_shared_checkouts(
+    setup, monkeypatch
+):
+    from app.services.shopify_privacy_synthetic_processor import (
+        build_synthetic_customer_export,
+    )
+    from app.shopify_security import decrypt_shopify_secret
+
+    db, receipt = setup
+    _add_two_synthetic_checkouts(db, receipt)
+    monkeypatch.setenv("DIAGLOB_SHOPIFY_PRIVACY_SYNTHETIC_TESTS", "1")
+    receipt.topic = "customers/data_request"
+    receipt.selector_encrypted = encrypt_shopify_secret(
+        json.dumps({"customer": {"id": 99999999}})
+    )
+
+    scope = preview_shopify_privacy_scope(db, receipt)
+    assert scope.scope_status == "subject_unresolved"
+    assert scope.matched_conversational_checkouts == 0
+    result = build_synthetic_customer_export(db, receipt)
+    assert result.checkout_count == 0
+    data = json.loads(decrypt_shopify_secret(result.encrypted_payload))
+    assert data["conversational_checkouts"] == []
+    assert data["complete"] is False
