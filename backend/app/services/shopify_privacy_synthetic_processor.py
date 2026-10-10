@@ -70,6 +70,18 @@ class SyntheticRedactionPlan:
     external_data_coverage_complete: bool = False
 
 
+@dataclass(frozen=True)
+class SyntheticRedactionResult:
+    request_id: str
+    redacted_profiles: int
+    redacted_orders: int
+    redacted_conversations: int
+    redacted_messages: int
+    remaining_shared_customer_records: int
+    complete: bool = False
+    # Never claims fulfillment; no retained legal-hold or external checks.
+
+
 def _ensure_synthetic_sqlite(db: Session) -> None:
     """Fail closed unless invoked by an explicitly opted-in pytest SQLite test."""
     if (
@@ -273,4 +285,113 @@ def plan_synthetic_redaction(
         order_candidates=preview.matched_store_orders,
         conversation_candidates=preview.matched_store_conversations,
         global_customer_records_protected=preview.shared_customers_protected,
+    )
+
+
+def execute_synthetic_field_redaction(
+    db: Session,
+    receipt: ShopifyPrivacyRequest,
+) -> SyntheticRedactionResult:
+    """Apply narrowly scoped field suppression on pytest SQLite fixtures only.
+
+    Financial/order records and globally shared Customer identity survive.
+    No commit, no completion status, no external work or Shopify responses.
+    This is NOT legal-retention-aware redaction and is never callable in prod.
+    """
+    _ensure_synthetic_sqlite(db)
+    if receipt.topic not in {"customers/redact", "shop/redact"}:
+        raise ShopifyPrivacySyntheticError("TOPIC_NOT_REDACTION")
+    preview = preview_shopify_privacy_scope(db, receipt)
+
+    if receipt.topic == "customers/redact":
+        customer_ids = _subject_customer_ids(db, receipt)
+    else:
+        shop_profiles = _limited(
+            db.query(CustomerStoreProfile).filter(
+                CustomerStoreProfile.organization_id == receipt.organization_id,
+                CustomerStoreProfile.store_id == receipt.store_id,
+            ).order_by(CustomerStoreProfile.id),
+            kind="profiles",
+        )
+        customer_ids = sorted({p.customer_id for p in shop_profiles})
+
+    if receipt.topic == "shop/redact":
+        profile_query = db.query(CustomerStoreProfile).filter(
+            CustomerStoreProfile.organization_id == receipt.organization_id,
+            CustomerStoreProfile.store_id == receipt.store_id,
+        )
+        order_query = db.query(Order).filter(
+            Order.organization_id == receipt.organization_id,
+            Order.store_id == receipt.store_id,
+        )
+        convo_query = db.query(Conversation).filter(
+            Conversation.organization_id == receipt.organization_id,
+            Conversation.store_id == receipt.store_id,
+        )
+    elif customer_ids:
+        profile_query = db.query(CustomerStoreProfile).filter(
+            CustomerStoreProfile.organization_id == receipt.organization_id,
+            CustomerStoreProfile.store_id == receipt.store_id,
+            CustomerStoreProfile.customer_id.in_(customer_ids),
+        )
+        order_query = db.query(Order).filter(
+            Order.organization_id == receipt.organization_id,
+            Order.store_id == receipt.store_id,
+            Order.customer_id.in_(customer_ids),
+        )
+        convo_query = db.query(Conversation).filter(
+            Conversation.organization_id == receipt.organization_id,
+            Conversation.store_id == receipt.store_id,
+            Conversation.customer_id.in_(customer_ids),
+        )
+    else:
+        return SyntheticRedactionResult(
+            request_id=receipt.request_id,
+            redacted_profiles=0,
+            redacted_orders=0,
+            redacted_conversations=0,
+            redacted_messages=0,
+            remaining_shared_customer_records=0,
+        )
+
+    profiles = _limited(profile_query.order_by(CustomerStoreProfile.id), kind="profiles")
+    orders = _limited(order_query.order_by(Order.id), kind="orders")
+    conversations = _limited(
+        convo_query.order_by(Conversation.id), kind="conversations"
+    )
+    messages = []
+    if conversations:
+        messages = _limited(
+            db.query(Message).filter(
+                Message.conversation_id.in_([c.id for c in conversations])
+            ).order_by(Message.id),
+            kind="messages",
+        )
+
+    # Clear PII only on target store's rows. Preserve financial records,
+    # identifiers used for reconciliation and every organization-global
+    # Customer object, which may have another store's legitimate references.
+    for profile in profiles:
+        profile.external_customer_id = None
+        profile.last_order_ref = None
+    for order in orders:
+        order.note = None
+        order.shipping_address = None
+        order.invoice_url = None
+        order.external_last_error = None
+    for conversation in conversations:
+        conversation.preview = ""
+        conversation.tags = ""
+    for message in messages:
+        message.text = "[redacted]"
+        message.external_message_id = None
+    db.flush()
+
+    return SyntheticRedactionResult(
+        request_id=receipt.request_id,
+        redacted_profiles=len(profiles),
+        redacted_orders=len(orders),
+        redacted_conversations=len(conversations),
+        redacted_messages=len(messages),
+        remaining_shared_customer_records=preview.shared_customers_protected,
     )
