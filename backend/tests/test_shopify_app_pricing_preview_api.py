@@ -173,3 +173,31 @@ def test_untrusted_provider_error_is_not_reflected_to_client():
     assert exc.value.status_code == 503
     assert exc.value.detail == {"code": "SHOPIFY_RECONCILIATION_UNAVAILABLE"}
     db.commit.assert_not_called()
+
+
+def test_manager_role_can_review_verified_plan():
+    membership = _membership(role="manager")
+    connection = _connection()
+    db = _db(connection)
+    verified = ShopifyEntitlementPreview(
+        organization_id=17,
+        shop_gid="gid://shopify/Shop/100",
+        current_plan="starter",
+        target_plan="starter",
+        target_billing_period_months=1,
+        verified_handle="verified-handle",
+        status="plan_verified_no_change",
+    )
+    with patch(
+        "app.api.billing.preview_shopify_entitlement_reconciliation",
+        return_value=verified,
+    ) as service:
+        response = preview_shopify_billing_reconciliation(
+            membership=membership,
+            db=db,
+        )
+    assert response["requires_review"] is True
+    assert response["applied"] is False
+    assert response["status"] == "plan_verified_no_change"
+    service.assert_called_once()
+    db.commit.assert_not_called()
