@@ -253,6 +253,10 @@
   ],
   [
     "GET",
+    "/api/internal/shopify/privacy/cases/{request_id}/assessment"
+  ],
+  [
+    "GET",
     "/api/knowledge-bases"
   ],
   [
