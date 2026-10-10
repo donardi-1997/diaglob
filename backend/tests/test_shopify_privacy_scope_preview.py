@@ -220,3 +220,102 @@ def test_synthetic_export_unresolved_customer_is_incomplete(setup, monkeypatch):
     assert data["complete"] is False
     assert data["orders"] == []
     assert result.order_count == 0
+
+
+def test_sqlite_redaction_changes_only_target_store_fixture(setup, monkeypatch):
+    from app.models import Conversation, Message
+    from app.services.shopify_privacy_synthetic_processor import (
+        execute_synthetic_field_redaction,
+    )
+
+    db, receipt = setup
+    monkeypatch.setenv("DIAGLOB_SHOPIFY_PRIVACY_SYNTHETIC_TESTS", "1")
+    orders = db.query(Order).order_by(Order.id).all()
+    source = next(o for o in orders if o.store_id == receipt.store_id)
+    other = next(o for o in orders if o.store_id != receipt.store_id)
+    source.note = "SOURCE_PII_PRIVATE"
+    source.shipping_address = {"address1": "SOURCE_ADDRESS"}
+    other.note = "OTHER_SHOP_PII_PRIVATE"
+    other.shipping_address = {"address1": "OTHER_ADDRESS"}
+    shared = db.query(Customer).one()
+    convo = Conversation(
+        organization_id=receipt.organization_id,
+        store_id=receipt.store_id,
+        customer_id=shared.id,
+        preview="SOURCE_PREVIEW_PRIVATE",
+    )
+    db.add(convo)
+    db.flush()
+    msg = Message(
+        conversation_id=convo.id,
+        sender="customer",
+        text="SOURCE_MESSAGE_PRIVATE",
+    )
+    db.add(msg)
+    db.commit()
+
+    outcome = execute_synthetic_field_redaction(db, receipt)
+    assert outcome.complete is False
+    assert outcome.redacted_profiles == outcome.redacted_orders == 1
+    assert outcome.redacted_conversations == outcome.redacted_messages == 1
+    assert outcome.remaining_shared_customer_records == 1
+    db.commit()
+
+    db.refresh(source)
+    db.refresh(other)
+    db.refresh(convo)
+    db.refresh(msg)
+    db.refresh(shared)
+    assert (source.note, source.shipping_address) == (None, None)
+    assert convo.preview == ""
+    assert msg.text == "[redacted]"
+    assert other.note == "OTHER_SHOP_PII_PRIVATE"
+    assert other.shipping_address["address1"] == "OTHER_ADDRESS"
+    assert shared.name == "Test"
+    other_profile = db.query(CustomerStoreProfile).filter(
+        CustomerStoreProfile.store_id == other.store_id
+    ).one()
+    source_profile = db.query(CustomerStoreProfile).filter(
+        CustomerStoreProfile.store_id == receipt.store_id
+    ).one()
+    assert other_profile.external_customer_id == "700"
+    assert source_profile.external_customer_id is None
+
+
+def test_sqlite_redaction_requires_opt_in_and_never_marks_receipt_complete(
+    setup, monkeypatch
+):
+    from app.services.shopify_privacy_synthetic_processor import (
+        ShopifyPrivacySyntheticError,
+        execute_synthetic_field_redaction,
+    )
+
+    db, receipt = setup
+    monkeypatch.delenv("DIAGLOB_SHOPIFY_PRIVACY_SYNTHETIC_TESTS", raising=False)
+    with pytest.raises(ShopifyPrivacySyntheticError, match="SYNTHETIC_TEST_ONLY"):
+        execute_synthetic_field_redaction(db, receipt)
+    assert db.query(CustomerStoreProfile).filter(
+        CustomerStoreProfile.external_customer_id == "700"
+    ).count() == 2
+
+    monkeypatch.setenv("DIAGLOB_SHOPIFY_PRIVACY_SYNTHETIC_TESTS", "1")
+    result = execute_synthetic_field_redaction(db, receipt)
+    assert result.complete is False
+    assert receipt.status == "pending_policy_review"
+    assert db.query(Customer).one().name == "Test"
+
+
+def test_synthetic_field_redaction_rejects_data_request_topic(setup, monkeypatch):
+    from app.services.shopify_privacy_synthetic_processor import (
+        ShopifyPrivacySyntheticError,
+        execute_synthetic_field_redaction,
+    )
+
+    db, receipt = setup
+    monkeypatch.setenv("DIAGLOB_SHOPIFY_PRIVACY_SYNTHETIC_TESTS", "1")
+    receipt.topic = "customers/data_request"
+    with pytest.raises(ShopifyPrivacySyntheticError, match="TOPIC_NOT_REDACTION"):
+        execute_synthetic_field_redaction(db, receipt)
+    assert db.query(CustomerStoreProfile).filter(
+        CustomerStoreProfile.external_customer_id == "700"
+    ).count() == 2
