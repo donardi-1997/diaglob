@@ -17,7 +17,7 @@ A valid request returns a PII-free receipt; the API never returns decrypted sele
 
 ## Persistence
 
-Table: `shopify_privacy_requests`; migration: `a4e5f6a7b8c9` (after `z2b3c4d5e6f7`).
+Table: `shopify_privacy_requests`; migration: `a4e5f6a7b8c9` (after `b4d5e6f7g8h9`).
 
 Important: The receipt must survive merchant disconnects. This table deliberately has no ON DELETE CASCADE on organization/store references. Identifiers are nullable on uninstalled/unknown shops; missing tenant mapping needs human review before executing any privacy operation.
 
