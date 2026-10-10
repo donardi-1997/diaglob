@@ -98,7 +98,7 @@ def assess_shopify_privacy_case(
             scope_status = (
                 "subject_unresolved"
                 if scope.scope_status == "subject_unresolved"
-                else "scope_reviewed"
+                else "scope_preview_only"
             )
             verified_scope = scope.scope_status != "subject_unresolved"
             counts = (
