@@ -115,6 +115,40 @@ def inspect_rag(agent: Any, vectors: Any) -> dict:
     }
 
 
+
+
+def readiness_findings(checks: dict[str, dict]) -> list[str]:
+    """Derive operational warnings; an unknown check is never interpreted as OK."""
+    findings = []
+    lightsail = checks.get("lightsail", {})
+    if lightsail.get("state") == "verified":
+        if not lightsail.get("automatic_snapshot_addon_enabled"):
+            findings.append("LIGHTSAIL_AUTOSNAPSHOT_DISABLED")
+        if (
+            lightsail.get("automatic_snapshot_count") == 0
+            and lightsail.get("manual_snapshot_count") == 0
+        ):
+            findings.append("NO_VERIFIED_LIGHTSAIL_RECOVERY_POINT")
+
+    s3 = checks.get("s3", {})
+    if s3.get("state") == "verified":
+        if s3.get("versioning") == "Enabled" and not s3.get("lifecycle_configured"):
+            findings.append("VERSIONED_S3_WITHOUT_LIFECYCLE")
+        if (
+            s3.get("current_object_count_on_page") == 0
+            and not s3.get("current_objects_truncated")
+        ):
+            findings.append("KNOWLEDGE_SOURCE_BUCKET_EMPTY")
+
+    bedrock = checks.get("bedrock", {})
+    if bedrock.get("state") == "verified":
+        indexes = bedrock.get("knowledge_bases", [])
+        if indexes and not bedrock.get("knowledge_bases_truncated"):
+            if all(index.get("has_vectors") is False for index in indexes):
+                findings.append("ALL_DIAGLOB_VECTOR_INDEXES_EMPTY")
+    return sorted(findings)
+
+
 def audit(session: Any, *, region: str, instance: str, bucket: str) -> dict:
     """Read-only independent checks; failures must be visible, not hidden."""
     results: dict[str, dict] = {}
@@ -143,6 +177,7 @@ def audit(session: Any, *, region: str, instance: str, bucket: str) -> dict:
         "instance": instance,
         "bucket": bucket,
         "checks": results,
+        "findings": readiness_findings(results),
         "production_changes": False,
         "privacy_fulfillment_authorized": False,
     }
@@ -165,10 +200,12 @@ def main() -> int:
         bucket=args.bucket,
     )
     print(json.dumps(report, sort_keys=True, indent=2))
-    return 0 if all(
-        result.get("state") == "verified"
+    if any(
+        result.get("state") != "verified"
         for result in report["checks"].values()
-    ) else 2
+    ):
+        return 2
+    return 1 if report["findings"] else 0
 
 
 if __name__ == "__main__":
