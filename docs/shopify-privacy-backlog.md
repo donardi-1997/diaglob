@@ -19,6 +19,7 @@ Returns only aggregated counts per Shopify topic:
 - Requests older than the **nominal 30-day** Shopify deadline.
 - Requests within the seven-day warning window.
 - Requests whose tenant/store mapping was unavailable at intake.
+- Unexpected topic receipts requiring manual data-integrity review.
 - Age (days) of the oldest unresolved request.
 
 No customer names, domains, emails, Shopify shop IDs, receipt identifiers,
@@ -27,9 +28,12 @@ used; the endpoint does not decrypt fields, fetch customer profiles,
 perform exports, approve retention exceptions, remove records or update
 request statuses.
 
-Only a documented terminal status is excluded; pending policy review,
-manual review and legal holds remain outstanding. A legal retention exemption
-must be assessed and documented separately. The 30-day timer is only a
+Until an authenticated, audited real fulfillment workflow exists, **every**
+receipt remains outstanding, even if a database status field is set to
+"completed", "exported" or "redacted". Unknown topics are included in totals
+and counted separately, without exposing the topic value. Pending policy
+review, manual review and legal holds always remain outstanding. A legal
+retention exemption must be assessed and documented separately. The 30-day timer is only a
 **monitoring threshold** from receipt time. Real legal deadlines and owner
 responsibilities require independent approval.
 
