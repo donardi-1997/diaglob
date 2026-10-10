@@ -5040,6 +5040,16 @@ class TestShopifyWebhookSubscriptions:
                 "userErrors": [],
             }
         }
+        create_uninstall = {
+            "webhookSubscriptionCreate": {
+                "webhookSubscription": {
+                    "id": "gid://shopify/WebhookSubscription/4",
+                    "topic": "APP_UNINSTALLED",
+                    "uri": "https://api.diaglob.tech/api/webhooks/shopify/uninstalled",
+                },
+                "userErrors": [],
+            }
+        }
 
         with patch(
             "app.shopify_webhook_subscriptions.decrypt_shopify_secret",
@@ -5050,6 +5060,7 @@ class TestShopifyWebhookSubscriptions:
                 existing,
                 create_updated,
                 create_cancelled,
+                create_uninstall,
             ],
         ) as query:
             response = client.post(
@@ -5063,13 +5074,17 @@ class TestShopifyWebhookSubscriptions:
         assert [item["topic"] for item in data["created"]] == [
             "ORDERS_UPDATED",
             "ORDERS_CANCELLED",
+            "APP_UNINSTALLED",
         ]
         # Required privacy topics are configured at app level, never through
         # shop-scoped GraphQL mutations on connect/reconnect.
-        assert query.call_count == 3
+        assert query.call_count == 4
         assert [
             call.args[1]["topic"] for call in query.call_args_list[1:]
-        ] == ["ORDERS_UPDATED", "ORDERS_CANCELLED"]
+        ] == ["ORDERS_UPDATED", "ORDERS_CANCELLED", "APP_UNINSTALLED"]
+        assert query.call_args_list[-1].args[1]["webhookSubscription"]["uri"] == (
+            "https://api.diaglob.tech/api/webhooks/shopify/uninstalled"
+        )
 
     def test_ensure_webhooks_provider_error_is_visible_and_recorded(
         self,
