@@ -9,7 +9,6 @@ import {
   Menu,
   Moon,
   ShoppingBag,
-  Sparkles,
   Sun,
   X,
   type LucideIcon,
