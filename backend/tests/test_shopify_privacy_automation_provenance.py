@@ -195,3 +195,80 @@ def test_tenant_unresolved_and_malformed_selector_fail_closed(scenario):
     )
     with pytest.raises(ShopifyPrivacyScopeError, match="CUSTOMER_ID_REQUIRED"):
         inspect_shopify_automation_privacy_impact(db, receipt)
+
+
+def test_same_store_different_customer_is_excluded_but_shop_scope_counts_both(
+    scenario,
+):
+    db, receipt = scenario
+    target_store_id = receipt.store_id
+    separate = Customer(
+        organization_id=receipt.organization_id,
+        name="Unrelated customer",
+        phone="synthetic-2",
+    )
+    db.add(separate)
+    db.flush()
+    db.add(CustomerStoreProfile(
+        organization_id=receipt.organization_id,
+        store_id=target_store_id,
+        customer_id=separate.id,
+        external_customer_id="701",
+        currency="COP",
+    ))
+    campaign = db.query(AutomationCampaign).filter(
+        AutomationCampaign.store_id == target_store_id,
+    ).one()
+    campaign_run = db.query(AutomationRun).filter(
+        AutomationRun.automation_id == campaign.id,
+    ).one()
+    db.add(AutomationAudienceMember(
+        automation_id=campaign.id, customer_id=separate.id,
+    ))
+    recipient = AutomationRecipientExecution(
+        run_id=campaign_run.id, customer_id=separate.id,
+        status="sent", rendered_message="PRIVATE_DIFFERENT_SUBJECT",
+    )
+    db.add(recipient)
+    db.flush()
+    db.add(AutomationDeliveryAttempt(
+        recipient_execution_id=recipient.id,
+        attempt_number=1, status="sent",
+    ))
+    flow_run = db.query(AutomationFlowRun).filter(
+        AutomationFlowRun.store_id == target_store_id,
+    ).one()
+    flow_recipient = AutomationFlowRecipientExecution(
+        flow_run_id=flow_run.id,
+        flow_version_id=flow_run.flow_version_id,
+        organization_id=receipt.organization_id,
+        customer_id=separate.id,
+        status="active",
+    )
+    db.add(flow_recipient)
+    db.flush()
+    db.add(AutomationNodeExecution(
+        flow_recipient_execution_id=flow_recipient.id,
+        node_id="other-node", node_type="message",
+    ))
+    db.commit()
+
+    customer_scope = inspect_shopify_automation_privacy_impact(db, receipt)
+    assert (
+        customer_scope.audience_members,
+        customer_scope.campaign_recipients,
+        customer_scope.delivery_attempts,
+        customer_scope.flow_recipients,
+        customer_scope.flow_node_executions,
+    ) == (1, 1, 1, 1, 1)
+
+    receipt.topic = "shop/redact"
+    shop_scope = inspect_shopify_automation_privacy_impact(db, receipt)
+    assert (
+        shop_scope.audience_members,
+        shop_scope.campaign_recipients,
+        shop_scope.delivery_attempts,
+        shop_scope.flow_recipients,
+        shop_scope.flow_node_executions,
+    ) == (2, 2, 2, 2, 2)
+    assert shop_scope.complete is False
