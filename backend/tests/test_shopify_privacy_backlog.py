@@ -58,11 +58,11 @@ def test_overdue_soon_and_unmapped_are_grouped_without_identifiers(sandbox):
              status="completed")
     sandbox.commit()
     result = summarize_shopify_privacy_backlog(sandbox, now=now).safe_dict()
-    assert result["outstanding_total"] == 3
-    assert result["overdue_total"] == 1
+    assert result["outstanding_total"] == 4
+    assert result["overdue_total"] == 2
     assert result["due_within_7_days_total"] == 1
     assert result["tenant_unresolved_total"] == 1
-    assert result["oldest_outstanding_days"] == 31
+    assert result["oldest_outstanding_days"] == 40
     assert result["fulfillment_target_days"] == 30
     assert result["live_processing_ready"] is False
     assert result["topics"] == [
@@ -70,7 +70,7 @@ def test_overdue_soon_and_unmapped_are_grouped_without_identifiers(sandbox):
          "due_within_7_days": 1, "tenant_unresolved": 1},
         {"topic": "customers/redact", "outstanding": 1, "overdue": 0,
          "due_within_7_days": 0, "tenant_unresolved": 0},
-        {"topic": "shop/redact", "outstanding": 0, "overdue": 0,
+        {"topic": "shop/redact", "outstanding": 1, "overdue": 1,
          "due_within_7_days": 0, "tenant_unresolved": 0},
     ]
     output = str(result)
@@ -132,3 +132,19 @@ def test_internal_auth_returns_only_aggregates(sandbox, monkeypatch):
     assert "shop_id" not in str(snapshot)
     assert "shop_domain" not in str(snapshot)
     assert "selector_encrypted" not in str(snapshot)
+
+
+def test_unexpected_topic_never_disappears_from_backlog(sandbox):
+    now = datetime(2026, 10, 10, 12, 0)
+    _receipt(
+        sandbox, n=6, topic="future_topic_needs_review",
+        age_days=32, now=now, status="exported",
+    )
+    sandbox.commit()
+    metrics = summarize_shopify_privacy_backlog(sandbox, now=now).safe_dict()
+    assert metrics["outstanding_total"] == 1
+    assert metrics["overdue_total"] == 1
+    assert metrics["unrecognized_topic_total"] == 1
+    assert metrics["oldest_outstanding_days"] == 32
+    assert all(item["outstanding"] == 0 for item in metrics["topics"])
+    assert "future_topic_needs_review" not in str(metrics)
