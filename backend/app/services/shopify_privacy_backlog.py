@@ -16,16 +16,10 @@ from sqlalchemy.orm import Session
 from ..models import ShopifyPrivacyRequest
 
 
-# Only documented terminal fulfillment states may be removed from a backlog.
-# None of these states is currently reachable from DIAGLOB's synthetic-only
-# review workflow. In particular, "manual_review_required" and retention/legal
-# holds MUST remain outstanding until there is verified completion evidence.
-TERMINAL_PRIVACY_STATUSES = frozenset({
-    "completed",
-    "fulfilled",
-    "redacted",
-    "exported",
-})
+# No real-data fulfillment workflow is enabled. A status string such as
+# "completed" is NOT evidence that a request was fulfilled. Until a verified
+# processing and completion path is implemented, every recorded receipt stays
+# in the outstanding backlog, even if its status text was manually changed.
 SHOPIFY_FULFILLMENT_DAYS = 30
 ALERT_WINDOW_DAYS = 7
 COMPLIANCE_TOPICS = (
@@ -50,6 +44,7 @@ class PrivacyBacklogSummary:
     overdue_total: int
     due_within_7_days_total: int
     tenant_unresolved_total: int
+    unrecognized_topic_total: int
     oldest_outstanding_days: int | None
     fulfillment_target_days: int
     live_processing_ready: bool
@@ -115,16 +110,19 @@ def summarize_shopify_privacy_backlog(
             ).label("unresolved"),
             func.min(ShopifyPrivacyRequest.created_at).label("oldest"),
         )
-        .filter(
-            ~ShopifyPrivacyRequest.status.in_(TERMINAL_PRIVACY_STATUSES)
-        )
         .group_by(ShopifyPrivacyRequest.topic)
         .all()
     )
 
     by_topic = {row.topic: row for row in rows}
+    unrecognized = tuple(
+        row for row in rows if row.topic not in COMPLIANCE_TOPICS
+    )
     summaries = []
-    oldest = None
+    oldest = min(
+        (row.oldest for row in rows if row.oldest is not None),
+        default=None,
+    )
     for topic in COMPLIANCE_TOPICS:
         row = by_topic.get(topic)
         if row is None:
@@ -139,14 +137,13 @@ def summarize_shopify_privacy_backlog(
                 tenant_unresolved=int(row.unresolved or 0),
             )
         )
-        if row.oldest is not None and (oldest is None or row.oldest < oldest):
-            oldest = row.oldest
 
     return PrivacyBacklogSummary(
-        outstanding_total=sum(item.outstanding for item in summaries),
-        overdue_total=sum(item.overdue for item in summaries),
-        due_within_7_days_total=sum(item.due_within_7_days for item in summaries),
-        tenant_unresolved_total=sum(item.tenant_unresolved for item in summaries),
+        outstanding_total=sum(int(row.outstanding or 0) for row in rows),
+        overdue_total=sum(int(row.overdue or 0) for row in rows),
+        due_within_7_days_total=sum(int(row.due_soon or 0) for row in rows),
+        tenant_unresolved_total=sum(int(row.unresolved or 0) for row in rows),
+        unrecognized_topic_total=sum(int(row.outstanding or 0) for row in unrecognized),
         oldest_outstanding_days=(
             max(0, (reference - oldest).days) if oldest is not None else None
         ),
