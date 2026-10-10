@@ -21,6 +21,7 @@ from ..models import (
     Store,
 )
 from ..shopify_oauth import normalize_shop_domain
+from ..model_domains.conversational_checkout import ConversationalCheckout
 from ..shopify_security import decrypt_shopify_secret
 
 
@@ -35,6 +36,7 @@ class ShopifyPrivacyScopePreview:
     matched_customer_profiles: int
     matched_store_orders: int
     matched_store_conversations: int
+    matched_conversational_checkouts: int
     shared_customers_protected: int
     scope_status: str
     # Deliberately excludes customer names, emails, phone, address and row IDs.
@@ -132,6 +134,10 @@ def preview_shopify_privacy_scope(
             Conversation.organization_id == receipt.organization_id,
             Conversation.store_id == receipt.store_id,
         ).scalar() or 0
+        checkouts = db.query(func.count(ConversationalCheckout.id)).filter(
+            ConversationalCheckout.organization_id == receipt.organization_id,
+            ConversationalCheckout.store_id == receipt.store_id,
+        ).scalar() or 0
     elif customer_ids:
         orders = db.query(func.count(Order.id)).filter(
             Order.organization_id == receipt.organization_id,
@@ -143,9 +149,15 @@ def preview_shopify_privacy_scope(
             Conversation.store_id == receipt.store_id,
             Conversation.customer_id.in_(customer_ids),
         ).scalar() or 0
+        checkouts = db.query(func.count(ConversationalCheckout.id)).filter(
+            ConversationalCheckout.organization_id == receipt.organization_id,
+            ConversationalCheckout.store_id == receipt.store_id,
+            ConversationalCheckout.customer_id.in_(customer_ids),
+        ).scalar() or 0
     else:
         orders = 0
         conversations = 0
+        checkouts = 0
 
     return ShopifyPrivacyScopePreview(
         topic=receipt.topic,
@@ -153,6 +165,7 @@ def preview_shopify_privacy_scope(
         matched_customer_profiles=profile_count,
         matched_store_orders=int(orders),
         matched_store_conversations=int(conversations),
+        matched_conversational_checkouts=int(checkouts),
         shared_customers_protected=int(other_store_profile_count),
         scope_status=scope,
     )
