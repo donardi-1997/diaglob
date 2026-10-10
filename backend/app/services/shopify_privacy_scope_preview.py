@@ -15,13 +15,13 @@ from sqlalchemy.orm import Session
 from ..models import (
     CommerceConnection,
     Conversation,
-    ConversationalCheckout,
     CustomerStoreProfile,
     Order,
     ShopifyPrivacyRequest,
     Store,
 )
 from ..shopify_oauth import normalize_shop_domain
+from ..model_domains.conversational_checkout import ConversationalCheckout
 from ..shopify_security import decrypt_shopify_secret
 
 

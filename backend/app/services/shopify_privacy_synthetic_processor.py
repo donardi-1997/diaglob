@@ -14,13 +14,13 @@ from sqlalchemy.orm import Session
 
 from ..models import (
     Conversation,
-    ConversationalCheckout,
     CustomerStoreProfile,
     Message,
     Order,
     OrderItem,
     ShopifyPrivacyRequest,
 )
+from ..model_domains.conversational_checkout import ConversationalCheckout
 from ..shopify_security import decrypt_shopify_secret, encrypt_shopify_secret
 from .shopify_privacy_scope_preview import (
     ShopifyPrivacyScopeError,

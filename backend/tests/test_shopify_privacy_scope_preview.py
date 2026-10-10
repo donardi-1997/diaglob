@@ -326,7 +326,8 @@ def test_synthetic_field_redaction_rejects_data_request_topic(setup, monkeypatch
 def _add_two_synthetic_checkouts(db, receipt):
     """Shared organization customer, different Shopify stores, distinct PII."""
     from datetime import datetime, timedelta
-    from app.models import ConversationalCheckout, Conversation, Store
+    from app.model_domains.conversational_checkout import ConversationalCheckout
+    from app.models import Conversation, Store
 
     customer = db.query(Customer).one()
     stores = db.query(Store).order_by(Store.id).all()
