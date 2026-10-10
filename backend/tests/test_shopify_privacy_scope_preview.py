@@ -102,6 +102,7 @@ def test_synthetic_export_encrypts_only_requested_store_data(setup, monkeypatch)
         title="Synthetic product",
         quantity=1,
         unit_price=4,
+        currency="COP",
     ))
     profile = db.query(CustomerStoreProfile).filter(
         CustomerStoreProfile.store_id == receipt.store_id
