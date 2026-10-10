@@ -52,7 +52,9 @@ class PrivacyBacklogSummary:
 
     def safe_dict(self) -> dict:
         """Expose metrics only, never shop/customer/request identifiers."""
-        return asdict(self)
+        data = asdict(self)
+        data["topics"] = list(data["topics"])
+        return data
 
 
 def summarize_shopify_privacy_backlog(
