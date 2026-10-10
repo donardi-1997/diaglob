@@ -5290,9 +5290,16 @@ class TestShopifyUninstallLifecycle:
                     if k != "X-Shopify-Triggered-At"
                 },
             )
+            missing_domain_body = json.dumps({"id": 97531}).encode()
+            _, missing_domain_headers = self._headers(missing_domain_body)
+            missing_signed_domain = client.post(
+                "/api/webhooks/shopify/uninstalled",
+                content=missing_domain_body, headers=missing_domain_headers,
+            )
         assert unsigned.status_code == 401
         assert mismatch.status_code == 400
         assert missing_timestamp.status_code == 400
+        assert missing_signed_domain.status_code == 400
         db.expire_all()
         assert db.query(CommerceConnection).one().status == "connected"
 
