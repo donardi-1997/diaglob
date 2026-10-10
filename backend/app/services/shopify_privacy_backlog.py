@@ -82,7 +82,7 @@ def summarize_shopify_privacy_backlog(
             func.count(ShopifyPrivacyRequest.id).label("outstanding"),
             func.sum(
                 case(
-                    (ShopifyPrivacyRequest.created_at < overdue_before, 1),
+                    (ShopifyPrivacyRequest.created_at <= overdue_before, 1),
                     else_=0,
                 )
             ).label("overdue"),
@@ -90,7 +90,7 @@ def summarize_shopify_privacy_backlog(
                 case(
                     (
                         and_(
-                            ShopifyPrivacyRequest.created_at >= overdue_before,
+                            ShopifyPrivacyRequest.created_at > overdue_before,
                             ShopifyPrivacyRequest.created_at <= expiring_before,
                         ),
                         1,
