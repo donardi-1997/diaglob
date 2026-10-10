@@ -249,6 +249,10 @@
   ],
   [
     "GET",
+    "/api/internal/shopify/privacy/cases"
+  ],
+  [
+    "GET",
     "/api/knowledge-bases"
   ],
   [
