@@ -13,6 +13,17 @@ from typing import Any
 
 import httpx
 
+from ..shopify_client import ShopifyGraphQLClient
+from ..shopify_oauth import normalize_shop_domain
+from ..shopify_security import decrypt_shopify_secret
+
+
+SHOP_IDENTITY_QUERY = """
+query DiaglobShopIdentity {
+  shop { id myshopifyDomain }
+}
+"""
+
 
 APP_GID_RE = re.compile(r"^gid://shopify/App/[0-9]+$")
 SHOP_GID_RE = re.compile(r"^gid://shopify/Shop/[0-9]+$")
@@ -53,6 +64,46 @@ class ShopifySubscriptionSnapshot:
     trial_ends_at: str | None = None
     current_cycle_end: str | None = None
     cancel_at_end_of_cycle: bool = False
+
+
+def resolve_trusted_shop_gid(connection: Any) -> str:
+    """Get the verified Shop GID from an authenticated, connected store token.
+
+    This function does not authorize a DIAGLOB user: the caller must first
+    authorize tenant/store access and load the matching CommerceConnection.
+    A merchant-provided domain or plan redirect alone cannot authenticate a
+    Shopify shop or its subscription.
+    """
+    if (
+        getattr(connection, "provider", None) != "shopify"
+        or getattr(connection, "status", None) != "connected"
+    ):
+        raise ShopifyAppPricingError("SHOPIFY_CONNECTION_NOT_VERIFIED")
+    try:
+        domain = normalize_shop_domain(connection.external_store_url)
+        token = decrypt_shopify_secret(connection.access_token_encrypted)
+        response = ShopifyGraphQLClient(
+            shop_domain=domain,
+            access_token=token,
+        ).query(SHOP_IDENTITY_QUERY)
+    except (ValueError, RuntimeError, AttributeError) as exc:
+        raise ShopifyAppPricingError("SHOPIFY_IDENTITY_UNAVAILABLE") from exc
+    except Exception as exc:
+        raise ShopifyAppPricingError("SHOPIFY_IDENTITY_UNAVAILABLE") from exc
+
+    shop = response.get("shop") if isinstance(response, dict) else None
+    if not isinstance(shop, dict):
+        raise ShopifyAppPricingError("SHOPIFY_IDENTITY_INVALID")
+    shop_gid = shop.get("id")
+    try:
+        response_domain = normalize_shop_domain(shop.get("myshopifyDomain") or "")
+    except (ValueError, AttributeError) as exc:
+        raise ShopifyAppPricingError("SHOPIFY_IDENTITY_INVALID") from exc
+    if not isinstance(shop_gid, str) or not SHOP_GID_RE.fullmatch(shop_gid):
+        raise ShopifyAppPricingError("SHOPIFY_IDENTITY_INVALID")
+    if response_domain != domain:
+        raise ShopifyAppPricingError("SHOPIFY_IDENTITY_MISMATCH")
+    return shop_gid
 
 
 def _configuration() -> tuple[str, str, str]:
