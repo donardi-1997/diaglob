@@ -1,14 +1,14 @@
 """add durable Shopify privacy request inbox
 
 Revision ID: a4e5f6a7b8c9
-Revises: z2b3c4d5e6f7
+Revises: b4d5e6f7g8h9
 Create Date: 2026-10-10
 """
 from alembic import op
 import sqlalchemy as sa
 
 revision = "a4e5f6a7b8c9"
-down_revision = "z2b3c4d5e6f7"
+down_revision = "b4d5e6f7g8h9"
 branch_labels = None
 depends_on = None
 
