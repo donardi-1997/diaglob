@@ -134,8 +134,8 @@ def test_customer_data_request_is_store_wide_only_not_buyer_attribution(scenario
         "PRIVATE_STRUCTURED_CONTENT", "PRIVATE_RESULT", "synthetic0",
     ):
         assert confidential not in output
-    assert db.dirty == set()
-    assert db.deleted == set()
+    assert not db.dirty
+    assert not db.deleted
 
 
 def test_customer_redact_does_not_attribute_merchant_chat_to_customer(scenario):
