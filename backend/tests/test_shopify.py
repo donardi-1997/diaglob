@@ -5331,3 +5331,29 @@ class TestShopifyUninstallLifecycle:
                 "test-store.myshopify.com",
             )
         assert db.query(CommerceConnection).one().organization_id == org.id
+
+
+    def test_signed_uninstall_revokes_connection_even_after_shopify_api_error(
+        self, client, db, shopify_connection,
+    ):
+        import json
+        from datetime import datetime, timedelta
+
+        shopify_connection.status = "error"
+        shopify_connection.connected_at = datetime.utcnow() - timedelta(days=2)
+        db.commit()
+        body = json.dumps({
+            "id": 97531, "myshopify_domain": "test-store.myshopify.com"
+        }).encode()
+        secret, headers = self._headers(body)
+        with patch.dict(os.environ, {"SHOPIFY_CLIENT_SECRET": secret}):
+            response = client.post(
+                "/api/webhooks/shopify/uninstalled",
+                content=body, headers=headers,
+            )
+        assert response.status_code == 200
+        assert response.json()["action"] == "revoked"
+        db.expire_all()
+        connection = db.query(CommerceConnection).one()
+        assert connection.status == "revoked"
+        assert connection.access_token_encrypted is None
