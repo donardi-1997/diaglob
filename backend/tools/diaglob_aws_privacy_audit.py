@@ -45,10 +45,16 @@ def inspect_s3(client: Any, bucket: str) -> dict:
             "Rules", []
         )
         lifecycle_configured = bool(rules)
+        active_noncurrent_rules = sum(
+            rule.get("Status") == "Enabled"
+            and bool(rule.get("NoncurrentVersionExpiration"))
+            for rule in rules
+        )
     except ClientError as exc:
         if _aws_code(exc) != NO_LIFECYCLE:
             raise
         lifecycle_configured = False
+        active_noncurrent_rules = 0
 
     # Intentionally inspect only one bounded metadata page. Never print keys.
     current = client.list_objects_v2(Bucket=bucket, MaxKeys=1000)
@@ -58,6 +64,7 @@ def inspect_s3(client: Any, bucket: str) -> dict:
         "state": "verified",
         "versioning": status or "Unversioned",
         "lifecycle_configured": lifecycle_configured,
+        "active_noncurrent_expiration_rule_count": active_noncurrent_rules,
         "current_object_count_on_page": len(current.get("Contents", [])),
         "current_objects_truncated": bool(current.get("IsTruncated")),
         "noncurrent_versions_on_page": sum(
@@ -132,8 +139,11 @@ def readiness_findings(checks: dict[str, dict]) -> list[str]:
 
     s3 = checks.get("s3", {})
     if s3.get("state") == "verified":
-        if s3.get("versioning") == "Enabled" and not s3.get("lifecycle_configured"):
-            findings.append("VERSIONED_S3_WITHOUT_LIFECYCLE")
+        if (
+            s3.get("versioning") == "Enabled"
+            and not s3.get("active_noncurrent_expiration_rule_count")
+        ):
+            findings.append("VERSIONED_S3_WITHOUT_NONCURRENT_EXPIRATION")
         if (
             s3.get("current_object_count_on_page") == 0
             and not s3.get("current_objects_truncated")
