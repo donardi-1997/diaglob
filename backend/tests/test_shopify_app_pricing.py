@@ -1,5 +1,7 @@
 """Shopify App Pricing verification must never authorize charges by itself."""
 import json
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import httpx
 import pytest
@@ -7,6 +9,7 @@ import pytest
 from app.services.shopify_app_pricing import (
     ShopifyAppPricingError,
     get_active_shopify_subscription,
+    resolve_trusted_shop_gid,
 )
 
 
@@ -116,3 +119,66 @@ def test_paddle_registry_remains_default():
 
     assert "paddle" in registered_billing_providers()
     assert get_billing_provider().name == "paddle"
+
+def test_trusted_shop_gid_resolved_with_authenticated_store_token():
+    connection = SimpleNamespace(
+        provider="shopify",
+        status="connected",
+        external_store_url="some-store.myshopify.com",
+        access_token_encrypted="encrypted-token",
+    )
+    with patch(
+        "app.services.shopify_app_pricing.decrypt_shopify_secret",
+        return_value="access-token",
+    ), patch(
+        "app.services.shopify_app_pricing.ShopifyGraphQLClient"
+    ) as client:
+        client.return_value.query.return_value = {
+            "shop": {
+                "id": "gid://shopify/Shop/123",
+                "myshopifyDomain": "some-store.myshopify.com",
+            }
+        }
+        gid = resolve_trusted_shop_gid(connection)
+    assert gid == "gid://shopify/Shop/123"
+    client.assert_called_once_with(
+        shop_domain="some-store.myshopify.com",
+        access_token="access-token",
+    )
+
+
+@pytest.mark.parametrize(
+    "returned_shop",
+    [
+        {"id": "gid://shopify/Shop/123", "myshopifyDomain": "other.myshopify.com"},
+        {"id": "not-a-gid", "myshopifyDomain": "some-store.myshopify.com"},
+        {},
+    ],
+)
+def test_shop_gid_rejects_mismatched_or_invalid_admin_identity(returned_shop):
+    connection = SimpleNamespace(
+        provider="shopify",
+        status="connected",
+        external_store_url="some-store.myshopify.com",
+        access_token_encrypted="token",
+    )
+    with patch(
+        "app.services.shopify_app_pricing.decrypt_shopify_secret",
+        return_value="access-token",
+    ), patch(
+        "app.services.shopify_app_pricing.ShopifyGraphQLClient"
+    ) as client:
+        client.return_value.query.return_value = {"shop": returned_shop}
+        with pytest.raises(ShopifyAppPricingError):
+            resolve_trusted_shop_gid(connection)
+
+
+def test_disconnected_shopify_connection_cannot_verify_subscription():
+    connection = SimpleNamespace(
+        provider="shopify",
+        status="disconnected",
+        external_store_url="some-store.myshopify.com",
+        access_token_encrypted="token",
+    )
+    with pytest.raises(ShopifyAppPricingError, match="NOT_VERIFIED"):
+        resolve_trusted_shop_gid(connection)
