@@ -56,6 +56,7 @@ const AgentsPage = lazy(() => import("./pages/AgentsPage"));
 const TeamPage = lazy(() => import("./pages/TeamPage"));
 const KnowledgeBasesPage = lazy(() => import("./pages/KnowledgeBasesPage"));
 const StoresPage = lazy(() => import("./pages/StoresPage"));
+const ShopifyInstallPage = lazy(() => import("./pages/ShopifyInstallPage"));
 const PlansPage = lazy(() => import("./pages/PlansPage"));
 const PublicLandingPage = lazy(() => import("./pages/PublicLandingPage"));
 const LegalPage = lazy(() => import("./pages/LegalPage"));
@@ -611,6 +612,24 @@ function App() {
         }
       />
       <Route path="/refund" element={<Navigate to="/refund-policy" replace />} />
+      <Route
+        path="/shopify/install"
+        element={
+          !authenticated ? (
+            <Navigate
+              to="/login"
+              replace
+              state={{ returnTo: `${location.pathname}${location.search}` }}
+            />
+          ) : !sessionReady ? (
+            <LoadingScreen session />
+          ) : (
+            <Suspense fallback={<LoadingScreen />}>
+              <ShopifyInstallPage canWrite={can("stores.write")} />
+            </Suspense>
+          )
+        }
+      />
       <Route
         path="/app/*"
         element={
