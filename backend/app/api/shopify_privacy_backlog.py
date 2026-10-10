@@ -10,6 +10,10 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..services.shopify_privacy_backlog import summarize_shopify_privacy_backlog
 from ..services.shopify_privacy_case_queue import list_shopify_privacy_cases
+from ..services.shopify_privacy_case_assessment import (
+    ShopifyPrivacyAssessmentError,
+    assess_shopify_privacy_case,
+)
 
 router = APIRouter()
 
@@ -45,3 +49,20 @@ def get_shopify_privacy_cases(
     """Bounded operational queue; never decrypt or export customer data."""
     _require_internal_secret(x_internal_secret)
     return list_shopify_privacy_cases(db, limit=limit, offset=offset)
+
+
+@router.get("/api/internal/shopify/privacy/cases/{request_id}/assessment")
+def get_shopify_privacy_case_assessment(
+    request_id: str,
+    x_internal_secret: str | None = Header(None, alias="X-Internal-Secret"),
+    db: Session = Depends(get_db),
+):
+    """Read signed-intake and store-scoped evidence; never release subject data."""
+    _require_internal_secret(x_internal_secret)
+    try:
+        assessment = assess_shopify_privacy_case(db, request_id=request_id)
+    except ShopifyPrivacyAssessmentError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if assessment is None:
+        raise HTTPException(status_code=404, detail="Privacy request not found")
+    return assessment.safe_dict()
