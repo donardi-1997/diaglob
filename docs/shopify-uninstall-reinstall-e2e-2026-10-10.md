@@ -5,7 +5,7 @@ Status: backend implementation for **signed** app lifecycle and same-tenant rein
 ## Implementation
 
 - After a successful OAuth connection or manual `POST /api/stores/{store_id}/shopify/webhooks/ensure`, register four shop-scoped webhook topics: `ORDERS_CREATE`, `ORDERS_UPDATED`, `ORDERS_CANCELLED` and `APP_UNINSTALLED`. The uninstall callback is `https://api.diaglob.tech/api/webhooks/shopify/uninstalled`; it is **not** one of the three mandatory privacy topics, which are configured separately at app level.
-- The uninstall callback requires **raw-body HMAC-SHA256 verification**, exact topic and canonical Shopify shop domain, positive shop ID, a valid `X-Shopify-Triggered-At`, and a request body of at most 256 KiB. Invalid signatures or mismatched identities cannot affect any connection.
+- The uninstall callback requires **raw-body HMAC-SHA256 verification**, exact topic and matching canonical Shopify shop domains in **both** the HMAC-signed payload and request header, positive shop ID, a valid `X-Shopify-Triggered-At`, and a request body of at most 256 KiB. Invalid signatures or mismatched identities cannot affect any connection.
 - `X-Shopify-Triggered-At` is compared to the persisted installation `connected_at` timestamp. A delayed uninstall older than the latest installation is acknowledged but **must not** revoke the reconnected shop.
 - On valid uninstall, retain the tenant/store binding for auditing, set connection `status=revoked`, clear Shopify token/refresh/API credentials, clear granted scopes, invalidate outstanding OAuth states for the store, and move `pending`/`retry` auto-fulfillment jobs to `waiting_shopify_reconnect`. It **does not** delete customers, orders, financial information or GDPR receipts, and **does not** settle billing.
 - After uninstall, only an authorized Diaglob user who owns the **same store** may request new OAuth for the **same canonical Shopify domain**. Other tenant/store/domain claims remain blocked even when the old connection is revoked. Successful OAuth refreshes `connected_at`; it never reuses the previous token.
@@ -16,7 +16,7 @@ Status: backend implementation for **signed** app lifecycle and same-tenant rein
 - Delivery-ID deduplication currently relies on terminal `revoked` state and timestamp guard. A new persistent event-ID ledger with replay investigation and a separate reconciliation strategy would improve auditability for full App Store readiness.
 - Shopify webhook processing is **not proof of personal-data deletion**, complete uninstall, or subscription cancellation. Must still complete production-ready GDPR processing and verify Shopify-managed subscription cancellation/reconciliation.
 - Do not automatically delete the existing `CommerceConnection`: preserving the original tenant/store/shop mapping prevents a foreign organization from claiming that Shopify domain after an uninstall.
-- A callback without a valid timestamp fails closed and does **not** disconnect the merchant; operational alerting/retry monitoring is required.
+- A callback without a valid timestamp or `myshopify_domain` in its **signed payload** fails closed and does **not** disconnect the merchant; operational alerting/retry monitoring is required. Shopify's generic documentation sample sometimes shows null fields; the real delivery shape must be verified in a development store before considering uninstall E2E complete.
 
 ## Development-store E2E acceptance
 
