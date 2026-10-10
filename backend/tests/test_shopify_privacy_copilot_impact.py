@@ -174,3 +174,17 @@ def test_invalid_shopify_event_cannot_probe_copilot_store(scenario):
     receipt.topic = "unknown/topic"
     with pytest.raises(ShopifyPrivacyScopeError, match="UNSUPPORTED_PRIVACY_TOPIC"):
         inspect_shopify_copilot_privacy_impact(db, receipt)
+
+
+def test_changing_buyer_identifier_does_not_change_store_wide_copilot_counts(
+    scenario,
+):
+    db, receipt = scenario
+    first = inspect_shopify_copilot_privacy_impact(db, receipt)
+    receipt.selector_encrypted = encrypt_shopify_secret(
+        json.dumps({"customer": {"id": 999999999}})
+    )
+    unknown_buyer = inspect_shopify_copilot_privacy_impact(db, receipt)
+    assert unknown_buyer == first
+    assert unknown_buyer.complete is False
+    assert unknown_buyer.content_review_required is True
