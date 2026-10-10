@@ -123,13 +123,19 @@ def start_oauth(
         .filter(CommerceConnection.store_id == store.id)
         .first()
     )
-    if existing_connection:
-        raise ShopifyConnectionError("COMMERCE_ALREADY_CONNECTED")
 
     try:
         normalized_shop = normalize_shop_domain(shop_domain)
     except ValueError as exc:
         raise ShopifyOAuthError("INVALID_SHOPIFY_DOMAIN") from exc
+
+    if existing_connection and not (
+        existing_connection.provider == "shopify"
+        and existing_connection.organization_id == organization_id
+        and existing_connection.external_store_url == normalized_shop
+        and existing_connection.status == "revoked"
+    ):
+        raise ShopifyConnectionError("COMMERCE_ALREADY_CONNECTED")
 
     conflicting = (
         db.query(CommerceConnection)
@@ -139,7 +145,9 @@ def start_oauth(
         )
         .first()
     )
-    if conflicting:
+    if conflicting is not None and (
+        existing_connection is None or conflicting.id != existing_connection.id
+    ):
         raise ShopifyConnectionError("SHOPIFY_STORE_ALREADY_CONNECTED")
 
     state = generate_oauth_state()
@@ -337,6 +345,7 @@ def process_oauth_callback(db: Session, query_params: dict) -> str:
         existing_connection.scopes = SHOPIFY_SCOPES
         existing_connection.status = "connected"
         existing_connection.last_error = None
+        existing_connection.connected_at = datetime.utcnow()
         existing_connection.updated_at = datetime.utcnow()
         (
             db.query(ShopifyOAuthState)
