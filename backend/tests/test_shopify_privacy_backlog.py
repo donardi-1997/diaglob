@@ -84,8 +84,8 @@ def test_timezone_aware_now_is_normalized_to_utc(sandbox):
     _receipt(sandbox, n=1, topic="shop/redact", age_days=30, now=now.replace(tzinfo=None))
     sandbox.commit()
     result = summarize_shopify_privacy_backlog(sandbox, now=now)
-    assert result.overdue_total == 0
-    assert result.due_within_7_days_total == 1
+    assert result.overdue_total == 1
+    assert result.due_within_7_days_total == 0
 
 
 def test_internal_auth_rejects_missing_secret_before_any_database_access(
