@@ -26,8 +26,13 @@ def _membership(*, role="owner", provider="shopify"):
 
 def _db(*connections):
     db = MagicMock()
-    db.query.return_value.join.return_value.filter.return_value.all.return_value = list(
-        connections
+    # Reconciliation now counts EVERY tenant Shopify binding before checking
+    # that its single selected Store is active and not deleted. Keep mocks
+    # aligned with the two independent read-only SQL queries.
+    scoped_query = db.query.return_value.filter.return_value
+    scoped_query.limit.return_value.all.return_value = list(connections)
+    scoped_query.first.return_value = SimpleNamespace(
+        id=23, active=True, deleted=False, organization_id=17
     )
     return db
 
