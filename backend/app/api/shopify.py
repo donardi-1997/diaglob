@@ -56,6 +56,10 @@ from ..services.shopify_webhook_service import (
 from ..services.shopify_compliance_webhooks import (
     process_shopify_compliance_webhook,
 )
+from ..services.shopify_oauth_callback_validation import (
+    ShopifyCallbackQueryError,
+    canonicalize_oauth_callback,
+)
 
 # Compliance payloads contain minimal customer/order selectors. The bounded
 # streaming read protects memory and rejects unexpectedly large signed payloads.
@@ -213,7 +217,15 @@ def shopify_oauth_callback(
     request: Request,
     db: Session = Depends(get_db),
 ):
-    query_params = dict(request.query_params)
+    # Never flatten duplicate query parameters: Starlette's dict conversion
+    # discards them before signature verification and OAuth state validation.
+    try:
+        query_params = canonicalize_oauth_callback(
+            list(request.query_params.multi_items()),
+            raw_query_bytes=len(request.scope.get("query_string", b"")),
+        )
+    except ShopifyCallbackQueryError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     try:
         redirect_url = svc_process_oauth_callback(db, query_params)
