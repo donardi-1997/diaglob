@@ -91,9 +91,11 @@ def inspect_rag(agent: Any, vectors: Any) -> dict:
         index_arn = storage.get("indexArn", "")
         bucket_arn = storage.get("vectorBucketArn", "")
         index_name = index_arn.rsplit("/index/", 1)[-1] if "/index/" in index_arn else None
+        # S3 Vectors bucket ARN format uses ":bucket/<name>", not
+        # "/bucket/<name>". A wrong delimiter silently hides empty indexes.
         bucket_name = (
-            bucket_arn.rsplit("/bucket/", 1)[-1]
-            if "/bucket/" in bucket_arn else None
+            bucket_arn.rsplit(":bucket/", 1)[-1]
+            if ":bucket/" in bucket_arn else None
         )
         sources = agent.list_data_sources(
             knowledgeBaseId=kb_id, maxResults=100
