@@ -53,3 +53,19 @@ def test_inventory_has_no_data_query_or_identity_fields():
     for sensitive_value in ("customer@example.com", "Bearer ", "secret-token"):
         assert sensitive_value not in output
     assert len({entry.table for entry in inventory.tables}) == len(inventory.tables)
+
+
+def test_automation_sources_are_explicitly_uncovered_even_with_count_preview():
+    inventory = inspect_shopify_privacy_coverage()
+    by_table = {entry.table: entry for entry in inventory.tables}
+    expected = (
+        "automations", "automation_executions", "automation_campaigns",
+        "automation_audience_members", "automation_runs",
+        "automation_recipient_executions", "automation_delivery_attempts",
+        "automation_flows", "automation_flow_versions",
+        "automation_flow_runs", "automation_flow_recipient_executions",
+        "automation_node_executions", "agent_chat_sessions",
+        "agent_chat_messages", "agent_chat_tool_calls",
+    )
+    assert all(by_table[name].coverage == "uncovered" for name in expected)
+    assert inventory.ready_for_live_privacy_processing is False
