@@ -44,3 +44,14 @@ test("post-auth redirects only allow local app destinations", () => {
   assert.equal(sanitizeReturnTo("//evil.example/app"), "/app");
   assert.equal(sanitizeReturnTo(null), "/app");
 });
+
+
+test("login round-trip preserves Shopify install only as a local safe path", () => {
+  assert.equal(
+    sanitizeReturnTo("/shopify/install?shop=sample.myshopify.com"),
+    "/shopify/install?shop=sample.myshopify.com",
+  );
+  assert.equal(sanitizeReturnTo("/shopify/install/evil"), "/app");
+  assert.equal(sanitizeReturnTo("//evil.example/shopify/install"), "/app");
+  assert.equal(sanitizeReturnTo("https://evil.example/shopify/install"), "/app");
+});
