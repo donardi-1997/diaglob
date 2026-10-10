@@ -245,6 +245,10 @@
   ],
   [
     "GET",
+    "/api/internal/shopify/privacy/backlog"
+  ],
+  [
+    "GET",
     "/api/knowledge-bases"
   ],
   [

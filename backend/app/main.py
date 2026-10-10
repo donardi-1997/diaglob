@@ -75,6 +75,7 @@ from .api.admin import router as admin_router  # noqa: E402
 from .api.automations import router as automations_router  # noqa: E402
 from .api.auth import router as auth_router  # noqa: E402
 from .api.billing import router as billing_router  # noqa: E402
+from .api.shopify_privacy_backlog import router as shopify_privacy_backlog_router  # noqa: E402
 from .api.ai_usage import router as ai_usage_router  # noqa: E402
 from .api.ai_agent import router as ai_agent_router  # noqa: E402
 from .api.ai_chat import router as ai_chat_router  # noqa: E402
@@ -125,6 +126,7 @@ app.include_router(payments_router)
 app.include_router(post_sales_router)
 app.include_router(google_router)
 app.include_router(billing_router)
+app.include_router(shopify_privacy_backlog_router)
 app.include_router(ai_usage_router)
 app.include_router(ai_agent_router)
 app.include_router(ai_chat_router)
