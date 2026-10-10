@@ -17,7 +17,7 @@ from sqlalchemy.pool import StaticPool
 from app.api.shopify import router
 from app.db import Base, get_db
 from app.main import app
-from app.models import ShopifyPrivacyRequest
+from app.models import ShopifyPrivacyAuditEvent, ShopifyPrivacyRequest
 from app.shopify_security import decrypt_shopify_secret
 from app.services.shopify_compliance_webhooks import (
     process_shopify_compliance_webhook,
@@ -176,6 +176,13 @@ class TestShopifyComplianceWebhooks:
             assert "private@example.com" not in record.selector_encrypted
             decoded = json.loads(decrypt_shopify_secret(record.selector_encrypted))
             assert decoded["customer"]["email"] == "private@example.com"
+            audits = session.query(ShopifyPrivacyAuditEvent).all()
+            assert len(audits) == 1
+            assert audits[0].request_id == record.request_id
+            assert audits[0].event_type == "received"
+            assert audits[0].to_status == "pending_policy_review"
+            assert audits[0].actor_type == "shopify_hmac_verified"
+            assert "private@example.com" not in str(audits[0].__dict__)
 
     def test_distinct_shopify_webhook_ids_do_not_collapse_requests(self, client):
         body = json.dumps({
