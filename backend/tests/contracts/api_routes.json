@@ -305,6 +305,10 @@
   ],
   [
     "GET",
+    "/api/shopify/install"
+  ],
+  [
+    "GET",
     "/api/stores"
   ],
   [
