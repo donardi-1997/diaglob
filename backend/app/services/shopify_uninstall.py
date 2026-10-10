@@ -51,8 +51,16 @@ def process_shopify_uninstall(
         raise ShopifyUninstallError("INVALID_SHOPIFY_UNINSTALL")
     try:
         domain = normalize_shop_domain(header_shop_domain or "")
+        # Header fields are not part of the raw-body HMAC. Require the
+        # canonical myshopify domain INSIDE the signed payload as well, so
+        # replaying another shop's delivery with a changed header cannot
+        # revoke a different tenant. Missing identity needs manual review.
         payload_domain = payload.get("myshopify_domain")
-        if payload_domain and normalize_shop_domain(payload_domain) != domain:
+        if (
+            not isinstance(payload_domain, str)
+            or not payload_domain
+            or normalize_shop_domain(payload_domain) != domain
+        ):
             raise ShopifyUninstallError("SHOPIFY_UNINSTALL_DOMAIN_MISMATCH")
     except (ValueError, AttributeError, TypeError) as exc:
         raise ShopifyUninstallError("SHOPIFY_UNINSTALL_DOMAIN_MISMATCH") from exc
