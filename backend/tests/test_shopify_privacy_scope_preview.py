@@ -125,6 +125,7 @@ def test_synthetic_export_encrypts_only_requested_store_data(setup, monkeypatch)
     assert result.completeness == "partial_requires_review"
     assert (result.profile_count, result.order_count) == (1, 1)
     assert (result.conversation_count, result.message_count) == (1, 1)
+    assert result.item_count == 1
     assert "SCOPED_ADDRESS" not in result.encrypted_payload
     assert "SCOPED_MESSAGE_PRIVATE" not in result.encrypted_payload
 
