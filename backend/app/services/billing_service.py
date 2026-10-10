@@ -286,6 +286,13 @@ def process_pending_downgrades(db: Session, now: datetime | None = None):
     results = []
 
     for organization in organizations:
+        if (organization.billing_provider or "").strip().lower() == "shopify":
+            # Pending legacy Paddle state must not mutate a managed Shopify plan.
+            results.append({
+                "organization_id": organization.id,
+                "status": "skipped_shopify_managed",
+            })
+            continue
         effective_at = organization.pending_plan_effective_at
         if not effective_at:
             continue

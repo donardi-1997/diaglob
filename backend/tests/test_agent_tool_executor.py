@@ -13,6 +13,8 @@ from app.models import (
     Order,
     Organization,
     OrganizationMembership,
+    Product,
+    ProductVariant,
     Store,
     User,
 )
@@ -123,6 +125,27 @@ def test_safe_read_tool_executes_without_approval(db):
     assert result["status"] == "success"
     assert result["result"]["count"] == 1
     assert result["result"]["items"][0]["id"] == order.id
+
+
+@pytest.mark.parametrize("price,stock,available,expected", [
+    (0, 10, True, False), (100, 0, True, False),
+    (100, 10, False, False), (100, 10, True, True),
+])
+def test_copilot_product_availability_requires_price_and_verified_stock(
+    db, price, stock, available, expected,
+):
+    membership, store, _ = seed(db)
+    product = Product(organization_id=membership.organization_id, store_id=store.id,
+                      title="Bakata product", active=True)
+    db.add(product)
+    db.flush()
+    db.add(ProductVariant(product_id=product.id, title="Default", price=price,
+                          currency="COP", inventory_quantity=stock, available=available))
+    db.commit()
+    result = execute_agent_tool(db, membership, tool_name="products.list",
+                                store_id=store.id, arguments={})
+    assert result["status"] == "success"
+    assert result["result"]["items"][0]["variants"][0]["available"] is expected
 
 
 def test_write_tool_requires_explicit_approval(db):

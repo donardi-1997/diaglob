@@ -165,6 +165,10 @@
   ],
   [
     "GET",
+    "/api/billing/shopify/reconciliation-preview"
+  ],
+  [
+    "GET",
     "/api/carriers"
   ],
   [
@@ -238,6 +242,10 @@
   [
     "GET",
     "/api/integrations/google/status"
+  ],
+  [
+    "GET",
+    "/api/internal/shopify/privacy/backlog"
   ],
   [
     "GET",
@@ -1038,6 +1046,10 @@
   [
     "POST",
     "/api/webhooks/shopify"
+  ],
+  [
+    "POST",
+    "/api/webhooks/shopify/compliance"
   ],
   [
     "POST",

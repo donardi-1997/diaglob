@@ -9,6 +9,7 @@ from .shopify_client import (
     ShopifyUserError,
 )
 from .shopify_security import decrypt_shopify_secret
+from .services.catalog_availability import variant_is_purchasable
 
 
 POC_TAGS = ["DIAGLOB_POC", "DIAGLOB_POC_API"]
@@ -83,6 +84,9 @@ def create_poc_order(
     )
     if existing:
         return _existing_response(existing)
+
+    if not variant_is_purchasable(variant, quantity):
+        raise ValueError("Shopify variant is not purchasable")
 
     order = Order(
         organization_id=store.organization_id,

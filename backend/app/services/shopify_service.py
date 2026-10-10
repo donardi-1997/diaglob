@@ -24,7 +24,9 @@ from ..shopify_oauth import (
     verify_shopify_hmac,
 )
 from ..shopify_security import encrypt_shopify_secret
-from ..shopify_webhook_subscriptions import ensure_shopify_order_webhooks
+from ..shopify_webhook_subscriptions import (
+    ensure_shopify_order_webhooks,
+)
 from .marketing_acquisition import record_lifecycle_conversion
 from .trial_service import (
     TrialIdentityAlreadyUsed,
@@ -313,7 +315,7 @@ def process_oauth_callback(db: Session, query_params: dict) -> str:
         try:
             ensure_shopify_order_webhooks(existing_connection)
             db.commit()
-        except ShopifyAPIError as exc:
+        except (ShopifyAPIError, ShopifyGraphQLError) as exc:
             existing_connection.last_error = (
                 "WEBHOOK_SUBSCRIPTION_FAILED: " + str(exc)[:400]
             )
@@ -403,7 +405,7 @@ def process_oauth_callback(db: Session, query_params: dict) -> str:
         ensure_shopify_order_webhooks(connection)
         connection.last_error = None
         db.commit()
-    except ShopifyAPIError as exc:
+    except (ShopifyAPIError, ShopifyGraphQLError) as exc:
         connection.last_error = (
             "WEBHOOK_SUBSCRIPTION_FAILED: "
             + str(exc)[:400]

@@ -67,6 +67,9 @@ def ensure_shopify_order_webhooks(
     callback URI are retained, while only missing subscriptions are created.
     """
 
+    # Mandatory GDPR topics are configured at app level (shopify.app.toml),
+    # not with GraphQL's shop-scoped webhookSubscriptionCreate mutation.
+
     token = decrypt_shopify_secret(
         connection.access_token_encrypted
     )
@@ -142,3 +145,5 @@ def ensure_shopify_order_webhooks(
         "retained": retained,
         "topics": list(ORDER_WEBHOOK_TOPICS),
     }
+
+
