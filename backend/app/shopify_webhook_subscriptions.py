@@ -15,6 +15,7 @@ ORDER_WEBHOOK_TOPICS = (
     "ORDERS_UPDATED",
     "ORDERS_CANCELLED",
 )
+LIFECYCLE_WEBHOOK_TOPICS = ("APP_UNINSTALLED",)
 
 LIST_WEBHOOKS_QUERY = """
 query DiaglobWebhookSubscriptions {
@@ -61,10 +62,10 @@ def shopify_webhook_callback_url() -> str:
 def ensure_shopify_order_webhooks(
     connection: CommerceConnection,
 ) -> dict:
-    """Ensure the three order lifecycle subscriptions exist for this shop.
+    """Ensure order and uninstall subscriptions exist for this shop.
 
-    The operation is idempotent: existing subscriptions with the same topic and
-    callback URI are retained, while only missing subscriptions are created.
+    The operation is idempotent: matching topic/URI subscriptions are retained.
+    Mandatory customer privacy webhooks remain separately app-configured.
     """
 
     # Mandatory GDPR topics are configured at app level (shopify.app.toml),
@@ -78,6 +79,7 @@ def ensure_shopify_order_webhooks(
         access_token=token,
     )
     callback_url = shopify_webhook_callback_url()
+    uninstall_url = callback_url + "/uninstalled"
 
     data = client.query(LIST_WEBHOOKS_QUERY)
     edges = (
@@ -98,8 +100,9 @@ def ensure_shopify_order_webhooks(
     created: list[dict] = []
     retained: list[str] = []
 
-    for topic in ORDER_WEBHOOK_TOPICS:
-        if (topic, callback_url) in existing:
+    for topic in (*ORDER_WEBHOOK_TOPICS, *LIFECYCLE_WEBHOOK_TOPICS):
+        target_url = uninstall_url if topic == "APP_UNINSTALLED" else callback_url
+        if (topic, target_url) in existing:
             retained.append(topic)
             continue
 
@@ -108,7 +111,7 @@ def ensure_shopify_order_webhooks(
             {
                 "topic": topic,
                 "webhookSubscription": {
-                    "uri": callback_url,
+                    "uri": target_url,
                 },
             },
         )
@@ -134,7 +137,7 @@ def ensure_shopify_order_webhooks(
             {
                 "id": subscription.get("id"),
                 "topic": subscription.get("topic") or topic,
-                "uri": subscription.get("uri") or callback_url,
+                "uri": subscription.get("uri") or target_url,
             }
         )
 
@@ -143,7 +146,7 @@ def ensure_shopify_order_webhooks(
         "callback_url": callback_url,
         "created": created,
         "retained": retained,
-        "topics": list(ORDER_WEBHOOK_TOPICS),
+        "topics": [*ORDER_WEBHOOK_TOPICS, *LIFECYCLE_WEBHOOK_TOPICS],
     }
 
 

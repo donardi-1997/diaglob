@@ -5040,6 +5040,16 @@ class TestShopifyWebhookSubscriptions:
                 "userErrors": [],
             }
         }
+        create_uninstall = {
+            "webhookSubscriptionCreate": {
+                "webhookSubscription": {
+                    "id": "gid://shopify/WebhookSubscription/4",
+                    "topic": "APP_UNINSTALLED",
+                    "uri": "https://api.diaglob.tech/api/webhooks/shopify/uninstalled",
+                },
+                "userErrors": [],
+            }
+        }
 
         with patch(
             "app.shopify_webhook_subscriptions.decrypt_shopify_secret",
@@ -5050,6 +5060,7 @@ class TestShopifyWebhookSubscriptions:
                 existing,
                 create_updated,
                 create_cancelled,
+                create_uninstall,
             ],
         ) as query:
             response = client.post(
@@ -5063,13 +5074,17 @@ class TestShopifyWebhookSubscriptions:
         assert [item["topic"] for item in data["created"]] == [
             "ORDERS_UPDATED",
             "ORDERS_CANCELLED",
+            "APP_UNINSTALLED",
         ]
         # Required privacy topics are configured at app level, never through
         # shop-scoped GraphQL mutations on connect/reconnect.
-        assert query.call_count == 3
+        assert query.call_count == 4
         assert [
             call.args[1]["topic"] for call in query.call_args_list[1:]
-        ] == ["ORDERS_UPDATED", "ORDERS_CANCELLED"]
+        ] == ["ORDERS_UPDATED", "ORDERS_CANCELLED", "APP_UNINSTALLED"]
+        assert query.call_args_list[-1].args[1]["webhookSubscription"]["uri"] == (
+            "https://api.diaglob.tech/api/webhooks/shopify/uninstalled"
+        )
 
     def test_ensure_webhooks_provider_error_is_visible_and_recorded(
         self,
@@ -5098,3 +5113,251 @@ class TestShopifyWebhookSubscriptions:
         ).one()
         assert "WEBHOOK_SUBSCRIPTION_FAILED" in (refreshed.last_error or "")
 
+
+
+class TestShopifyUninstallLifecycle:
+    """Signed uninstall/reinstall tests use only synthetic SQLite records."""
+
+    @staticmethod
+    def _headers(body, *, shop="test-store.myshopify.com", triggered_at=None):
+        import base64
+        import hashlib
+        import hmac
+        from datetime import datetime, timezone
+
+        secret = "synthetic-shopify-webhook-secret"
+        signature = base64.b64encode(
+            hmac.new(secret.encode(), body, hashlib.sha256).digest()
+        ).decode()
+        return secret, {
+            "X-Shopify-Topic": "app/uninstalled",
+            "X-Shopify-Hmac-Sha256": signature,
+            "X-Shopify-Shop-Domain": shop,
+            "X-Shopify-Triggered-At": triggered_at or datetime.now(timezone.utc).isoformat(),
+            "X-Shopify-Webhook-Id": "synthetic-uninstall-id",
+        }
+
+    def test_signed_uninstall_revokes_token_and_preserves_data(
+        self, client, db, store, org, shopify_connection, membership,
+    ):
+        import json
+        from datetime import datetime, timedelta
+
+        shopify_connection.connected_at = datetime.utcnow() - timedelta(days=2)
+        state = ShopifyOAuthState(
+            state="pending-state-during-uninstall",
+            organization_id=org.id,
+            store_id=store.id,
+            user_id=membership.user_id,
+            shop_domain="test-store.myshopify.com",
+            expires_at=datetime.utcnow() + timedelta(minutes=10),
+            used=False,
+        )
+        db.add(state)
+        db.commit()
+        body = json.dumps({"id": 97531, "myshopify_domain": "test-store.myshopify.com"}).encode()
+        secret, headers = self._headers(body)
+        with patch.dict(os.environ, {"SHOPIFY_CLIENT_SECRET": secret}):
+            response = client.post(
+                "/api/webhooks/shopify/uninstalled", content=body, headers=headers
+            )
+            duplicate = client.post(
+                "/api/webhooks/shopify/uninstalled", content=body, headers=headers
+            )
+
+        assert response.status_code == 200
+        assert response.json() == {"ok": True, "action": "revoked"}
+        assert duplicate.status_code == 200
+        assert duplicate.json()["action"] == "already_revoked"
+        db.expire_all()
+        connection = db.query(CommerceConnection).one()
+        assert connection.id == shopify_connection.id
+        assert connection.status == "revoked"
+        assert connection.access_token_encrypted is None
+        assert connection.scopes == ""
+        assert state.used is True
+        assert db.query(Store).filter(Store.id == store.id).one().active is True
+
+    def test_uninstall_reinstall_is_only_same_shop_and_new_oauth_state(
+        self, client, db, store, org, shopify_connection, membership,
+    ):
+        import json
+        from datetime import datetime, timedelta, timezone
+        from app.services.shopify_service import (
+            ShopifyConnectionError, process_oauth_callback, start_oauth,
+        )
+
+        shopify_connection.connected_at = datetime.utcnow() - timedelta(days=2)
+        db.commit()
+        body = json.dumps({"id": 97531, "myshopify_domain": "test-store.myshopify.com"}).encode()
+        secret, headers = self._headers(body)
+        with patch.dict(os.environ, {"SHOPIFY_CLIENT_SECRET": secret}):
+            assert client.post(
+                "/api/webhooks/shopify/uninstalled", content=body, headers=headers
+            ).json()["action"] == "revoked"
+
+        with patch(
+            "app.services.shopify_service.build_authorization_url",
+            return_value="https://test-store.myshopify.com/admin/oauth/authorize?state=fresh",
+        ):
+            with pytest.raises(ShopifyConnectionError):
+                start_oauth(
+                    db, org.id, store.id, membership.user_id,
+                    "other.myshopify.com",
+                )
+            begin = start_oauth(
+                db, org.id, store.id, membership.user_id,
+                "test-store.myshopify.com",
+            )
+
+        assert begin["ok"] is True
+        assert db.query(CommerceConnection).one().status == "revoked"
+        assert db.query(CommerceConnection).one().access_token_encrypted is None
+        state = db.query(ShopifyOAuthState).filter(
+            ShopifyOAuthState.used.is_(False)
+        ).one()
+        params = {
+            "state": state.state,
+            "code": "fresh-code",
+            "shop": "test-store.myshopify.com",
+            "hmac": "signed-in-shopify",
+        }
+        with patch(
+            "app.services.shopify_service.verify_shopify_hmac", return_value=True
+        ), patch(
+            "app.services.shopify_service.exchange_access_token",
+            return_value="new-synthetic-token",
+        ), patch(
+            "app.services.shopify_service.encrypt_shopify_secret",
+            return_value="new-encrypted-token",
+        ), patch(
+            "app.services.shopify_service.ensure_shopify_order_webhooks",
+            return_value={"ok": True},
+        ), patch(
+            "app.services.auto_fulfillment.requeue_store_auto_fulfillment",
+            return_value=[],
+        ):
+            result = process_oauth_callback(db, params)
+
+        assert "shopify=connected" in result
+        db.expire_all()
+        connection = db.query(CommerceConnection).one()
+        assert connection.id == shopify_connection.id
+        assert connection.status == "connected"
+        assert connection.access_token_encrypted == "new-encrypted-token"
+        assert db.query(ShopifyOAuthState).filter(
+            ShopifyOAuthState.state == state.state
+        ).one().used is True
+
+        # Shopify can retry a late delivery from BEFORE the new installation.
+        old_time = (
+            datetime.now(timezone.utc) - timedelta(hours=1)
+        ).isoformat()
+        _, old_headers = self._headers(body, triggered_at=old_time)
+        with patch.dict(os.environ, {"SHOPIFY_CLIENT_SECRET": secret}):
+            late = client.post(
+                "/api/webhooks/shopify/uninstalled",
+                content=body, headers=old_headers,
+            )
+        assert late.status_code == 200
+        assert late.json()["action"] == "stale_uninstall"
+        db.expire_all()
+        assert db.query(CommerceConnection).one().status == "connected"
+
+    def test_unsigned_or_mismatched_uninstall_never_revokes(
+        self, client, db, shopify_connection,
+    ):
+        import json
+        # The fixture initially flushes rather than commits. A rejected HTTP
+        # request rolls back its request session; persist the existing shop
+        # first so the test observes whether the handler truly mutated it.
+        db.commit()
+        body = json.dumps({"id": 97531, "myshopify_domain": "test-store.myshopify.com"}).encode()
+        secret, headers = self._headers(body)
+        bad_signature = dict(headers, **{"X-Shopify-Hmac-Sha256": "invalid"})
+        with patch.dict(os.environ, {"SHOPIFY_CLIENT_SECRET": secret}):
+            unsigned = client.post(
+                "/api/webhooks/shopify/uninstalled",
+                content=body, headers=bad_signature,
+            )
+            mismatch = client.post(
+                "/api/webhooks/shopify/uninstalled",
+                content=body, headers=dict(
+                    headers,
+                    **{"X-Shopify-Shop-Domain": "other.myshopify.com"},
+                ),
+            )
+            missing_timestamp = client.post(
+                "/api/webhooks/shopify/uninstalled",
+                content=body, headers={
+                    k: v for k, v in headers.items()
+                    if k != "X-Shopify-Triggered-At"
+                },
+            )
+            missing_domain_body = json.dumps({"id": 97531}).encode()
+            _, missing_domain_headers = self._headers(missing_domain_body)
+            missing_signed_domain = client.post(
+                "/api/webhooks/shopify/uninstalled",
+                content=missing_domain_body, headers=missing_domain_headers,
+            )
+        assert unsigned.status_code == 401
+        assert mismatch.status_code == 400
+        assert missing_timestamp.status_code == 400
+        assert missing_signed_domain.status_code == 400
+        db.expire_all()
+        assert db.query(CommerceConnection).one().status == "connected"
+
+    def test_old_revoked_domain_cannot_be_claimed_by_another_tenant(
+        self, db, org, store, shopify_connection, membership,
+    ):
+        from app.services.shopify_service import (
+            ShopifyConnectionError, start_oauth,
+        )
+
+        shopify_connection.status = "revoked"
+        shopify_connection.access_token_encrypted = None
+        other_org = Organization(
+            name="Separate Tenant", slug="separate-tenant-shopify",
+            plan="starter", subscription_status="active",
+        )
+        db.add(other_org)
+        db.flush()
+        other_store = Store(
+            organization_id=other_org.id, name="Other Store",
+            slug="other-shopify", country_code="CO",
+            currency="COP", timezone="UTC", active=True,
+        )
+        db.add(other_store)
+        db.commit()
+        with pytest.raises(ShopifyConnectionError, match="SHOPIFY_STORE_ALREADY_CONNECTED"):
+            start_oauth(
+                db, other_org.id, other_store.id, membership.user_id,
+                "test-store.myshopify.com",
+            )
+        assert db.query(CommerceConnection).one().organization_id == org.id
+
+
+    def test_signed_uninstall_revokes_connection_even_after_shopify_api_error(
+        self, client, db, shopify_connection,
+    ):
+        import json
+        from datetime import datetime, timedelta
+
+        shopify_connection.status = "error"
+        shopify_connection.connected_at = datetime.utcnow() - timedelta(days=2)
+        db.commit()
+        body = json.dumps({
+            "id": 97531, "myshopify_domain": "test-store.myshopify.com"
+        }).encode()
+        secret, headers = self._headers(body)
+        with patch.dict(os.environ, {"SHOPIFY_CLIENT_SECRET": secret}):
+            response = client.post(
+                "/api/webhooks/shopify/uninstalled",
+                content=body, headers=headers,
+            )
+        assert response.status_code == 200
+        assert response.json()["action"] == "revoked"
+        db.expire_all()
+        connection = db.query(CommerceConnection).one()
+        assert connection.status == "revoked"
+        assert connection.access_token_encrypted is None

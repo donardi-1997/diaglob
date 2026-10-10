@@ -57,6 +57,10 @@ from ..services.shopify_webhook_service import (
 from ..services.shopify_compliance_webhooks import (
     process_shopify_compliance_webhook,
 )
+from ..services.shopify_uninstall import (
+    ShopifyUninstallError,
+    process_shopify_uninstall,
+)
 from ..services.shopify_install_handoff import (
     ShopifyInstallHandoffError,
     build_shopify_install_handoff,
@@ -578,6 +582,48 @@ async def shopify_order_webhook(
             status_code=500,
             detail="Shopify webhook processing failed",
         )
+
+
+@router.post("/api/webhooks/shopify/uninstalled")
+async def shopify_app_uninstalled_webhook(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Revoke exactly one verified installation; preserve privacy receipts."""
+    chunks = []
+    body_size = 0
+    async for chunk in request.stream():
+        body_size += len(chunk)
+        if body_size > MAX_COMPLIANCE_BODY_BYTES:
+            raise HTTPException(status_code=413, detail="Shopify webhook payload too large")
+        chunks.append(chunk)
+    raw_body = b"".join(chunks)
+    if not verify_shopify_webhook_hmac(
+        raw_body, request.headers.get("x-shopify-hmac-sha256")
+    ):
+        raise HTTPException(status_code=401, detail="Invalid Shopify webhook signature")
+
+    if request.headers.get("x-shopify-topic", "").strip().lower() != "app/uninstalled":
+        raise HTTPException(status_code=400, detail="Unsupported Shopify lifecycle topic")
+    try:
+        payload = json.loads(raw_body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=400, detail="Invalid JSON payload") from exc
+    try:
+        return process_shopify_uninstall(
+            db,
+            topic="app/uninstalled",
+            header_shop_domain=request.headers.get("x-shopify-shop-domain"),
+            triggered_at=request.headers.get("x-shopify-triggered-at"),
+            payload=payload,
+        )
+    except ShopifyUninstallError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        db.rollback()
+        logging.getLogger(__name__).exception("Shopify uninstall webhook failed")
+        raise HTTPException(status_code=500, detail="Shopify uninstall failed") from exc
 
 
 @router.post("/api/webhooks/shopify/compliance")

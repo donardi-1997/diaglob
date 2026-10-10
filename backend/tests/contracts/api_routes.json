@@ -1065,6 +1065,10 @@
   ],
   [
     "POST",
+    "/api/webhooks/shopify/uninstalled"
+  ],
+  [
+    "POST",
     "/api/webhooks/telegram/{webhook_path_token}"
   ],
   [
