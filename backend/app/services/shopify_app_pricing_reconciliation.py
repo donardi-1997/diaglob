@@ -54,6 +54,8 @@ def preview_shopify_entitlement_reconciliation(
         or getattr(connection, "provider", None) != "shopify"
     ):
         raise ShopifyAppPricingError("SHOPIFY_CONNECTION_TENANT_MISMATCH")
+    if getattr(connection, "status", None) != "connected":
+        raise ShopifyAppPricingError("SHOPIFY_CONNECTION_NOT_ACTIVE")
     if (
         type(connected_shopify_store_count) is not int
         or connected_shopify_store_count != 1
