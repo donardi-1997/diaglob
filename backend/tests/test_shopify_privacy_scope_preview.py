@@ -496,3 +496,23 @@ def test_unknown_external_customer_id_never_selects_shared_checkouts(
     data = json.loads(decrypt_shopify_secret(result.encrypted_payload))
     assert data["conversational_checkouts"] == []
     assert data["complete"] is False
+
+
+def test_unknown_external_customer_does_not_redact_checkouts(
+    setup, monkeypatch
+):
+    from app.services.shopify_privacy_synthetic_processor import (
+        execute_synthetic_field_redaction,
+    )
+
+    db, receipt = setup
+    source, other = _add_two_synthetic_checkouts(db, receipt)
+    monkeypatch.setenv("DIAGLOB_SHOPIFY_PRIVACY_SYNTHETIC_TESTS", "1")
+    receipt.selector_encrypted = encrypt_shopify_secret(
+        json.dumps({"customer": {"id": 99999999}})
+    )
+    result = execute_synthetic_field_redaction(db, receipt)
+    assert result.redacted_checkouts == 0
+    assert result.complete is False
+    assert source.phone == "PHONE_PRIVATE_STORE_0"
+    assert other.phone == "PHONE_PRIVATE_STORE_1"
