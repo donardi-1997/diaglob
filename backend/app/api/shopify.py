@@ -8,6 +8,7 @@ from fastapi import (
     Depends,
     HTTPException,
     Request,
+    Query,
 )
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field, field_validator
@@ -55,6 +56,10 @@ from ..services.shopify_webhook_service import (
 )
 from ..services.shopify_compliance_webhooks import (
     process_shopify_compliance_webhook,
+)
+from ..services.shopify_install_handoff import (
+    ShopifyInstallHandoffError,
+    build_shopify_install_handoff,
 )
 from ..services.shopify_oauth_callback_validation import (
     MAX_CALLBACK_QUERY_BYTES,
@@ -173,6 +178,20 @@ def _map_oauth_error(exc: Exception):
 
 
 # --- Endpoints ---
+
+
+@router.get("/api/shopify/install")
+def shopify_install_handoff(shop: str = Query(..., min_length=1, max_length=255)):
+    """Public handoff to the authenticated DIAGLOB store-selection screen.
+
+    This is NOT Shopify OAuth or trusted proof of shop ownership. No database
+    writes, installation, token exchange, customer data access or app grant.
+    """
+    try:
+        url = build_shopify_install_handoff(shop)
+    except ShopifyInstallHandoffError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return RedirectResponse(url, status_code=303, headers={"Cache-Control": "no-store"})
 
 
 @router.post("/api/stores/{store_id}/shopify/connect")
