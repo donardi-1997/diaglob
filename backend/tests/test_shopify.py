@@ -5268,6 +5268,10 @@ class TestShopifyUninstallLifecycle:
         self, client, db, shopify_connection,
     ):
         import json
+        # The fixture initially flushes rather than commits. A rejected HTTP
+        # request rolls back its request session; persist the existing shop
+        # first so the test observes whether the handler truly mutated it.
+        db.commit()
         body = json.dumps({"id": 97531, "myshopify_domain": "test-store.myshopify.com"}).encode()
         secret, headers = self._headers(body)
         bad_signature = dict(headers, **{"X-Shopify-Hmac-Sha256": "invalid"})
