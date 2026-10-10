@@ -92,7 +92,7 @@ def test_audit_identifies_backup_retention_and_rag_gaps_without_exposing_pii():
         "KNOWLEDGE_SOURCE_BUCKET_EMPTY",
         "LIGHTSAIL_AUTOSNAPSHOT_DISABLED",
         "NO_VERIFIED_LIGHTSAIL_RECOVERY_POINT",
-        "VERSIONED_S3_WITHOUT_LIFECYCLE",
+        "VERSIONED_S3_WITHOUT_NONCURRENT_EXPIRATION",
     ]
     assert result["mode"] == "read_only"
     assert result["production_changes"] is False
@@ -184,4 +184,23 @@ def test_unverified_s3_never_becomes_healthy_or_claims_empty_source():
     )
     assert result["checks"]["s3"]["state"] == "unverified"
     assert "KNOWLEDGE_SOURCE_BUCKET_EMPTY" not in result["findings"]
-    assert "VERSIONED_S3_WITHOUT_LIFECYCLE" not in result["findings"]
+    assert "VERSIONED_S3_WITHOUT_NONCURRENT_EXPIRATION" not in result["findings"]
+
+
+def test_disabled_lifecycle_rules_do_not_hide_s3_retention_gap():
+    session, _, s3, _, _ = fixtures()
+    s3.get_bucket_lifecycle_configuration.side_effect = None
+    s3.get_bucket_lifecycle_configuration.return_value = {
+        "Rules": [{
+            "ID": "DisabledOldRule",
+            "Status": "Disabled",
+            "NoncurrentVersionExpiration": {"NoncurrentDays": 30},
+        }]
+    }
+    result = audit(
+        session, region="us-east-2", instance="diaglob-prod",
+        bucket="diaglob-test-knowledge",
+    )
+    assert result["checks"]["s3"]["lifecycle_configured"] is True
+    assert result["checks"]["s3"]["active_noncurrent_expiration_rule_count"] == 0
+    assert "VERSIONED_S3_WITHOUT_NONCURRENT_EXPIRATION" in result["findings"]
