@@ -38,3 +38,25 @@ The read-only verifier raises `ShopifyAppPricingError` on absent credentials, in
 Shopify App Pricing does not send legacy billing-update webhooks after April 2026: use authenticated redirect inputs **only as triggers**, and re-query Partner API to confirm current plan. For out-of-band cancellations/freezes, periodically query Partner API. Rate-limit requests and cache verified state only within an appropriate narrow window.
 
 This work is independent of the draft privacy PRs #149/#150/#151. Tracking issue #148.
+
+
+## Strict read-only plan mapping (staged, no entitlement writes)
+
+The `resolve_verified_shopify_plan` helper maps **only** a Partner-API-verified active subscription to one of the canonical DIAGLOB plans. It additionally requires:
+
+- The Partner API subscription's `shop.id` to exactly match the authenticated Shop GID supplied by DIAGLOB's trusted Shopify Admin API connection.
+- Exactly one flat-rate active USD subscription item with a non-empty Shopify handle. Ambiguous or unknown multi-item contracts are not enabled by default.
+- An operator-controlled explicit allowlist in the secret/configuration `SHOPIFY_APP_PRICING_HANDLES_JSON`:
+
+```json
+{
+  "verified-handle-from-shopify-dashboard": {
+    "plan": "starter",
+    "interval": "EVERY_30_DAYS"
+  }
+}
+```
+
+This is an **illustrative placeholder**; do not use the shown handle. Populate the catalog only after the actual plan handles are verified from Shopify's Partner API and priced publicly in the existing DIAGLOB developer account. Values must match `EVERY_30_DAYS` or `ANNUAL` billing frequency and a valid canonical plan. Missing/invalid catalog, untrusted handle, inactive subscription, or billing interval mismatch fails closed. Trial users with an active Shopify contract can be eligible after this verified lookup; trial metadata must be interpreted separately.
+
+`VerifiedShopifyPlan` is **not an authorization token** or a database entitlement grant. Nothing is written to `Organization.plan` or `billing_provider` by the mapper. Before enabling paid access, add server-controlled Shopify installation provenance, a canonical shop-to-organization identity binding, guarded transactional entitlement synchronization, and a Shopify-channel block on Paddle checkout. Do not infer contracting channel from the presence of a domain or access token alone.
