@@ -11,7 +11,6 @@ import {
   LockKeyhole,
   Mail,
   Moon,
-  Sparkles,
   Sun,
   UserRound,
   Workflow,
