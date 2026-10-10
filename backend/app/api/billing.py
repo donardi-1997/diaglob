@@ -16,9 +16,13 @@ from ..billing_providers import (
     get_billing_provider,
 )
 from ..db import get_db
-from ..models import Organization, OrganizationMembership
+from ..models import CommerceConnection, Organization, OrganizationMembership, Store
 from .deps import get_current_membership
 from ..services.ai_usage_packages import fulfill_ai_usage_package_transaction
+from ..services.shopify_app_pricing import ShopifyAppPricingError
+from ..services.shopify_app_pricing_reconciliation import (
+    preview_shopify_entitlement_reconciliation,
+)
 from ..services.billing_service import (
     AutoRenewConflictError,
     DowngradeBlockedError,
@@ -74,6 +78,94 @@ def _reject_shopify_managed_billing(organization: Organization) -> None:
             },
         )
 
+
+
+
+_SHOPIFY_BILLING_TEMPORARY_ERRORS = frozenset({
+    "SHOPIFY_PARTNER_API_NOT_CONFIGURED",
+    "SHOPIFY_PARTNER_API_UNAVAILABLE",
+    "SHOPIFY_PARTNER_API_GRAPHQL_ERROR",
+    "SHOPIFY_PARTNER_API_INVALID_RESPONSE",
+    "SHOPIFY_IDENTITY_UNAVAILABLE",
+    "SHOPIFY_IDENTITY_INVALID",
+    "SHOPIFY_IDENTITY_MISMATCH",
+    "SHOPIFY_PLAN_CATALOG_NOT_CONFIGURED",
+    "SHOPIFY_PLAN_CATALOG_INVALID",
+})
+
+
+@router.get("/api/billing/shopify/reconciliation-preview")
+def preview_shopify_billing_reconciliation(
+    membership: OrganizationMembership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+):
+    """Read-only, tenant-bound preview of a verified Shopify subscription.
+
+    Never infer billing authority from a client-supplied shop/domain, redirect,
+    or plan handle. This endpoint does not create charges, update plans, or
+    mutate existing Paddle subscriptions.
+    """
+    if membership.role not in {"owner", "manager"}:
+        raise HTTPException(status_code=403, detail="Billing access denied")
+
+    organization = membership.organization
+    if (organization.billing_provider or "").strip().lower() != "shopify":
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "SHOPIFY_BILLING_PROVENANCE_REQUIRED"},
+        )
+
+    connections = (
+        db.query(CommerceConnection)
+        .join(Store, Store.id == CommerceConnection.store_id)
+        .filter(
+            CommerceConnection.organization_id == membership.organization_id,
+            CommerceConnection.provider == "shopify",
+            CommerceConnection.status == "connected",
+            Store.organization_id == membership.organization_id,
+            Store.active.is_(True),
+            Store.deleted.is_(False),
+        )
+        .all()
+    )
+    # The existing reconciliation service cannot safely infer billing from
+    # zero or multiple connected Shopify stores. Reject before provider calls.
+    if len(connections) != 1:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "SHOPIFY_MULTISTORE_BILLING_REVIEW_REQUIRED"},
+        )
+
+    try:
+        preview = preview_shopify_entitlement_reconciliation(
+            organization,
+            connections[0],
+            connected_shopify_store_count=len(connections),
+        )
+    except ShopifyAppPricingError as exc:
+        code = str(exc)
+        if not code.startswith("SHOPIFY_") or not code.replace("_", "").isalnum():
+            code = "SHOPIFY_RECONCILIATION_UNAVAILABLE"
+        raise HTTPException(
+            status_code=(
+                503 if code in _SHOPIFY_BILLING_TEMPORARY_ERRORS
+                or code == "SHOPIFY_RECONCILIATION_UNAVAILABLE"
+                else 409
+            ),
+            detail={"code": code},
+        ) from exc
+
+    # Do not expose access tokens, app credentials, raw subscription payloads,
+    # plan handles, or unreviewed Shop GIDs in an HTTP response.
+    return {
+        "status": preview.status,
+        "requires_review": preview.requires_review,
+        "current_plan": preview.current_plan,
+        "target_plan": preview.target_plan,
+        "target_billing_period_months": preview.target_billing_period_months,
+        "organization_id": preview.organization_id,
+        "applied": False,
+    }
 
 class BillingAutoRenewRequest(BaseModel):
     enabled: bool
