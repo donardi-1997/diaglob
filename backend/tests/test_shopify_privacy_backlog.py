@@ -148,3 +148,16 @@ def test_unexpected_topic_never_disappears_from_backlog(sandbox):
     assert metrics["oldest_outstanding_days"] == 32
     assert all(item["outstanding"] == 0 for item in metrics["topics"])
     assert "future_topic_needs_review" not in str(metrics)
+
+
+def test_exact_operational_thresholds_have_no_overlap(sandbox):
+    now = datetime(2026, 10, 10, 12, 0)
+    for n, age in enumerate((22, 23, 29, 30, 31), start=1):
+        _receipt(sandbox, n=n, topic="customers/redact", age_days=age, now=now)
+    sandbox.commit()
+    summary = summarize_shopify_privacy_backlog(sandbox, now=now)
+    assert summary.outstanding_total == 5
+    assert summary.overdue_total == 2  # Exactly 30 days is critical.
+    assert summary.due_within_7_days_total == 2  # 23 through <30 days.
+    assert summary.topics[1].overdue == 2
+    assert summary.topics[1].due_within_7_days == 2
