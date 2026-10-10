@@ -261,6 +261,31 @@ def test_live_price_change_forces_second_final_confirmation(db, monkeypatch):
     assert "#999" in created
 
 
+def test_zero_price_is_not_offered_for_conversational_checkout(db):
+    _, _, _, agent, _, variant, conversation, _ = _scenario(db)
+    variant.price = 0
+    db.commit()
+    _turn(db, conversation, agent, "quiero comprar Sandalia AT 77 talla 40")
+    assert db.query(ConversationalCheckout).count() == 0
+
+
+def test_price_becoming_zero_blocks_final_confirmation(db, monkeypatch):
+    _, _, _, agent, _, variant, conversation, _ = _scenario(db)
+    _advance_to_final_confirmation(db, conversation, agent)
+    calls = []
+    monkeypatch.setattr(
+        "app.services.conversational_checkout_service.create_attributed_shopify_cod_order",
+        lambda *args, **kwargs: calls.append(kwargs),
+    )
+    variant.price = 0
+    db.commit()
+    _turn(db, conversation, agent, "CONFIRMO")
+    checkout = db.query(ConversationalCheckout).one()
+    assert calls == []
+    assert checkout.status == "failed"
+    assert checkout.customer_confirmed is False
+
+
 def test_attributed_cod_wrapper_records_ai_closer(db, monkeypatch):
     org, store, customer, agent, _, variant, conversation, _ = _scenario(db)
 

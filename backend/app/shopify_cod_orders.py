@@ -112,8 +112,9 @@ def create_shopify_cod_order(
         raise ValueError("Variant does not belong to this store")
     if not variant.shopify_variant_id:
         raise ValueError("Variant is not linked to Shopify")
-    if not variant.available or int(variant.inventory_quantity or 0) < quantity:
-        raise ValueError("Variant is out of stock")
+    from .services.catalog_availability import variant_is_purchasable
+    if not variant_is_purchasable(variant, quantity):
+        raise ValueError("Variant is not purchasable")
 
     total = float(variant.price) * quantity
     order = Order(

@@ -24,7 +24,9 @@ from ..shopify_oauth import (
     verify_shopify_hmac,
 )
 from ..shopify_security import encrypt_shopify_secret
-from ..shopify_webhook_subscriptions import ensure_shopify_order_webhooks
+from ..shopify_webhook_subscriptions import (
+    ensure_shopify_order_webhooks,
+)
 from .marketing_acquisition import record_lifecycle_conversion
 from .trial_service import (
     TrialIdentityAlreadyUsed,
@@ -238,6 +240,35 @@ def start_reauthorization(
     }
 
 
+def _claim_shopify_oauth_state(
+    db: Session,
+    oauth_state: ShopifyOAuthState,
+    *,
+    normalized_shop: str,
+) -> None:
+    """Atomically consume OAuth state before exchanging a code with Shopify.
+
+    Two parallel callbacks may both read the same unused state. A conditional
+    UPDATE ensures exactly one request can claim it. The claim is committed
+    *before* the network call, so a retry or worker crash cannot replay the
+    grant. If the provider fails, the merchant must start a new authorization.
+    """
+    claimed = (
+        db.query(ShopifyOAuthState)
+        .filter(
+            ShopifyOAuthState.id == oauth_state.id,
+            ShopifyOAuthState.used.is_(False),
+            ShopifyOAuthState.expires_at > datetime.utcnow(),
+            ShopifyOAuthState.shop_domain == normalized_shop,
+        )
+        .update({ShopifyOAuthState.used: True}, synchronize_session=False)
+    )
+    if claimed != 1:
+        db.rollback()
+        raise ShopifyOAuthError("Invalid or already used OAuth state")
+    db.commit()
+
+
 def process_oauth_callback(db: Session, query_params: dict) -> str:
     """Process OAuth callback. Returns frontend redirect URL."""
     if not verify_shopify_hmac(query_params):
@@ -271,6 +302,10 @@ def process_oauth_callback(db: Session, query_params: dict) -> str:
 
     if oauth_state.shop_domain != normalized_shop:
         raise ShopifyOAuthError("OAuth state does not match the shop domain")
+
+    _claim_shopify_oauth_state(
+        db, oauth_state, normalized_shop=normalized_shop
+    )
 
     try:
         access_token = exchange_access_token(normalized_shop, code)
@@ -313,7 +348,7 @@ def process_oauth_callback(db: Session, query_params: dict) -> str:
         try:
             ensure_shopify_order_webhooks(existing_connection)
             db.commit()
-        except ShopifyAPIError as exc:
+        except (ShopifyAPIError, ShopifyGraphQLError) as exc:
             existing_connection.last_error = (
                 "WEBHOOK_SUBSCRIPTION_FAILED: " + str(exc)[:400]
             )
@@ -403,7 +438,7 @@ def process_oauth_callback(db: Session, query_params: dict) -> str:
         ensure_shopify_order_webhooks(connection)
         connection.last_error = None
         db.commit()
-    except ShopifyAPIError as exc:
+    except (ShopifyAPIError, ShopifyGraphQLError) as exc:
         connection.last_error = (
             "WEBHOOK_SUBSCRIPTION_FAILED: "
             + str(exc)[:400]

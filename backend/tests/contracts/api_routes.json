@@ -89,11 +89,11 @@
   ],
   [
     "DELETE",
-    "/api/team/{membership_id}"
+    "/api/team/invitations/{invitation_id}"
   ],
   [
     "DELETE",
-    "/api/team/invitations/{invitation_id}"
+    "/api/team/{membership_id}"
   ],
   [
     "GET",
@@ -165,6 +165,10 @@
   ],
   [
     "GET",
+    "/api/billing/shopify/reconciliation-preview"
+  ],
+  [
+    "GET",
     "/api/carriers"
   ],
   [
@@ -189,6 +193,10 @@
   ],
   [
     "GET",
+    "/api/customers/summary"
+  ],
+  [
+    "GET",
     "/api/customers/{customer_id}"
   ],
   [
@@ -198,10 +206,6 @@
   [
     "GET",
     "/api/customers/{customer_id}/risk/disputes/mine"
-  ],
-  [
-    "GET",
-    "/api/customers/summary"
   ],
   [
     "GET",
@@ -238,6 +242,18 @@
   [
     "GET",
     "/api/integrations/google/status"
+  ],
+  [
+    "GET",
+    "/api/internal/shopify/privacy/backlog"
+  ],
+  [
+    "GET",
+    "/api/internal/shopify/privacy/cases"
+  ],
+  [
+    "GET",
+    "/api/internal/shopify/privacy/cases/{request_id}/assessment"
   ],
   [
     "GET",
@@ -286,6 +302,10 @@
   [
     "GET",
     "/api/shopify/callback"
+  ],
+  [
+    "GET",
+    "/api/shopify/install"
   ],
   [
     "GET",
@@ -349,6 +369,10 @@
   ],
   [
     "GET",
+    "/api/stores/{store_id}/automation-campaigns/audience/customers"
+  ],
+  [
+    "GET",
     "/api/stores/{store_id}/automation-campaigns/{campaign_id}"
   ],
   [
@@ -366,10 +390,6 @@
   [
     "GET",
     "/api/stores/{store_id}/automation-campaigns/{campaign_id}/runs/{run_id}/recipients/{recipient_id}"
-  ],
-  [
-    "GET",
-    "/api/stores/{store_id}/automation-campaigns/audience/customers"
   ],
   [
     "GET",
@@ -473,15 +493,15 @@
   ],
   [
     "GET",
+    "/api/stores/{store_id}/payments/providers"
+  ],
+  [
+    "GET",
     "/api/stores/{store_id}/payments/{payment_id}"
   ],
   [
     "GET",
     "/api/stores/{store_id}/payments/{provider}/status"
-  ],
-  [
-    "GET",
-    "/api/stores/{store_id}/payments/providers"
   ],
   [
     "GET",
@@ -753,18 +773,6 @@
   ],
   [
     "POST",
-    "/api/knowledge-bases/{knowledge_base_id}/sources/{source_id}/sync"
-  ],
-  [
-    "POST",
-    "/api/knowledge-bases/{knowledge_base_id}/sources/{source_id}/sync-drive-file"
-  ],
-  [
-    "POST",
-    "/api/knowledge-bases/{knowledge_base_id}/sources/{source_id}/sync-folder"
-  ],
-  [
-    "POST",
     "/api/knowledge-bases/{knowledge_base_id}/sources/google-doc"
   ],
   [
@@ -781,6 +789,18 @@
   ],
   [
     "POST",
+    "/api/knowledge-bases/{knowledge_base_id}/sources/{source_id}/sync"
+  ],
+  [
+    "POST",
+    "/api/knowledge-bases/{knowledge_base_id}/sources/{source_id}/sync-drive-file"
+  ],
+  [
+    "POST",
+    "/api/knowledge-bases/{knowledge_base_id}/sources/{source_id}/sync-folder"
+  ],
+  [
+    "POST",
     "/api/register/provision"
   ],
   [
@@ -790,6 +810,10 @@
   [
     "POST",
     "/api/stores/{store_id}/automation-campaigns"
+  ],
+  [
+    "POST",
+    "/api/stores/{store_id}/automation-campaigns/audience/preview"
   ],
   [
     "POST",
@@ -805,15 +829,15 @@
   ],
   [
     "POST",
-    "/api/stores/{store_id}/automation-campaigns/audience/preview"
-  ],
-  [
-    "POST",
     "/api/stores/{store_id}/automation-flow-templates/{template_id}"
   ],
   [
     "POST",
     "/api/stores/{store_id}/automation-flows"
+  ],
+  [
+    "POST",
+    "/api/stores/{store_id}/automation-flows/simulate"
   ],
   [
     "POST",
@@ -842,10 +866,6 @@
   [
     "POST",
     "/api/stores/{store_id}/automation-flows/{flow_id}/versions/{version_id}/publish"
-  ],
-  [
-    "POST",
-    "/api/stores/{store_id}/automation-flows/simulate"
   ],
   [
     "POST",
@@ -1038,6 +1058,10 @@
   [
     "POST",
     "/api/webhooks/shopify"
+  ],
+  [
+    "POST",
+    "/api/webhooks/shopify/compliance"
   ],
   [
     "POST",

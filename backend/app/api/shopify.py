@@ -8,6 +8,7 @@ from fastapi import (
     Depends,
     HTTPException,
     Request,
+    Query,
 )
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field, field_validator
@@ -53,6 +54,22 @@ from ..services.shopify_webhook_service import (
     resolve_shopify_connection,
     verify_shopify_webhook_hmac,
 )
+from ..services.shopify_compliance_webhooks import (
+    process_shopify_compliance_webhook,
+)
+from ..services.shopify_install_handoff import (
+    ShopifyInstallHandoffError,
+    build_shopify_install_handoff,
+)
+from ..services.shopify_oauth_callback_validation import (
+    MAX_CALLBACK_QUERY_BYTES,
+    ShopifyCallbackQueryError,
+    canonicalize_oauth_callback,
+)
+
+# Compliance payloads contain minimal customer/order selectors. The bounded
+# streaming read protects memory and rejects unexpectedly large signed payloads.
+MAX_COMPLIANCE_BODY_BYTES = 256 * 1024
 
 router = APIRouter()
 
@@ -163,6 +180,20 @@ def _map_oauth_error(exc: Exception):
 # --- Endpoints ---
 
 
+@router.get("/api/shopify/install")
+def shopify_install_handoff(shop: str = Query(..., min_length=1, max_length=255)):
+    """Public handoff to the authenticated DIAGLOB store-selection screen.
+
+    This is NOT Shopify OAuth or trusted proof of shop ownership. No database
+    writes, installation, token exchange, customer data access or app grant.
+    """
+    try:
+        url = build_shopify_install_handoff(shop)
+    except ShopifyInstallHandoffError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return RedirectResponse(url, status_code=303, headers={"Cache-Control": "no-store"})
+
+
 @router.post("/api/stores/{store_id}/shopify/connect")
 def start_shopify_connection(
     store_id: int,
@@ -206,7 +237,20 @@ def shopify_oauth_callback(
     request: Request,
     db: Session = Depends(get_db),
 ):
-    query_params = dict(request.query_params)
+    # Reject oversized raw queries BEFORE parsing multi-value parameters.
+    raw_query_size = len(request.scope.get("query_string", b""))
+    if raw_query_size > MAX_CALLBACK_QUERY_BYTES:
+        raise HTTPException(status_code=400, detail="INVALID_SHOPIFY_CALLBACK_QUERY")
+
+    # Never flatten duplicate query parameters: Starlette's dict conversion
+    # discards them before signature verification and OAuth state validation.
+    try:
+        query_params = canonicalize_oauth_callback(
+            list(request.query_params.multi_items()),
+            raw_query_bytes=raw_query_size,
+        )
+    except ShopifyCallbackQueryError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     try:
         redirect_url = svc_process_oauth_callback(db, query_params)
@@ -534,4 +578,53 @@ async def shopify_order_webhook(
             status_code=500,
             detail="Shopify webhook processing failed",
         )
+
+
+@router.post("/api/webhooks/shopify/compliance")
+async def shopify_compliance_webhook(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Acknowledge and process Shopify App Store privacy webhooks."""
+    # Read the request incrementally: a forged Content-Length must never
+    # allow an unbounded body allocation before HMAC verification.
+    chunks = []
+    body_size = 0
+    async for chunk in request.stream():
+        body_size += len(chunk)
+        if body_size > MAX_COMPLIANCE_BODY_BYTES:
+            raise HTTPException(status_code=413, detail="Shopify compliance payload too large")
+        chunks.append(chunk)
+    raw_body = b"".join(chunks)
+    if not verify_shopify_webhook_hmac(
+        raw_body,
+        request.headers.get("x-shopify-hmac-sha256"),
+    ):
+        raise HTTPException(status_code=401, detail="Invalid Shopify webhook signature")
+
+    topic = request.headers.get("x-shopify-topic", "").strip().lower()
+    if topic not in {"customers/data_request", "customers/redact", "shop/redact"}:
+        raise HTTPException(status_code=400, detail="Unsupported Shopify compliance topic")
+
+    try:
+        payload = json.loads(raw_body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=400, detail="Invalid JSON payload") from exc
+
+    try:
+        return process_shopify_compliance_webhook(
+            db,
+            topic=topic,
+            payload=payload,
+            webhook_id=request.headers.get("x-shopify-webhook-id"),
+            header_shop_domain=request.headers.get("x-shopify-shop-domain"),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        db.rollback()
+        logging.getLogger(__name__).exception(
+            "Shopify compliance webhook processing failed for topic=%s", topic
+        )
+        raise HTTPException(status_code=500, detail="Shopify compliance webhook processing failed") from exc
 

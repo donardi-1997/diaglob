@@ -105,6 +105,20 @@ def test_colombia_exposes_nequi_not_mercado_pago():
         db.close()
 
 
+def test_shopify_domain_without_oauth_is_disconnected():
+    db = _session()
+    try:
+        _seed_org_store(db, org_id=1, store_id=1, country="CO", currency="COP")
+        db.get(Store, 1).shopify_domain = "0djnem-9x.myshopify.com"
+        db.commit()
+        shopify = next(item for item in get_operations_integrations(db, 1, 1)
+                       if item["provider"] == "shopify")
+        assert shopify["connected"] is False
+        assert shopify["status"] == "disconnected"
+    finally:
+        db.close()
+
+
 def test_nuvemshop_is_dynamic_commerce_and_removes_shopify_alert():
     db = _session()
     try:

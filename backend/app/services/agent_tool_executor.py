@@ -163,6 +163,7 @@ def _products_list(
     store_id: int,
     arguments: dict,
 ) -> dict:
+    from .catalog_availability import availability_reason, variant_is_purchasable
     query = db.query(Product).filter(
         Product.organization_id == membership.organization_id,
         Product.store_id == store_id,
@@ -196,7 +197,8 @@ def _products_list(
                         "price": float(variant.price or 0),
                         "currency": variant.currency,
                         "inventory_quantity": variant.inventory_quantity,
-                        "available": variant.available,
+                        "available": variant_is_purchasable(variant),
+                        "availability_reason": availability_reason(variant),
                         "shopify_variant_id": variant.shopify_variant_id,
                     }
                     for variant in product.variants

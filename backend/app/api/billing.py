@@ -16,9 +16,13 @@ from ..billing_providers import (
     get_billing_provider,
 )
 from ..db import get_db
-from ..models import Organization, OrganizationMembership
+from ..models import CommerceConnection, Organization, OrganizationMembership, Store
 from .deps import get_current_membership
 from ..services.ai_usage_packages import fulfill_ai_usage_package_transaction
+from ..services.shopify_app_pricing import ShopifyAppPricingError
+from ..services.shopify_app_pricing_reconciliation import (
+    preview_shopify_entitlement_reconciliation,
+)
 from ..services.billing_service import (
     AutoRenewConflictError,
     DowngradeBlockedError,
@@ -58,6 +62,110 @@ from ..services.paddle_webhooks import (
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+
+def _reject_shopify_managed_billing(organization: Organization) -> None:
+    """Never route Shopify App Store subscriptions through Paddle operations.
+
+    The billing-provider flag must be set server-side using verified install
+    provenance. Legacy unassigned organizations keep the Paddle channel.
+    """
+    if (organization.billing_provider or "").strip().lower() == "shopify":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "SHOPIFY_MANAGED_BILLING",
+                "message": "Manage this subscription through Shopify App Pricing.",
+            },
+        )
+
+
+
+
+_SHOPIFY_BILLING_TEMPORARY_ERRORS = frozenset({
+    "SHOPIFY_PARTNER_API_NOT_CONFIGURED",
+    "SHOPIFY_PARTNER_API_UNAVAILABLE",
+    "SHOPIFY_PARTNER_API_GRAPHQL_ERROR",
+    "SHOPIFY_PARTNER_API_INVALID_RESPONSE",
+    "SHOPIFY_IDENTITY_UNAVAILABLE",
+    "SHOPIFY_IDENTITY_INVALID",
+    "SHOPIFY_IDENTITY_MISMATCH",
+    "SHOPIFY_PLAN_CATALOG_NOT_CONFIGURED",
+    "SHOPIFY_PLAN_CATALOG_INVALID",
+})
+
+
+@router.get("/api/billing/shopify/reconciliation-preview")
+def preview_shopify_billing_reconciliation(
+    membership: OrganizationMembership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+):
+    """Read-only, tenant-bound preview of a verified Shopify subscription.
+
+    Never infer billing authority from a client-supplied shop/domain, redirect,
+    or plan handle. This endpoint does not create charges, update plans, or
+    mutate existing Paddle subscriptions.
+    """
+    if membership.role not in {"owner", "manager"}:
+        raise HTTPException(status_code=403, detail="Billing access denied")
+
+    organization = membership.organization
+    if (organization.billing_provider or "").strip().lower() != "shopify":
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "SHOPIFY_BILLING_PROVENANCE_REQUIRED"},
+        )
+
+    connections = (
+        db.query(CommerceConnection)
+        .join(Store, Store.id == CommerceConnection.store_id)
+        .filter(
+            CommerceConnection.organization_id == membership.organization_id,
+            CommerceConnection.provider == "shopify",
+            CommerceConnection.status == "connected",
+            Store.organization_id == membership.organization_id,
+            Store.active.is_(True),
+            Store.deleted.is_(False),
+        )
+        .all()
+    )
+    # The existing reconciliation service cannot safely infer billing from
+    # zero or multiple connected Shopify stores. Reject before provider calls.
+    if len(connections) != 1:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "SHOPIFY_MULTISTORE_BILLING_REVIEW_REQUIRED"},
+        )
+
+    try:
+        preview = preview_shopify_entitlement_reconciliation(
+            organization,
+            connections[0],
+            connected_shopify_store_count=len(connections),
+        )
+    except ShopifyAppPricingError as exc:
+        code = str(exc)
+        if not code.startswith("SHOPIFY_") or not code.replace("_", "").isalnum():
+            code = "SHOPIFY_RECONCILIATION_UNAVAILABLE"
+        raise HTTPException(
+            status_code=(
+                503 if code in _SHOPIFY_BILLING_TEMPORARY_ERRORS
+                or code == "SHOPIFY_RECONCILIATION_UNAVAILABLE"
+                else 409
+            ),
+            detail={"code": code},
+        ) from exc
+
+    # Do not expose access tokens, app credentials, raw subscription payloads,
+    # plan handles, or unreviewed Shop GIDs in an HTTP response.
+    return {
+        "status": preview.status,
+        "requires_review": preview.requires_review,
+        "current_plan": preview.current_plan,
+        "target_plan": preview.target_plan,
+        "target_billing_period_months": preview.target_billing_period_months,
+        "organization_id": preview.organization_id,
+        "applied": False,
+    }
 
 class BillingAutoRenewRequest(BaseModel):
     enabled: bool
@@ -134,6 +242,15 @@ async def paddle_billing_webhook(
             "ok": True,
             "ignored": True,
             "reason": "organization_not_found",
+            "event_type": event_type,
+        }
+
+    if (organization.billing_provider or "").strip().lower() == "shopify":
+        # Authenticated Paddle events must not change Shopify-managed access.
+        return {
+            "ok": True,
+            "ignored": True,
+            "reason": "shopify_managed_billing",
             "event_type": event_type,
         }
 
@@ -242,6 +359,8 @@ def update_billing_auto_renew(
     if membership.role not in {"owner", "manager"}:
         raise HTTPException(status_code=403, detail="Billing access denied")
 
+    _reject_shopify_managed_billing(membership.organization)
+
     organization = membership.organization
     if not organization.billing_subscription_id:
         raise HTTPException(
@@ -279,6 +398,8 @@ def preview_billing_upgrade(
 ):
     if membership.role not in {"owner", "manager"}:
         raise HTTPException(status_code=403, detail="Billing access denied")
+
+    _reject_shopify_managed_billing(membership.organization)
 
     organization = db.query(Organization).filter(
         Organization.id == membership.organization_id
@@ -321,6 +442,8 @@ def apply_billing_upgrade(
     if membership.role not in {"owner", "manager"}:
         raise HTTPException(status_code=403, detail="Billing access denied")
 
+    _reject_shopify_managed_billing(membership.organization)
+
     organization = db.query(Organization).filter(
         Organization.id == membership.organization_id
     ).first()
@@ -352,6 +475,8 @@ def preview_billing_downgrade(
 ):
     if membership.role not in {"owner", "manager"}:
         raise HTTPException(status_code=403, detail="Billing access denied")
+
+    _reject_shopify_managed_billing(membership.organization)
 
     organization = membership.organization
     try:
@@ -401,6 +526,8 @@ def apply_billing_downgrade(
 ):
     if membership.role not in {"owner", "manager"}:
         raise HTTPException(status_code=403, detail="Billing access denied")
+
+    _reject_shopify_managed_billing(membership.organization)
 
     organization = membership.organization
     try:
@@ -452,6 +579,7 @@ def cancel_billing_downgrade(
 ):
     if membership.role not in {"owner", "manager"}:
         raise HTTPException(status_code=403, detail="Billing access denied")
+    _reject_shopify_managed_billing(membership.organization)
     return cancel_downgrade(membership.organization, db)
 
 
@@ -479,6 +607,8 @@ def create_billing_checkout(
 ):
     if membership.role not in {"owner", "manager"}:
         raise HTTPException(status_code=403, detail="Billing access denied")
+
+    _reject_shopify_managed_billing(membership.organization)
 
     organization = membership.organization
     if (

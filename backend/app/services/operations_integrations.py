@@ -330,8 +330,8 @@ def get_operations_integrations(
                 provider="shopify",
                 name="Shopify",
                 category="commerce",
-                connected=True,
-                status="connected",
+                connected=False,
+                status="disconnected",
             )
         )
 

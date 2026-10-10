@@ -18,6 +18,7 @@ from ..commerce import search_products
 from ..model_domains.conversational_checkout import ConversationalCheckout
 from ..models import Agent, CommerceConnection, Conversation, Message, Product, ProductVariant
 from .attributed_order_service import create_attributed_shopify_cod_order
+from .catalog_availability import variant_is_purchasable
 
 ACTIVE_STATUSES = {
     "collecting_variant",
@@ -323,6 +324,7 @@ def _available_variants(db: Session, checkout: ConversationalCheckout) -> list[P
             ),
             ProductVariant.available.is_(True),
             ProductVariant.inventory_quantity > 0,
+            ProductVariant.price > 0,
         )
         .order_by(ProductVariant.id.asc())
         .all()
@@ -439,7 +441,7 @@ def _start_checkout(
     if not product:
         return None, None
 
-    available = [variant for variant in product.variants if variant.available and int(variant.inventory_quantity or 0) > 0]
+    available = [variant for variant in product.variants if variant_is_purchasable(variant)]
     locale = _locale(conversation)
     if not available:
         if locale == "en":
@@ -523,7 +525,7 @@ def _finalize_checkout(
         )
         .first()
     )
-    if not variant or not variant.available or int(variant.inventory_quantity or 0) < checkout.quantity:
+    if not variant or not variant_is_purchasable(variant, checkout.quantity):
         checkout.status = "failed"
         checkout.failure_reason = "variant_out_of_stock_before_creation"
         checkout.customer_confirmed = False

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from copy import deepcopy
 import json
 from typing import Any
 
@@ -166,10 +167,18 @@ def converse(
 ) -> dict:
     settings = get_settings()
     tool_config, reverse_names = build_bedrock_tool_config(tools)
+    # Persisted tool names use the internal dotted registry names. Bedrock's
+    # toolUse history must use the same provider-safe names as toolSpec.
+    provider_messages = deepcopy(messages)
+    for message in provider_messages:
+        for block in message.get("content") or []:
+            tool_use = block.get("toolUse")
+            if isinstance(tool_use, dict) and tool_use.get("name"):
+                tool_use["name"] = provider_tool_name(str(tool_use["name"]))
 
     kwargs: dict[str, Any] = {
         "modelId": settings.agent_model_id,
-        "messages": messages,
+        "messages": provider_messages,
         "system": [
             {
                 "text": build_system_prompt(

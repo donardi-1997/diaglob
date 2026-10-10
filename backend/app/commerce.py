@@ -143,6 +143,7 @@ def search_products(
 
                         "available": (
                             variant.available
+                            and variant.price > 0
                             and
                             variant.inventory_quantity
                             > 0

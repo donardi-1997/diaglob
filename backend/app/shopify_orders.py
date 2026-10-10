@@ -21,6 +21,7 @@ from .shopify_client import (
 )
 from .shopify_security import decrypt_shopify_secret
 from .automations import safe_emit_event
+from .services.catalog_availability import variant_is_purchasable
 
 
 def _sanitize_error(msg: str) -> str:
@@ -95,6 +96,7 @@ def _validate_and_build_items(
         if (
             product is None
             or product.store_id != store.id
+            or product.organization_id != store.organization_id
         ):
             raise ValueError(
                 f"Variant {vid} does not belong "
@@ -108,6 +110,17 @@ def _validate_and_build_items(
                 f"Quantity must be > 0 for "
                 f"variant {vid}"
             )
+
+        if not variant.shopify_variant_id or not variant_is_purchasable(variant, quantity):
+            raise ValueError(f"Variant {vid} is not purchasable")
+
+    quantities: dict[int, int] = {}
+    for item in items_payload:
+        vid = item["variant_local_id"]
+        quantities[vid] = quantities.get(vid, 0) + item["quantity"]
+    for vid, quantity in quantities.items():
+        if not variant_is_purchasable(variant_map[vid], quantity):
+            raise ValueError(f"Variant {vid} has insufficient verified stock")
 
     shopify_line_items = []
 
