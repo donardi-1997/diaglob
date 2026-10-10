@@ -9,6 +9,8 @@ import pytest
 from app.services.shopify_app_pricing import (
     ShopifyAppPricingError,
     get_active_shopify_subscription,
+    resolve_verified_shopify_plan,
+    ShopifySubscriptionSnapshot,
     resolve_trusted_shop_gid,
 )
 
@@ -33,14 +35,15 @@ def test_active_subscription_is_verified_by_partner_api(monkeypatch):
     payload = {
         "data": {
             "activeSubscription": {
-                "billingPeriod": "MONTHLY",
+                "shop": {"id": "gid://shopify/Shop/12345"},
+                "billingPeriod": "EVERY_30_DAYS",
                 "cancelAtEndOfCycle": False,
                 "trialEndsAt": None,
                 "currentBillingCycle": {
                     "startTime": "2026-10-01T00:00:00Z",
                     "endTime": "2026-11-01T00:00:00Z",
                 },
-                "items": [{"handle": "starter-plan", "description": "Starter"}],
+                "items": [{"handle": "starter-plan", "description": "Starter", "price": {"__typename": "FlatRatePrice", "active": True, "currency": "USD"}}],
             }
         }
     }
@@ -49,7 +52,7 @@ def test_active_subscription_is_verified_by_partner_api(monkeypatch):
             "gid://shopify/Shop/12345", http_client=client
         )
     assert snapshot.active is True
-    assert snapshot.billing_period == "MONTHLY"
+    assert snapshot.billing_period == "EVERY_30_DAYS"
     assert snapshot.item_handles == ("starter-plan",)
     assert snapshot.current_cycle_end == "2026-11-01T00:00:00Z"
     assert len(requests) == 1
@@ -182,3 +185,89 @@ def test_disconnected_shopify_connection_cannot_verify_subscription():
     )
     with pytest.raises(ShopifyAppPricingError, match="NOT_VERIFIED"):
         resolve_trusted_shop_gid(connection)
+
+
+def test_verified_plan_rejects_untrusted_or_ambiguous_handles():
+    valid = ShopifySubscriptionSnapshot(
+        active=True,
+        billing_period="EVERY_30_DAYS",
+        item_handles=("real-starter-monthly",),
+        eligible_handles=("real-starter-monthly",),
+    )
+    catalog = {
+        "real-starter-monthly": {"plan": "starter", "interval": "EVERY_30_DAYS"}
+    }
+    result = resolve_verified_shopify_plan(valid, handle_catalog=catalog)
+    assert result.plan == "starter"
+    assert result.billing_period_months == 1
+
+    with pytest.raises(ShopifyAppPricingError, match="UNKNOWN"):
+        resolve_verified_shopify_plan(
+            valid, handle_catalog={"other": {"plan": "starter", "interval": "EVERY_30_DAYS"}}
+        )
+    with pytest.raises(ShopifyAppPricingError, match="MISMATCH"):
+        resolve_verified_shopify_plan(
+            valid, handle_catalog={"real-starter-monthly": {"plan": "starter", "interval": "ANNUAL"}}
+        )
+
+    for handles, eligible in [
+        (("real-starter-monthly", "extra-charge"), ("real-starter-monthly",)),
+        (("real-starter-monthly",), ()),
+        ((), ()),
+    ]:
+        with pytest.raises(ShopifyAppPricingError, match="UNRECOGNIZED"):
+            resolve_verified_shopify_plan(
+                ShopifySubscriptionSnapshot(
+                    active=True,
+                    billing_period="EVERY_30_DAYS",
+                    item_handles=handles,
+                    eligible_handles=eligible,
+                ),
+                handle_catalog=catalog,
+            )
+
+
+def test_inactive_plan_never_maps_to_entitlements():
+    with pytest.raises(ShopifyAppPricingError, match="NO_ACTIVE"):
+        resolve_verified_shopify_plan(
+            ShopifySubscriptionSnapshot(active=False),
+            handle_catalog={"starter": {"plan": "starter", "interval": "EVERY_30_DAYS"}},
+        )
+
+
+def test_environment_handle_catalog_fail_closed(monkeypatch):
+    monkeypatch.delenv("SHOPIFY_APP_PRICING_HANDLES_JSON", raising=False)
+    active = ShopifySubscriptionSnapshot(
+        active=True,
+        billing_period="ANNUAL",
+        item_handles=("annual-starter",),
+        eligible_handles=("annual-starter",),
+    )
+    with pytest.raises(ShopifyAppPricingError, match="NOT_CONFIGURED"):
+        resolve_verified_shopify_plan(active)
+
+    monkeypatch.setenv(
+        "SHOPIFY_APP_PRICING_HANDLES_JSON",
+        '{"annual-starter":{"plan":"starter","interval":"ANNUAL"}}',
+    )
+    plan = resolve_verified_shopify_plan(active)
+    assert (plan.plan, plan.billing_period_months) == ("starter", 12)
+
+
+def test_subscription_response_shop_id_must_match_requested_shop(monkeypatch):
+    _env(monkeypatch)
+    payload = {
+        "data": {
+            "activeSubscription": {
+                "shop": {"id": "gid://shopify/Shop/other"},
+                "billingPeriod": "EVERY_30_DAYS",
+                "currentBillingCycle": None,
+                "items": [{"handle": "starter", "price": {"__typename": "FlatRatePrice", "active": True, "currency": "USD"}}],
+            },
+        }
+    }
+    with _client(payload) as client:
+        with pytest.raises(ShopifyAppPricingError, match="SHOP_MISMATCH"):
+            get_active_shopify_subscription(
+                "gid://shopify/Shop/123", http_client=client
+            )
