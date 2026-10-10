@@ -57,6 +57,7 @@ from ..services.shopify_compliance_webhooks import (
     process_shopify_compliance_webhook,
 )
 from ..services.shopify_oauth_callback_validation import (
+    MAX_CALLBACK_QUERY_BYTES,
     ShopifyCallbackQueryError,
     canonicalize_oauth_callback,
 )
@@ -217,12 +218,17 @@ def shopify_oauth_callback(
     request: Request,
     db: Session = Depends(get_db),
 ):
+    # Reject oversized raw queries BEFORE parsing multi-value parameters.
+    raw_query_size = len(request.scope.get("query_string", b""))
+    if raw_query_size > MAX_CALLBACK_QUERY_BYTES:
+        raise HTTPException(status_code=400, detail="INVALID_SHOPIFY_CALLBACK_QUERY")
+
     # Never flatten duplicate query parameters: Starlette's dict conversion
     # discards them before signature verification and OAuth state validation.
     try:
         query_params = canonicalize_oauth_callback(
             list(request.query_params.multi_items()),
-            raw_query_bytes=len(request.scope.get("query_string", b"")),
+            raw_query_bytes=raw_query_size,
         )
     except ShopifyCallbackQueryError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
