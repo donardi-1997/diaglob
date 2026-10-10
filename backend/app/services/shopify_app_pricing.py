@@ -260,10 +260,10 @@ def resolve_verified_shopify_plan(
         raise ShopifyAppPricingError("SHOPIFY_PLAN_HANDLE_UNKNOWN")
     plan = entry.get("plan")
     interval = entry.get("interval")
-    if plan not in {"starter", "growth", "pro", "scale"}:
+    if not isinstance(plan, str) or plan not in {"starter", "growth", "pro", "scale"}:
         raise ShopifyAppPricingError("SHOPIFY_PLAN_CATALOG_INVALID")
     periods = {"EVERY_30_DAYS": 1, "ANNUAL": 12}
-    if interval not in periods or subscription.billing_period != interval:
+    if not isinstance(interval, str) or interval not in periods or subscription.billing_period != interval:
         raise ShopifyAppPricingError("SHOPIFY_PLAN_INTERVAL_MISMATCH")
     return VerifiedShopifyPlan(
         plan=plan,
