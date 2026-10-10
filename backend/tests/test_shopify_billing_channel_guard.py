@@ -2,7 +2,7 @@
 import asyncio
 import json
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
@@ -66,3 +66,15 @@ def test_signed_paddle_event_cannot_overwrite_shopify_entitlements():
     assert response["ignored"] is True
     assert response["reason"] == "shopify_managed_billing"
     mutate.assert_not_called()
+
+
+def test_internal_downgrade_worker_skips_shopify_organizations():
+    from app.services.billing_service import process_pending_downgrades
+
+    db = MagicMock()
+    db.query.return_value.filter.return_value.all.return_value = [
+        SimpleNamespace(id=42, billing_provider="shopify")
+    ]
+    result = process_pending_downgrades(db)
+    assert result == [{"organization_id": 42, "status": "skipped_shopify_managed"}]
+    db.commit.assert_not_called()
