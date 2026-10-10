@@ -13,6 +13,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..models import (
+    CommerceConnection,
     Conversation,
     CustomerStoreProfile,
     Order,
@@ -65,11 +66,22 @@ def preview_shopify_privacy_scope(
         raise ShopifyPrivacyScopeError("SHOPIFY_PRIVACY_STORE_NOT_FOUND")
     try:
         expected_domain = normalize_shop_domain(receipt.shop_domain)
-        actual_domain = normalize_shop_domain(store.shopify_domain or "")
+        stored_domain = (
+            normalize_shop_domain(store.shopify_domain)
+            if store.shopify_domain else None
+        )
     except (ValueError, AttributeError) as exc:
         raise ShopifyPrivacyScopeError("SHOPIFY_PRIVACY_STORE_UNVERIFIED") from exc
-    if actual_domain != expected_domain:
+    if stored_domain and stored_domain != expected_domain:
         raise ShopifyPrivacyScopeError("SHOPIFY_PRIVACY_STORE_MISMATCH")
+    trusted_connection = db.query(CommerceConnection).filter(
+        CommerceConnection.organization_id == receipt.organization_id,
+        CommerceConnection.store_id == receipt.store_id,
+        CommerceConnection.provider == "shopify",
+        CommerceConnection.external_store_url == expected_domain,
+    ).first()
+    if not trusted_connection and stored_domain != expected_domain:
+        raise ShopifyPrivacyScopeError("SHOPIFY_PRIVACY_STORE_UNVERIFIED")
 
     if receipt.topic == "shop/redact":
         profiles = db.query(CustomerStoreProfile.customer_id).filter(
