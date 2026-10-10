@@ -53,6 +53,7 @@ class SyntheticExport:
     order_count: int
     conversation_count: int
     message_count: int
+    item_count: int
     completeness: str = "partial_requires_review"
     # Export never contains another store's records, even within one tenant.
 
@@ -263,6 +264,7 @@ def build_synthetic_customer_export(
         order_count=len(orders),
         conversation_count=len(conversations),
         message_count=message_count,
+        item_count=item_count,
     )
 
 
