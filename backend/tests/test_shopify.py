@@ -1,4 +1,5 @@
 import os
+from copy import deepcopy
 from unittest.mock import patch
 
 import pytest
@@ -23,6 +24,7 @@ from app.models import (
     Product,
     ProductVariant,
     Store,
+    ShopifyOAuthState,
     User,
 )
 from app.shopify_client import (
@@ -447,6 +449,36 @@ class TestShopifyTestConnection:
 
 
 class TestShopifyPocOrder:
+    @pytest.mark.parametrize("entrypoint", ["poc", "cod"])
+    @pytest.mark.parametrize("active,price,stock", [
+        (False, 100, 10), (True, 0, 10), (True, 100, 0),
+    ])
+    def test_order_entrypoints_reject_unsellable_catalog(
+        self, db, org, store, shopify_connection, entrypoint, active, price, stock,
+    ):
+        from app.shopify_poc import create_poc_order
+        from app.shopify_cod_orders import create_shopify_cod_order
+        variant = self._variant(db, org, store)
+        variant.product.active = active
+        variant.price = price
+        variant.inventory_quantity = stock
+        db.commit()
+        common = dict(db=db, store=store, connection=shopify_connection,
+                      quantity=1, customer_email="simulation@example.com",
+                      customer_phone="+573000000000", shipping_address={
+                          "first_name": "Simulation", "last_name": "Test",
+                          "address1": "Test", "city": "Bogota", "country_code": "CO", "zip": "110111",
+                      },
+                      note="simulation", idempotency_key="unsellable")
+        with patch("app.shopify_poc.decrypt_shopify_secret", return_value="test"), patch(
+            "app.shopify_cod_orders.decrypt_shopify_secret", return_value="test",
+        ), patch("app.shopify_poc.ShopifyGraphQLClient.query", side_effect=AssertionError("Unexpected provider call")), pytest.raises(ValueError):
+            if entrypoint == "poc":
+                create_poc_order(**common, variant_id="gid://shopify/ProductVariant/902", tags=[])
+            else:
+                create_shopify_cod_order(**common, customer_id=0, variant_local_id=variant.id)
+        assert db.query(Order).count() == 0
+
     def _variant(self, db, org, store):
         product = Product(
             organization_id=org.id,
@@ -703,7 +735,119 @@ class TestShopifyPocOrder:
         assert resp.status_code == 404
 
 
+class TestBakataOAuth:
+    @pytest.mark.parametrize("invalid", ["hmac", "expired", "shop"])
+    def test_callback_rejects_invalid_state_without_token_exchange(
+        self, db, org, store, user, monkeypatch, invalid,
+    ):
+        from datetime import datetime, timedelta
+        import hashlib
+        import hmac
+        from app.services.shopify_service import process_oauth_callback, ShopifyOAuthError
+        monkeypatch.setenv("SHOPIFY_CLIENT_SECRET", "test-secret")
+        state = ShopifyOAuthState(state="test-state", organization_id=org.id,
+                                  store_id=store.id, user_id=user.id,
+                                  shop_domain="0djnem-9x.myshopify.com",
+                                  expires_at=datetime.utcnow() + timedelta(minutes=-1 if invalid == "expired" else 5),
+                                  used=False)
+        db.add(state)
+        db.commit()
+        params = {"state": state.state, "code": "test-code",
+                  "shop": "other.myshopify.com" if invalid == "shop" else state.shop_domain}
+        message = "&".join(f"{key}={params[key]}" for key in sorted(params))
+        params["hmac"] = hmac.new(b"test-secret", message.encode(), hashlib.sha256).hexdigest()
+        if invalid == "hmac":
+            params["hmac"] = "invalid"
+        with patch("app.services.shopify_service.exchange_access_token") as exchange:
+            with pytest.raises(ShopifyOAuthError):
+                process_oauth_callback(db, params)
+            exchange.assert_not_called()
+
+    def test_callback_encrypts_token_consumes_state_and_rejects_replay(
+        self, db, org, store, user, monkeypatch,
+    ):
+        from datetime import datetime, timedelta
+        import hashlib
+        import hmac
+        from cryptography.fernet import Fernet
+        from app.services.shopify_service import process_oauth_callback, ShopifyOAuthError
+        from app.shopify_security import decrypt_shopify_secret
+        monkeypatch.setenv("SHOPIFY_CLIENT_SECRET", "test-secret")
+        monkeypatch.setenv("SHOPIFY_TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode())
+        state = ShopifyOAuthState(state="test-state", organization_id=org.id,
+                                  store_id=store.id, user_id=user.id,
+                                  shop_domain="0djnem-9x.myshopify.com",
+                                  expires_at=datetime.utcnow() + timedelta(minutes=5), used=False)
+        db.add(state)
+        db.commit()
+        params = {"state": state.state, "code": "test-code", "shop": state.shop_domain}
+        message = "&".join(f"{key}={params[key]}" for key in sorted(params))
+        params["hmac"] = hmac.new(b"test-secret", message.encode(), hashlib.sha256).hexdigest()
+        with patch("app.services.shopify_service.exchange_access_token", return_value="test-access"), patch(
+            "app.services.shopify_service.ensure_shopify_order_webhooks", return_value={"ok": True},
+        ):
+            assert "shopify=connected" in process_oauth_callback(db, params)
+            connection = db.query(CommerceConnection).one()
+            assert connection.organization_id == org.id
+            assert connection.store_id == store.id
+            assert connection.external_store_url == "0djnem-9x.myshopify.com"
+            assert connection.access_token_encrypted != "test-access"
+            assert decrypt_shopify_secret(connection.access_token_encrypted) == "test-access"
+            db.refresh(state)
+            assert state.used is True
+            with pytest.raises(ShopifyOAuthError):
+                process_oauth_callback(db, params)
+
+
 class TestShopifySyncProducts:
+    @pytest.mark.parametrize("active,price,stock,available", [
+        (False, 100, 10, True), (True, 0, 10, True),
+        (True, 100, 0, True), (True, 100, 10, False),
+    ])
+    def test_draft_order_rejects_unsellable_variants_before_writes(
+        self, db, org, store, active, price, stock, available,
+    ):
+        from app.shopify_orders import _validate_and_build_items
+        product = Product(organization_id=org.id, store_id=store.id,
+                          title="Bakata", active=active)
+        db.add(product)
+        db.flush()
+        variant = ProductVariant(product_id=product.id, title="Default",
+                                 shopify_variant_id="99", price=price, currency="COP",
+                                 inventory_quantity=stock, available=available)
+        db.add(variant)
+        db.flush()
+        with pytest.raises(ValueError):
+            _validate_and_build_items(db=db, store=store, items_payload=[
+                {"variant_local_id": variant.id, "quantity": 1},
+            ])
+        assert db.query(Order).count() == 0
+
+    @pytest.mark.parametrize("status,price,available,expected", [
+        ("DRAFT", "100", True, False),
+        ("ARCHIVED", "100", True, False),
+        ("ACTIVE", "0", True, False),
+        ("ACTIVE", "100", None, False),
+        ("ACTIVE", "100", True, True),
+    ])
+    def test_sync_availability_requires_explicit_sellable_data(
+        self, db, shopify_connection, status, price, available, expected,
+    ):
+        from app.shopify_sync import sync_shopify_products
+        variant = {"id": "gid://shopify/ProductVariant/900", "price": price,
+                   "inventoryQuantity": 0}
+        if available is not None:
+            variant["availableForSale"] = available
+        page = {"products": {"pageInfo": {"hasNextPage": False}, "edges": [
+            {"node": {"id": "gid://shopify/Product/900", "title": "Bakata",
+                      "status": status, "variants": {"edges": [{"node": variant}]}}}
+        ]}}
+        with patch("app.shopify_sync.decrypt_shopify_secret", return_value="test"), patch(
+            "app.shopify_sync.ShopifyGraphQLClient.query", return_value=page,
+        ):
+            sync_shopify_products(db, shopify_connection)
+        assert db.query(ProductVariant).one().available is expected
+
     def test_sync_creates_products(
         self,
         client,
@@ -1205,6 +1349,16 @@ MOCK_DRAFT_ORDER_USER_ERROR = {
 }
 
 
+# Order tests require a sellable catalog; the sync fixture intentionally
+# contains unavailable variants to verify Shopify availability is preserved.
+ORDER_PAGE1 = deepcopy(PAGE1)
+ORDER_PAGE2 = deepcopy(PAGE2)
+for _page in (ORDER_PAGE1, ORDER_PAGE2):
+    for _edge in _page["products"]["edges"]:
+        for _variant in _edge["node"]["variants"]["edges"]:
+            _variant["node"]["availableForSale"] = True
+
+
 class TestShopifyOrders:
     def test_valid_order_creates_draft(
         self,
@@ -1221,7 +1375,7 @@ class TestShopifyOrders:
         ), patch(
             "app.shopify_sync"
             ".ShopifyGraphQLClient.query",
-            side_effect=[PAGE1, PAGE2],
+            side_effect=[ORDER_PAGE1, ORDER_PAGE2],
         ):
             client.post(
                 f"/api/stores/"
@@ -1459,7 +1613,7 @@ class TestShopifyOrders:
         ), patch(
             "app.shopify_sync"
             ".ShopifyGraphQLClient.query",
-            side_effect=[PAGE1, PAGE2],
+            side_effect=[ORDER_PAGE1, ORDER_PAGE2],
         ):
             client.post(
                 f"/api/stores/"
@@ -1504,7 +1658,7 @@ class TestShopifyOrders:
         ), patch(
             "app.shopify_sync"
             ".ShopifyGraphQLClient.query",
-            side_effect=[PAGE1, PAGE2],
+            side_effect=[ORDER_PAGE1, ORDER_PAGE2],
         ):
             client.post(
                 f"/api/stores/"
@@ -1571,7 +1725,7 @@ class TestShopifyOrders:
         ), patch(
             "app.shopify_sync"
             ".ShopifyGraphQLClient.query",
-            side_effect=[PAGE1, PAGE2],
+            side_effect=[ORDER_PAGE1, ORDER_PAGE2],
         ):
             client.post(
                 f"/api/stores/"
@@ -1631,7 +1785,7 @@ class TestShopifyOrders:
         ), patch(
             "app.shopify_sync"
             ".ShopifyGraphQLClient.query",
-            side_effect=[PAGE1, PAGE2],
+            side_effect=[ORDER_PAGE1, ORDER_PAGE2],
         ):
             client.post(
                 f"/api/stores/"
@@ -1687,7 +1841,7 @@ class TestShopifyOrders:
         ), patch(
             "app.shopify_sync"
             ".ShopifyGraphQLClient.query",
-            side_effect=[PAGE1, PAGE2],
+            side_effect=[ORDER_PAGE1, ORDER_PAGE2],
         ):
             client.post(
                 f"/api/stores/"
@@ -1746,7 +1900,7 @@ class TestShopifyOrders:
         ), patch(
             "app.shopify_sync"
             ".ShopifyGraphQLClient.query",
-            side_effect=[PAGE1, PAGE2],
+            side_effect=[ORDER_PAGE1, ORDER_PAGE2],
         ):
             client.post(
                 f"/api/stores/"
@@ -1818,7 +1972,7 @@ class TestShopifyOrders:
         ), patch(
             "app.shopify_sync"
             ".ShopifyGraphQLClient.query",
-            side_effect=[PAGE1, PAGE2],
+            side_effect=[ORDER_PAGE1, ORDER_PAGE2],
         ):
             client.post(
                 f"/api/stores/"
@@ -1920,7 +2074,7 @@ class TestShopifyOrders:
         ), patch(
             "app.shopify_sync"
             ".ShopifyGraphQLClient.query",
-            side_effect=[PAGE1, PAGE2],
+            side_effect=[ORDER_PAGE1, ORDER_PAGE2],
         ):
             client.post(
                 f"/api/stores/"
@@ -1987,7 +2141,7 @@ class TestShopifyOrders:
         ), patch(
             "app.shopify_sync"
             ".ShopifyGraphQLClient.query",
-            side_effect=[PAGE1, PAGE2],
+            side_effect=[ORDER_PAGE1, ORDER_PAGE2],
         ):
             client.post(
                 f"/api/stores/"
@@ -2064,7 +2218,7 @@ class TestShopifyOrders:
         ), patch(
             "app.shopify_sync"
             ".ShopifyGraphQLClient.query",
-            side_effect=[PAGE1, PAGE2],
+            side_effect=[ORDER_PAGE1, ORDER_PAGE2],
         ):
             client.post(
                 f"/api/stores/"
@@ -2160,7 +2314,7 @@ class TestShopifyOrders:
         ), patch(
             "app.shopify_sync"
             ".ShopifyGraphQLClient.query",
-            side_effect=[PAGE1, PAGE2],
+            side_effect=[ORDER_PAGE1, ORDER_PAGE2],
         ):
             client.post(
                 f"/api/stores/"
@@ -2229,7 +2383,7 @@ class TestShopifyOrders:
         ), patch(
             "app.shopify_sync"
             ".ShopifyGraphQLClient.query",
-            side_effect=[PAGE1, PAGE2],
+            side_effect=[ORDER_PAGE1, ORDER_PAGE2],
         ):
             client.post(
                 f"/api/stores/"
@@ -2387,7 +2541,7 @@ class TestShopifyOrdersMultiStore:
         ), patch(
             "app.shopify_sync"
             ".ShopifyGraphQLClient.query",
-            side_effect=[PAGE1, PAGE2],
+            side_effect=[ORDER_PAGE1, ORDER_PAGE2],
         ):
             client.post(
                 f"/api/stores/"
@@ -2447,7 +2601,7 @@ class TestShopifyOrdersMultiStore:
             ), patch(
                 "app.shopify_sync"
                 ".ShopifyGraphQLClient.query",
-                side_effect=[PAGE1, PAGE2],
+                side_effect=[ORDER_PAGE1, ORDER_PAGE2],
             ):
                 client.post(
                     f"/api/stores/"
@@ -2467,6 +2621,9 @@ class TestShopifyOrdersMultiStore:
             other_variant = ProductVariant(
                 product_id=other_product.id,
                 title="Other Variant",
+                shopify_variant_id="other-901",
+                inventory_quantity=10,
+                available=True,
                 price=15.00,
                 currency="USD",
             )
@@ -2560,7 +2717,7 @@ class TestShopifyOrdersMultiStore:
         ), patch(
             "app.shopify_sync"
             ".ShopifyGraphQLClient.query",
-            side_effect=[PAGE1, PAGE2],
+            side_effect=[ORDER_PAGE1, ORDER_PAGE2],
         ):
             client.post(
                 f"/api/stores/"
@@ -2660,7 +2817,7 @@ class TestShopifyOrdersMultiStore:
         ), patch(
             "app.shopify_sync"
             ".ShopifyGraphQLClient.query",
-            side_effect=[PAGE1, PAGE2],
+            side_effect=[ORDER_PAGE1, ORDER_PAGE2],
         ):
             client.post(
                 f"/api/stores/"
@@ -2750,7 +2907,7 @@ class TestShopifyOrdersMultiStore:
         ), patch(
             "app.shopify_sync"
             ".ShopifyGraphQLClient.query",
-            side_effect=[PAGE1, PAGE2],
+            side_effect=[ORDER_PAGE1, ORDER_PAGE2],
         ):
             client.post(
                 f"/api/stores/"
@@ -2850,7 +3007,7 @@ class TestShopifyOrdersMultiStore:
         ), patch(
             "app.shopify_sync"
             ".ShopifyGraphQLClient.query",
-            side_effect=[PAGE1, PAGE2],
+            side_effect=[ORDER_PAGE1, ORDER_PAGE2],
         ):
             client.post(
                 f"/api/stores/"
@@ -2944,7 +3101,7 @@ class TestShopifyOrdersMultiStore:
         ), patch(
             "app.shopify_sync"
             ".ShopifyGraphQLClient.query",
-            side_effect=[PAGE1, PAGE2],
+            side_effect=[ORDER_PAGE1, ORDER_PAGE2],
         ):
             client.post(
                 f"/api/stores/"
@@ -3079,7 +3236,7 @@ class TestShopifyOrdersExternalStatus:
         ), patch(
             "app.shopify_sync"
             ".ShopifyGraphQLClient.query",
-            side_effect=[PAGE1, PAGE2],
+            side_effect=[ORDER_PAGE1, ORDER_PAGE2],
         ):
             client.post(
                 f"/api/stores/"
@@ -3162,7 +3319,7 @@ class TestShopifyOrdersExternalStatus:
         ), patch(
             "app.shopify_sync"
             ".ShopifyGraphQLClient.query",
-            side_effect=[PAGE1, PAGE2],
+            side_effect=[ORDER_PAGE1, ORDER_PAGE2],
         ):
             client.post(
                 f"/api/stores/"
@@ -3252,7 +3409,7 @@ class TestShopifyOrdersExternalStatus:
         ), patch(
             "app.shopify_sync"
             ".ShopifyGraphQLClient.query",
-            side_effect=[PAGE1, PAGE2],
+            side_effect=[ORDER_PAGE1, ORDER_PAGE2],
         ):
             client.post(
                 f"/api/stores/"
@@ -3343,7 +3500,7 @@ class TestShopifyOrdersExternalStatus:
         ), patch(
             "app.shopify_sync"
             ".ShopifyGraphQLClient.query",
-            side_effect=[PAGE1, PAGE2],
+            side_effect=[ORDER_PAGE1, ORDER_PAGE2],
         ):
             client.post(
                 f"/api/stores/"
@@ -3426,7 +3583,7 @@ class TestShopifyOrdersExternalStatus:
         ), patch(
             "app.shopify_sync"
             ".ShopifyGraphQLClient.query",
-            side_effect=[PAGE1, PAGE2],
+            side_effect=[ORDER_PAGE1, ORDER_PAGE2],
         ):
             client.post(
                 f"/api/stores/"
@@ -3505,7 +3662,7 @@ class TestShopifyOrdersExternalStatus:
         ), patch(
             "app.shopify_sync"
             ".ShopifyGraphQLClient.query",
-            side_effect=[PAGE1, PAGE2],
+            side_effect=[ORDER_PAGE1, ORDER_PAGE2],
         ):
             client.post(
                 f"/api/stores/"
@@ -3610,7 +3767,7 @@ class TestShopifyOrdersExternalStatus:
         ), patch(
             "app.shopify_sync"
             ".ShopifyGraphQLClient.query",
-            side_effect=[PAGE1, PAGE2],
+            side_effect=[ORDER_PAGE1, ORDER_PAGE2],
         ):
             client.post(
                 f"/api/stores/"
@@ -3711,7 +3868,7 @@ class TestShopifyOrdersExternalStatus:
         ), patch(
             "app.shopify_sync"
             ".ShopifyGraphQLClient.query",
-            side_effect=[PAGE1, PAGE2],
+            side_effect=[ORDER_PAGE1, ORDER_PAGE2],
         ):
             client.post(
                 f"/api/stores/"
@@ -3800,7 +3957,7 @@ class TestShopifyOrdersExternalStatus:
         ), patch(
             "app.shopify_sync"
             ".ShopifyGraphQLClient.query",
-            side_effect=[PAGE1, PAGE2],
+            side_effect=[ORDER_PAGE1, ORDER_PAGE2],
         ):
             client.post(
                 f"/api/stores/"
@@ -3922,7 +4079,7 @@ class TestShopifyOrdersExternalStatus:
         ), patch(
             "app.shopify_sync"
             ".ShopifyGraphQLClient.query",
-            side_effect=[PAGE1, PAGE2],
+            side_effect=[ORDER_PAGE1, ORDER_PAGE2],
         ):
             client.post(
                 f"/api/stores/"
@@ -4008,7 +4165,7 @@ class TestShopifyOrdersExternalStatus:
         ), patch(
             "app.shopify_sync"
             ".ShopifyGraphQLClient.query",
-            side_effect=[PAGE1, PAGE2],
+            side_effect=[ORDER_PAGE1, ORDER_PAGE2],
         ):
             client.post(
                 f"/api/stores/"
@@ -4177,7 +4334,7 @@ class TestShopifyOrdersExternalStatus:
         ), patch(
             "app.shopify_sync"
             ".ShopifyGraphQLClient.query",
-            side_effect=[PAGE1, PAGE2],
+            side_effect=[ORDER_PAGE1, ORDER_PAGE2],
         ):
             client.post(
                 f"/api/stores/"
@@ -4237,7 +4394,7 @@ class TestShopifyOrdersExternalStatus:
             ), patch(
                 "app.shopify_sync"
                 ".ShopifyGraphQLClient.query",
-                side_effect=[PAGE1, PAGE2],
+                side_effect=[ORDER_PAGE1, ORDER_PAGE2],
             ):
                 client.post(
                     f"/api/stores/"
@@ -4259,6 +4416,9 @@ class TestShopifyOrdersExternalStatus:
             other_variant = ProductVariant(
                 product_id=other_product.id,
                 title="Other Variant",
+                shopify_variant_id="other-901",
+                inventory_quantity=10,
+                available=True,
                 price=15.00,
                 currency="USD",
             )
@@ -4363,7 +4523,7 @@ class TestShopifyOrdersExternalStatus:
         ), patch(
             "app.shopify_sync"
             ".ShopifyGraphQLClient.query",
-            side_effect=[PAGE1, PAGE2],
+            side_effect=[ORDER_PAGE1, ORDER_PAGE2],
         ):
             client.post(
                 f"/api/stores/"
@@ -4551,7 +4711,7 @@ class TestShopifyOrderWebhooks:
             return_value="token",
         ), patch(
             "app.shopify_sync.ShopifyGraphQLClient.query",
-            side_effect=[PAGE1, PAGE2],
+            side_effect=[ORDER_PAGE1, ORDER_PAGE2],
         ):
             response = client.post(
                 f"/api/stores/{store.id}/shopify/sync/products"

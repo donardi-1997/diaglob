@@ -7,7 +7,7 @@ SHOPIFY_GRAPHQL_VERSION = (
     os.getenv(
         "SHOPIFY_API_VERSION", "2026-07"
     ).strip()
-    or "2024-10"
+    or "2026-07"
 )
 
 SHOPIFY_TIMEOUT = 30

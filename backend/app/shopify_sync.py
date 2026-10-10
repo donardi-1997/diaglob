@@ -305,9 +305,7 @@ def sync_shopify_products(
 
             handle = node.get("handle")
 
-            status = node.get(
-                "status", "ACTIVE"
-            )
+            status = node.get("status", "")
 
             description_html = node.get(
                 "descriptionHtml", ""
@@ -417,9 +415,10 @@ def sync_shopify_products(
                         inventory_quantity=(
                             inv_qty
                         ),
-                        available=vnode.get(
-                            "availableForSale",
-                            True,
+                        available=(
+                            status == "ACTIVE"
+                            and price > 0
+                            and vnode.get("availableForSale") is True
                         ),
                         currency=currency,
                     )
