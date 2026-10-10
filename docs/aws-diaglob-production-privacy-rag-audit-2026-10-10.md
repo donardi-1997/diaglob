@@ -66,3 +66,20 @@ Official references:
 - https://docs.aws.amazon.com/AmazonS3/latest/userguide/intro-lifecycle-rules.html
 
 **Tracking:** issue #148 / draft PR #149. This document supersedes the narrower `docs/shopify-privacy-aws-infrastructure-evidence-2026-10-10.md` inventory.
+
+
+## 5. Repeatable read-only audit command
+
+The repository now contains `backend/tools/diaglob_aws_privacy_audit.py` and unit tests with mocked AWS clients (no real AWS usage in tests). Run from `backend/` using an authorized, **read-only** AWS identity in the target account:
+
+```bash
+python -m tools.diaglob_aws_privacy_audit --region us-east-2 \
+  --instance diaglob-prod \
+  --bucket diaglob-knowledge-765761474007-us-east-2
+```
+
+The program requests only metadata: Lightsail instance/snapshot counts, bounded S3 listing and version counts, Bedrock KB/source existence and **one vector key per index** to check whether any vectors exist. It never prints object keys, vector keys, payloads, customer IDs or secrets; it calls no mutation APIs. A listing is **partial** when the `*_truncated` field is true. The tool does not certify privacy compliance, usable backups or a functioning RAG answer.
+
+Exit codes: `0` = all checks verified and no detected warning; `1` = checks verified but operational warnings (such as missing snapshots/empty RAG); `2` = at least one API check unverified. It makes **no automatic remediation** and must not be deployed with credentials granting unnecessary write access.
+
+Inspect role permissions and logs separately before scheduling the command. The code does not inspect other AWS regions or accounts or external providers.
