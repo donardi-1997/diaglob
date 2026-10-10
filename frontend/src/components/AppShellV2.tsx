@@ -9,7 +9,6 @@ import {
   Menu,
   Moon,
   ShoppingBag,
-  Sparkles,
   Sun,
   X,
   type LucideIcon,
@@ -210,7 +209,7 @@ export default function AppShellV2({
     <div className={`dg-shell ${sidebarCollapsed ? "is-sidebar-collapsed" : ""}`}>
       <aside className="dg-sidebar">
         <div className="dg-sidebar-brand">
-          <div className="dg-brand-mark"><Sparkles size={19} /></div>
+          <div className="dg-brand-mark"><img src="/brand/diaglob-mark.svg" alt="" width={25} height={25} /></div>
           <div className="dg-brand-copy">
             <strong>DIAGLOB</strong>
             <span>Commerce OS</span>
@@ -245,7 +244,7 @@ export default function AppShellV2({
           <aside className="dg-mobile-drawer" onClick={(event) => event.stopPropagation()}>
             <div className="dg-mobile-drawer-header">
               <div className="dg-sidebar-brand">
-                <div className="dg-brand-mark"><Sparkles size={19} /></div>
+                <div className="dg-brand-mark"><img src="/brand/diaglob-mark.svg" alt="" width={25} height={25} /></div>
                 <div className="dg-brand-copy"><strong>DIAGLOB</strong><span>Commerce OS</span></div>
               </div>
               <button className="dg-icon-button" onClick={() => setMobileOpen(false)} aria-label="Cerrar menú">

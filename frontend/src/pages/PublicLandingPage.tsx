@@ -300,7 +300,7 @@ export default function PublicLandingPage({
       <header className="marketing-nav">
         <div className="marketing-shell marketing-nav-inner">
           <button className="marketing-brand" onClick={() => scrollTo("hero")} aria-label="Diaglob">
-            <span className="marketing-brand-mark"><Sparkles size={19} /></span>
+            <span className="marketing-brand-mark"><img src="/brand/diaglob-mark.svg" alt="" width={25} height={25} /></span>
             <span className="marketing-brand-copy">
               <strong>DIAGLOB</strong>
               <small>ECOMMERCE + IA</small>
@@ -667,7 +667,7 @@ export default function PublicLandingPage({
       <footer className="marketing-footer">
         <div className="marketing-shell marketing-footer-grid">
           <div className="marketing-footer-brand">
-            <div className="marketing-brand static"><span className="marketing-brand-mark"><Sparkles size={19} /></span><span className="marketing-brand-copy"><strong>DIAGLOB</strong><small>ECOMMERCE + IA</small></span></div>
+            <div className="marketing-brand static"><span className="marketing-brand-mark"><img src="/brand/diaglob-mark.svg" alt="" width={25} height={25} /></span><span className="marketing-brand-copy"><strong>DIAGLOB</strong><small>ECOMMERCE + IA</small></span></div>
             <p>{copy.footer.tagline}</p>
           </div>
           <div><strong>{copy.footer.product}</strong><button onClick={() => scrollTo("product")}>{copy.nav.product}</button><button onClick={() => scrollTo("integrations")}>{copy.nav.integrations}</button><button onClick={() => scrollTo("pricing")}>{copy.nav.pricing}</button></div>
