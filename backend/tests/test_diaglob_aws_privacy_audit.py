@@ -87,6 +87,13 @@ def test_audit_identifies_backup_retention_and_rag_gaps_without_exposing_pii():
         session, region="us-east-2", instance="diaglob-prod",
         bucket="diaglob-test-knowledge",
     )
+    assert result["findings"] == [
+        "ALL_DIAGLOB_VECTOR_INDEXES_EMPTY",
+        "KNOWLEDGE_SOURCE_BUCKET_EMPTY",
+        "LIGHTSAIL_AUTOSNAPSHOT_DISABLED",
+        "NO_VERIFIED_LIGHTSAIL_RECOVERY_POINT",
+        "VERSIONED_S3_WITHOUT_LIFECYCLE",
+    ]
     assert result["mode"] == "read_only"
     assert result["production_changes"] is False
     assert result["privacy_fulfillment_authorized"] is False
@@ -166,3 +173,15 @@ def test_auto_snapshot_addon_reports_enabled_when_configured():
         bucket="diaglob-test-knowledge",
     )
     assert result["checks"]["lightsail"]["automatic_snapshot_addon_enabled"] is True
+
+
+def test_unverified_s3_never_becomes_healthy_or_claims_empty_source():
+    session, _, s3, _, _ = fixtures()
+    s3.get_bucket_versioning.side_effect = aws_error("AccessDenied")
+    result = audit(
+        session, region="us-east-2", instance="diaglob-prod",
+        bucket="diaglob-test-knowledge",
+    )
+    assert result["checks"]["s3"]["state"] == "unverified"
+    assert "KNOWLEDGE_SOURCE_BUCKET_EMPTY" not in result["findings"]
+    assert "VERSIONED_S3_WITHOUT_LIFECYCLE" not in result["findings"]
