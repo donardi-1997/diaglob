@@ -51,5 +51,9 @@ export function sanitizeReturnTo(value: unknown, fallback = "/app") {
   if (value.startsWith("//")) return fallback;
 
   const pathOnly = value.split(/[?#]/, 1)[0];
-  return isAppPath(pathOnly) ? value : fallback;
+  // Public Shopify handoff is authentication-gated and requires explicit
+  // store selection. Preserve its shop hint across login, never an external URL.
+  return isAppPath(pathOnly) || pathOnly === "/shopify/install"
+    ? value
+    : fallback;
 }
