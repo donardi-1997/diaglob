@@ -67,6 +67,17 @@ class TestShopifyComplianceWebhooks:
         )
         assert response.status_code == 401
 
+    def test_missing_hmac_is_rejected(self, client):
+        response = client.post(
+            "/api/webhooks/shopify/compliance",
+            content=b'{"shop_id":123,"shop_domain":"test.myshopify.com"}',
+            headers={
+                "X-Shopify-Topic": "customers/redact",
+                "Content-Type": "application/json",
+            },
+        )
+        assert response.status_code == 401
+
     def test_customer_data_request_is_acknowledged_without_pii_in_receipt(self, client):
         body = json.dumps(
             {
