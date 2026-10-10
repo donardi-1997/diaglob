@@ -104,6 +104,8 @@ def summarize_shopify_privacy_backlog(
                         or_(
                             ShopifyPrivacyRequest.organization_id.is_(None),
                             ShopifyPrivacyRequest.store_id.is_(None),
+                            ShopifyPrivacyRequest.organization_id <= 0,
+                            ShopifyPrivacyRequest.store_id <= 0,
                         ),
                         1,
                     ),
