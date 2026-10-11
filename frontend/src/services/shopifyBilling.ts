@@ -21,6 +21,7 @@ export interface ShopifyBillingCheck {
   current_plan: string;
   target_plan: string | null;
   target_billing_period_months: number | null;
+  has_pending_update: boolean;
   requires_review: true;
   applied: false;
 }
