@@ -6,16 +6,8 @@ import {
   getCurrentOrganization,
   type Organization,
 } from "../services/organizations";
+import { billingChannel } from "../services/billingChannel";
 import "../shopify-billing-workspace.css";
-
-export type BillingChannel = "shopify" | "paddle" | "unverified";
-
-export function billingChannel(value: string | null | undefined): BillingChannel {
-  const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
-  if (normalized === "shopify") return "shopify";
-  if (normalized === "paddle") return "paddle";
-  return "unverified";
-}
 
 /** Prevents accidentally presenting Paddle checkout to Shopify-managed shops. */
 export default function BillingChannelPage() {
