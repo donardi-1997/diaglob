@@ -19,7 +19,12 @@ from ..db import get_db
 from ..models import CommerceConnection, Organization, OrganizationMembership, Store
 from .deps import get_current_membership
 from ..services.ai_usage_packages import fulfill_ai_usage_package_transaction
-from ..services.shopify_app_pricing import ShopifyAppPricingError
+from ..services.shopify_app_pricing import (
+    SHOPIFY_APP_STORE_PLANS,
+    SHOPIFY_APP_STORE_TRIAL_DAYS,
+    SHOPIFY_APP_PRICING_INTERVAL_TO_MONTHS,
+    ShopifyAppPricingError,
+)
 from ..services.shopify_app_pricing_reconciliation import (
     preview_shopify_entitlement_reconciliation,
 )
@@ -173,6 +178,9 @@ def shopify_billing_capabilities(
             os.getenv("SHOPIFY_BILLING_ENTITLEMENTS_ENABLED", "").lower() == "true"
         ),
         "paddle_checkout_available": False,
+        "public_plans": list(SHOPIFY_APP_STORE_PLANS),
+        "trial_days": SHOPIFY_APP_STORE_TRIAL_DAYS,
+        "billing_period_months": list(SHOPIFY_APP_PRICING_INTERVAL_TO_MONTHS.values()),
     }
 
 
