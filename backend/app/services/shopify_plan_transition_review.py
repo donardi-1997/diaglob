@@ -18,9 +18,10 @@ from ..models import (
     ShopifyPlanTransitionReview,
     Store,
 )
+from .shopify_app_pricing import SHOPIFY_APP_STORE_PLANS
 
 REVIEW_TTL = timedelta(minutes=10)
-_VALID_TARGET_PLANS = frozenset({"starter", "growth", "pro", "scale"})
+_VALID_TARGET_PLANS = frozenset(SHOPIFY_APP_STORE_PLANS)
 
 
 class ShopifyTransitionReviewError(ValueError):
