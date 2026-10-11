@@ -105,6 +105,20 @@ class ShopifySubscriptionSnapshot:
     cancel_at_end_of_cycle: bool = False
 
 
+def subscription_has_no_charge_effective_price(
+    subscription: ShopifySubscriptionSnapshot,
+) -> bool:
+    """Detect Shopify's effective USD 0 representation without authorizing it."""
+    if len(subscription.eligible_amounts) != 1:
+        return False
+    amount = subscription.eligible_amounts[0]
+    return (
+        type(amount) is str
+        and USD_AMOUNT_RE.fullmatch(amount) is not None
+        and Decimal(amount) == 0
+    )
+
+
 def resolve_trusted_shop_gid(connection: Any) -> str:
     """Get the verified Shop GID from an authenticated, connected store token.
 
