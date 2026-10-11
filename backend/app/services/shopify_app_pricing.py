@@ -351,8 +351,8 @@ def get_active_shopify_subscription(
 class ShopifyTrialEvidence:
     """Provider-backed trial settings for the currently verified plan."""
 
-    trial_days: int
-    trial_days_remaining: int
+    trial_days: int | None
+    trial_days_remaining: int | None
     billing_period: str
     event_type: str
     occurred_at: str | None = None
@@ -430,12 +430,13 @@ def get_shopify_trial_evidence(
             continue
         trial_days = plan.get("trialDays")
         remaining = plan.get("trialDaysRemaining")
-        if (
-            type(trial_days) is not int
-            or type(remaining) is not int
-            or trial_days < 0
-            or remaining < 0
-            or remaining > trial_days
+        if trial_days is not None and (
+            type(trial_days) is not int or trial_days < 0
+        ):
+            raise ShopifyAppPricingError("SHOPIFY_TRIAL_EVIDENCE_INVALID")
+        if remaining is not None and (
+            type(remaining) is not int or remaining < 0
+            or (trial_days is not None and remaining > trial_days)
         ):
             raise ShopifyAppPricingError("SHOPIFY_TRIAL_EVIDENCE_INVALID")
         occurred_at = node.get("occurredAt")
