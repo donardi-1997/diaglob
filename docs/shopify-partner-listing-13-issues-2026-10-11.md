@@ -55,6 +55,20 @@ Use the literal Dashboard message in column 2. Only row 1 is currently evidenced
 - **App config:** `shopify.app.toml` is not tracked; use Shopify CLI to **link the existing app**, preserving deployed OAuth URLs/scopes. Review mandatory compliance webhook subscriptions, not just callback HTTP 200. Do not fabricate or commit secrets.
 - **P0 review risks:** privacy exports/redaction and retention policy still need end-to-end evidence; protected customer data, OAuth install/reinstall, App Bridge (if embedded), unnecessary API scopes and Shopify checkout/merchant billing must be independently verified.
 
+## AWS encrypted destination reserved for Partner credentials (2026-10-11)
+
+Provisioned in AWS account `765761474007`, region `us-east-2`:
+
+- SSM Parameter Store name: `/diaglob/prod/shopify/partner-api-token`
+- Type: **SecureString**, tier **Standard**, encrypted with the account-managed KMS alias `aws/ssm`.
+- Current value: **placeholder only** — **no authentic Partner API credential** exists in the parameter.
+- Not mapped to `SHOPIFY_PARTNER_ACCESS_TOKEN` in the Lightsail service. No production access or feature flags were enabled.
+- Tags indicate the value is awaiting authorized operator replacement.
+
+Partner organization owner can now create a **Manage apps** Partner API client in the correct Shopify Partner settings and replace the placeholder using AWS Console Systems Manager → Parameter Store → edit SecureString value. **Never send the token over chat, include it in GitHub, print it in CI, place it in a shell command line or expose it in logs.**
+
+After the token is stored, a separately reviewed secret-delivery procedure is needed to pass it securely from AWS to the Lightsail runtime and rotate/revoke it safely. Lightsail isn't registered as an SSM managed instance in the current AWS audit, so do not claim automatic retrieval works. Restrict IAM access to only approved operator/service principals. Do not deploy placeholder text as if it were a real Partner token.
+
 ## Hard release boundaries
 
 - Shopify App Store **submission**, **public plan publication**, **commercial entitlement activation**, **merchant charges** and **production erasure of personal data** require separate operational/legal authorization.
