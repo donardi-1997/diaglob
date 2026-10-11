@@ -36,6 +36,7 @@ import AppShellV2, {
 } from "./components/AppShellV2";
 import FloatingCopilotButton from "./components/FloatingCopilotButton";
 import type { GlobalSearchResult } from "./services/globalSearch";
+import { registrationChannelForReturnTo } from "./services/registrationChannel";
 import LoginPage from "./pages/LoginPage";
 import RouteStatePage from "./pages/RouteStatePage";
 import CookieConsent from "./components/CookieConsent";
@@ -596,6 +597,9 @@ function App() {
                 navigate("/login", { replace: true, state: location.state })
               }
               initialMode="register"
+              registrationChannel={registrationChannelForReturnTo(
+                (location.state as { returnTo?: unknown } | null)?.returnTo,
+              )}
             />
           )
         }
