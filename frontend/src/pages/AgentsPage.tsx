@@ -27,6 +27,8 @@ import {
 import {
   type Store,
 } from "../services/stores";
+import { validateAgentStoreAssignment } from "../services/agentEditorValidation";
+import { Link } from "react-router-dom";
 import "../workforce-catalog.css";
 
 
@@ -284,6 +286,20 @@ export default function AgentsPage({
       return;
     }
 
+    const storeValidation = validateAgentStoreAssignment(
+      form.active,
+      form.store_ids,
+      stores.filter((store) => store.active).map((store) => store.id),
+    );
+    if (storeValidation) {
+      setError(
+        storeValidation === "STORE_REQUIRED"
+          ? "Selecciona al menos una tienda activa antes de activar el agente."
+          : "Una tienda asignada ya no está disponible. Actualiza la selección.",
+      );
+      return;
+    }
+
     try {
       setSaving(true);
       setError("");
@@ -313,7 +329,11 @@ export default function AgentsPage({
         });
       }
 
-      closeModal();
+      // closeModal() deliberately ignores requests while saving=true.
+      // A successful save must dismiss the editor without a second click.
+      setModalOpen(false);
+      setEditingAgent(null);
+      setForm({ ...EMPTY_FORM });
 
       await loadData();
     } catch (err) {
@@ -387,8 +407,18 @@ export default function AgentsPage({
 
 
       {error && (
-        <div className="api-error">
+        <div className="api-error" role="alert">
           {error}
+          <button type="button" className="secondary-button" onClick={() => void loadData()} disabled={loading || saving}>
+            Reintentar
+          </button>
+        </div>
+      )}
+      {stores.length === 0 && !loading && (
+        <div className="panel" role="status">
+          <strong>No hay tiendas disponibles para los agentes.</strong>
+          <p>Agrega o conecta una tienda para asignar agentes de IA.</p>
+          <Link to="/app/stores" className="secondary-button">Ir a Tiendas</Link>
         </div>
       )}
 
