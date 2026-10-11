@@ -52,11 +52,27 @@ The `resolve_verified_shopify_plan` helper maps **only** a Partner-API-verified 
 {
   "verified-handle-from-shopify-dashboard": {
     "plan": "starter",
-    "interval": "EVERY_30_DAYS"
+    "interval": "EVERY_30_DAYS",
+    "amount_usd": "APPROVED_USD_PRICE"
   }
 }
 ```
 
-This is an **illustrative placeholder**; do not use the shown handle. Populate the catalog only after the actual plan handles are verified from Shopify's Partner API and priced publicly in the existing DIAGLOB developer account. Values must match `EVERY_30_DAYS` or `ANNUAL` billing frequency and a valid canonical plan. Missing/invalid catalog, untrusted handle, inactive subscription, or billing interval mismatch fails closed. Trial users with an active Shopify contract can be eligible after this verified lookup; trial metadata must be interpreted separately.
+This is an **illustrative placeholder**; do not use the shown handle. Populate the catalog only after the actual plan handles are verified from Shopify's Partner API and priced publicly in the existing DIAGLOB developer account. Values must match `EVERY_30_DAYS` or `ANNUAL` billing frequency, a valid canonical plan, **and the exact approved flat-rate USD price** from the Partner API. The illustrative `APPROVED_USD_PRICE` placeholder is deliberately not a valid amount; replace it only after the owner approves the real Shopify price. Missing/invalid catalog, untrusted handle, inactive subscription, or billing interval mismatch fails closed. Trial users with an active Shopify contract can be eligible after this verified lookup; trial metadata must be interpreted separately.
 
 `VerifiedShopifyPlan` is **not an authorization token** or a database entitlement grant. Nothing is written to `Organization.plan` or `billing_provider` by the mapper. Before enabling paid access, add server-controlled Shopify installation provenance, a canonical shop-to-organization identity binding, guarded transactional entitlement synchronization, and a Shopify-channel block on Paddle checkout. Do not infer contracting channel from the presence of a domain or access token alone.
+
+## Exact price verification (new safe staging gate)
+
+The Partner API subscription query now explicitly fetches `... on FlatRatePrice { amount }` for each subscription item. The verifier checks **all** of these properties together:
+
+- Shopify Admin API confirms the live merchant Shop GID; Partner API returns an active subscription for exactly that Shop GID.
+- Exactly one item, with an active USD `FlatRatePrice` and a recognized `handle`; multi-item/usage-based structures remain blocked until their commercial model is reviewed.
+- The operator-approved handle catalog specifies `plan`, `interval` and `amount_usd`. `amount_usd` must be a positive decimal **string** with at most two fractional digits, not a floating-point number, exponent, negative/zero price, `NaN` or free-form currency notation.
+- The Partner API also supplies the flat-rate USD `amount` **as a string**. The verifier compares the two exact decimal values with `Decimal` (not floating point). Missing/malformed API amount raises `SHOPIFY_PLAN_PRICE_UNVERIFIED`, a mismatch raises `SHOPIFY_PLAN_PRICE_MISMATCH`, and missing/malformed catalog pricing raises `SHOPIFY_PLAN_CATALOG_INVALID`.
+- Planned annual pricing must be approved independently. Do not infer annual from 12 times monthly, or accidentally use a proposed price as approved.
+- The existing owner/manager preview stays read-only: no billing writes, automatic entitlements, Partner plan creation or paid Shopify actions.
+
+`SHOPIFY_APP_PRICING_HANDLES_JSON` is operator-managed configuration; create catalog entries only after verifying the existing Shopify Partner application and prices. Keep the token and config in your approved secret/configuration management, not in public logs. The example in this document is intentionally a non-production placeholder.
+
+This closes **price mismatch validation**, not the larger release gates: Shopify-owned install E2E, app billing provenance, multi-shop contracting policy, plan lifecycle handling, reviewed entitlement updates, privacy redaction/retention and live plan settings remain blocked.
