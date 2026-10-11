@@ -1,13 +1,13 @@
 """Add a short-lived, unbound Shopify installation grant table.
 
 Revision ID: f9a0b1c2d3e4
-Revises: e7f8a9b0c1d2
+Revises: f8a9b0c1d2e3
 """
 from alembic import op
 import sqlalchemy as sa
 
 revision = "f9a0b1c2d3e4"
-down_revision = "e7f8a9b0c1d2"
+down_revision = "f8a9b0c1d2e3"
 branch_labels = None
 depends_on = None
 
