@@ -787,3 +787,26 @@ export async function reversePayment(
 
   return response.data;
 }
+
+
+/** OAuth-first Shopify handoff: cookie remains HttpOnly on the backend. */
+export async function getPendingShopifyInstall() {
+  const response = await api.get<{
+    pending: boolean;
+    shop_domain: string | null;
+  }>("/api/shopify/install/pending", { withCredentials: true });
+  return response.data;
+}
+
+export async function claimPendingShopifyInstall(storeId: number) {
+  const response = await api.post<{
+    connected: boolean;
+    store_id: number;
+    shop_domain: string;
+  }>(
+    `/api/stores/${storeId}/shopify/install/claim`,
+    {},
+    { withCredentials: true },
+  );
+  return response.data;
+}
