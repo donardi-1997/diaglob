@@ -48,6 +48,7 @@ interface Props {
   mode?: "page" | "panel";
   pageContext?: CopilotPageContextInput;
   onClose?: () => void;
+  onNavigateToStores?: () => void;
 }
 
 const suggestions = [
