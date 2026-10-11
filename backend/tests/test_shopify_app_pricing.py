@@ -7,12 +7,22 @@ import httpx
 import pytest
 
 from app.services.shopify_app_pricing import (
+    SHOPIFY_APP_PRICING_INTERVAL_TO_MONTHS,
     ShopifyAppPricingError,
     get_active_shopify_subscription,
     resolve_verified_shopify_plan,
     ShopifySubscriptionSnapshot,
     resolve_trusted_shop_gid,
 )
+
+
+def test_shopify_app_pricing_exposes_only_monthly_and_annual_intervals():
+    """Shopify App Pricing has no semestral billing interval."""
+    assert SHOPIFY_APP_PRICING_INTERVAL_TO_MONTHS == {
+        "EVERY_30_DAYS": 1,
+        "ANNUAL": 12,
+    }
+    assert "EVERY_180_DAYS" not in SHOPIFY_APP_PRICING_INTERVAL_TO_MONTHS
 
 
 def _env(monkeypatch):

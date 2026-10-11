@@ -30,6 +30,13 @@ APP_GID_RE = re.compile(r"^gid://shopify/App/[0-9]+$")
 SHOP_GID_RE = re.compile(r"^gid://shopify/Shop/[0-9]+$")
 PARTNER_ORG_RE = re.compile(r"^[0-9]+$")
 
+# Shopify App Pricing exposes only these recurring intervals through the
+# Partner API. In particular, Shopify does not support a semestral interval.
+SHOPIFY_APP_PRICING_INTERVAL_TO_MONTHS = {
+    "EVERY_30_DAYS": 1,
+    "ANNUAL": 12,
+}
+
 ACTIVE_SUBSCRIPTION_QUERY = """
 query DiaglobActiveSubscription($appId: ID!, $shopId: ID!) {
   activeSubscription(appId: $appId, shopId: $shopId) {
@@ -288,7 +295,7 @@ def resolve_verified_shopify_plan(
     plan = entry.get("plan")
     if not isinstance(plan, str) or plan not in {"starter", "growth", "pro", "scale"}:
         raise ShopifyAppPricingError("SHOPIFY_PLAN_CATALOG_INVALID")
-    periods = {"EVERY_30_DAYS": 1, "ANNUAL": 12}
+    periods = SHOPIFY_APP_PRICING_INTERVAL_TO_MONTHS
 
     # A single Shopify plan handle may support both monthly and annual billing.
     # Keep the original single-period catalog shape for backwards compatibility.
