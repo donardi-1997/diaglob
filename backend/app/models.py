@@ -60,7 +60,10 @@ from .model_domains.shopify_privacy import (  # noqa: F401
     ShopifyPrivacyAuditEvent,
     ShopifyPrivacyRequest,
 )
-from .model_domains.shopify_billing import ShopifyBillingVerification  # noqa: F401
+from .model_domains.shopify_billing import (  # noqa: F401
+    ShopifyBillingVerification,
+    ShopifyPlanTransitionReview,
+)
 
 
 # ============================================================
