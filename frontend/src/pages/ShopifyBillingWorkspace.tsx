@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertCircle, ArrowRight, CheckCircle2, Clock3, RefreshCw, ShieldCheck,
 } from "lucide-react";
@@ -106,6 +106,7 @@ export default function ShopifyBillingWorkspace({ organization }: Props) {
   const hasBillingAccess = organization.role === "owner" || organization.role === "manager";
   const isOwner = organization.role === "owner";
 
+  const hostedReturnHandled = useRef(false);
   const [history, setHistory] = useState<ShopifyBillingVerification[]>([]);
   const [reviews, setReviews] = useState<ShopifyPlanReview[]>([]);
   const [latestCheck, setLatestCheck] = useState<ShopifyBillingCheck | null>(null);
@@ -114,7 +115,7 @@ export default function ShopifyBillingWorkspace({ organization }: Props) {
   const [assessment, setAssessment] = useState<ShopifyReviewAssessment | null>(null);
   const [trialVerification, setTrialVerification] = useState<ShopifyTrialVerification | null>(null);
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState<"refresh" | "check" | "stage" | "assess" | "hosted" | "apply" | "subscription" | "trial" | null>(null);
+  const [busy, setBusy] = useState<"refresh" | "check" | "stage" | "assess" | "hosted" | "apply" | "subscription" | "trial" | "return" | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
@@ -265,6 +266,87 @@ export default function ShopifyBillingWorkspace({ organization }: Props) {
       setBusy(null);
     }
   }
+
+  useEffect(() => {
+    if (
+      loading ||
+      !capabilities ||
+      !hasBillingAccess ||
+      hostedReturnHandled.current
+    ) return;
+
+    const params = new URLSearchParams(window.location.search);
+    // Shopify appends plan_handle to the configured welcome link. Its value is
+    // intentionally NOT trusted; presence only triggers fresh Partner checks.
+    if (!params.has("plan_handle")) return;
+    hostedReturnHandled.current = true;
+
+    params.delete("plan_handle");
+    params.delete("shop");
+    const cleanedQuery = params.toString();
+    window.history.replaceState(
+      {},
+      "",
+      `${window.location.pathname}${cleanedQuery ? `?${cleanedQuery}` : ""}${window.location.hash}`,
+    );
+
+    void (async () => {
+      setBusy("return");
+      setError("");
+      setNotice("Shopify devolvió el control a Diaglob. Verificando el contrato activo…");
+      try {
+        const check = await checkShopifyBilling();
+        if (check.organization_id !== organization.id || check.applied !== false) {
+          throw new Error("Invalid Shopify billing return");
+        }
+        setLatestCheck(check);
+        await refreshHistory();
+
+        if (check.status !== "plan_transition_requires_review") {
+          setNotice("Shopify confirmó el plan activo. No hay cambios de acceso pendientes.");
+          return;
+        }
+
+        if (!isOwner || !capabilities.verified_entitlement_apply_enabled) {
+          setNotice(
+            "Shopify confirmó un cambio de plan. La verificación quedó registrada y requiere la activación segura del propietario.",
+          );
+          return;
+        }
+
+        const review = await stageShopifyPlanReview(check.verification_id);
+        const freshAssessment = await assessShopifyPlanReview(review.id);
+        if (!freshAssessment.ready_for_manual_review) {
+          setAssessment(freshAssessment);
+          setNotice("Shopify confirmó el cambio, pero la revisión interna necesita una nueva comprobación.");
+          return;
+        }
+
+        const applied = await applyVerifiedShopifyPlan(review.id);
+        if (applied.organization_id !== organization.id) {
+          throw new Error("Wrong tenant on Shopify billing return");
+        }
+        setAssessment(null);
+        await refreshHistory();
+        setNotice(
+          applied.applied
+            ? `Plan ${applied.plan} aplicado después de una segunda verificación con Shopify.`
+            : `El plan ${applied.plan} ya estaba aplicado; no se repitió ninguna operación.`,
+        );
+      } catch (cause) {
+        setError(billingErrorMessage(cause));
+      } finally {
+        setBusy(null);
+      }
+    })();
+  }, [
+    capabilities,
+    hasBillingAccess,
+    isOwner,
+    loading,
+    organization.id,
+    refreshHistory,
+  ]);
 
   const first = history[0];
   const mayStage = isOwner && first?.status === "plan_transition_requires_review" && !!first.target_plan;
