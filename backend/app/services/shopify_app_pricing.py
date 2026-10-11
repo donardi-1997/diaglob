@@ -52,7 +52,7 @@ query DiaglobActiveSubscription($appId: ID!, $shopId: ID!) {
 """
 
 
-USD_AMOUNT_RE = re.compile(r"^(?:0|[1-9][0-9]{0,6})(?:\\.[0-9]{1,2})?$")
+USD_AMOUNT_RE = re.compile(r"^(?:0|[1-9][0-9]{0,6})(?:\.[0-9]{1,2})?$")
 
 
 def _valid_usd_amount(value: Any) -> bool:
