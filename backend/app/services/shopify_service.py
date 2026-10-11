@@ -204,7 +204,23 @@ def start_reauthorization(
     user_id: int,
 ) -> dict:
     store = _require_store(db, organization_id, store_id)
-    connection = _require_connection(db, organization_id, store_id)
+    if not store.active:
+        raise ShopifyConnectionError("La tienda debe estar activa para reautorizar Shopify.")
+    # A failed/expired token makes /shopify/test mark this connection "error".
+    # Reauthorization must still work for that same organization and store.
+    # Normal commerce reads remain restricted to status="connected".
+    connection = (
+        db.query(CommerceConnection)
+        .filter(
+            CommerceConnection.store_id == store_id,
+            CommerceConnection.organization_id == organization_id,
+            CommerceConnection.provider == "shopify",
+            CommerceConnection.status.in_(("connected", "error")),
+        )
+        .first()
+    )
+    if connection is None:
+        raise ShopifyNotFoundError("SHOPIFY_NOT_CONNECTED")
 
     state = generate_oauth_state()
     now = datetime.utcnow()
