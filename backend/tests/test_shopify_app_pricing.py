@@ -12,6 +12,7 @@ from app.services.shopify_app_pricing import (
     SHOPIFY_APP_STORE_TRIAL_DAYS,
     ShopifyAppPricingError,
     get_active_shopify_subscription,
+    is_trusted_partner_development_shop,
     resolve_verified_shopify_plan,
     ShopifySubscriptionSnapshot,
     resolve_trusted_shop_gid,
@@ -495,3 +496,104 @@ def test_shopify_billing_capabilities_publish_review_contract(monkeypatch):
     assert result["public_plans"] == ["starter", "growth", "pro"]
     assert result["trial_days"] == 3
     assert result["billing_period_months"] == [1, 12]
+
+
+def test_zero_effective_price_maps_only_when_trusted_dev_store_was_confirmed():
+    snapshot = ShopifySubscriptionSnapshot(
+        active=True,
+        billing_period="EVERY_30_DAYS",
+        item_handles=("growth-monthly",),
+        eligible_handles=("growth-monthly",),
+        eligible_amounts=("0.00",),
+    )
+    catalog = {
+        "growth-monthly": {
+            "plan": "growth",
+            "interval": "EVERY_30_DAYS",
+            "amount_usd": "49.00",
+        },
+    }
+
+    with pytest.raises(ShopifyAppPricingError, match="PRICE_UNVERIFIED"):
+        resolve_verified_shopify_plan(snapshot, handle_catalog=catalog)
+
+    resolved = resolve_verified_shopify_plan(
+        snapshot,
+        handle_catalog=catalog,
+        allow_no_charge_testing=True,
+    )
+    assert resolved.plan == "growth"
+    assert resolved.billing_period_months == 1
+
+
+@pytest.mark.parametrize("partner_development", [True, False])
+def test_development_shop_status_comes_from_authenticated_admin_identity(
+    partner_development,
+):
+    connection = SimpleNamespace(
+        provider="shopify",
+        status="connected",
+        external_store_url="some-store.myshopify.com",
+        access_token_encrypted="encrypted-token",
+    )
+    with patch(
+        "app.services.shopify_app_pricing.decrypt_shopify_secret",
+        return_value="access-token",
+    ), patch(
+        "app.services.shopify_app_pricing.ShopifyGraphQLClient"
+    ) as client:
+        client.return_value.query.return_value = {
+            "shop": {
+                "id": "gid://shopify/Shop/123",
+                "myshopifyDomain": "some-store.myshopify.com",
+                "plan": {"partnerDevelopment": partner_development},
+            }
+        }
+        result = is_trusted_partner_development_shop(
+            connection,
+            expected_shop_gid="gid://shopify/Shop/123",
+        )
+
+    assert result is partner_development
+    client.assert_called_once_with(
+        shop_domain="some-store.myshopify.com",
+        access_token="access-token",
+    )
+
+
+def test_development_shop_status_rejects_gid_or_domain_mismatch():
+    connection = SimpleNamespace(
+        provider="shopify",
+        status="connected",
+        external_store_url="some-store.myshopify.com",
+        access_token_encrypted="encrypted-token",
+    )
+    for returned_shop in (
+        {
+            "id": "gid://shopify/Shop/999",
+            "myshopifyDomain": "some-store.myshopify.com",
+            "plan": {"partnerDevelopment": True},
+        },
+        {
+            "id": "gid://shopify/Shop/123",
+            "myshopifyDomain": "other.myshopify.com",
+            "plan": {"partnerDevelopment": True},
+        },
+        {
+            "id": "gid://shopify/Shop/123",
+            "myshopifyDomain": "some-store.myshopify.com",
+            "plan": {"partnerDevelopment": "true"},
+        },
+    ):
+        with patch(
+            "app.services.shopify_app_pricing.decrypt_shopify_secret",
+            return_value="access-token",
+        ), patch(
+            "app.services.shopify_app_pricing.ShopifyGraphQLClient"
+        ) as client:
+            client.return_value.query.return_value = {"shop": returned_shop}
+            with pytest.raises(ShopifyAppPricingError, match="IDENTITY_INVALID"):
+                is_trusted_partner_development_shop(
+                    connection,
+                    expected_shop_gid="gid://shopify/Shop/123",
+                )
