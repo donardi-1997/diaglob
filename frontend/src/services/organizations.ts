@@ -7,6 +7,7 @@ export interface Organization {
   active: boolean;
   auto_renew_enabled: boolean;
   billing_provider: "paddle" | "shopify" | string | null;
+  billing_onboarding_channel?: "direct" | "shopify_install" | string | null;
 
   plan: string;
   plan_name: string;
