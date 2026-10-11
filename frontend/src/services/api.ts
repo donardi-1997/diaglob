@@ -1,4 +1,5 @@
 import axios from "axios";
+import { resolveRequestStoreId } from "./storeRequestScope";
 
 import {
   clearSession,
@@ -66,17 +67,15 @@ api.interceptors.request.use(
       ];
     }
 
-    if (
-      storeId &&
-      !globalScope
-    ) {
-      config.headers[
-        "X-Store-Id"
-      ] = storeId;
+    const scopedStoreId = resolveRequestStoreId(
+      storeId,
+      config.headers["X-Store-Id"],
+      globalScope,
+    );
+    if (scopedStoreId) {
+      config.headers["X-Store-Id"] = scopedStoreId;
     } else {
-      delete config.headers[
-        "X-Store-Id"
-      ];
+      delete config.headers["X-Store-Id"];
     }
 
     return config;

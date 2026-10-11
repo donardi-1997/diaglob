@@ -24,8 +24,12 @@ export async function getConversations(storeId?: number) {
 }
 
 export async function getConversation(conversationId: number) {
+  // The inbox may list conversations from every authorized store.
+  // Avoid inheriting the active-store header for a different store.
+  // The backend still enforces organization and membership permissions.
   const response = await api.get<ConversationDetail>(
     `/api/conversations/${conversationId}`,
+    { headers: { "X-Diaglob-Global-Scope": "1" } },
   );
 
   return response.data;
@@ -39,9 +43,8 @@ export async function setConversationMode(
     `/api/conversations/${conversationId}/mode`,
     null,
     {
-      params: {
-        mode,
-      },
+      params: { mode },
+      headers: { "X-Diaglob-Global-Scope": "1" },
     },
   );
 
@@ -58,6 +61,7 @@ export async function sendConversationMessage(
       text,
       sender: "human",
     },
+    { headers: { "X-Diaglob-Global-Scope": "1" } },
   );
 
   return response.data;
@@ -73,6 +77,7 @@ export async function sendWhatsAppMessage(
       text,
       sender: "human",
     },
+    { headers: { "X-Diaglob-Global-Scope": "1" } },
   );
 
   return response.data;
@@ -86,6 +91,7 @@ export async function getWhatsAppStatus(
     phone_number_id: string | null;
   }>(
     `/api/stores/${storeId}/whatsapp`,
+    { headers: { "X-Diaglob-Global-Scope": "1" } },
   );
 
   return response.data;
