@@ -159,3 +159,25 @@ export async function refreshShopifySubscription() {
   });
   return response.data;
 }
+
+
+export interface ShopifyTrialVerification {
+  organization_id: number;
+  plan: string;
+  billing_period_months: number;
+  expected_trial_days: number;
+  observed_trial_days: number;
+  trial_days_remaining: number;
+  trial_ends_at: string | null;
+  matches_expected: boolean;
+  verified_against_shopify: true;
+  applied: false;
+}
+
+export async function verifyShopifyTrial() {
+  const response = await api.get<ShopifyTrialVerification>(
+    "/api/billing/shopify/trial-verification",
+    { headers: tenantHeaders },
+  );
+  return response.data;
+}
