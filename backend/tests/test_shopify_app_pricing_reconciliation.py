@@ -17,6 +17,7 @@ CATALOG = {
     "shopify-starter-monthly": {
         "plan": "starter",
         "interval": "EVERY_30_DAYS",
+        "amount_usd": "19.00",
     },
 }
 
@@ -45,6 +46,7 @@ def _subscription(active=True):
         billing_period="EVERY_30_DAYS",
         item_handles=("shopify-starter-monthly",),
         eligible_handles=("shopify-starter-monthly",),
+        eligible_amounts=("19.00",),
     )
 
 
