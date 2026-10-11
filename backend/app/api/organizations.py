@@ -392,6 +392,7 @@ def get_organization(
         "auto_renew_enabled":
             bool(organization.auto_renew_enabled),
         "billing_provider": (organization.billing_provider or "").strip().lower() or None,
+        "billing_onboarding_channel": organization.billing_onboarding_channel,
 
         "plan": organization.plan,
         "plan_name": plan["name"],
