@@ -60,7 +60,7 @@ const knownErrorCodes: Record<string, string> = {
   SHOPIFY_TRANSITION_CONCURRENT_REVIEW: "Se está procesando otra propuesta. Actualiza el historial.",
 };
 
-export function billingErrorMessage(error: unknown): string {
+function billingErrorMessage(error: unknown): string {
   if (error && typeof error === "object" && "response" in error) {
     const response = (error as { response?: { data?: { detail?: { code?: string } | string }; status?: number } }).response;
     const detail = response?.data?.detail;
