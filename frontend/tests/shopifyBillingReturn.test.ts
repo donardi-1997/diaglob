@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseShopifyHostedPricingReturn } from "../src/services/shopifyBilling.ts";
+import { parseShopifyHostedPricingReturn } from "../src/services/shopifyBillingReturn.ts";
 
 test("Shopify plan_handle only triggers provider re-verification", () => {
   const result = parseShopifyHostedPricingReturn(
