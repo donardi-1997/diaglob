@@ -327,6 +327,6 @@ def resolve_verified_shopify_plan(
         raise ShopifyAppPricingError("SHOPIFY_PLAN_PRICE_MISMATCH")
     return VerifiedShopifyPlan(
         plan=plan,
-        billing_period_months=periods[interval],
+        billing_period_months=periods[subscription.billing_period],
         handle=handle,
     )
