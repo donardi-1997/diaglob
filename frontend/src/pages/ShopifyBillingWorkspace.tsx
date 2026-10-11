@@ -10,6 +10,7 @@ import {
   checkShopifyBilling,
   getShopifyBillingCapabilities,
   getShopifyHostedPlanSelection,
+  refreshShopifySubscription,
   getShopifyBillingHistory,
   getShopifyPlanReviews,
   stageShopifyPlanReview,
@@ -107,7 +108,7 @@ export default function ShopifyBillingWorkspace({ organization }: Props) {
   const [hostedPricingUrl, setHostedPricingUrl] = useState<string | null>(null);
   const [assessment, setAssessment] = useState<ShopifyReviewAssessment | null>(null);
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState<"refresh" | "check" | "stage" | "assess" | "hosted" | "apply" | null>(null);
+  const [busy, setBusy] = useState<"refresh" | "check" | "stage" | "assess" | "hosted" | "apply" | "subscription" | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
@@ -157,7 +158,7 @@ export default function ShopifyBillingWorkspace({ organization }: Props) {
   }, [hasBillingAccess, organization.id]);
 
   async function run(
-    action: "refresh" | "check" | "stage" | "assess" | "hosted" | "apply",
+    action: "refresh" | "check" | "stage" | "assess" | "hosted" | "apply" | "subscription",
     reviewId?: number,
   ) {
     if (!hasBillingAccess || busy) return;
@@ -174,7 +175,20 @@ export default function ShopifyBillingWorkspace({ organization }: Props) {
     setError("");
     setNotice("");
     try {
-      if (action === "hosted") {
+      if (action === "subscription") {
+        const result = await refreshShopifySubscription();
+        if (result.organization_id !== organization.id
+          || result.verified_against_shopify !== true) {
+          throw new Error("Invalid tenant billing state");
+        }
+        setNotice(result.subscription_status === "active"
+          ? "Suscripción confirmada y activa en Shopify."
+          : result.subscription_status === "inactive"
+            ? "Shopify confirmó que no existe una suscripción activa. El acceso de pago se suspendió."
+            : "Shopify confirmó un contrato diferente; las funciones de pago quedan en revisión.");
+        setAssessment(null);
+        await refreshHistory();
+      } else if (action === "hosted") {
         const result = await getShopifyHostedPlanSelection();
         if (
           result.provider !== "shopify" || result.hosted_by_shopify !== true ||
@@ -313,6 +327,14 @@ export default function ShopifyBillingWorkspace({ organization }: Props) {
                 <button type="button" className="shopify-billing-secondary" disabled={Boolean(busy) || loading} onClick={() => { void run("refresh"); }}>
                   <RefreshCw size={16} /> Actualizar historial
                 </button>
+                {capabilities?.verified_entitlement_apply_enabled && (
+                  <button type="button" className="shopify-billing-secondary"
+                    disabled={Boolean(busy) || loading || !["starter", "growth", "pro", "scale"].includes(organization.plan)}
+                    onClick={() => { void run("subscription"); }}>
+                    <RefreshCw size={16} />
+                    {busy === "subscription" ? "Comprobando acceso…" : "Comprobar acceso activo"}
+                  </button>
+                )}
                 <button type="button" className="shopify-billing-primary" disabled={Boolean(busy) || loading} onClick={() => { void run("check"); }}>
                   <ShieldCheck size={17} /> {busy === "check" ? "Verificando…" : "Verificar suscripción"}
                 </button>
