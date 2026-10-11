@@ -6,6 +6,7 @@ export interface Organization {
   slug: string;
   active: boolean;
   auto_renew_enabled: boolean;
+  billing_provider: "paddle" | "shopify" | string | null;
 
   plan: string;
   plan_name: string;
