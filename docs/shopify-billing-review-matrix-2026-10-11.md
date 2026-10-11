@@ -32,7 +32,7 @@ Backend regression tests must prove:
 5. Growth resolves at USD 49 monthly and USD 490 annual.
 6. Pro resolves at USD 99 monthly and USD 990 annual.
 7. Scale is rejected by Shopify entitlement resolution.
-8. Unknown handles, incorrect prices, zero-dollar commercial contracts, unsupported intervals, and ambiguous multi-item subscriptions fail closed.
+8. Unknown handles, incorrect prices, unsupported intervals, and ambiguous multi-item subscriptions fail closed. An effective USD 0 paid-plan contract is accepted only after the installed Admin API token independently confirms the exact shop is a Shopify partner development store; ordinary merchant stores cannot use the test-price exception.
 9. Shopify-managed tenants never fall back to Paddle checkout.
 10. A plan transition can only be applied after a fresh Partner API verification and the server-side entitlement gate is enabled.
 
@@ -84,6 +84,8 @@ Verify these cases separately:
 - cancellation scheduled: DIAGLOB must not apply a newly staged paid-plan transition;
 - inactive subscription: paid feature access is suspended after confirmed provider state;
 - unknown/changed price or handle: access moves to review-required instead of silently mapping a plan;
+- development-store no-charge paid plan: Shopify may report an effective USD 0 price; DIAGLOB must verify the exact shop as `partnerDevelopment=true` before mapping the allowlisted plan handle;
+- ordinary/non-development shop with effective USD 0: reject the contract for paid entitlement mapping;
 - Partner API outage: do not falsely cancel a previously active contract solely because Shopify could not be reached;
 - uninstall/reinstall during verification: reject stale evidence and require a new verification.
 
