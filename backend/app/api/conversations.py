@@ -2,6 +2,7 @@
 
 import logging
 from datetime import datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -32,7 +33,9 @@ logger = logging.getLogger(__name__)
 
 class MessageCreate(BaseModel):
     text: str
-    sender: str = "human"
+    # Only authenticated human operators may call this route. Channel
+    # webhooks and system AI generation use separately authenticated paths.
+    sender: Literal["human"] = "human"
 
 
 def serialize_conversation(
@@ -337,16 +340,6 @@ def create_message(
         raise HTTPException(
             status_code=400,
             detail="Message cannot be empty",
-        )
-
-    if payload.sender not in {
-        "human",
-        "ai",
-        "customer",
-    }:
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid sender",
         )
 
     try:
