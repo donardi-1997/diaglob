@@ -1,0 +1,110 @@
+name: Shopify Billing Hourly Watch
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: diaglob-shopify-billing-hourly
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    name: Recheck approved Shopify billing
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - name: Configure production SSH
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_SSH_KEY_B64: ${{ secrets.PROD_SSH_KEY_B64 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$PROD_HOST"
+          test -n "$PROD_SSH_KEY_B64"
+          mkdir -p "$HOME/.ssh"
+          chmod 700 "$HOME/.ssh"
+          printf '%s' "$PROD_SSH_KEY_B64" | base64 --decode > "$HOME/.ssh/diaglob_actions_prod"
+          chmod 600 "$HOME/.ssh/diaglob_actions_prod"
+          ssh-keyscan -H "$PROD_HOST" >> "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Verify gate and reconcile only when explicitly approved
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$PROD_USER"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -i "$HOME/.ssh/diaglob_actions_prod" \
+            "$PROD_USER@$PROD_HOST" 'sudo bash -s' <<'REMOTE'
+          set -euo pipefail
+          set +x
+
+          ENV_FILE=/etc/diaglob/diaglob.env
+          if [[ ! -r "$ENV_FILE" ]]; then
+            echo "CONFIG_BLOCKED: production environment file unavailable"
+            exit 1
+          fi
+
+          set -a
+          . "$ENV_FILE"
+          set +a
+
+          for key in SHOPIFY_PARTNER_ORG_ID SHOPIFY_PARTNER_APP_GID \
+                     SHOPIFY_PARTNER_ACCESS_TOKEN SHOPIFY_APP_PRICING_HANDLES_JSON \
+                     SHOPIFY_APP_STORE_HANDLE; do
+            if [[ -n "${!key:-}" ]]; then
+              echo "CONFIG_PRESENT: $key"
+            else
+              echo "CONFIG_MISSING: $key"
+            fi
+          done
+
+          # Separate explicit approval for the scheduler and paid entitlements.
+          # In default-off mode, no API requests or billing database writes.
+          if [[ "${SHOPIFY_BILLING_ENTITLEMENTS_ENABLED:-}" != "true" ]] || \
+             [[ "${SHOPIFY_BILLING_SCHEDULER_ENABLED:-}" != "true" ]]; then
+            echo "RECONCILIATION_SKIPPED: launch approval gates disabled"
+            exit 0
+          fi
+
+          for key in SHOPIFY_PARTNER_ORG_ID SHOPIFY_PARTNER_APP_GID \
+                     SHOPIFY_PARTNER_ACCESS_TOKEN SHOPIFY_APP_PRICING_HANDLES_JSON; do
+            if [[ -z "${!key:-}" ]]; then
+              echo "CONFIG_BLOCKED: required Shopify Partner configuration missing ($key)"
+              exit 1
+            fi
+          done
+
+          cd /opt/diaglob/app/backend
+          exec .venv/bin/python -m app.shopify_billing_recheck \
+            --page-size 50 --max-pages 1000
+          REMOTE
+
+      - name: Notify on failure
+        if: failure()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GH_REPOSITORY: ${{ github.repository }}
+          GH_RUN_ID: ${{ github.run_id }}
+          GH_SERVER: ${{ github.server_url }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$TELEGRAM_BOT_TOKEN" || -z "$TELEGRAM_CHAT_ID" ]]; then
+            echo "Telegram not configured; the GitHub Actions run remains failed."
+            exit 0
+          fi
+          curl --fail --silent --show-error --max-time 15 \
+            -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=DIAGLOB Shopify billing watch FAILED: ${GH_SERVER}/${GH_REPOSITORY}/actions/runs/${GH_RUN_ID}"

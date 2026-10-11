@@ -275,3 +275,34 @@ def test_subscription_response_shop_id_must_match_requested_shop(monkeypatch):
             get_active_shopify_subscription(
                 "gid://shopify/Shop/123", http_client=client
             )
+
+
+@pytest.mark.parametrize("actual,approved", [
+    ("0.00", "49.00"),
+    ("0", "49.00"),
+    ("0.00", "0.00"),
+])
+def test_dev_store_zero_charge_never_grants_commercial_entitlements(
+    actual, approved,
+):
+    """A real no-charge development contract is not a paid merchant receipt."""
+    snapshot = ShopifySubscriptionSnapshot(
+        active=True,
+        billing_period="EVERY_30_DAYS",
+        item_handles=("growth-monthly",),
+        eligible_handles=("growth-monthly",),
+        eligible_amounts=(actual,),
+    )
+    catalog = {
+        "growth-monthly": {
+            "plan": "growth", "interval": "EVERY_30_DAYS",
+            "amount_usd": approved,
+        },
+    }
+    with pytest.raises(ShopifyAppPricingError) as exc:
+        resolve_verified_shopify_plan(snapshot, handle_catalog=catalog)
+    assert str(exc.value) in {
+        "SHOPIFY_PLAN_PRICE_UNVERIFIED",
+        "SHOPIFY_PLAN_PRICE_MISMATCH",
+        "SHOPIFY_PLAN_CATALOG_INVALID",
+    }

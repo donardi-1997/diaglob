@@ -309,6 +309,45 @@ jobs:
             echo "PASS: anonymous $route blocked (HTTP $status)"
           done
 
+
+      - name: Audit Shopify Partner configuration on production (read only)
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -i "$HOME/.ssh/diaglob_actions_prod" \
+            "$PROD_USER@$PROD_HOST" 'sudo bash -s' <<'REMOTE'
+          set -euo pipefail
+          set +x
+          ENV_FILE=/etc/diaglob/diaglob.env
+          if [[ ! -r "$ENV_FILE" ]]; then
+            echo "SHOPIFY_BILLING_ENV_FILE_MISSING"
+            exit 0
+          fi
+          set -a
+          . "$ENV_FILE"
+          set +a
+          for key in SHOPIFY_PARTNER_ORG_ID SHOPIFY_PARTNER_APP_GID \
+                     SHOPIFY_PARTNER_ACCESS_TOKEN SHOPIFY_APP_PRICING_HANDLES_JSON \
+                     SHOPIFY_APP_STORE_HANDLE; do
+            if [[ -n "${!key:-}" ]]; then
+              echo "SHOPIFY_CONFIG_PRESENT: $key"
+            else
+              echo "SHOPIFY_CONFIG_MISSING: $key"
+            fi
+          done
+          for key in SHOPIFY_BILLING_ENTITLEMENTS_ENABLED SHOPIFY_BILLING_SCHEDULER_ENABLED; do
+            if [[ "${!key:-}" == "true" ]]; then
+              echo "SHOPIFY_GATE_ON: $key"
+            else
+              echo "SHOPIFY_GATE_OFF: $key"
+            fi
+          done
+          REMOTE
+
   notify:
     name: Telegram Notification
     needs:
