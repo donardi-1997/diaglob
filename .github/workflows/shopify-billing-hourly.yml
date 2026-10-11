@@ -1,6 +1,12 @@
 name: Shopify Billing Hourly Watch
 
 on:
+  # A workflow-only push performs an SSH + gate smoke check, NEVER billing.
+  # This provides observable validation even before the first hourly tick.
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/shopify-billing-hourly.yml"
   schedule:
     - cron: "17 * * * *"
   workflow_dispatch:
@@ -42,9 +48,15 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$PROD_USER"
+          # GitHub push-triggered smoke checks must stay read-only even if the
+          # commercial billing flags are later enabled by an operator.
+          smoke_only=0
+          if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
+            smoke_only=1
+          fi
           ssh -o BatchMode=yes -o StrictHostKeyChecking=yes \
             -i "$HOME/.ssh/diaglob_actions_prod" \
-            "$PROD_USER@$PROD_HOST" 'sudo bash -s' <<'REMOTE'
+            "$PROD_USER@$PROD_HOST" "sudo env DIAGLOB_WATCH_SMOKE_ONLY=$smoke_only bash -s" <<'REMOTE'
           set -euo pipefail
           set +x
 
@@ -67,6 +79,13 @@ jobs:
               echo "CONFIG_MISSING: $key"
             fi
           done
+
+          # A code deployment can audit connectivity and flags, but MUST NOT
+          # reconcile merchants (regardless of the activation flags).
+          if [[ "${DIAGLOB_WATCH_SMOKE_ONLY:-0}" == "1" ]]; then
+            echo "WATCH_SMOKE_PASS: connected to production, no Shopify API calls or billing writes"
+            exit 0
+          fi
 
           # Separate explicit approval for the scheduler and paid entitlements.
           # In default-off mode, no API requests or billing database writes.
