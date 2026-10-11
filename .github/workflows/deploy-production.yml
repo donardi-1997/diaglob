@@ -251,6 +251,64 @@ jobs:
           check_url "Terms of service" "https://diaglob.tech/terms"
           check_url "Refund policy" "https://diaglob.tech/refund-policy"
 
+
+      - name: Verify billing onboarding public E2E boundaries (read only)
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Public GET-only assertions after deploy. No Cognito accounts,
+          # Shopify OAuth exchanges, Paddle charges, or merchant mutations.
+          fetch_code() {
+            curl --silent --show-error --max-time 15 \
+              --output /dev/null --write-out '%{http_code}' "$1"
+          }
+
+          assert_code() {
+            local expected="$1" url="$2" observed
+            observed="$(fetch_code "$url")"
+            if [[ "$observed" != "$expected" ]]; then
+              echo "Unexpected HTTP response on $url: expected $expected, got $observed"
+              return 1
+            fi
+            echo "PASS (HTTP $expected): $url"
+          }
+
+          assert_code 200 "https://diaglob.tech/register"
+          assert_code 200 "https://diaglob.tech/shopify/install?shop=diaglob-poc.myshopify.com"
+
+          headers="$(mktemp)"
+          trap 'rm -f "$headers"' EXIT
+          status="$(curl --silent --show-error --max-time 15 \
+            --dump-header "$headers" --output /dev/null \
+            --write-out '%{http_code}' \
+            'https://api.diaglob.tech/api/shopify/install?shop=diaglob-poc.myshopify.com')"
+          [[ "$status" == "303" ]] || { echo "Install handoff HTTP $status (wanted 303)"; exit 1; }
+
+          destination="$(grep -i '^location:' "$headers" | \
+            tr -d '\r' | sed -E 's/^[^:]+:[[:space:]]*//')"
+          [[ "$destination" == 'https://diaglob.tech/shopify/install?shop=diaglob-poc.myshopify.com' ]] || {
+            echo 'Untrusted install handoff produced an unsafe redirect'
+            exit 1
+          }
+          grep -qi '^cache-control: no-store' "$headers" || {
+            echo 'Install handoff missing no-store'
+            exit 1
+          }
+          echo 'PASS: safe Shopify install 303 handoff'
+
+          assert_code 400 "https://api.diaglob.tech/api/shopify/install?shop=https%3A%2F%2Fevil.example.test"
+          # These HTTP resources must NOT disclose tenant billing details
+          # to anonymous visitors. Neither endpoint has write side effects.
+          for route in /api/organization /api/billing/shopify/reconciliation-history; do
+            status="$(fetch_code "https://api.diaglob.tech$route")"
+            if [[ "$status" != "401" && "$status" != "403" ]]; then
+              echo "FAIL: anonymous $route returned HTTP $status"
+              exit 1
+            fi
+            echo "PASS: anonymous $route blocked (HTTP $status)"
+          done
+
   notify:
     name: Telegram Notification
     needs:
