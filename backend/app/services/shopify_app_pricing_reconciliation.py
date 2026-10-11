@@ -31,6 +31,7 @@ class ShopifyEntitlementPreview:
     verified_handle: str | None
     status: str
     trial_ends_at: str | None = None
+    has_pending_update: bool = False
     requires_review: bool = True
     # Deliberately no database writes or automatic grants.
 
@@ -88,6 +89,7 @@ def preview_shopify_entitlement_reconciliation(
             verified_handle=None,
             status="subscription_inactive_requires_review",
             trial_ends_at=None,
+            has_pending_update=False,
         )
 
     allow_no_charge_testing = False
@@ -118,6 +120,7 @@ def preview_shopify_entitlement_reconciliation(
             "plan_verified_no_change" if same_plan else "plan_transition_requires_review"
         ),
         trial_ends_at=subscription.trial_ends_at,
+        has_pending_update=subscription.has_pending_update,
     )
 
 
