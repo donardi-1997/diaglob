@@ -42,6 +42,9 @@ from ..services.shopify_hosted_plan_selection import (
 from ..services.shopify_verified_entitlement_apply import (
     apply_verified_shopify_transition,
 )
+from ..services.shopify_billing_lifecycle import (
+    refresh_shopify_billing_status,
+)
 from ..services.billing_service import (
     AutoRenewConflictError,
     DowngradeBlockedError,
@@ -125,6 +128,30 @@ _SHOPIFY_BILLING_TEMPORARY_ERRORS = frozenset({
     "SHOPIFY_PLAN_CATALOG_NOT_CONFIGURED",
     "SHOPIFY_PLAN_CATALOG_INVALID",
 })
+
+
+@router.post("/api/billing/shopify/subscription-refresh")
+def refresh_shopify_billing_subscription(
+    membership: OrganizationMembership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+):
+    """Refresh paid Shopify access from Partner API; no subscription mutations."""
+    if membership.role not in {"owner", "manager"}:
+        raise HTTPException(status_code=403, detail="Billing access denied")
+    try:
+        return refresh_shopify_billing_status(
+            db, organization_id=membership.organization_id,
+        )
+    except ShopifyTransitionReviewError as exc:
+        db.rollback()
+        code = str(exc)
+        if not code.startswith("SHOPIFY_") or not code.replace("_", "").isalnum():
+            code = "SHOPIFY_BILLING_UNAVAILABLE"
+        raise HTTPException(
+            status_code=503 if code in _SHOPIFY_BILLING_TEMPORARY_ERRORS
+            or code == "SHOPIFY_BILLING_UNAVAILABLE" else 409,
+            detail={"code": code},
+        ) from exc
 
 
 @router.get("/api/billing/shopify/capabilities")
