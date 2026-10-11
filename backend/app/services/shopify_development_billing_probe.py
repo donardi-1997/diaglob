@@ -49,6 +49,9 @@ def probe_shopify_development_subscription(
         or org_id < 1
         or not getattr(organization, "active", False)
         or (getattr(organization, "billing_provider", "") or "").lower() != "shopify"
+        or getattr(organization, "billing_customer_id", None)
+        or getattr(organization, "billing_subscription_id", None)
+        or getattr(organization, "billing_price_id", None)
         or getattr(connection, "organization_id", None) != org_id
         or getattr(connection, "provider", None) != "shopify"
         or getattr(connection, "status", None) != "connected"
