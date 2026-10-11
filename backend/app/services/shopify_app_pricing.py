@@ -133,6 +133,7 @@ class ShopifySubscriptionSnapshot:
     trial_ends_at: str | None = None
     current_cycle_end: str | None = None
     cancel_at_end_of_cycle: bool = False
+    has_pending_update: bool = False
 
 
 def subscription_has_no_charge_effective_price(
@@ -309,6 +310,15 @@ def get_active_shopify_subscription(
     cycle = subscription.get("currentBillingCycle")
     if cycle is not None and not isinstance(cycle, dict):
         raise ShopifyAppPricingError("SHOPIFY_PARTNER_API_INVALID_RESPONSE")
+    pending_update = subscription.get("pendingUpdate")
+    if pending_update is not None:
+        if not isinstance(pending_update, dict):
+            raise ShopifyAppPricingError("SHOPIFY_PARTNER_API_INVALID_RESPONSE")
+        pending_items = pending_update.get("items")
+        if not isinstance(pending_items, list) or any(
+            not isinstance(item, dict) for item in pending_items
+        ):
+            raise ShopifyAppPricingError("SHOPIFY_PARTNER_API_INVALID_RESPONSE")
     handles = tuple(
         handle.strip()
         for item in items
@@ -344,6 +354,7 @@ def get_active_shopify_subscription(
         trial_ends_at=subscription.get("trialEndsAt"),
         current_cycle_end=cycle.get("endTime") if cycle else None,
         cancel_at_end_of_cycle=subscription.get("cancelAtEndOfCycle") is True,
+        has_pending_update=pending_update is not None,
     )
 
 
