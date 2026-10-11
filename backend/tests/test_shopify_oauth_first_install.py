@@ -132,9 +132,14 @@ def test_claim_binds_once_only_to_explicit_authorized_store(database):
     database.add_all([organization, store])
     database.commit()
     with patch("app.services.shopify_public_install.confirm_shopify_install_billing",
-               return_value=False):
+               return_value=False), patch(
+        "app.services.shopify_public_install.ensure_shopify_order_webhooks",
+        return_value={"ok": True},
+    ) as ensure_webhooks:
         result = claim_install(database, secret=cookie, membership=membership, store=store)
     assert result["connected"] is True
+    assert result["webhooks_ready"] is True
+    ensure_webhooks.assert_called_once()
     connection = database.query(CommerceConnection).one()
     assert connection.store_id == 7 and connection.organization_id == 31
     assert connection.access_token_encrypted == "encrypted-fixture"
@@ -154,3 +159,41 @@ def test_wrong_tenant_is_rejected_without_consuming_grant(database):
                       membership=SimpleNamespace(organization_id=31), store=store)
     database.rollback()
     assert pending_install_status(database, cookie)["pending"] is True
+
+
+def test_webhook_registration_error_preserves_connection_for_retry(database):
+    """A rejected Shopify subscription must be visible, not orphan the install."""
+    from app.shopify_client import ShopifyUserError
+
+    _, state = _begin(database)
+    cookie, _ = _finish(database, state)
+    membership = SimpleNamespace(organization_id=32)
+    organization = Organization(
+        id=32, name="Webhook retry", slug="webhook-retry", plan="trial",
+        subscription_status="trial_pending",
+        billing_onboarding_channel="shopify_install",
+    )
+    store = Store(
+        id=8, organization_id=32, name="Test webhook", slug="test-webhook",
+        country_code="CO", currency="COP", timezone="America/Bogota",
+        active=True, deleted=False,
+    )
+    database.add_all([organization, store])
+    database.commit()
+    with patch(
+        "app.services.shopify_public_install.confirm_shopify_install_billing",
+        return_value=False,
+    ), patch(
+        "app.services.shopify_public_install.ensure_shopify_order_webhooks",
+        side_effect=ShopifyUserError("synthetic webhook rejection"),
+    ) as ensure_webhooks:
+        result = claim_install(
+            database, secret=cookie, membership=membership, store=store
+        )
+    assert result["connected"] is True
+    assert result["webhooks_ready"] is False
+    ensure_webhooks.assert_called_once()
+    connection = database.query(CommerceConnection).one()
+    assert connection.status == "connected"
+    assert connection.last_error.startswith("WEBHOOK_SUBSCRIPTION_FAILED:")
+    assert pending_install_status(database, cookie)["pending"] is False
