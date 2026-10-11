@@ -149,6 +149,7 @@ def apply_verified_shopify_transition(
         org is not None and org.active
         and (org.billing_provider or "").lower() == "shopify"
         and org.plan == baseline
+        and (target != baseline or org.billing_period_months != months)
         and not org.billing_customer_id and not org.billing_subscription_id
         and not org.billing_price_id
         and not org.pending_plan
