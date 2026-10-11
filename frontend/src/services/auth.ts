@@ -209,6 +209,7 @@ export async function provisionAccount(
   name: string,
   organizationName: string,
   marketingContext?: Record<string, unknown> | null,
+  registrationChannel: "direct" | "shopify_install" = "direct",
 ) {
   const apiUrl =
     import.meta.env.VITE_API_URL ||
@@ -233,6 +234,7 @@ export async function provisionAccount(
           organizationName,
         marketing_context:
           marketingContext || undefined,
+        registration_channel: registrationChannel,
       }),
     },
   );
