@@ -298,6 +298,7 @@ export default function AgentChatPage({
   mode = "page",
   pageContext,
   onClose,
+  onNavigateToStores,
 }: Props) {
   const { t } = useTranslation();
   const panelMode = mode === "panel";
@@ -615,6 +616,11 @@ export default function AgentChatPage({
           <Bot size={28} />
           <h2>{copy.title}</h2>
           <p>Selecciona una tienda para conversar con LIA.</p>
+          {onNavigateToStores && (
+            <button type="button" className="primary-button" onClick={onNavigateToStores}>
+              Ir a Tiendas
+            </button>
+          )}
         </div>
       </section>
     );
