@@ -9,7 +9,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from app.db import Base
-from app.models import CommerceConnection, ShopifyPendingInstall, Store
+from app.models import CommerceConnection, Organization, ShopifyPendingInstall, Store
 from app.api.shopify import shopify_install_handoff
 from app.services.shopify_public_install import (
     begin_public_install, finish_public_install, claim_install,
@@ -121,20 +121,23 @@ def test_claim_binds_once_only_to_explicit_authorized_store(database):
     _, state = _begin(database)
     cookie, _ = _finish(database, state)
     membership = SimpleNamespace(organization_id=31)
+    organization = Organization(
+        id=31, name="Reviewer", slug="reviewer", plan="trial",
+        subscription_status="trial_pending", billing_onboarding_channel="shopify_install",
+    )
     store = Store(id=7, organization_id=31, name="Test", slug="test",
-                  country_code="CO", active=True, deleted=False)
-    with patch(
-        "app.services.shopify_public_install.activate_trial_for_verified_store",
-        return_value={"trial_activated": False},
-    ), patch(
-        "app.services.shopify_public_install.confirm_shopify_install_billing",
-        return_value=False,
-    ):
+                  country_code="CO", currency="COP", timezone="America/Bogota",
+                  active=True, deleted=False)
+    database.add_all([organization, store])
+    database.commit()
+    with patch("app.services.shopify_public_install.confirm_shopify_install_billing",
+               return_value=False):
         result = claim_install(database, secret=cookie, membership=membership, store=store)
     assert result["connected"] is True
     connection = database.query(CommerceConnection).one()
     assert connection.store_id == 7 and connection.organization_id == 31
     assert connection.access_token_encrypted == "encrypted-fixture"
+    assert organization.subscription_status == "trial_pending"  # No 7-day off-platform trial
     assert pending_install_status(database, cookie)["pending"] is False
     with pytest.raises(ShopifyOAuthError, match="EXPIRED"):
         claim_install(database, secret=cookie, membership=membership, store=store)
