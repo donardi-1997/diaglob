@@ -24,6 +24,7 @@ from ..shopify_client import (
     ShopifyUserError,
 )
 from .deps import require_permission
+from .store_access import require_authorized_path_store
 from ..services.auto_fulfillment import (
     enqueue_shopify_order,
     process_auto_fulfillment_job_background,
@@ -198,7 +199,7 @@ def shopify_install_handoff(shop: str = Query(..., min_length=1, max_length=255)
     return RedirectResponse(url, status_code=303, headers={"Cache-Control": "no-store"})
 
 
-@router.post("/api/stores/{store_id}/shopify/connect")
+@router.post("/api/stores/{store_id}/shopify/connect", dependencies=[Depends(require_authorized_path_store)])
 def start_shopify_connection(
     store_id: int,
     payload: ShopifyConnectRequest,
@@ -213,7 +214,7 @@ def start_shopify_connection(
         _map_oauth_error(exc)
 
 
-@router.post("/api/stores/{store_id}/shopify/reauthorize")
+@router.post("/api/stores/{store_id}/shopify/reauthorize", dependencies=[Depends(require_authorized_path_store)])
 def reauthorize_shopify(
     store_id: int,
     membership: OrganizationMembership = Depends(
@@ -264,7 +265,7 @@ def shopify_oauth_callback(
     return RedirectResponse(redirect_url)
 
 
-@router.delete("/api/stores/{store_id}/shopify/disconnect")
+@router.delete("/api/stores/{store_id}/shopify/disconnect", dependencies=[Depends(require_authorized_path_store)])
 def disconnect_shopify(
     store_id: int,
     membership: OrganizationMembership = Depends(require_permission("stores.write")),
@@ -276,7 +277,7 @@ def disconnect_shopify(
         _map_oauth_error(exc)
 
 
-@router.post("/api/stores/{store_id}/shopify/webhooks/ensure")
+@router.post("/api/stores/{store_id}/shopify/webhooks/ensure", dependencies=[Depends(require_authorized_path_store)])
 def shopify_ensure_order_webhooks(
     store_id: int,
     membership: OrganizationMembership = Depends(
@@ -320,7 +321,7 @@ def shopify_ensure_order_webhooks(
         ) from exc
 
 
-@router.post("/api/stores/{store_id}/shopify/test")
+@router.post("/api/stores/{store_id}/shopify/test", dependencies=[Depends(require_authorized_path_store)])
 def shopify_test_connection(
     store_id: int,
     membership: OrganizationMembership = Depends(require_permission("stores.write")),
@@ -336,7 +337,7 @@ def shopify_test_connection(
         raise HTTPException(status_code=502, detail={"connected": False, "error": str(exc)})
 
 
-@router.post("/api/stores/{store_id}/shopify/sync/products")
+@router.post("/api/stores/{store_id}/shopify/sync/products", dependencies=[Depends(require_authorized_path_store)])
 def shopify_sync_products(
     store_id: int,
     membership: OrganizationMembership = Depends(require_permission("stores.write")),
@@ -352,7 +353,7 @@ def shopify_sync_products(
         raise HTTPException(status_code=502, detail={"ok": False, "error": str(exc)})
 
 
-@router.post("/api/stores/{store_id}/shopify/poc/order")
+@router.post("/api/stores/{store_id}/shopify/poc/order", dependencies=[Depends(require_authorized_path_store)])
 def create_shopify_poc_order(
     store_id: int,
     payload: ShopifyPocOrderRequest,
@@ -387,7 +388,7 @@ def create_shopify_poc_order(
         raise HTTPException(status_code=502, detail={"success": False, "error": str(exc)})
 
 
-@router.post("/api/stores/{store_id}/shopify/orders")
+@router.post("/api/stores/{store_id}/shopify/orders", dependencies=[Depends(require_authorized_path_store)])
 def create_shopify_order(
     store_id: int,
     payload: ShopifyOrderCreateRequest,
@@ -432,7 +433,7 @@ def create_shopify_order(
         raise HTTPException(status_code=502, detail={"ok": False, "error": str(exc)})
 
 
-@router.get("/api/stores/{store_id}/shopify/orders")
+@router.get("/api/stores/{store_id}/shopify/orders", dependencies=[Depends(require_authorized_path_store)])
 def list_orders(
     store_id: int,
     membership: OrganizationMembership = Depends(require_permission("commerce.read")),
@@ -446,7 +447,7 @@ def list_orders(
     return {"items": orders, "total": len(orders)}
 
 
-@router.get("/api/stores/{store_id}/shopify/orders/{order_id}")
+@router.get("/api/stores/{store_id}/shopify/orders/{order_id}", dependencies=[Depends(require_authorized_path_store)])
 def get_order(
     store_id: int,
     order_id: int,
