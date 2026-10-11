@@ -22,6 +22,7 @@ def database(monkeypatch):
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)
     monkeypatch.setenv("SHOPIFY_CLIENT_ID", "test-client")
+    monkeypatch.setenv("SHOPIFY_CLIENT_SECRET", "synthetic-only-test-secret")
     monkeypatch.setenv("SHOPIFY_REDIRECT_URI", "https://api.diaglob.tech/api/shopify/callback")
     with Session(engine) as db:
         yield db
