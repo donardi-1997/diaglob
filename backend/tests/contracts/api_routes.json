@@ -737,6 +737,10 @@
   ],
   [
     "POST",
+    "/api/billing/shopify/subscription-refresh"
+  ],
+  [
+    "POST",
     "/api/billing/shopify/transition-proposals"
   ],
   [
