@@ -38,7 +38,7 @@ def _connection(**kwargs):
     return SimpleNamespace(**values)
 
 
-def _subscription(active=True):
+def _subscription(active=True, amount="19.00"):
     if not active:
         return ShopifySubscriptionSnapshot(active=False)
     return ShopifySubscriptionSnapshot(
@@ -46,7 +46,7 @@ def _subscription(active=True):
         billing_period="EVERY_30_DAYS",
         item_handles=("shopify-starter-monthly",),
         eligible_handles=("shopify-starter-monthly",),
-        eligible_amounts=("19.00",),
+        eligible_amounts=(amount,),
     )
 
 
@@ -159,4 +159,50 @@ def test_unknown_provider_handle_does_not_grant_plan():
             preview_shopify_entitlement_reconciliation(
                 _org(), _connection(), connected_shopify_store_count=1,
                 handle_catalog={"unknown": {"plan": "starter", "interval": "EVERY_30_DAYS"}},
+            )
+
+
+def test_no_charge_paid_plan_is_usable_only_after_authenticated_dev_store_check():
+    with patch(
+        "app.services.shopify_app_pricing_reconciliation.resolve_trusted_shop_gid",
+        return_value="gid://shopify/Shop/100",
+    ), patch(
+        "app.services.shopify_app_pricing_reconciliation.get_active_shopify_subscription",
+        return_value=_subscription(amount="0.00"),
+    ), patch(
+        "app.services.shopify_app_pricing_reconciliation.is_trusted_partner_development_shop",
+        return_value=True,
+    ) as development:
+        result = preview_shopify_entitlement_reconciliation(
+            _org(),
+            _connection(),
+            connected_shopify_store_count=1,
+            handle_catalog=CATALOG,
+        )
+
+    assert result.status == "plan_transition_requires_review"
+    assert result.target_plan == "starter"
+    development.assert_called_once_with(
+        _connection(),
+        expected_shop_gid="gid://shopify/Shop/100",
+    )
+
+
+def test_no_charge_paid_plan_from_non_development_shop_cannot_grant_access():
+    with patch(
+        "app.services.shopify_app_pricing_reconciliation.resolve_trusted_shop_gid",
+        return_value="gid://shopify/Shop/100",
+    ), patch(
+        "app.services.shopify_app_pricing_reconciliation.get_active_shopify_subscription",
+        return_value=_subscription(amount="0.00"),
+    ), patch(
+        "app.services.shopify_app_pricing_reconciliation.is_trusted_partner_development_shop",
+        return_value=False,
+    ):
+        with pytest.raises(ShopifyAppPricingError, match="PRICE_UNVERIFIED"):
+            preview_shopify_entitlement_reconciliation(
+                _org(),
+                _connection(),
+                connected_shopify_store_count=1,
+                handle_catalog=CATALOG,
             )
