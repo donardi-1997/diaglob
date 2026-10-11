@@ -240,6 +240,8 @@ function App() {
     currentUser,
     sessionReady,
     stores,
+    storesError,
+    storesLoading,
     selectedStoreId,
     selectedStore,
     can,
