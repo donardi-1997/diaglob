@@ -6,7 +6,7 @@ import os
 import secrets
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -22,6 +22,11 @@ from ..services.ai_usage_packages import fulfill_ai_usage_package_transaction
 from ..services.shopify_app_pricing import ShopifyAppPricingError
 from ..services.shopify_app_pricing_reconciliation import (
     preview_shopify_entitlement_reconciliation,
+)
+from ..services.shopify_billing_verification import (
+    ShopifyBillingEvidenceError,
+    list_shopify_billing_verifications,
+    record_shopify_billing_verification,
 )
 from ..services.billing_service import (
     AutoRenewConflictError,
@@ -181,6 +186,88 @@ def preview_shopify_billing_reconciliation(
         "organization_id": preview.organization_id,
         "applied": False,
     }
+
+@router.post("/api/billing/shopify/reconciliation-check")
+def check_shopify_billing_reconciliation(
+    membership: OrganizationMembership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+):
+    """Query Shopify live and persist only non-authorizing verification evidence.
+
+    No untrusted shop or plan parameters. The issuer must already manage this
+    organization and its billing channel. Recording a check cannot grant a plan.
+    """
+    if membership.role not in {"owner", "manager"}:
+        raise HTTPException(status_code=403, detail="Billing access denied")
+    if (membership.organization.billing_provider or "").strip().lower() != "shopify":
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "SHOPIFY_BILLING_PROVENANCE_REQUIRED"},
+        )
+
+    installed = (
+        db.query(CommerceConnection)
+        .filter(
+            CommerceConnection.organization_id == membership.organization_id,
+            CommerceConnection.provider == "shopify",
+        )
+        .limit(2)
+        .all()
+    )
+    if len(installed) != 1 or installed[0].status != "connected":
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "SHOPIFY_BILLING_CONNECTION_REVIEW_REQUIRED"},
+        )
+    connection = installed[0]
+    connection_id = connection.id
+    store_id = connection.store_id
+    installed_at = connection.connected_at
+
+    # Reuses the existing live Admin+Partner verification and plan price guard.
+    # No writes or locks are held while waiting for the remote provider.
+    preview = preview_shopify_billing_reconciliation(membership=membership, db=db)
+
+    try:
+        verification = record_shopify_billing_verification(
+            db,
+            organization_id=membership.organization_id,
+            connection_id=connection_id,
+            store_id=store_id,
+            installation_connected_at=installed_at,
+            preview=preview,
+        )
+    except ShopifyBillingEvidenceError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=409, detail={"code": str(exc)}
+        ) from exc
+    return {
+        **preview,
+        "verification_id": verification.id,
+        "verified_at": verification.observed_at.isoformat(),
+        "requires_review": True,
+        "applied": False,
+    }
+
+
+@router.get("/api/billing/shopify/reconciliation-history")
+def get_shopify_billing_reconciliation_history(
+    limit: int = Query(20, ge=1, le=50),
+    membership: OrganizationMembership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+):
+    """Tenant-scoped audit metadata only; never a billing authorization."""
+    if membership.role not in {"owner", "manager"}:
+        raise HTTPException(status_code=403, detail="Billing access denied")
+    return {
+        "organization_id": membership.organization_id,
+        "items": list_shopify_billing_verifications(
+            db, organization_id=membership.organization_id, limit=limit,
+        ),
+        "applied": False,
+    }
+
 
 class BillingAutoRenewRequest(BaseModel):
     enabled: bool
