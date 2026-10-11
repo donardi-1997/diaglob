@@ -28,6 +28,11 @@ from ..services.shopify_billing_verification import (
     list_shopify_billing_verifications,
     record_shopify_billing_verification,
 )
+from ..services.shopify_plan_transition_review import (
+    ShopifyTransitionReviewError,
+    list_shopify_plan_transition_reviews,
+    prepare_shopify_plan_transition,
+)
 from ..services.billing_service import (
     AutoRenewConflictError,
     DowngradeBlockedError,
@@ -263,6 +268,50 @@ def get_shopify_billing_reconciliation_history(
     return {
         "organization_id": membership.organization_id,
         "items": list_shopify_billing_verifications(
+            db, organization_id=membership.organization_id, limit=limit,
+        ),
+        "applied": False,
+    }
+
+
+class ShopifyTransitionReviewRequest(BaseModel):
+    verification_id: int
+
+
+@router.post("/api/billing/shopify/transition-proposals")
+def propose_shopify_plan_transition(
+    payload: ShopifyTransitionReviewRequest,
+    membership: OrganizationMembership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+):
+    """Stage a non-granting review after a recent provider-backed verification."""
+    if membership.role != "owner":
+        raise HTTPException(status_code=403, detail="Owner access required")
+    try:
+        return prepare_shopify_plan_transition(
+            db,
+            organization_id=membership.organization_id,
+            verification_id=payload.verification_id,
+        )
+    except ShopifyTransitionReviewError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=409, detail={"code": str(exc)}
+        ) from exc
+
+
+@router.get("/api/billing/shopify/transition-proposals")
+def get_shopify_plan_transition_proposals(
+    limit: int = Query(20, ge=1, le=50),
+    membership: OrganizationMembership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+):
+    """Inspect non-entitling proposals, never approve or apply them."""
+    if membership.role not in {"owner", "manager"}:
+        raise HTTPException(status_code=403, detail="Billing access denied")
+    return {
+        "organization_id": membership.organization_id,
+        "items": list_shopify_plan_transition_reviews(
             db, organization_id=membership.organization_id, limit=limit,
         ),
         "applied": False,
