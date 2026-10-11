@@ -1,4 +1,5 @@
 import { initializePaddle, type Paddle } from "@paddle/paddle-js";
+import { resolvePaddleJsEnvironment } from "../services/paddleEnvironment";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -869,22 +870,27 @@ export default function PlansPage() {
 
   useEffect(() => {
     const token = import.meta.env.VITE_PADDLE_CLIENT_TOKEN;
+    const environment = resolvePaddleJsEnvironment(
+      token,
+      import.meta.env.VITE_PADDLE_ENVIRONMENT,
+    );
 
-    if (!token) {
-      console.warn("VITE_PADDLE_CLIENT_TOKEN no configurado");
-
+    if (!environment) {
+      // Do not initialize Paddle with unknown credentials or with a
+      // sandbox/live mismatch. No tokens should appear in logs.
+      console.warn("Configuración del checkout Paddle no disponible o incompatible");
       return;
     }
 
     initializePaddle({
-      environment: "sandbox",
-      token,
+      environment,
+      token: token.trim(),
     })
       .then((instance) => {
         setPaddle(instance);
       })
-      .catch((error) => {
-        console.error("Unable to initialize Paddle", error);
+      .catch(() => {
+        console.error("No fue posible iniciar Paddle Checkout");
       });
   }, []);
 
