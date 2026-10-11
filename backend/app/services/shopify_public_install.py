@@ -181,6 +181,8 @@ def claim_install(
         and existing.external_store_url == grant.shop_domain
         and existing.organization_id == membership.organization_id
     )
+    if store.shopify_domain and store.shopify_domain.strip().lower() != grant.shop_domain:
+        raise ShopifyConnectionError("SHOPIFY_STORE_DOMAIN_MISMATCH")
     if existing is not None and not same_store:
         raise ShopifyConnectionError("COMMERCE_ALREADY_CONNECTED")
     conflicting = db.query(CommerceConnection).filter(
