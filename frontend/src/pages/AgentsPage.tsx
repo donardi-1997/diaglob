@@ -100,26 +100,41 @@ export default function AgentsPage({
       setError("");
 
       const [
-        agentsResponse,
-        knowledgeResponse,
-        workforceResponse,
-      ] = await Promise.all([
+        agentsResult,
+        knowledgeResult,
+        workforceResult,
+      ] = await Promise.allSettled([
         getAgents(),
         getKnowledgeBases(),
         getWorkforceCatalog(),
       ]);
 
-      setAgents(
-        agentsResponse.items,
-      );
+      const failedSections: string[] = [];
 
-      setKnowledgeBases(
-        knowledgeResponse.items,
-      );
+      if (agentsResult.status === "fulfilled") {
+        setAgents(agentsResult.value.items);
+      } else {
+        console.error("Failed to load AI agents", agentsResult.reason);
+        failedSections.push("agents");
+      }
 
-      setWorkforceRoles(
-        workforceResponse.roles,
-      );
+      if (knowledgeResult.status === "fulfilled") {
+        setKnowledgeBases(knowledgeResult.value.items);
+      } else {
+        console.error("Failed to load knowledge bases", knowledgeResult.reason);
+        failedSections.push("knowledge bases");
+      }
+
+      if (workforceResult.status === "fulfilled") {
+        setWorkforceRoles(workforceResult.value.roles);
+      } else {
+        console.error("Failed to load workforce roles", workforceResult.reason);
+        failedSections.push("workforce roles");
+      }
+
+      if (failedSections.length > 0) {
+        setError(`Could not load: ${failedSections.join(", ")}. Please retry.`);
+      }
     } catch (err) {
       console.error(err);
 
