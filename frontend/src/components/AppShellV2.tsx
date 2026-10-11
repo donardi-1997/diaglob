@@ -34,6 +34,9 @@ interface AppShellV2Props {
   onNavigate: (page: string) => void;
   onSearchResult?: (result: GlobalSearchResult) => void;
   stores: Store[];
+  storesError: boolean;
+  storesLoading: boolean;
+  onRetryStores: () => void;
   selectedStoreId: string;
   selectedStoreName?: string;
   onChangeStore: (storeId: string) => void;
@@ -98,6 +101,9 @@ export default function AppShellV2({
   onNavigate,
   onSearchResult,
   stores,
+  storesError,
+  storesLoading,
+  onRetryStores,
   selectedStoreId,
   selectedStoreName,
   onChangeStore,
@@ -296,12 +302,27 @@ export default function AppShellV2({
                 <span className="dg-store-icon"><ShoppingBag size={16} /></span>
                 <span className="dg-store-copy">
                   <small>{STORE_LABELS[locale]}</small>
-                  <strong>{selectedStoreName || "Sin tienda"}</strong>
+                  <strong>{selectedStoreName || (storesLoading ? "Cargando..." : storesError ? "Error de tiendas" : "Sin tienda")}</strong>
                 </span>
                 <ChevronDown size={15} />
               </button>
               {storeMenuOpen && (
                 <div className="dg-popover dg-store-menu">
+                  {storesError && (
+                    <div role="alert" className="dg-store-menu-status">
+                      No se pudieron actualizar las tiendas.
+                      <button type="button" onClick={() => onRetryStores()}>Reintentar</button>
+                    </div>
+                  )}
+                  {!storesError && storesLoading && stores.length === 0 && (
+                    <div role="status" className="dg-store-menu-status">Cargando tiendas...</div>
+                  )}
+                  {!storesLoading && !storesError && stores.filter((store) => store.active).length === 0 && (
+                    <div className="dg-store-menu-status">
+                      No hay tiendas activas. Abre Tiendas para crear o activar una.
+                      <button type="button" onClick={() => { navigate("stores"); setStoreMenuOpen(false); }}>Ir a Tiendas</button>
+                    </div>
+                  )}
                   {stores.filter((store) => store.active).map((store) => (
                     <button
                       key={store.id}
