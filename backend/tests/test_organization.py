@@ -187,6 +187,7 @@ class TestOrganizationEndpoint:
     ):
         """When Paddle times out, endpoint returns 200
         with local data and next_billed_at=None."""
+        org.billing_provider = "paddle"
         org.billing_subscription_id = "sub_123"
         client.app.dependency_overrides[
             get_current_membership
@@ -214,6 +215,7 @@ class TestOrganizationEndpoint:
     ):
         """When Paddle returns an error, endpoint
         returns 200 with local data."""
+        org.billing_provider = "paddle"
         org.billing_subscription_id = "sub_123"
         client.app.dependency_overrides[
             get_current_membership
@@ -353,6 +355,7 @@ class TestOrganizationEndpoint:
     ):
         """When Paddle responds successfully,
         next_billed_at is populated."""
+        org.billing_provider = "paddle"
         org.billing_subscription_id = "sub_123"
         client.app.dependency_overrides[
             get_current_membership
@@ -382,3 +385,41 @@ class TestOrganizationEndpoint:
             data["next_billed_at"]
             == "2026-09-01T00:00:00Z"
         )
+
+
+    def test_provider_channel_disclosed_without_billing_credentials(
+        self, client, org,
+    ):
+        org.billing_provider = "shopify"
+        resp = client.get("/api/organization")
+        assert resp.status_code == 200
+        assert resp.json()["billing_provider"] == "shopify"
+        assert "billing_subscription_id" not in resp.json()
+
+    def test_shopify_org_never_queries_paddle_even_with_legacy_reference(
+        self, client, org,
+    ):
+        org.billing_provider = "shopify"
+        org.billing_subscription_id = "sub_legacy_should_not_be_queried"
+        with patch.dict(os.environ, {"PADDLE_API_KEY": "synthetic-secret"}), patch(
+            "app.api.organizations.httpx.get",
+        ) as http_get:
+            resp = client.get("/api/organization")
+        assert resp.status_code == 200
+        assert resp.json()["billing_provider"] == "shopify"
+        assert resp.json()["next_billed_at"] is None
+        http_get.assert_not_called()
+
+    def test_unknown_billing_channel_fails_closed_on_provider_lookup(
+        self, client, org,
+    ):
+        org.billing_provider = None
+        org.billing_subscription_id = "sub_ambiguous"
+        with patch.dict(os.environ, {"PADDLE_API_KEY": "synthetic-secret"}), patch(
+            "app.api.organizations.httpx.get",
+        ) as http_get:
+            resp = client.get("/api/organization")
+        assert resp.status_code == 200
+        assert resp.json()["billing_provider"] is None
+        assert resp.json()["next_billed_at"] is None
+        http_get.assert_not_called()
