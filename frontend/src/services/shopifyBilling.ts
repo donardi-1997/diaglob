@@ -54,17 +54,6 @@ export interface ShopifyReviewAssessment {
   applied: false;
 }
 
-export function parseShopifyHostedPricingReturn(search: string) {
-  const params = new URLSearchParams(search);
-  const shouldReverify = params.has("plan_handle");
-  params.delete("plan_handle");
-  params.delete("shop");
-  return {
-    shouldReverify,
-    cleanedSearch: params.toString(),
-  };
-}
-
 const tenantHeaders = { "X-Diaglob-Global-Scope": "1" };
 
 export async function getShopifyBillingHistory() {
