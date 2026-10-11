@@ -10,6 +10,7 @@ from app.services.shopify_app_pricing import (
 )
 from app.services.shopify_app_pricing_reconciliation import (
     preview_shopify_entitlement_reconciliation,
+    verify_shopify_trial_contract,
 )
 
 
@@ -206,3 +207,81 @@ def test_no_charge_paid_plan_from_non_development_shop_cannot_grant_access():
                 connected_shopify_store_count=1,
                 handle_catalog=CATALOG,
             )
+
+
+def test_trial_contract_compares_partner_event_days_with_three_day_requirement():
+    from app.services.shopify_app_pricing import ShopifyTrialEvidence
+
+    with patch(
+        "app.services.shopify_app_pricing_reconciliation.resolve_trusted_shop_gid",
+        return_value="gid://shopify/Shop/100",
+    ), patch(
+        "app.services.shopify_app_pricing_reconciliation.get_active_shopify_subscription",
+        return_value=ShopifySubscriptionSnapshot(
+            active=True,
+            billing_period="EVERY_30_DAYS",
+            item_handles=("shopify-starter-monthly",),
+            eligible_handles=("shopify-starter-monthly",),
+            eligible_amounts=("19.00",),
+            trial_ends_at="2026-10-14T18:30:00Z",
+        ),
+    ), patch(
+        "app.services.shopify_app_pricing_reconciliation.get_shopify_trial_evidence",
+        return_value=ShopifyTrialEvidence(
+            trial_days=3,
+            trial_days_remaining=3,
+            billing_period="EVERY_30_DAYS",
+            event_type="SUBSCRIPTION_CREATED",
+            occurred_at="2026-10-11T18:30:00Z",
+        ),
+    ) as trial:
+        result = verify_shopify_trial_contract(
+            _org(),
+            _connection(),
+            connected_shopify_store_count=1,
+            handle_catalog=CATALOG,
+        )
+
+    assert result["expected_trial_days"] == 3
+    assert result["observed_trial_days"] == 3
+    assert result["trial_days_remaining"] == 3
+    assert result["trial_ends_at"] == "2026-10-14T18:30:00Z"
+    assert result["matches_expected"] is True
+    assert result["verified_against_shopify"] is True
+    assert result["applied"] is False
+    trial.assert_called_once_with(
+        "gid://shopify/Shop/100",
+        current_handle="shopify-starter-monthly",
+        current_billing_period="EVERY_30_DAYS",
+    )
+
+
+def test_trial_contract_reports_partner_mismatch_without_granting_or_hiding_it():
+    from app.services.shopify_app_pricing import ShopifyTrialEvidence
+
+    with patch(
+        "app.services.shopify_app_pricing_reconciliation.resolve_trusted_shop_gid",
+        return_value="gid://shopify/Shop/100",
+    ), patch(
+        "app.services.shopify_app_pricing_reconciliation.get_active_shopify_subscription",
+        return_value=_subscription(),
+    ), patch(
+        "app.services.shopify_app_pricing_reconciliation.get_shopify_trial_evidence",
+        return_value=ShopifyTrialEvidence(
+            trial_days=7,
+            trial_days_remaining=7,
+            billing_period="EVERY_30_DAYS",
+            event_type="SUBSCRIPTION_CREATED",
+        ),
+    ):
+        result = verify_shopify_trial_contract(
+            _org(),
+            _connection(),
+            connected_shopify_store_count=1,
+            handle_catalog=CATALOG,
+        )
+
+    assert result["expected_trial_days"] == 3
+    assert result["observed_trial_days"] == 7
+    assert result["matches_expected"] is False
+    assert result["applied"] is False
