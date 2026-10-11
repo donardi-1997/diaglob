@@ -13,7 +13,6 @@ import {
   refreshShopifySubscription,
   getShopifyBillingHistory,
   getShopifyPlanReviews,
-  parseShopifyHostedPricingReturn,
   stageShopifyPlanReview,
   verifyShopifyTrial,
   type ShopifyBillingCapabilities,
@@ -23,6 +22,7 @@ import {
   type ShopifyReviewAssessment,
   type ShopifyTrialVerification,
 } from "../services/shopifyBilling";
+import { parseShopifyHostedPricingReturn } from "../services/shopifyBillingReturn";
 
 interface Props {
   organization: Organization;
