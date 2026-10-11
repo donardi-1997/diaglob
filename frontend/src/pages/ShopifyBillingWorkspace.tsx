@@ -298,6 +298,15 @@ export default function ShopifyBillingWorkspace({ organization }: Props) {
               <div>
                 <h2>Planes alojados en Shopify</h2>
                 <p>Los cambios y los cobros se realizan en Shopify Admin, no en Diaglob.</p>
+                {capabilities && (
+                  <p className="shopify-billing-muted">
+                    Planes: {capabilities.public_plans.map((plan) => (
+                      plan.charAt(0).toUpperCase() + plan.slice(1)
+                    )).join(" · ")}
+                    {" · "}prueba gratis de {capabilities.trial_days} días
+                    {" · "}facturación {capabilities.billing_period_months.includes(12) ? "mensual o anual" : "mensual"}.
+                  </p>
+                )}
               </div>
               <button type="button" className="shopify-billing-primary"
                 disabled={Boolean(busy) || loading || !capabilities?.shopify_hosted_pricing_configured}
@@ -329,7 +338,7 @@ export default function ShopifyBillingWorkspace({ organization }: Props) {
                 </button>
                 {capabilities?.verified_entitlement_apply_enabled && (
                   <button type="button" className="shopify-billing-secondary"
-                    disabled={Boolean(busy) || loading || !["starter", "growth", "pro", "scale"].includes(organization.plan)}
+                    disabled={Boolean(busy) || loading || !capabilities?.public_plans.includes(organization.plan)}
                     onClick={() => { void run("subscription"); }}>
                     <RefreshCw size={16} />
                     {busy === "subscription" ? "Comprobando acceso…" : "Comprobar acceso activo"}
