@@ -878,3 +878,29 @@ def test_shopify_same_plan_annual_change_requires_partner_period_confirmation(
     assert org.plan == "starter"
     assert org.billing_period_months == 12
     assert org.subscription_status == "active"
+
+
+
+def test_shopify_lifecycle_unknown_partner_price_suspends_but_outage_does_not(
+    sandbox, monkeypatch,
+):
+    from app.services.shopify_billing_lifecycle import refresh_shopify_billing_status
+    from app.services.shopify_app_pricing import ShopifyAppPricingError
+    from app.plan_limits import get_organization_limits
+    db, org, _, _, _, _ = sandbox
+    org.subscription_status = "active"
+    db.commit()
+    monkeypatch.setenv("SHOPIFY_BILLING_ENTITLEMENTS_ENABLED", "true")
+    with patch(
+        "app.services.shopify_billing_lifecycle.preview_shopify_entitlement_reconciliation",
+        side_effect=ShopifyAppPricingError("SHOPIFY_PLAN_PRICE_MISMATCH"),
+    ):
+        refreshed = refresh_shopify_billing_status(db, organization_id=org.id)
+    db.refresh(org)
+    assert refreshed["subscription_status"] == "review_required"
+    assert org.subscription_status == "review_required"
+    assert get_organization_limits(org).active_stores == 0
+    latest = db.query(ShopifyBillingVerification).order_by(
+        ShopifyBillingVerification.id.desc(),
+    ).first()
+    assert latest.status == "subscription_unrecognized_requires_review"
