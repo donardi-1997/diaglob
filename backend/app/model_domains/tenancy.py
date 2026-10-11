@@ -115,6 +115,13 @@ class Organization(Base):
         nullable=True,
     )
 
+    # Immutable origin of the organization's signup. Legacy rows keep NULL.
+    # A Shopify install hint is NOT proof of ownership or a paid contract.
+    billing_onboarding_channel: Mapped[str | None] = mapped_column(
+        String(30),
+        nullable=True,
+    )
+
     billing_customer_id: Mapped[str | None] = mapped_column(
         String(100),
         nullable=True,

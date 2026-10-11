@@ -26,6 +26,7 @@ from ..models import (
 from ..permissions import get_permissions_for_role
 from ..services.marketing_acquisition import record_registration_conversion
 from ..services.trial_service import create_pending_trial
+from ..services.billing_onboarding import registration_billing_channel
 from .deps import (
     bearer_scheme,
     get_current_user,
@@ -61,6 +62,9 @@ class RegistrationProvisionRequest(BaseModel):
     name: str
     organization_name: str | None = None
     marketing_context: RegistrationMarketingContext | None = None
+    # An untrusted install hint may only leave billing pending, never
+    # authorize a Shopify subscription or retroactively switch an account.
+    registration_channel: str = Field(default="direct", max_length=32)
 
 
 router = APIRouter()
@@ -705,6 +709,16 @@ def provision_registration(
     # ========================================================
 
     try:
+        origin, billing_provider = registration_billing_channel(
+            payload.registration_channel
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": str(exc)},
+        ) from exc
+
+    try:
         if email_user:
             user = email_user
 
@@ -731,6 +745,8 @@ def provision_registration(
             name=organization_name,
             slug=slug,
             active=True,
+            billing_onboarding_channel=origin,
+            billing_provider=billing_provider,
         )
 
         db.add(organization)

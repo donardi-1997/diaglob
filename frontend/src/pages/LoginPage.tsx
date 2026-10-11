@@ -36,6 +36,7 @@ import "../onboarding-activation-polish.css";
 
 interface LoginPageProps {
   onAuthenticated: () => void;
+  registrationChannel?: "direct" | "shopify_install";
   initialMode?: AuthMode;
   onNavigateHome?: () => void;
   onNavigateToLogin?: () => void;
@@ -46,6 +47,7 @@ type AuthMode = "login" | "register" | "confirm" | "forgot" | "reset";
 
 export default function LoginPage({
   onAuthenticated,
+  registrationChannel = "direct",
   initialMode,
   onNavigateHome = () => window.location.assign("/"),
   onNavigateToLogin,
@@ -267,6 +269,7 @@ export default function LoginPage({
       cleanName,
       cleanOrganization,
       marketingContext,
+      registrationChannel,
     );
     saveSession(result.AccessToken, result.IdToken, result.RefreshToken);
     trackMarketingEvent(
