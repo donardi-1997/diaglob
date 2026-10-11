@@ -65,9 +65,11 @@ Provisioned in AWS account `765761474007`, region `us-east-2`:
 - Not mapped to `SHOPIFY_PARTNER_ACCESS_TOKEN` in the Lightsail service. No production access or feature flags were enabled.
 - Tags indicate the value is awaiting authorized operator replacement.
 
-Partner organization owner can now create a **Manage apps** Partner API client in the correct Shopify Partner settings and replace the placeholder using AWS Console Systems Manager → Parameter Store → edit SecureString value. **Never send the token over chat, include it in GitHub, print it in CI, place it in a shell command line or expose it in logs.**
+**This reserved location is not yet approved for a real token.** AWS warns that the default `aws/ssm` KMS key is shared across account IAM principals with compatible Parameter Store read permissions and is not a fine-grained secret boundary. **Before replacing the placeholder**, review and restrict IAM SSM read/write access and either move the token to AWS Secrets Manager (preferred for long-lived API tokens and rotation, paid service) or encrypt the parameter under a properly scoped customer-managed KMS key (also potentially charged). Do not store a real Partner credential under the present default-key configuration without this access review.
 
-After the token is stored, a separately reviewed secret-delivery procedure is needed to pass it securely from AWS to the Lightsail runtime and rotate/revoke it safely. Lightsail isn't registered as an SSM managed instance in the current AWS audit, so do not claim automatic retrieval works. Restrict IAM access to only approved operator/service principals. Do not deploy placeholder text as if it were a real Partner token.
+A Partner organization owner may create the authorized **Manage apps** Partner API client after the approved protected storage and rotation/rollback procedure is ready. **Never send the token over chat, include it in GitHub, print it in CI, place it on a shell command line or expose it in logs.**
+
+A separately reviewed secret-delivery procedure is needed to pass it securely from AWS to the Lightsail runtime and rotate/revoke it safely. Lightsail isn't registered as an SSM managed instance in the current AWS audit, so do not claim automatic retrieval works. No secret has been consumed by production; do not deploy placeholder text as if it were a real Partner token.
 
 ## Hard release boundaries
 
