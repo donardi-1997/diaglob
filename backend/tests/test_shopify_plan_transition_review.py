@@ -686,3 +686,110 @@ def test_shopify_transition_cross_tenant_replay_is_denied(sandbox, monkeypatch):
                 db, organization_id=other.id, review_id=review["id"],
             )
         partner.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "remote_status,expected_local",
+    [
+        ("plan_verified_no_change", "active"),
+        ("plan_transition_requires_review", "review_required"),
+        ("subscription_inactive_requires_review", "inactive"),
+    ],
+)
+def test_shopify_billing_lifecycle_refresh_enforces_current_partner_state(
+    sandbox, monkeypatch, remote_status, expected_local,
+):
+    from app.services.shopify_billing_lifecycle import refresh_shopify_billing_status
+    from app.plan_limits import get_organization_limits, organization_has_plan
+    db, org, _, _, _, _ = sandbox
+    org.subscription_status = "active"
+    db.commit()
+    monkeypatch.setenv("SHOPIFY_BILLING_ENTITLEMENTS_ENABLED", "true")
+
+    preview = SimpleNamespace(
+        organization_id=org.id, current_plan="starter",
+        status=remote_status,
+        target_plan=(
+            None if remote_status == "subscription_inactive_requires_review"
+            else "starter" if remote_status == "plan_verified_no_change"
+            else "growth"
+        ),
+        target_billing_period_months=(
+            None if remote_status == "subscription_inactive_requires_review" else 1
+        ),
+    )
+    with patch(
+        "app.services.shopify_billing_lifecycle.preview_shopify_entitlement_reconciliation",
+        return_value=preview,
+    ) as provider:
+        result = refresh_shopify_billing_status(db, organization_id=org.id)
+    provider.assert_called_once()
+    db.refresh(org)
+    assert result["subscription_status"] == expected_local
+    assert org.subscription_status == expected_local
+    assert org.plan == "starter"
+    assert org.billing_provider == "shopify"
+    assert db.query(ShopifyBillingVerification).count() == 2
+    if expected_local != "active":
+        assert get_organization_limits(org).active_stores == 0
+        assert organization_has_plan(org) is False
+    else:
+        assert get_organization_limits(org).active_stores > 0
+        assert organization_has_plan(org) is True
+
+
+def test_shopify_lifecycle_no_partner_claim_or_paddle_changes(sandbox, monkeypatch):
+    from app.services.shopify_billing_lifecycle import refresh_shopify_billing_status
+    db, org, _, _, _, _ = sandbox
+    monkeypatch.setenv("SHOPIFY_BILLING_ENTITLEMENTS_ENABLED", "true")
+    org.billing_provider = "paddle"
+    db.commit()
+    with patch(
+        "app.services.shopify_billing_lifecycle.preview_shopify_entitlement_reconciliation"
+    ) as provider:
+        with pytest.raises(ShopifyTransitionReviewError, match="PROVENANCE_REQUIRED"):
+            refresh_shopify_billing_status(db, organization_id=org.id)
+        provider.assert_not_called()
+
+
+def test_shopify_lifecycle_does_not_suspend_on_partner_outage(sandbox, monkeypatch):
+    from app.services.shopify_billing_lifecycle import refresh_shopify_billing_status
+    from app.services.shopify_app_pricing import ShopifyAppPricingError
+    db, org, _, _, _, _ = sandbox
+    org.subscription_status = "active"
+    db.commit()
+    monkeypatch.setenv("SHOPIFY_BILLING_ENTITLEMENTS_ENABLED", "true")
+    with patch(
+        "app.services.shopify_billing_lifecycle.preview_shopify_entitlement_reconciliation",
+        side_effect=ShopifyAppPricingError("SHOPIFY_PARTNER_API_UNAVAILABLE"),
+    ):
+        with pytest.raises(ShopifyTransitionReviewError, match="PARTNER_API_UNAVAILABLE"):
+            refresh_shopify_billing_status(db, organization_id=org.id)
+    db.refresh(org)
+    assert org.subscription_status == "active"
+    assert db.query(ShopifyBillingVerification).count() == 1
+
+
+def test_shopify_lifecycle_reinstall_during_partner_check_fails_closed(
+    sandbox, monkeypatch,
+):
+    from app.services.shopify_billing_lifecycle import refresh_shopify_billing_status
+    db, org, _, conn, _, _ = sandbox
+    monkeypatch.setenv("SHOPIFY_BILLING_ENTITLEMENTS_ENABLED", "true")
+
+    def reconnect(*args, **kwargs):
+        conn.connected_at = datetime.utcnow()
+        db.commit()
+        return SimpleNamespace(
+            organization_id=org.id, current_plan="starter",
+            status="subscription_inactive_requires_review",
+            target_plan=None, target_billing_period_months=None,
+        )
+
+    with patch(
+        "app.services.shopify_billing_lifecycle.preview_shopify_entitlement_reconciliation",
+        side_effect=reconnect,
+    ):
+        with pytest.raises(ShopifyTransitionReviewError, match="STATE_CHANGED"):
+            refresh_shopify_billing_status(db, organization_id=org.id)
+    assert db.query(ShopifyBillingVerification).count() == 1
