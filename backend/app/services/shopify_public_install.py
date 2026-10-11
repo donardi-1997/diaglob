@@ -7,7 +7,6 @@ a secure HttpOnly browser cookie by an authenticated authorized member.
 from __future__ import annotations
 
 import hashlib
-import hmac
 import os
 import secrets
 from datetime import datetime, timedelta
@@ -21,7 +20,7 @@ from ..shopify_oauth import (
     SHOPIFY_SCOPES, build_authorization_url, exchange_access_token,
     generate_oauth_state, normalize_shop_domain, verify_shopify_hmac,
 )
-from ..shopify_security import decrypt_shopify_secret, encrypt_shopify_secret
+from ..shopify_security import encrypt_shopify_secret
 from ..shopify_sync import SHOPIFY_TEST_QUERY
 from .billing_onboarding import confirm_shopify_install_billing
 from .shopify_service import ShopifyConnectionError, ShopifyOAuthError, ShopifyProviderError
