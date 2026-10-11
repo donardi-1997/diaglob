@@ -25,6 +25,16 @@ query DiaglobShopIdentity {
 }
 """
 
+SHOP_DEVELOPMENT_IDENTITY_QUERY = """
+query DiaglobShopDevelopmentIdentity {
+  shop {
+    id
+    myshopifyDomain
+    plan { partnerDevelopment }
+  }
+}
+"""
+
 
 APP_GID_RE = re.compile(r"^gid://shopify/App/[0-9]+$")
 SHOP_GID_RE = re.compile(r"^gid://shopify/Shop/[0-9]+$")
@@ -36,6 +46,41 @@ SHOPIFY_APP_PRICING_INTERVAL_TO_MONTHS = {
     "EVERY_30_DAYS": 1,
     "ANNUAL": 12,
 }
+
+# Public Shopify App Store contract. Keep this separate from DIAGLOB's direct
+# Paddle catalog: Scale and 3/6-month periods are not offered through Shopify.
+SHOPIFY_APP_STORE_PLANS = ("starter", "growth", "pro")
+SHOPIFY_APP_STORE_TRIAL_DAYS = 3
+
+SUBSCRIPTION_TRIAL_EVENTS_QUERY = """
+query DiaglobSubscriptionTrialEvents($appId: ID!, $shopId: ID!) {
+  events(
+    filter: {
+      subjectId: $appId
+      shopId: $shopId
+      eventTypes: [SUBSCRIPTION_CREATED, SUBSCRIPTION_UPDATED]
+    }
+    first: 20
+  ) {
+    edges {
+      node {
+        eventType
+        occurredAt
+        shop { id }
+        ... on SubscriptionStatus {
+          plan {
+            handle
+            billingPeriod
+            trialDays
+            trialDaysRemaining
+          }
+        }
+      }
+    }
+  }
+}
+"""
+
 
 ACTIVE_SUBSCRIPTION_QUERY = """
 query DiaglobActiveSubscription($appId: ID!, $shopId: ID!) {
@@ -88,6 +133,21 @@ class ShopifySubscriptionSnapshot:
     trial_ends_at: str | None = None
     current_cycle_end: str | None = None
     cancel_at_end_of_cycle: bool = False
+    has_pending_update: bool = False
+
+
+def subscription_has_no_charge_effective_price(
+    subscription: ShopifySubscriptionSnapshot,
+) -> bool:
+    """Detect Shopify's effective USD 0 representation without authorizing it."""
+    if len(subscription.eligible_amounts) != 1:
+        return False
+    amount = subscription.eligible_amounts[0]
+    return (
+        type(amount) is str
+        and USD_AMOUNT_RE.fullmatch(amount) is not None
+        and Decimal(amount) == 0
+    )
 
 
 def resolve_trusted_shop_gid(connection: Any) -> str:
@@ -128,6 +188,53 @@ def resolve_trusted_shop_gid(connection: Any) -> str:
     if response_domain != domain:
         raise ShopifyAppPricingError("SHOPIFY_IDENTITY_MISMATCH")
     return shop_gid
+
+
+def is_trusted_partner_development_shop(
+    connection: Any,
+    *,
+    expected_shop_gid: str,
+) -> bool:
+    """Confirm no-charge App Pricing is being exercised on a real dev shop.
+
+    This check uses the already installed Admin API token and verifies both the
+    exact Shop GID and myshopify domain again. A browser flag or a zero-dollar
+    Partner contract alone can never opt a production merchant into test mode.
+    """
+    if (
+        getattr(connection, "provider", None) != "shopify"
+        or getattr(connection, "status", None) != "connected"
+        or not SHOP_GID_RE.fullmatch(expected_shop_gid or "")
+    ):
+        raise ShopifyAppPricingError("SHOPIFY_CONNECTION_NOT_VERIFIED")
+    try:
+        domain = normalize_shop_domain(connection.external_store_url)
+        token = decrypt_shopify_secret(connection.access_token_encrypted)
+        response = ShopifyGraphQLClient(
+            shop_domain=domain,
+            access_token=token,
+        ).query(SHOP_DEVELOPMENT_IDENTITY_QUERY)
+    except (ValueError, RuntimeError, AttributeError) as exc:
+        raise ShopifyAppPricingError("SHOPIFY_IDENTITY_UNAVAILABLE") from exc
+    except Exception as exc:
+        raise ShopifyAppPricingError("SHOPIFY_IDENTITY_UNAVAILABLE") from exc
+
+    shop = response.get("shop") if isinstance(response, dict) else None
+    if not isinstance(shop, dict):
+        raise ShopifyAppPricingError("SHOPIFY_IDENTITY_INVALID")
+    try:
+        response_domain = normalize_shop_domain(shop.get("myshopifyDomain") or "")
+    except (ValueError, AttributeError) as exc:
+        raise ShopifyAppPricingError("SHOPIFY_IDENTITY_INVALID") from exc
+    plan = shop.get("plan")
+    if (
+        shop.get("id") != expected_shop_gid
+        or response_domain != domain
+        or not isinstance(plan, dict)
+        or type(plan.get("partnerDevelopment")) is not bool
+    ):
+        raise ShopifyAppPricingError("SHOPIFY_IDENTITY_INVALID")
+    return plan["partnerDevelopment"]
 
 
 def _configuration() -> tuple[str, str, str]:
@@ -203,6 +310,15 @@ def get_active_shopify_subscription(
     cycle = subscription.get("currentBillingCycle")
     if cycle is not None and not isinstance(cycle, dict):
         raise ShopifyAppPricingError("SHOPIFY_PARTNER_API_INVALID_RESPONSE")
+    pending_update = subscription.get("pendingUpdate")
+    if pending_update is not None:
+        if not isinstance(pending_update, dict):
+            raise ShopifyAppPricingError("SHOPIFY_PARTNER_API_INVALID_RESPONSE")
+        pending_items = pending_update.get("items")
+        if not isinstance(pending_items, list) or any(
+            not isinstance(item, dict) for item in pending_items
+        ):
+            raise ShopifyAppPricingError("SHOPIFY_PARTNER_API_INVALID_RESPONSE")
     handles = tuple(
         handle.strip()
         for item in items
@@ -238,7 +354,114 @@ def get_active_shopify_subscription(
         trial_ends_at=subscription.get("trialEndsAt"),
         current_cycle_end=cycle.get("endTime") if cycle else None,
         cancel_at_end_of_cycle=subscription.get("cancelAtEndOfCycle") is True,
+        has_pending_update=pending_update is not None,
     )
+
+
+@dataclass(frozen=True)
+class ShopifyTrialEvidence:
+    """Provider-backed trial settings for the currently verified plan."""
+
+    trial_days: int | None
+    trial_days_remaining: int | None
+    billing_period: str
+    event_type: str
+    occurred_at: str | None = None
+
+
+def get_shopify_trial_evidence(
+    shop_gid: str,
+    *,
+    current_handle: str,
+    current_billing_period: str,
+    http_client: httpx.Client | None = None,
+) -> ShopifyTrialEvidence:
+    """Read the latest matching subscription event and its configured trial.
+
+    The caller must first resolve the current handle from activeSubscription.
+    Redirect parameters are never accepted as trial evidence.
+    """
+    if (
+        not SHOP_GID_RE.fullmatch(shop_gid or "")
+        or not isinstance(current_handle, str)
+        or not current_handle.strip()
+        or current_billing_period not in SHOPIFY_APP_PRICING_INTERVAL_TO_MONTHS
+    ):
+        raise ShopifyAppPricingError("SHOPIFY_TRIAL_EVIDENCE_INVALID_REQUEST")
+
+    organization_id, app_gid, token = _configuration()
+    url = f"https://partners.shopify.com/{organization_id}/api/2026-10/graphql.json"
+    payload = {
+        "query": SUBSCRIPTION_TRIAL_EVENTS_QUERY,
+        "variables": {"appId": app_gid, "shopId": shop_gid},
+    }
+    try:
+        if http_client is None:
+            with httpx.Client(timeout=10) as client:
+                response = client.post(
+                    url,
+                    json=payload,
+                    headers={"X-Shopify-Access-Token": token},
+                )
+        else:
+            response = http_client.post(
+                url,
+                json=payload,
+                headers={"X-Shopify-Access-Token": token},
+            )
+        response.raise_for_status()
+        body: Any = response.json()
+    except (httpx.HTTPError, ValueError) as exc:
+        raise ShopifyAppPricingError("SHOPIFY_PARTNER_API_UNAVAILABLE") from exc
+
+    if not isinstance(body, dict) or body.get("errors"):
+        raise ShopifyAppPricingError("SHOPIFY_PARTNER_API_GRAPHQL_ERROR")
+    data = body.get("data")
+    events = data.get("events") if isinstance(data, dict) else None
+    edges = events.get("edges") if isinstance(events, dict) else None
+    if not isinstance(edges, list):
+        raise ShopifyAppPricingError("SHOPIFY_PARTNER_API_INVALID_RESPONSE")
+
+    for edge in edges:
+        node = edge.get("node") if isinstance(edge, dict) else None
+        if not isinstance(node, dict):
+            continue
+        linked_shop = node.get("shop")
+        if not isinstance(linked_shop, dict) or linked_shop.get("id") != shop_gid:
+            continue
+        if node.get("eventType") not in {"SUBSCRIPTION_CREATED", "SUBSCRIPTION_UPDATED"}:
+            continue
+        plan = node.get("plan")
+        if not isinstance(plan, dict):
+            continue
+        if (
+            plan.get("handle") != current_handle
+            or plan.get("billingPeriod") != current_billing_period
+        ):
+            continue
+        trial_days = plan.get("trialDays")
+        remaining = plan.get("trialDaysRemaining")
+        if trial_days is not None and (
+            type(trial_days) is not int or trial_days < 0
+        ):
+            raise ShopifyAppPricingError("SHOPIFY_TRIAL_EVIDENCE_INVALID")
+        if remaining is not None and (
+            type(remaining) is not int or remaining < 0
+            or (trial_days is not None and remaining > trial_days)
+        ):
+            raise ShopifyAppPricingError("SHOPIFY_TRIAL_EVIDENCE_INVALID")
+        occurred_at = node.get("occurredAt")
+        if occurred_at is not None and not isinstance(occurred_at, str):
+            raise ShopifyAppPricingError("SHOPIFY_TRIAL_EVIDENCE_INVALID")
+        return ShopifyTrialEvidence(
+            trial_days=trial_days,
+            trial_days_remaining=remaining,
+            billing_period=current_billing_period,
+            event_type=node["eventType"],
+            occurred_at=occurred_at,
+        )
+
+    raise ShopifyAppPricingError("SHOPIFY_TRIAL_EVIDENCE_NOT_FOUND")
 
 
 @dataclass(frozen=True)
@@ -254,6 +477,7 @@ def resolve_verified_shopify_plan(
     subscription: ShopifySubscriptionSnapshot,
     *,
     handle_catalog: dict[str, Any] | None = None,
+    allow_no_charge_testing: bool = False,
 ) -> VerifiedShopifyPlan:
     """Resolve only a verified, explicitly configured App Pricing plan.
 
@@ -293,7 +517,7 @@ def resolve_verified_shopify_plan(
     if not isinstance(entry, dict):
         raise ShopifyAppPricingError("SHOPIFY_PLAN_HANDLE_UNKNOWN")
     plan = entry.get("plan")
-    if not isinstance(plan, str) or plan not in {"starter", "growth", "pro", "scale"}:
+    if not isinstance(plan, str) or plan not in SHOPIFY_APP_STORE_PLANS:
         raise ShopifyAppPricingError("SHOPIFY_PLAN_CATALOG_INVALID")
     periods = SHOPIFY_APP_PRICING_INTERVAL_TO_MONTHS
 
@@ -328,9 +552,20 @@ def resolve_verified_shopify_plan(
     if len(subscription.eligible_amounts) != 1:
         raise ShopifyAppPricingError("SHOPIFY_PLAN_PRICE_UNVERIFIED")
     actual_amount = subscription.eligible_amounts[0]
-    if not _valid_usd_amount(actual_amount):
+    if (
+        type(actual_amount) is not str
+        or USD_AMOUNT_RE.fullmatch(actual_amount) is None
+    ):
         raise ShopifyAppPricingError("SHOPIFY_PLAN_PRICE_UNVERIFIED")
-    if Decimal(actual_amount) != Decimal(expected_amount):
+    actual_decimal = Decimal(actual_amount)
+    if actual_decimal == 0:
+        # Shopify intentionally rewrites paid App Pricing items to effective
+        # USD 0 on eligible development-store tests. This exception is safe
+        # only when the caller independently authenticated partnerDevelopment
+        # with the installed Admin API token.
+        if allow_no_charge_testing is not True:
+            raise ShopifyAppPricingError("SHOPIFY_PLAN_PRICE_UNVERIFIED")
+    elif actual_decimal != Decimal(expected_amount):
         raise ShopifyAppPricingError("SHOPIFY_PLAN_PRICE_MISMATCH")
     return VerifiedShopifyPlan(
         plan=plan,

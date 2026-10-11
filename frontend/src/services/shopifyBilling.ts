@@ -14,12 +14,14 @@ export interface ShopifyBillingVerification {
 }
 
 export interface ShopifyBillingCheck {
+  organization_id: number;
   verification_id: number;
   verified_at: string;
   status: string;
   current_plan: string;
   target_plan: string | null;
   target_billing_period_months: number | null;
+  has_pending_update: boolean;
   requires_review: true;
   applied: false;
 }
@@ -108,6 +110,9 @@ export interface ShopifyBillingCapabilities {
   shopify_hosted_pricing_configured: boolean;
   verified_entitlement_apply_enabled: boolean;
   paddle_checkout_available: false;
+  public_plans: string[];
+  trial_days: number;
+  billing_period_months: number[];
 }
 
 export async function getShopifyBillingCapabilities() {
@@ -154,5 +159,27 @@ export async function refreshShopifySubscription() {
   }>("/api/billing/shopify/subscription-refresh", {}, {
     headers: tenantHeaders,
   });
+  return response.data;
+}
+
+
+export interface ShopifyTrialVerification {
+  organization_id: number;
+  plan: string;
+  billing_period_months: number;
+  expected_trial_days: number;
+  observed_trial_days: number | null;
+  trial_days_remaining: number | null;
+  trial_ends_at: string | null;
+  matches_expected: boolean;
+  verified_against_shopify: true;
+  applied: false;
+}
+
+export async function verifyShopifyTrial() {
+  const response = await api.get<ShopifyTrialVerification>(
+    "/api/billing/shopify/trial-verification",
+    { headers: tenantHeaders },
+  );
   return response.data;
 }

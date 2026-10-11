@@ -130,6 +130,7 @@ def test_verified_plan_is_review_only_without_secrets_or_mutations():
         "current_plan": "none",
         "target_plan": "growth",
         "target_billing_period_months": 12,
+        "has_pending_update": False,
         "organization_id": 17,
         "applied": False,
     }

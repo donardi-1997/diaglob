@@ -8,8 +8,12 @@ import pytest
 
 from app.services.shopify_app_pricing import (
     SHOPIFY_APP_PRICING_INTERVAL_TO_MONTHS,
+    SHOPIFY_APP_STORE_PLANS,
+    SHOPIFY_APP_STORE_TRIAL_DAYS,
     ShopifyAppPricingError,
     get_active_shopify_subscription,
+    get_shopify_trial_evidence,
+    is_trusted_partner_development_shop,
     resolve_verified_shopify_plan,
     ShopifySubscriptionSnapshot,
     resolve_trusted_shop_gid,
@@ -407,3 +411,299 @@ def test_shared_handle_config_cannot_mix_legacy_and_new_price_keys():
                 "prices": {"EVERY_30_DAYS": "49.00"},
             }},
         )
+
+
+def test_shopify_app_store_review_contract_has_three_public_plans_and_three_day_trial():
+    assert SHOPIFY_APP_STORE_PLANS == ("starter", "growth", "pro")
+    assert SHOPIFY_APP_STORE_TRIAL_DAYS == 3
+    assert set(SHOPIFY_APP_PRICING_INTERVAL_TO_MONTHS.values()) == {1, 12}
+
+
+@pytest.mark.parametrize(
+    "plan,handle,monthly,annual,interval,amount,months",
+    [
+        ("starter", "starter-review", "19.00", "190.00", "EVERY_30_DAYS", "19.00", 1),
+        ("starter", "starter-review", "19.00", "190.00", "ANNUAL", "190.00", 12),
+        ("growth", "growth-review", "49.00", "490.00", "EVERY_30_DAYS", "49.00", 1),
+        ("growth", "growth-review", "49.00", "490.00", "ANNUAL", "490.00", 12),
+        ("pro", "pro-review", "99.00", "990.00", "EVERY_30_DAYS", "99.00", 1),
+        ("pro", "pro-review", "99.00", "990.00", "ANNUAL", "990.00", 12),
+    ],
+)
+def test_each_shopify_public_plan_resolves_for_monthly_and_annual_review(
+    plan, handle, monthly, annual, interval, amount, months,
+):
+    subscription = ShopifySubscriptionSnapshot(
+        active=True,
+        billing_period=interval,
+        item_handles=(handle,),
+        eligible_handles=(handle,),
+        eligible_amounts=(amount,),
+        trial_ends_at="2026-10-14T18:00:00Z",
+    )
+    catalog = {
+        handle: {
+            "plan": plan,
+            "prices": {
+                "EVERY_30_DAYS": monthly,
+                "ANNUAL": annual,
+            },
+        },
+    }
+
+    resolved = resolve_verified_shopify_plan(
+        subscription,
+        handle_catalog=catalog,
+    )
+
+    assert resolved.plan == plan
+    assert resolved.billing_period_months == months
+    assert subscription.trial_ends_at == "2026-10-14T18:00:00Z"
+
+
+def test_scale_is_not_a_shopify_app_store_public_plan():
+    subscription = ShopifySubscriptionSnapshot(
+        active=True,
+        billing_period="EVERY_30_DAYS",
+        item_handles=("scale-review",),
+        eligible_handles=("scale-review",),
+        eligible_amounts=("199.00",),
+    )
+    with pytest.raises(ShopifyAppPricingError, match="SHOPIFY_PLAN_CATALOG_INVALID"):
+        resolve_verified_shopify_plan(
+            subscription,
+            handle_catalog={
+                "scale-review": {
+                    "plan": "scale",
+                    "interval": "EVERY_30_DAYS",
+                    "amount_usd": "199.00",
+                },
+            },
+        )
+
+
+def test_shopify_billing_capabilities_publish_review_contract(monkeypatch):
+    from app.api.billing import shopify_billing_capabilities
+
+    monkeypatch.setenv("SHOPIFY_APP_STORE_HANDLE", "diaglob-app")
+    monkeypatch.delenv("SHOPIFY_BILLING_ENTITLEMENTS_ENABLED", raising=False)
+    result = shopify_billing_capabilities(
+        membership=SimpleNamespace(role="owner", organization_id=77),
+    )
+
+    assert result["shopify_hosted_pricing_configured"] is True
+    assert result["verified_entitlement_apply_enabled"] is False
+    assert result["paddle_checkout_available"] is False
+    assert result["public_plans"] == ["starter", "growth", "pro"]
+    assert result["trial_days"] == 3
+    assert result["billing_period_months"] == [1, 12]
+
+
+def test_zero_effective_price_maps_only_when_trusted_dev_store_was_confirmed():
+    snapshot = ShopifySubscriptionSnapshot(
+        active=True,
+        billing_period="EVERY_30_DAYS",
+        item_handles=("growth-monthly",),
+        eligible_handles=("growth-monthly",),
+        eligible_amounts=("0.00",),
+    )
+    catalog = {
+        "growth-monthly": {
+            "plan": "growth",
+            "interval": "EVERY_30_DAYS",
+            "amount_usd": "49.00",
+        },
+    }
+
+    with pytest.raises(ShopifyAppPricingError, match="PRICE_UNVERIFIED"):
+        resolve_verified_shopify_plan(snapshot, handle_catalog=catalog)
+
+    resolved = resolve_verified_shopify_plan(
+        snapshot,
+        handle_catalog=catalog,
+        allow_no_charge_testing=True,
+    )
+    assert resolved.plan == "growth"
+    assert resolved.billing_period_months == 1
+
+
+@pytest.mark.parametrize("partner_development", [True, False])
+def test_development_shop_status_comes_from_authenticated_admin_identity(
+    partner_development,
+):
+    connection = SimpleNamespace(
+        provider="shopify",
+        status="connected",
+        external_store_url="some-store.myshopify.com",
+        access_token_encrypted="encrypted-token",
+    )
+    with patch(
+        "app.services.shopify_app_pricing.decrypt_shopify_secret",
+        return_value="access-token",
+    ), patch(
+        "app.services.shopify_app_pricing.ShopifyGraphQLClient"
+    ) as client:
+        client.return_value.query.return_value = {
+            "shop": {
+                "id": "gid://shopify/Shop/123",
+                "myshopifyDomain": "some-store.myshopify.com",
+                "plan": {"partnerDevelopment": partner_development},
+            }
+        }
+        result = is_trusted_partner_development_shop(
+            connection,
+            expected_shop_gid="gid://shopify/Shop/123",
+        )
+
+    assert result is partner_development
+    client.assert_called_once_with(
+        shop_domain="some-store.myshopify.com",
+        access_token="access-token",
+    )
+
+
+def test_development_shop_status_rejects_gid_or_domain_mismatch():
+    connection = SimpleNamespace(
+        provider="shopify",
+        status="connected",
+        external_store_url="some-store.myshopify.com",
+        access_token_encrypted="encrypted-token",
+    )
+    for returned_shop in (
+        {
+            "id": "gid://shopify/Shop/999",
+            "myshopifyDomain": "some-store.myshopify.com",
+            "plan": {"partnerDevelopment": True},
+        },
+        {
+            "id": "gid://shopify/Shop/123",
+            "myshopifyDomain": "other.myshopify.com",
+            "plan": {"partnerDevelopment": True},
+        },
+        {
+            "id": "gid://shopify/Shop/123",
+            "myshopifyDomain": "some-store.myshopify.com",
+            "plan": {"partnerDevelopment": "true"},
+        },
+    ):
+        with patch(
+            "app.services.shopify_app_pricing.decrypt_shopify_secret",
+            return_value="access-token",
+        ), patch(
+            "app.services.shopify_app_pricing.ShopifyGraphQLClient"
+        ) as client:
+            client.return_value.query.return_value = {"shop": returned_shop}
+            with pytest.raises(ShopifyAppPricingError, match="IDENTITY_INVALID"):
+                is_trusted_partner_development_shop(
+                    connection,
+                    expected_shop_gid="gid://shopify/Shop/123",
+                )
+
+
+def test_trial_evidence_reads_three_day_setting_for_current_partner_plan(monkeypatch):
+    _env(monkeypatch)
+    payload = {
+        "data": {
+            "events": {
+                "edges": [
+                    {
+                        "node": {
+                            "eventType": "SUBSCRIPTION_UPDATED",
+                            "occurredAt": "2026-10-11T18:30:00Z",
+                            "shop": {"id": "gid://shopify/Shop/123"},
+                            "plan": {
+                                "handle": "growth-review",
+                                "billingPeriod": "EVERY_30_DAYS",
+                                "trialDays": 3,
+                                "trialDaysRemaining": 2,
+                            },
+                        }
+                    }
+                ]
+            }
+        }
+    }
+    with _client(payload) as client:
+        evidence = get_shopify_trial_evidence(
+            "gid://shopify/Shop/123",
+            current_handle="growth-review",
+            current_billing_period="EVERY_30_DAYS",
+            http_client=client,
+        )
+
+    assert evidence.trial_days == 3
+    assert evidence.trial_days_remaining == 2
+    assert evidence.billing_period == "EVERY_30_DAYS"
+    assert evidence.event_type == "SUBSCRIPTION_UPDATED"
+
+
+def test_trial_evidence_ignores_other_plan_events_and_fails_if_current_missing(monkeypatch):
+    _env(monkeypatch)
+    payload = {
+        "data": {
+            "events": {
+                "edges": [
+                    {
+                        "node": {
+                            "eventType": "SUBSCRIPTION_CREATED",
+                            "occurredAt": "2026-10-10T18:30:00Z",
+                            "shop": {"id": "gid://shopify/Shop/123"},
+                            "plan": {
+                                "handle": "starter-review",
+                                "billingPeriod": "EVERY_30_DAYS",
+                                "trialDays": 3,
+                                "trialDaysRemaining": 3,
+                            },
+                        }
+                    }
+                ]
+            }
+        }
+    }
+    with _client(payload) as client:
+        with pytest.raises(ShopifyAppPricingError, match="TRIAL_EVIDENCE_NOT_FOUND"):
+            get_shopify_trial_evidence(
+                "gid://shopify/Shop/123",
+                current_handle="growth-review",
+                current_billing_period="EVERY_30_DAYS",
+                http_client=client,
+            )
+
+
+@pytest.mark.parametrize(
+    "trial_days,remaining",
+    [(True, 1), (3, True), (-1, 0), (3, -1), (3, 4)],
+)
+def test_trial_evidence_rejects_invalid_partner_values(
+    monkeypatch, trial_days, remaining,
+):
+    _env(monkeypatch)
+    payload = {
+        "data": {
+            "events": {
+                "edges": [
+                    {
+                        "node": {
+                            "eventType": "SUBSCRIPTION_CREATED",
+                            "occurredAt": "2026-10-11T18:30:00Z",
+                            "shop": {"id": "gid://shopify/Shop/123"},
+                            "plan": {
+                                "handle": "growth-review",
+                                "billingPeriod": "EVERY_30_DAYS",
+                                "trialDays": trial_days,
+                                "trialDaysRemaining": remaining,
+                            },
+                        }
+                    }
+                ]
+            }
+        }
+    }
+    with _client(payload) as client:
+        with pytest.raises(ShopifyAppPricingError, match="TRIAL_EVIDENCE_INVALID"):
+            get_shopify_trial_evidence(
+                "gid://shopify/Shop/123",
+                current_handle="growth-review",
+                current_billing_period="EVERY_30_DAYS",
+                http_client=client,
+            )

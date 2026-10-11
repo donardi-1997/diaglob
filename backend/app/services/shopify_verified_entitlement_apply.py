@@ -21,8 +21,10 @@ from ..models import (
 from .shopify_app_pricing import (
     ShopifyAppPricingError,
     get_active_shopify_subscription,
+    is_trusted_partner_development_shop,
     resolve_trusted_shop_gid,
     resolve_verified_shopify_plan,
+    subscription_has_no_charge_effective_price,
 )
 from .shopify_plan_transition_review import REVIEW_TTL, ShopifyTransitionReviewError
 from .shopify_transition_assessment import assess_shopify_transition_review
@@ -103,7 +105,16 @@ def apply_verified_shopify_transition(
             raise ShopifyAppPricingError("SHOPIFY_NO_ACTIVE_SUBSCRIPTION")
         if snapshot.cancel_at_end_of_cycle:
             raise ShopifyAppPricingError("SHOPIFY_SUBSCRIPTION_CANCELLATION_SCHEDULED")
-        confirmed = resolve_verified_shopify_plan(snapshot)
+        allow_no_charge_testing = False
+        if subscription_has_no_charge_effective_price(snapshot):
+            allow_no_charge_testing = is_trusted_partner_development_shop(
+                connection,
+                expected_shop_gid=shop_gid,
+            )
+        confirmed = resolve_verified_shopify_plan(
+            snapshot,
+            allow_no_charge_testing=allow_no_charge_testing,
+        )
     except ShopifyAppPricingError as exc:
         raise ShopifyTransitionReviewError(str(exc)) from exc
     if confirmed.plan != target or confirmed.billing_period_months != months:

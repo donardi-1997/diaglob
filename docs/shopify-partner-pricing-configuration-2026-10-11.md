@@ -8,16 +8,17 @@ Shopify official:
 - https://shopify.dev/docs/apps/launch/billing/shopify-app-pricing/plans
 - https://shopify.dev/docs/api/partner/latest
 
-## Existing internal *proposals*, pending business approval
+## Shopify App Store review catalog
 
-These values are from `docs/shopify-commercial-pricing-review-2026-10-10.md`, not from Shopify Partner or a merchant contract.
+For the Shopify App Store review path, DIAGLOB exposes exactly **three public tiers**. Scale remains a direct/Paddle or future enterprise tier and must not be created as a public Shopify plan.
 
-| Diaglob plan | Monthly USD candidate | Annual USD candidate | 2026 Shopify App Store eligibility |
-|---|---:|---:|---|
-| Starter | 19.00 | 190.00 | Single Shopify store; verify offered features |
-| Growth | 49.00 | 490.00 | Single Shopify store **until** multi-shop contract model exists |
-| Pro | 99.00 | 990.00 | Single Shopify store **until** multi-shop contract model exists |
-| Scale | 199.00 | 1990.00 | Single Shopify store **until** multi-shop contract model exists |
+| Shopify plan | Monthly USD | Annual USD | Free trial | Billing periods |
+|---|---:|---:|---:|---|
+| Starter | 19.00 | 190.00 | 3 days | Monthly / Annual |
+| Growth | 49.00 | 490.00 | 3 days | Monthly / Annual |
+| Pro | 99.00 | 990.00 | 3 days | Monthly / Annual |
+
+These prices are the current DIAGLOB review target from `docs/shopify-commercial-pricing-review-2026-10-10.md`; Shopify Partner remains the billing authority. Do **not** create a Scale public plan, a 3-month plan or a 6-month plan in Shopify.
 
 Do **not** claim Shopify App Store multi-store allowances of 2, 5 or 10 at launch. The existing product global organization limits reflect historical direct SaaS tiers; the Shopify App Pricing reconciliation deliberately rejects multi-installation tenants. Never promise unlimited AI calls or usage-billed overages: live quotas and marginal inference costs need evidence.
 
@@ -26,13 +27,14 @@ Do **not** claim Shopify App Store multi-store allowances of 2, 5 or 10 at launc
 1. Sign in to the **original Diaglob Partner organization**, not the merchant store. Partner Dashboard > **App distribution > All apps > Diaglob > Distribution > Shopify App Store listing > Manage listing > Published languages > Edit > Pricing content > Manage**. Confirm whether the existing app can opt into Shopify App Pricing and if its distribution is public/draft.
 2. Check the approved app, organization numeric ID and `shopify.app.toml` app handle. Don't create a duplicate Diaglob app or publish a new listing as a workaround.
 3. Ask the product owner to approve actual prices, annual discounts, trial, feature copy, merchant support and any multi-store policy before creating **public** plans. If only connectivity needs testing first, Shopify offers a private no-charge test plan and development stores can test eligible paid plans for free.
-4. For each approved tier, create a public plan with monthly + yearly option (or two separate plans if Shopify's actual UI/handles require it). Record the **actual Partner plan and subscription item handles** returned by the active contract; don't guess handles from the display title.
-5. Under Partner Dashboard > **Settings > Partner API clients**, an organization owner creates a new least-privileged API client with **Manage apps** permission; record the token in an approved secret store, never Git, chat or PR text. Make sure the `gid://shopify/App/<id>` used by `activeSubscription` actually belongs to this app and matches the existing verified OAuth client identity.
-6. Confirm `diaglob-poc.myshopify.com` is a Shopify development store in an eligible Partner organization before selecting plans; Bakatá is the ecommerce OAuth pilot, not a billing sandbox.
-7. On the development store, authorize Diaglob; select a draft or private test plan; confirm the Shopify redirect and then query Partner API `activeSubscription(appId:, shopId:)` against its **Admin-verified Shop GID**. A zero effective recurring price is *not* commercial entitlement proof.
-8. Validate monthly, yearly, cancellation, upgrade/downgrade, trial, reinstall and unknown-plan scenarios, plus cross-tenant prevention and Paddle isolation.
-9. Configure the production `SHOPIFY_PARTNER_ORG_ID`, `SHOPIFY_PARTNER_APP_GID`, `SHOPIFY_PARTNER_ACCESS_TOKEN`, `SHOPIFY_APP_PRICING_HANDLES_JSON` and `SHOPIFY_APP_STORE_HANDLE` by approved secure operator access. First exercise **read-only** verification with both gates OFF.
-10. Only after privacy and commercial approval, turn on `SHOPIFY_BILLING_ENTITLEMENTS_ENABLED` and `SHOPIFY_BILLING_SCHEDULER_ENABLED` in a controlled launch, with rollback and alarms confirmed.
+4. Create exactly three public plans — Starter, Growth and Pro — each with **3 free-trial days** and monthly + yearly pricing. Record the **actual Partner plan and subscription item handles** returned by the active contract; don't guess handles from the display title. Do not create Scale or 3/6-month Shopify billing periods.
+5. Configure each plan's welcome/redirection link to the DIAGLOB billing workspace (`/app/plans`). Shopify appends `plan_handle` (and, for external links, `shop`). DIAGLOB treats those values only as a signal to re-query Shopify; they never authorize a plan.
+6. Under Partner Dashboard > **Settings > Partner API clients**, an organization owner creates a new least-privileged API client with **Manage apps** permission; record the token in an approved secret store, never Git, chat or PR text. Make sure the `gid://shopify/App/<id>` used by `activeSubscription` actually belongs to this app and matches the existing verified OAuth client identity.
+7. Confirm `diaglob-poc.myshopify.com` is a Shopify development store in an eligible Partner organization before selecting plans; Bakatá is the ecommerce OAuth pilot, not a billing sandbox.
+8. On the development store, authorize Diaglob; select one of the three paid App Pricing plans. Shopify may report an effective recurring price of USD 0 for eligible development-store testing; DIAGLOB accepts that test representation only after the authenticated Admin API independently confirms the exact shop has `partnerDevelopment=true`.
+9. Validate monthly, yearly, cancellation, all upgrade/downgrade directions, the 3-day trial, reinstall and unknown-plan scenarios, plus cross-tenant prevention and Paddle isolation.
+10. Configure the production `SHOPIFY_PARTNER_ORG_ID`, `SHOPIFY_PARTNER_APP_GID`, `SHOPIFY_PARTNER_ACCESS_TOKEN`, `SHOPIFY_APP_PRICING_HANDLES_JSON` and `SHOPIFY_APP_STORE_HANDLE` by approved secure operator access. First exercise **read-only** verification with both gates OFF.
+11. Only after privacy and commercial approval, turn on `SHOPIFY_BILLING_ENTITLEMENTS_ENABLED` and `SHOPIFY_BILLING_SCHEDULER_ENABLED` in a controlled launch, with rollback and alarms confirmed.
 
 ## Operator catalog schema
 
