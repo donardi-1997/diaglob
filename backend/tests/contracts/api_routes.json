@@ -165,6 +165,10 @@
   ],
   [
     "GET",
+    "/api/billing/shopify/capabilities"
+  ],
+  [
+    "GET",
     "/api/billing/shopify/hosted-plan-selection"
   ],
   [
