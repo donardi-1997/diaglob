@@ -18,6 +18,8 @@ test("ordinary signup and navigation use the direct Paddle signup origin", () =>
 });
 
 test("a valid Shopify installation return path marks signup as pending only", () => {
+  assert.equal(registrationChannelForReturnTo("/shopify/install?authorized=1"), "shopify_install");
+  assert.equal(registrationChannelForReturnTo("/shopify/install?authorized=2"), "direct");
   assert.equal(
     registrationChannelForReturnTo("/shopify/install?shop=test.myshopify.com"),
     "shopify_install",
