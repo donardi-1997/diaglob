@@ -43,7 +43,7 @@ def test_active_subscription_is_verified_by_partner_api(monkeypatch):
                     "startTime": "2026-10-01T00:00:00Z",
                     "endTime": "2026-11-01T00:00:00Z",
                 },
-                "items": [{"handle": "starter-plan", "description": "Starter", "price": {"__typename": "FlatRatePrice", "active": True, "currency": "USD"}}],
+                "items": [{"handle": "starter-plan", "description": "Starter", "price": {"__typename": "FlatRatePrice", "active": True, "currency": "USD", "amount": "19.00"}}],
             }
         }
     }
@@ -54,6 +54,7 @@ def test_active_subscription_is_verified_by_partner_api(monkeypatch):
     assert snapshot.active is True
     assert snapshot.billing_period == "EVERY_30_DAYS"
     assert snapshot.item_handles == ("starter-plan",)
+    assert snapshot.eligible_amounts == ("19.00",)
     assert snapshot.current_cycle_end == "2026-11-01T00:00:00Z"
     assert len(requests) == 1
     request = requests[0]
@@ -62,6 +63,7 @@ def test_active_subscription_is_verified_by_partner_api(monkeypatch):
         "https://partners.shopify.com/5148778/api/2026-10/graphql.json"
     )
     assert request.headers["X-Shopify-Access-Token"] == "test-credential"
+    assert "on FlatRatePrice { amount }" in json.loads(request.content)["query"]
     params = json.loads(request.content)["variables"]
     assert params == {
         "appId": "gid://shopify/App/416524435457",
@@ -193,9 +195,10 @@ def test_verified_plan_rejects_untrusted_or_ambiguous_handles():
         billing_period="EVERY_30_DAYS",
         item_handles=("real-starter-monthly",),
         eligible_handles=("real-starter-monthly",),
+        eligible_amounts=("19.00",),
     )
     catalog = {
-        "real-starter-monthly": {"plan": "starter", "interval": "EVERY_30_DAYS"}
+        "real-starter-monthly": {"plan": "starter", "interval": "EVERY_30_DAYS", "amount_usd": "19.00"}
     }
     result = resolve_verified_shopify_plan(valid, handle_catalog=catalog)
     assert result.plan == "starter"
@@ -242,13 +245,14 @@ def test_environment_handle_catalog_fail_closed(monkeypatch):
         billing_period="ANNUAL",
         item_handles=("annual-starter",),
         eligible_handles=("annual-starter",),
+        eligible_amounts=("190.00",),
     )
     with pytest.raises(ShopifyAppPricingError, match="NOT_CONFIGURED"):
         resolve_verified_shopify_plan(active)
 
     monkeypatch.setenv(
         "SHOPIFY_APP_PRICING_HANDLES_JSON",
-        '{"annual-starter":{"plan":"starter","interval":"ANNUAL"}}',
+        '{"annual-starter":{"plan":"starter","interval":"ANNUAL","amount_usd":"190.00"}}',
     )
     plan = resolve_verified_shopify_plan(active)
     assert (plan.plan, plan.billing_period_months) == ("starter", 12)
