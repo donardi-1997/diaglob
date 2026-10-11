@@ -127,6 +127,25 @@ _SHOPIFY_BILLING_TEMPORARY_ERRORS = frozenset({
 })
 
 
+@router.get("/api/billing/shopify/capabilities")
+def shopify_billing_capabilities(
+    membership: OrganizationMembership = Depends(get_current_membership),
+):
+    """Expose operational flags only; no provider secrets or customer data."""
+    if membership.role not in {"owner", "manager"}:
+        raise HTTPException(status_code=403, detail="Billing access denied")
+    return {
+        "organization_id": membership.organization_id,
+        "shopify_hosted_pricing_configured": bool(
+            (os.getenv("SHOPIFY_APP_STORE_HANDLE") or "").strip()
+        ),
+        "verified_entitlement_apply_enabled": (
+            os.getenv("SHOPIFY_BILLING_ENTITLEMENTS_ENABLED", "").lower() == "true"
+        ),
+        "paddle_checkout_available": False,
+    }
+
+
 @router.get("/api/billing/shopify/hosted-plan-selection")
 def shopify_hosted_plan_selection(
     membership: OrganizationMembership = Depends(get_current_membership),
