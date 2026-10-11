@@ -7,14 +7,13 @@ from unittest.mock import patch
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
-from fastapi import HTTPException
 
 from app.db import Base
 from app.models import CommerceConnection, ShopifyPendingInstall, Store
 from app.api.shopify import shopify_install_handoff
 from app.services.shopify_public_install import (
     begin_public_install, finish_public_install, claim_install,
-    pending_install_status, ShopifyOAuthError, ShopifyConnectionError,
+    pending_install_status, ShopifyOAuthError,
 )
 
 
