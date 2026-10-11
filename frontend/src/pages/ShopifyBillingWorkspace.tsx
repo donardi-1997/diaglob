@@ -14,11 +14,13 @@ import {
   getShopifyBillingHistory,
   getShopifyPlanReviews,
   stageShopifyPlanReview,
+  verifyShopifyTrial,
   type ShopifyBillingCapabilities,
   type ShopifyBillingCheck,
   type ShopifyBillingVerification,
   type ShopifyPlanReview,
   type ShopifyReviewAssessment,
+  type ShopifyTrialVerification,
 } from "../services/shopifyBilling";
 
 interface Props {
@@ -69,6 +71,9 @@ const knownErrorCodes: Record<string, string> = {
   SHOPIFY_TRANSITION_STATE_CHANGED: "La instalación o suscripción cambió durante la operación.",
   SHOPIFY_SUBSCRIPTION_CANCELLATION_SCHEDULED: "Hay una cancelación programada; revisa el contrato en Shopify.",
   SHOPIFY_HOSTED_PRICING_NOT_CONFIGURED: "Falta configurar el identificador de la app en Shopify.",
+  SHOPIFY_TRIAL_EVIDENCE_NOT_FOUND: "Shopify aún no devolvió evidencia de trial para el plan activo.",
+  SHOPIFY_TRIAL_EVIDENCE_INVALID: "La evidencia de trial devuelta por Shopify no es válida.",
+  SHOPIFY_TRIAL_EVIDENCE_NO_ACTIVE_PLAN: "No hay un plan Shopify activo que permita verificar el trial.",
 };
 
 function billingErrorMessage(error: unknown): string {
@@ -107,8 +112,9 @@ export default function ShopifyBillingWorkspace({ organization }: Props) {
   const [capabilities, setCapabilities] = useState<ShopifyBillingCapabilities | null>(null);
   const [hostedPricingUrl, setHostedPricingUrl] = useState<string | null>(null);
   const [assessment, setAssessment] = useState<ShopifyReviewAssessment | null>(null);
+  const [trialVerification, setTrialVerification] = useState<ShopifyTrialVerification | null>(null);
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState<"refresh" | "check" | "stage" | "assess" | "hosted" | "apply" | "subscription" | null>(null);
+  const [busy, setBusy] = useState<"refresh" | "check" | "stage" | "assess" | "hosted" | "apply" | "subscription" | "trial" | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
@@ -158,7 +164,7 @@ export default function ShopifyBillingWorkspace({ organization }: Props) {
   }, [hasBillingAccess, organization.id]);
 
   async function run(
-    action: "refresh" | "check" | "stage" | "assess" | "hosted" | "apply" | "subscription",
+    action: "refresh" | "check" | "stage" | "assess" | "hosted" | "apply" | "subscription" | "trial",
     reviewId?: number,
   ) {
     if (!hasBillingAccess || busy) return;
@@ -175,7 +181,22 @@ export default function ShopifyBillingWorkspace({ organization }: Props) {
     setError("");
     setNotice("");
     try {
-      if (action === "subscription") {
+      if (action === "trial") {
+        const result = await verifyShopifyTrial();
+        if (
+          result.organization_id !== organization.id ||
+          result.verified_against_shopify !== true ||
+          result.applied !== false
+        ) {
+          throw new Error("Invalid trial verification");
+        }
+        setTrialVerification(result);
+        setNotice(
+          result.matches_expected
+            ? `Shopify confirmó un trial de ${result.observed_trial_days} días para el plan activo.`
+            : `Atención: Shopify reporta ${result.observed_trial_days} días de trial; Diaglob espera ${result.expected_trial_days}.`,
+        );
+      } else if (action === "subscription") {
         const result = await refreshShopifySubscription();
         if (result.organization_id !== organization.id
           || result.verified_against_shopify !== true) {
@@ -344,6 +365,9 @@ export default function ShopifyBillingWorkspace({ organization }: Props) {
                     {busy === "subscription" ? "Comprobando acceso…" : "Comprobar acceso activo"}
                   </button>
                 )}
+                <button type="button" className="shopify-billing-secondary" disabled={Boolean(busy) || loading} onClick={() => { void run("trial"); }}>
+                  <Clock3 size={16} /> {busy === "trial" ? "Verificando trial…" : "Verificar trial de 3 días"}
+                </button>
                 <button type="button" className="shopify-billing-primary" disabled={Boolean(busy) || loading} onClick={() => { void run("check"); }}>
                   <ShieldCheck size={17} /> {busy === "check" ? "Verificando…" : "Verificar suscripción"}
                 </button>
@@ -367,6 +391,20 @@ export default function ShopifyBillingWorkspace({ organization }: Props) {
               </div>
             )}
             {latestCheck && <p className="shopify-billing-muted">Última consulta realizada en esta sesión: #{latestCheck.verification_id} · {formatDate(latestCheck.verified_at)}</p>}
+            {trialVerification && (
+              <div className="shopify-billing-assessment" role="status">
+                <strong>
+                  Trial Shopify: {trialVerification.matches_expected ? "configuración correcta" : "requiere corrección"}
+                </strong>
+                <p>
+                  Esperado: {trialVerification.expected_trial_days} días · observado: {trialVerification.observed_trial_days} días · restantes: {trialVerification.trial_days_remaining}.
+                </p>
+                <small>
+                  Plan {trialVerification.plan} · {trialVerification.billing_period_months === 12 ? "anual" : "mensual"}
+                  {trialVerification.trial_ends_at ? ` · termina ${formatDate(trialVerification.trial_ends_at)}` : ""}
+                </small>
+              </div>
+            )}
           </section>
 
           <section className="shopify-billing-panel">
