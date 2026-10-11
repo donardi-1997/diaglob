@@ -10,8 +10,12 @@ from sqlalchemy.orm import Session
 
 from app.api.billing import (
     ShopifyTransitionReviewRequest,
+    get_shopify_plan_transition_assessment,
     get_shopify_plan_transition_proposals,
     propose_shopify_plan_transition,
+)
+from app.services.shopify_transition_assessment import (
+    assess_shopify_transition_review,
 )
 from app.db import Base
 from app.models import (
@@ -271,3 +275,196 @@ def test_production_activation_has_hard_stop_even_when_review_exists(sandbox):
     }):
         with pytest.raises(ShopifyTransitionReviewError, match="ACTIVATION_DISABLED"):
             activate_shopify_plan_transition(review_id=first["id"])
+
+
+def _assess(sandbox):
+    db, org, _, _, _, _ = sandbox
+    proposal = _prepare(sandbox)
+    return assess_shopify_transition_review(
+        db, organization_id=org.id, review_id=proposal["id"],
+    )
+
+
+def test_fresh_review_is_preflight_only_never_an_access_grant(sandbox):
+    db, org, _, connection, _, _ = sandbox
+    result = _assess(sandbox)
+    assert result["status"] == "ready_for_manual_review"
+    assert result["ready_for_manual_review"] is True
+    assert result["blockers"] == []
+    assert result["requires_new_shopify_verification_before_activation"] is True
+    assert result["shopify_reverified_now"] is False
+    assert result["activation_allowed"] is False
+    assert result["applied"] is False
+    assert db.query(ShopifyPlanTransitionReview).one().status == "pending_review"
+    db.expire_all()
+    assert org.plan == "starter"
+    assert connection.access_token_encrypted == "PRIVATE_SYNTHETIC_TOKEN"
+    assert "PRIVATE_SYNTHETIC_TOKEN" not in str(result)
+    assert "myshopify.com" not in str(result)
+
+
+def test_preflight_rejects_expired_proposal_even_if_db_status_pending(sandbox):
+    db, org, _, _, _, _ = sandbox
+    proposal = _prepare(sandbox)
+    item = db.get(ShopifyPlanTransitionReview, proposal["id"])
+    item.expires_at = datetime.utcnow() - timedelta(seconds=1)
+    db.commit()
+    assessment = assess_shopify_transition_review(
+        db, organization_id=org.id, review_id=item.id,
+    )
+    assert assessment["status"] == "blocked"
+    assert "REVIEW_EXPIRED" in assessment["blockers"]
+    assert assessment["activation_allowed"] is False
+    db.expire_all()
+    assert db.get(ShopifyPlanTransitionReview, item.id).status == "pending_review"
+
+
+def test_preflight_rejects_disconnected_or_reinstalled_shop(sandbox):
+    db, org, _, conn, _, _ = sandbox
+    proposal = _prepare(sandbox)
+    conn.connected_at = datetime.utcnow()
+    db.commit()
+    assessment = assess_shopify_transition_review(
+        db, organization_id=org.id, review_id=proposal["id"],
+    )
+    assert "SHOPIFY_INSTALLATION_CHANGED" in assessment["blockers"]
+    conn.status = "revoked"
+    conn.access_token_encrypted = None
+    db.commit()
+    assessment = assess_shopify_transition_review(
+        db, organization_id=org.id, review_id=proposal["id"],
+    )
+    assert "SHOPIFY_INSTALLATION_CHANGED" in assessment["blockers"]
+    assert assessment["ready_for_manual_review"] is False
+
+
+def test_preflight_rejects_newer_verified_subscription_even_if_proposal_unexpired(sandbox):
+    db, org, store, conn, _, _ = sandbox
+    proposal = _prepare(sandbox)
+    db.add(ShopifyBillingVerification(
+        organization_id=org.id, store_id=store.id,
+        connection_id=conn.id,
+        status="subscription_inactive_requires_review",
+        current_plan="starter", target_plan=None,
+        target_period_months=None,
+        installation_connected_at=conn.connected_at,
+        observed_at=datetime.utcnow() + timedelta(milliseconds=5),
+    ))
+    db.commit()
+    result = assess_shopify_transition_review(
+        db, organization_id=org.id, review_id=proposal["id"],
+    )
+    assert "NEWER_VERIFICATION_EXISTS" in result["blockers"]
+    assert result["activation_allowed"] is False
+
+
+def test_preflight_rejects_changed_plan_and_billing_provider(sandbox):
+    db, org, _, _, _, _ = sandbox
+    proposal = _prepare(sandbox)
+    org.plan = "pro"
+    org.billing_provider = "paddle"
+    db.commit()
+    result = assess_shopify_transition_review(
+        db, organization_id=org.id, review_id=proposal["id"],
+    )
+    assert "BILLING_CHANNEL_CHANGED" in result["blockers"]
+    assert "BASELINE_PLAN_CHANGED" in result["blockers"]
+
+
+def test_preflight_rejects_paddle_references(sandbox):
+    db, org, _, _, _, _ = sandbox
+    proposal = _prepare(sandbox)
+    org.billing_subscription_id = "legacy-synthetic"
+    db.commit()
+    result = assess_shopify_transition_review(
+        db, organization_id=org.id, review_id=proposal["id"],
+    )
+    assert "LEGACY_BILLING_REFERENCES" in result["blockers"]
+    assert "legacy-synthetic" not in str(result)
+
+
+def test_preflight_rejects_paused_deleted_store(sandbox):
+    db, org, store, _, _, _ = sandbox
+    proposal = _prepare(sandbox)
+    store.active = False
+    store.deleted = True
+    db.commit()
+    result = assess_shopify_transition_review(
+        db, organization_id=org.id, review_id=proposal["id"],
+    )
+    assert "STORE_UNAVAILABLE" in result["blockers"]
+
+
+def test_preflight_rejects_second_shop_even_when_revoked(sandbox):
+    db, org, _, _, _, _ = sandbox
+    proposal = _prepare(sandbox)
+    second = Store(
+        organization_id=org.id, name="Second", slug="assessment-second",
+        country_code="CO", currency="COP", timezone="UTC", active=False,
+    )
+    db.add(second)
+    db.flush()
+    db.add(CommerceConnection(
+        organization_id=org.id, store_id=second.id, provider="shopify",
+        external_store_url="assessment-second.myshopify.com", status="revoked",
+    ))
+    db.commit()
+    result = assess_shopify_transition_review(
+        db, organization_id=org.id, review_id=proposal["id"],
+    )
+    assert "SHOPIFY_BINDINGS_CHANGED" in result["blockers"]
+    assert result["activation_allowed"] is False
+
+
+def test_preflight_rejects_foreign_tenant_even_with_known_review_id(sandbox):
+    db, _, _, _, _, _ = sandbox
+    proposal = _prepare(sandbox)
+    foreign = Organization(
+        name="Foreign assessment", slug="foreign-assessment-tenant",
+        billing_provider="shopify", plan="starter",
+    )
+    db.add(foreign)
+    db.commit()
+    with pytest.raises(ShopifyTransitionReviewError, match="NOT_FOUND"):
+        assess_shopify_transition_review(
+            db, organization_id=foreign.id, review_id=proposal["id"],
+        )
+
+
+def test_assessment_route_requires_billing_role_and_is_read_only(sandbox):
+    db, org, _, _, _, member = sandbox
+    proposal = _prepare(sandbox)
+    member.role = "viewer"
+    with pytest.raises(HTTPException) as error:
+        get_shopify_plan_transition_assessment(
+            review_id=proposal["id"], membership=member, db=db,
+        )
+    assert error.value.status_code == 403
+    member.role = "manager"
+    result = get_shopify_plan_transition_assessment(
+        review_id=proposal["id"], membership=member, db=db,
+    )
+    assert result["ready_for_manual_review"] is True
+    assert result["activation_allowed"] is False
+    assert org.plan == "starter"
+    assert db.query(ShopifyPlanTransitionReview).count() == 1
+
+
+def test_missing_review_returns_consistent_non_disclosing_code(sandbox):
+    db, org, _, _, _, _ = sandbox
+    with pytest.raises(ShopifyTransitionReviewError, match="NOT_FOUND"):
+        assess_shopify_transition_review(
+            db, organization_id=org.id, review_id=99999,
+        )
+
+
+def test_invalid_assessment_ids_fail_closed(sandbox):
+    db, org, _, _, _, _ = sandbox
+    proposal = _prepare(sandbox)
+    for invalid in (0, -1, True, "1", None):
+        with pytest.raises(ShopifyTransitionReviewError, match="INVALID_ID"):
+            assess_shopify_transition_review(
+                db, organization_id=org.id, review_id=invalid,
+            )
+    assert db.query(ShopifyPlanTransitionReview).count() == 1
+    assert proposal["applied"] is False

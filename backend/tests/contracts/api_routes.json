@@ -177,6 +177,10 @@
   ],
   [
     "GET",
+    "/api/billing/shopify/transition-proposals/{review_id}/assessment"
+  ],
+  [
+    "GET",
     "/api/carriers"
   ],
   [

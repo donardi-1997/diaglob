@@ -33,6 +33,9 @@ from ..services.shopify_plan_transition_review import (
     list_shopify_plan_transition_reviews,
     prepare_shopify_plan_transition,
 )
+from ..services.shopify_transition_assessment import (
+    assess_shopify_transition_review,
+)
 from ..services.billing_service import (
     AutoRenewConflictError,
     DowngradeBlockedError,
@@ -316,6 +319,27 @@ def get_shopify_plan_transition_proposals(
         ),
         "applied": False,
     }
+
+
+@router.get("/api/billing/shopify/transition-proposals/{review_id}/assessment")
+def get_shopify_plan_transition_assessment(
+    review_id: int,
+    membership: OrganizationMembership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+):
+    """Non-authorizing freshness assessment for the current tenant only."""
+    if membership.role not in {"owner", "manager"}:
+        raise HTTPException(status_code=403, detail="Billing access denied")
+    try:
+        return assess_shopify_transition_review(
+            db,
+            organization_id=membership.organization_id,
+            review_id=review_id,
+        )
+    except ShopifyTransitionReviewError as exc:
+        raise HTTPException(
+            status_code=409, detail={"code": str(exc)}
+        ) from exc
 
 
 class BillingAutoRenewRequest(BaseModel):
