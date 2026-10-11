@@ -14,7 +14,7 @@ from urllib.parse import urlsplit
 
 from sqlalchemy.orm import Session
 
-from ..models import CommerceConnection, OrganizationMembership, ShopifyPendingInstall, Store
+from ..models import CommerceConnection, Organization, OrganizationMembership, ShopifyPendingInstall, Store
 from ..shopify_client import ShopifyAPIError, ShopifyAuthError, ShopifyGraphQLClient
 from ..shopify_oauth import (
     SHOPIFY_SCOPES, build_authorization_url, exchange_access_token,
@@ -24,7 +24,6 @@ from ..shopify_security import encrypt_shopify_secret
 from ..shopify_sync import SHOPIFY_TEST_QUERY
 from .billing_onboarding import confirm_shopify_install_billing
 from .shopify_service import ShopifyConnectionError, ShopifyOAuthError, ShopifyProviderError
-from .trial_service import TrialIdentityAlreadyUsed, activate_trial_for_verified_store
 
 COOKIE_NAME = "__Secure-diaglob-shopify-install"
 OAUTH_TTL = timedelta(minutes=10)
@@ -172,6 +171,19 @@ def claim_install(
     ):
         raise ShopifyOAuthError("SHOPIFY_INSTALL_STORE_INVALID")
 
+    organization = db.query(Organization).filter(
+        Organization.id == membership.organization_id,
+        Organization.active.is_(True),
+    ).with_for_update().first()
+    # The Shopify App Store must be billed through Shopify App Pricing.
+    # A new grant cannot attach to a direct/Paddle organization or issue
+    # the old DIAGLOB seven-day trial ahead of a verified Shopify plan.
+    if organization is None or (
+        organization.billing_onboarding_channel != "shopify_install"
+        and (organization.billing_provider or "").strip().lower() != "shopify"
+    ):
+        raise ShopifyConnectionError("SHOPIFY_BILLING_ORGANIZATION_REQUIRED")
+
     existing = db.query(CommerceConnection).filter(
         CommerceConnection.store_id == store.id
     ).first()
@@ -202,15 +214,6 @@ def claim_install(
         connection.connected_at = now
         connection.scopes = SHOPIFY_SCOPES
     else:
-        try:
-            activate_trial_for_verified_store(
-                db, organization_id=membership.organization_id,
-                store_id=store.id, provider="shopify",
-                external_identity=grant.shop_domain,
-            )
-        except TrialIdentityAlreadyUsed as exc:
-            db.rollback()
-            raise ShopifyConnectionError("TRIAL_STORE_ALREADY_USED") from exc
         connection = CommerceConnection(
             organization_id=membership.organization_id, store_id=store.id,
             provider="shopify", external_store_url=grant.shop_domain,
