@@ -306,3 +306,94 @@ def test_dev_store_zero_charge_never_grants_commercial_entitlements(
         "SHOPIFY_PLAN_PRICE_MISMATCH",
         "SHOPIFY_PLAN_CATALOG_INVALID",
     }
+
+
+def test_one_shopify_plan_handle_can_verify_both_billing_periods():
+    """One public plan can offer a monthly and yearly price under one handle."""
+    catalog = {
+        "growth-shared": {
+            "plan": "growth",
+            "prices": {"EVERY_30_DAYS": "49.00", "ANNUAL": "490.00"},
+        }
+    }
+    for interval, amount, months in [
+        ("EVERY_30_DAYS", "49.00", 1),
+        ("ANNUAL", "490.00", 12),
+    ]:
+        subscription = ShopifySubscriptionSnapshot(
+            active=True,
+            billing_period=interval,
+            item_handles=("growth-shared",),
+            eligible_handles=("growth-shared",),
+            eligible_amounts=(amount,),
+        )
+        matched = resolve_verified_shopify_plan(subscription, handle_catalog=catalog)
+        assert (matched.plan, matched.billing_period_months) == ("growth", months)
+
+
+@pytest.mark.parametrize("invalid_prices", [
+    {},
+    {"EVERY_30_DAYS": "0"},
+    {"ANNUAL": 490.0},
+    {"ANNUAL": "NaN"},
+    {"EVERY_30_DAYS": "49.00", "WEEKLY": "10.00"},
+])
+def test_shared_handle_catalog_rejects_unapproved_prices(invalid_prices):
+    snapshot = ShopifySubscriptionSnapshot(
+        active=True, billing_period="EVERY_30_DAYS",
+        item_handles=("growth-shared",), eligible_handles=("growth-shared",),
+        eligible_amounts=("49.00",),
+    )
+    with pytest.raises(ShopifyAppPricingError, match="CATALOG_INVALID"):
+        resolve_verified_shopify_plan(
+            snapshot, handle_catalog={"growth-shared": {
+                "plan": "growth", "prices": invalid_prices,
+            }},
+        )
+
+
+def test_shared_handle_does_not_fallback_or_allow_price_mismatch():
+    catalog = {"growth-shared": {
+        "plan": "growth", "prices": {"EVERY_30_DAYS": "49.00"},
+    }}
+    annual = ShopifySubscriptionSnapshot(
+        active=True, billing_period="ANNUAL",
+        item_handles=("growth-shared",), eligible_handles=("growth-shared",),
+        eligible_amounts=("490.00",),
+    )
+    with pytest.raises(ShopifyAppPricingError, match="INTERVAL_MISMATCH"):
+        resolve_verified_shopify_plan(annual, handle_catalog=catalog)
+
+    monthly_zero = ShopifySubscriptionSnapshot(
+        active=True, billing_period="EVERY_30_DAYS",
+        item_handles=("growth-shared",), eligible_handles=("growth-shared",),
+        eligible_amounts=("0.00",),
+    )
+    with pytest.raises(ShopifyAppPricingError, match="PRICE_UNVERIFIED"):
+        resolve_verified_shopify_plan(monthly_zero, handle_catalog=catalog)
+
+    monthly_wrong = ShopifySubscriptionSnapshot(
+        active=True, billing_period="EVERY_30_DAYS",
+        item_handles=("growth-shared",), eligible_handles=("growth-shared",),
+        eligible_amounts=("39.00",),
+    )
+    with pytest.raises(ShopifyAppPricingError, match="PRICE_MISMATCH"):
+        resolve_verified_shopify_plan(monthly_wrong, handle_catalog=catalog)
+
+
+def test_shared_handle_config_cannot_mix_legacy_and_new_price_keys():
+    subscription = ShopifySubscriptionSnapshot(
+        active=True, billing_period="EVERY_30_DAYS",
+        item_handles=("growth-shared",), eligible_handles=("growth-shared",),
+        eligible_amounts=("49.00",),
+    )
+    with pytest.raises(ShopifyAppPricingError, match="CATALOG_INVALID"):
+        resolve_verified_shopify_plan(
+            subscription,
+            handle_catalog={"growth-shared": {
+                "plan": "growth",
+                "interval": "EVERY_30_DAYS",
+                "amount_usd": "49.00",
+                "prices": {"EVERY_30_DAYS": "49.00"},
+            }},
+        )
