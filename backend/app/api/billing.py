@@ -409,7 +409,7 @@ def preview_shopify_billing_reconciliation(
         "current_plan": preview.current_plan,
         "target_plan": preview.target_plan,
         "target_billing_period_months": preview.target_billing_period_months,
-        "has_pending_update": preview.has_pending_update,
+        "has_pending_update": bool(getattr(preview, "has_pending_update", False)),
         "organization_id": preview.organization_id,
         "applied": False,
     }
