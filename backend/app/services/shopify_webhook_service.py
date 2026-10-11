@@ -135,6 +135,16 @@ def process_shopify_order_webhook(
         .first()
     )
 
+    old_state = (
+        (
+            order.lifecycle_status,
+            order.financial_status,
+            order.payment_status,
+            order.fulfillment_status,
+            str(order.total_amount),
+        )
+        if order is not None else None
+    )
     incoming_updated_at = _parse_datetime(
         payload.get("updated_at")
     )
@@ -209,12 +219,30 @@ def process_shopify_order_webhook(
         )
         db.commit()
 
-    if created:
+    new_state = (
+        order.lifecycle_status,
+        order.financial_status,
+        order.payment_status,
+        order.fulfillment_status,
+        str(order.total_amount),
+    )
+    # Suppress duplicate deliveries and unchanged replays. Dispatch each
+    # meaningful transition once per state/version without exposing PII.
+    if created or old_state != new_state:
+        if created:
+            event_type = "order.created"
+        elif order.lifecycle_status == "cancelled" and old_state[0] != "cancelled":
+            event_type = "order.cancelled"
+        else:
+            event_type = "order.updated"
+        fingerprint = hashlib.sha256(
+            repr((external_order_id, event_type, new_state)).encode("utf-8")
+        ).hexdigest()[:24]
         safe_emit_event(
             db=db,
             organization_id=connection.organization_id,
             store_id=connection.store_id,
-            event_type="order.created",
+            event_type=event_type,
             payload={
                 "order": {
                     "id": order.id,
@@ -224,11 +252,15 @@ def process_shopify_order_webhook(
                     "financial_status": order.financial_status,
                     "payment_status": order.payment_status,
                     "fulfillment_status": order.fulfillment_status,
+                    "lifecycle_status": order.lifecycle_status,
                     "source": "shopify",
                 },
                 "customer_id": order.customer_id,
             },
-            event_id=f"shopify:order:{external_order_id}:created",
+            event_id=(
+                f"shopify:order:{external_order_id}:created"
+                if created else f"shopify:order:{external_order_id}:{fingerprint}"
+            ),
         )
 
     return {

@@ -43,6 +43,8 @@ const TRIGGER_LABELS: Record<string, string> = {
   customer_segment: "flowTriggerType_customer_segment",
   customer_created: "flowTriggerType_customer_created",
   order_created: "flowTriggerType_order_created",
+  order_updated: "flowTriggerType_order_updated",
+  order_cancelled: "flowTriggerType_order_cancelled",
   failed_order: "flowTriggerType_failed_order",
   post_sales_case_created: "flowTriggerType_post_sales_case_created",
   post_sales_case_updated: "flowTriggerType_post_sales_case_updated",

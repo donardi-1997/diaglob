@@ -18,8 +18,12 @@ ORDER_WEBHOOK_TOPICS = (
 LIFECYCLE_WEBHOOK_TOPICS = ("APP_UNINSTALLED",)
 
 LIST_WEBHOOKS_QUERY = """
-query DiaglobWebhookSubscriptions {
-  webhookSubscriptions(first: 100) {
+query DiaglobWebhookSubscriptions($cursor: String) {
+  webhookSubscriptions(first: 100, after: $cursor) {
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
     edges {
       node {
         id
@@ -81,12 +85,24 @@ def ensure_shopify_order_webhooks(
     callback_url = shopify_webhook_callback_url()
     uninstall_url = callback_url + "/uninstalled"
 
+    # Enumerate every subscription: Shopify paginates after the first 100.
+    # A truncated scan must not create duplicates.
+    edges: list[dict] = []
     data = client.query(LIST_WEBHOOKS_QUERY)
-    edges = (
-        (data.get("webhookSubscriptions") or {})
-        .get("edges")
-        or []
-    )
+    seen_cursors: set[str] = set()
+    page_count = 0
+    while True:
+        subscriptions = data.get("webhookSubscriptions") or {}
+        edges.extend(subscriptions.get("edges") or [])
+        info = subscriptions.get("pageInfo") or {}
+        if not info.get("hasNextPage"):
+            break
+        cursor = info.get("endCursor")
+        if not cursor or cursor in seen_cursors or page_count >= 100:
+            raise ShopifyUserError("SHOPIFY_WEBHOOK_PAGINATION_INCOMPLETE")
+        seen_cursors.add(cursor)
+        page_count += 1
+        data = client.query(LIST_WEBHOOKS_QUERY, {"cursor": cursor})
 
     existing = {
         (

@@ -64,6 +64,8 @@ def resolve_variables(
 VALID_TRIGGER_TYPES = frozenset({
     "manual",
     "order.created",
+    "order.updated",
+    "order.cancelled",
     "order.failed",
     "conversation.created",
     "message.received",

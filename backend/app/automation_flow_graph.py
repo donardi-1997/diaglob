@@ -13,6 +13,8 @@ TRIGGER_TYPES = {
     "customer_segment",
     "customer_created",
     "order_created",
+    "order_updated",
+    "order_cancelled",
     "failed_order",
     "post_sales_case_created",
     "post_sales_case_updated",

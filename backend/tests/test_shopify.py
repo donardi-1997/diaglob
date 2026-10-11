@@ -5361,3 +5361,235 @@ class TestShopifyUninstallLifecycle:
         connection = db.query(CommerceConnection).one()
         assert connection.status == "revoked"
         assert connection.access_token_encrypted is None
+
+
+# Shopify P1 hardening: safe catalog pagination/reconciliation and order events.
+
+
+def test_shopify_sync_fetches_variants_beyond_first_hundred(db, shopify_connection):
+    from app.shopify_sync import sync_shopify_products
+
+    base = _mock_product_edge(
+        pid="gid://shopify/Product/707",
+        variants=[
+            {
+                "id": f"gid://shopify/ProductVariant/{i}",
+                "title": f"Size {i}",
+                "sku": f"SKU-{i}",
+                "price": "20.00",
+                "inventoryQuantity": 3,
+                "availableForSale": True,
+            }
+            for i in range(100)
+        ],
+    )
+    base["node"]["variants"]["pageInfo"] = {
+        "hasNextPage": True,
+        "endCursor": "next-variants",
+    }
+    first = {
+        "products": {
+            "pageInfo": {"hasNextPage": False},
+            "edges": [base],
+        }
+    }
+    second = {
+        "product": {
+            "variants": {
+                "pageInfo": {"hasNextPage": False},
+                "edges": [
+                    {
+                        "node": {
+                            "id": "gid://shopify/ProductVariant/100",
+                            "title": "Size 100",
+                            "price": "21.00",
+                            "inventoryQuantity": 2,
+                            "availableForSale": True,
+                        }
+                    }
+                ],
+            }
+        }
+    }
+    with patch("app.shopify_sync.decrypt_shopify_secret", return_value="test"), patch(
+        "app.shopify_sync.ShopifyGraphQLClient.query",
+        side_effect=[first, second],
+    ) as query:
+        report = sync_shopify_products(db, shopify_connection)
+    assert report["ok"] is True
+    assert db.query(ProductVariant).count() == 101
+    assert query.call_count == 2
+    assert query.call_args_list[1].args[1] == {
+        "productId": "gid://shopify/Product/707",
+        "cursor": "next-variants",
+    }
+
+
+def test_shopify_sync_refuses_incomplete_variant_pages(db, shopify_connection):
+    from app.shopify_sync import sync_shopify_products
+
+    page = {
+        "products": {
+            "pageInfo": {"hasNextPage": False},
+            "edges": [
+                {
+                    "node": {
+                        "id": "gid://shopify/Product/707",
+                        "title": "Incomplete",
+                        "status": "ACTIVE",
+                        "variants": {
+                            "pageInfo": {"hasNextPage": True, "endCursor": None},
+                            "edges": [],
+                        },
+                    }
+                }
+            ],
+        }
+    }
+    with patch("app.shopify_sync.decrypt_shopify_secret", return_value="test"), patch(
+        "app.shopify_sync.ShopifyGraphQLClient.query", return_value=page,
+    ):
+        report = sync_shopify_products(db, shopify_connection)
+    assert report["ok"] is False
+    assert report["failed"] == 1
+    assert shopify_connection.last_sync_at is None
+    assert shopify_connection.last_error == "SHOPIFY_PRODUCTS_PARTIAL_SYNC"
+    assert db.query(Product).count() == 0
+
+
+def test_shopify_sync_deactivates_missing_products_only_after_complete_scan(
+    db, shopify_connection,
+):
+    from app.shopify_sync import sync_shopify_products
+
+    initial = {
+        "products": {
+            "pageInfo": {"hasNextPage": False},
+            "edges": [_mock_product_edge(pid="gid://shopify/Product/707")],
+        }
+    }
+    empty = {"products": {"pageInfo": {"hasNextPage": False}, "edges": []}}
+    with patch("app.shopify_sync.decrypt_shopify_secret", return_value="test"), patch(
+        "app.shopify_sync.ShopifyGraphQLClient.query", side_effect=[initial, empty],
+    ):
+        assert sync_shopify_products(db, shopify_connection)["ok"]
+        assert db.query(Product).one().active is True
+        assert sync_shopify_products(db, shopify_connection)["ok"]
+    product = db.query(Product).one()
+    assert product.active is False
+    assert all(variant.available is False for variant in product.variants)
+
+
+def test_shopify_webhook_subscriptions_scan_all_pages_before_ensure(shopify_connection):
+    from app.shopify_webhook_subscriptions import ensure_shopify_order_webhooks
+
+    callback = "https://api.example.test/api/webhooks/shopify"
+    first = {
+        "webhookSubscriptions": {
+            "pageInfo": {"hasNextPage": True, "endCursor": "page-two"},
+            "edges": [
+                {"node": {"topic": "PRODUCTS_UPDATE", "uri": "https://old.example.test"}}
+            ],
+        }
+    }
+    second = {
+        "webhookSubscriptions": {
+            "pageInfo": {"hasNextPage": False},
+            "edges": [
+                {"node": {"topic": topic, "uri": callback + (
+                    "/uninstalled" if topic == "APP_UNINSTALLED" else ""
+                )}}
+                for topic in (
+                    "ORDERS_CREATE", "ORDERS_UPDATED", "ORDERS_CANCELLED",
+                    "APP_UNINSTALLED",
+                )
+            ],
+        }
+    }
+    with patch(
+        "app.shopify_webhook_subscriptions.decrypt_shopify_secret",
+        return_value="test",
+    ), patch(
+        "app.shopify_webhook_subscriptions.shopify_webhook_callback_url",
+        return_value=callback,
+    ), patch(
+        "app.shopify_webhook_subscriptions.ShopifyGraphQLClient.query",
+        side_effect=[first, second],
+    ) as query:
+        report = ensure_shopify_order_webhooks(shopify_connection)
+    assert report["created"] == []
+    assert len(report["retained"]) == 4
+    assert query.call_count == 2
+
+
+def test_shopify_webhook_emits_only_meaningful_order_transitions(
+    db, shopify_connection,
+):
+    from app.services.shopify_webhook_service import process_shopify_order_webhook
+
+    payload = {
+        "id": 707,
+        "name": "#707",
+        "created_at": "2026-10-11T09:00:00Z",
+        "updated_at": "2026-10-11T09:00:00Z",
+        "total_price": "100.00",
+        "currency": "USD",
+        "financial_status": "pending",
+        "line_items": [],
+    }
+    with patch(
+        "app.services.shopify_webhook_service.safe_emit_event",
+    ) as emit:
+        process_shopify_order_webhook(
+            db, connection=shopify_connection, topic="orders/create", payload=payload,
+        )
+        paid = dict(payload, financial_status="paid", updated_at="2026-10-11T09:01:00Z")
+        process_shopify_order_webhook(
+            db, connection=shopify_connection, topic="orders/updated", payload=paid,
+        )
+        process_shopify_order_webhook(
+            db, connection=shopify_connection, topic="orders/updated", payload=paid,
+        )
+        cancelled = dict(paid, updated_at="2026-10-11T09:02:00Z")
+        process_shopify_order_webhook(
+            db, connection=shopify_connection, topic="orders/cancelled",
+            payload=cancelled,
+        )
+
+    assert [call.kwargs["event_type"] for call in emit.call_args_list] == [
+        "order.created", "order.updated", "order.cancelled",
+    ]
+    assert len({call.kwargs["event_id"] for call in emit.call_args_list}) == 3
+
+
+
+def test_shopify_order_flow_triggers_are_consistent():
+    from app.automations import VALID_TRIGGER_TYPES
+    from app.automation_flow_events import EVENT_TO_FLOW_TRIGGER
+    from app.automation_flow_graph import TRIGGER_TYPES
+
+    for event, trigger in (
+        ("order.updated", "order_updated"),
+        ("order.cancelled", "order_cancelled"),
+    ):
+        assert event in VALID_TRIGGER_TYPES
+        assert EVENT_TO_FLOW_TRIGGER[event] == trigger
+        assert trigger in TRIGGER_TYPES
+
+
+def test_shopify_sync_rejects_missing_product_page_cursor(db, shopify_connection):
+    from app.shopify_sync import sync_shopify_products
+
+    response = {
+        "products": {
+            "pageInfo": {"hasNextPage": True, "endCursor": None},
+            "edges": [],
+        }
+    }
+    with patch("app.shopify_sync.decrypt_shopify_secret", return_value="test"), patch(
+        "app.shopify_sync.ShopifyGraphQLClient.query", return_value=response,
+    ):
+        report = sync_shopify_products(db, shopify_connection)
+    assert report["ok"] is False
+    assert report["failed"] == 1
+    assert shopify_connection.last_sync_at is None
