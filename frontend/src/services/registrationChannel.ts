@@ -1,4 +1,4 @@
-import { parseShopifyInstallHint } from "../shopifyInstall";
+import { parseShopifyInstallHint } from "../shopifyInstall.ts";
 
 export type RegistrationChannel = "direct" | "shopify_install";
 
