@@ -58,7 +58,7 @@ const TeamPage = lazy(() => import("./pages/TeamPage"));
 const KnowledgeBasesPage = lazy(() => import("./pages/KnowledgeBasesPage"));
 const StoresPage = lazy(() => import("./pages/StoresPage"));
 const ShopifyInstallPage = lazy(() => import("./pages/ShopifyInstallPage"));
-const PlansPage = lazy(() => import("./pages/PlansPage"));
+const BillingChannelPage = lazy(() => import("./pages/BillingChannelPage"));
 const PublicLandingPage = lazy(() => import("./pages/PublicLandingPage"));
 const LegalPage = lazy(() => import("./pages/LegalPage"));
 const RefundPolicyPage = lazy(() => import("./pages/RefundPolicyPage"));
@@ -409,7 +409,7 @@ function App() {
           onNavigateToAutomations={() => handleNavigate("automations")}
         />
       )}
-      {appRouteAllowed && activePage === "plans" && <PlansPage />}
+      {appRouteAllowed && activePage === "plans" && <BillingChannelPage />}
       {appRouteAllowed && activePage === "conversations" && (
         <ConversationsPage
           stores={stores}
