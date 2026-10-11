@@ -7,6 +7,7 @@ export function registrationChannelForReturnTo(value: unknown): RegistrationChan
   if (typeof value !== "string" || !value.startsWith("/shopify/install?")) {
     return "direct";
   }
+  if (value === "/shopify/install?authorized=1") return "shopify_install";
   const search = value.slice("/shopify/install".length);
   return parseShopifyInstallHint(search) ? "shopify_install" : "direct";
 }
