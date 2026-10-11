@@ -13,7 +13,7 @@ Partner organization **5148778**, original Diaglob app **416524435457**. `diaglo
 | 1 | Basic app information: **App category** | Recommend **Store management → Operations → Operations - Other**. Use **Workflow automation** as primary tag only after end-to-end workflow execution has been proven; confirm category options in Partner UI. | Category proposed, **not submitted** |
 | 2 | App store listing content: **Feature media** | Candidate 1600×900 PNG provided in user export bundle: `diaglob-feature-media-1600x900.png`. Brand graphic, not a simulated software screenshot. English ALT: "DIAGLOB ecommerce operations graphic illustrating products, orders, and team workflows." | Image generated; **not uploaded** |
 | 3 | App store listing content: **Screenshots** | Capture **3–6 genuine 1600×900** UI views from a working authorized DIAGLOB development install: products, orders, team workspace and only verified/working assistant or automation. Crop browser chrome, blur private data, use unique scenes. | **Blocked** until live DIAGLOB installation / login |
-| 4 | App store listing content: **Support** | Enter a real verified public support link and monitored inbox; confirm reception before saving. Do **not** invent `support@diaglob.tech` or a nonexistent contact page. | Requires tested support channel |
+| 4 | App store listing content: **Support** | Public help page: `https://diaglob.tech/support` (being deployed in PR); reuse email `support@diaglob.tech` already published in the live-site footer. **Verify mailbox reception** and deployed URL before entering into Partner. | Page implemented; operator delivery check pending |
 | 5 | Pricing details: **Pricing plans** | Investigate disabled Pricing content; under Shopify App Pricing, first use a **private test plan USD 0** allowlisted for `diaglob-poc.myshopify.com`. Public tiers and pricing candidates are **not approved**. Do not bypass UI/Partner eligibility. | **Blocked** by Partner configuration |
 | 6 | App discovery content: **App store search terms** | Five independent terms: `store management`; `order management`; `product organization`; `ecommerce operations`; `team workflows`. Confirm exact UI features before publishing. | Text prepared, **not saved** |
 | 7 | Install requirements: **Sales Channel requirements** | DIAGLOB is a **regular operations app**, not a Shopify Sales Channel. If its release uses Admin APIs only and no Online Store theme/POS features, select **Online Store NOT required** and **POS NOT required**. Verify actual scopes/extensions first. | Recommendation, needs app config check |
@@ -92,3 +92,9 @@ The PNG assets were exported for user download; **they are not stored in this Gi
 - https://shopify.dev/docs/apps/launch/shopify-app-store/app-store-requirements
 - https://shopify.dev/docs/apps/launch/billing/shopify-app-pricing
 - https://shopify.dev/docs/apps/launch/billing/shopify-app-pricing/plans
+
+## Public support page implementation
+
+The new `/support` route presents general support `support@diaglob.tech` (already present in the marketing footer), billing `billing@diaglob.tech` (already present in the refund policy), guidance about connecting Shopify, refund/privacy links and instructions to omit secrets from requests. It is accessible without DIAGLOB login and localized in English, Spanish and Brazilian Portuguese. The public footer now links to it. A production smoke check was added.
+
+This is a **technical support URL and copy**, not proof that those inboxes are provisioned, monitored or able to receive. A Partner operator must send a test email and confirm a reply; only then mark `Support` resolved.
