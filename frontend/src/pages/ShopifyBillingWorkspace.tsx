@@ -302,7 +302,11 @@ export default function ShopifyBillingWorkspace({ organization }: Props) {
         await refreshHistory();
 
         if (check.status !== "plan_transition_requires_review") {
-          setNotice("Shopify confirmó el plan activo. No hay cambios de acceso pendientes.");
+          setNotice(
+            check.has_pending_update
+              ? "Shopify confirmó un cambio programado para un próximo ciclo. Diaglob mantendrá el plan activo actual hasta que Shopify haga efectivo el cambio."
+              : "Shopify confirmó el plan activo. No hay cambios de acceso pendientes.",
+          );
           return;
         }
 
