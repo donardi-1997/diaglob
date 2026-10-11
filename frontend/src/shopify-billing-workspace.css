@@ -1,0 +1,49 @@
+.shopify-billing-workspace{width:100%;display:grid;gap:1.4rem;padding-bottom:2rem}
+.shopify-billing-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:1.5rem;flex-wrap:wrap}
+.shopify-billing-heading h1{margin:.35rem 0 .65rem;font-size:clamp(1.5rem,3vw,2.2rem);line-height:1.18}
+.shopify-billing-heading p{max-width:770px;line-height:1.5}
+.shopify-billing-eyebrow{margin:0;color:#07858b;font-size:.72rem;letter-spacing:.11em;font-weight:800}
+.shopify-billing-source{display:inline-flex;align-items:center;gap:.5rem;border:1px solid #abd8d4;background:#e8f7f4;color:#0b6667;padding:.5rem .85rem;border-radius:100px;font-size:.78rem;font-weight:750}
+.shopify-billing-caution{display:flex;gap:.9rem;align-items:flex-start;background:var(--surface-primary,#fff);border:1px solid #cbd7e1;border-left:4px solid #0b8080;padding:1rem 1.2rem;border-radius:12px}
+.shopify-billing-caution svg{flex-shrink:0;margin-top:2px;color:#0b8080}
+.shopify-billing-caution p{margin:.35rem 0 0;line-height:1.5;font-size:.88rem}
+.shopify-billing-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1rem}
+.shopify-billing-stats section{display:grid;gap:.45rem;padding:1.2rem;background:var(--surface-primary,#fff);border:1px solid var(--border-color,#dae2e9);border-radius:15px}
+.shopify-billing-stats section span{color:var(--text-secondary,#5d6978);font-size:.81rem}
+.shopify-billing-stats section strong{font-size:clamp(1.02rem,2vw,1.24rem);overflow-wrap:anywhere}
+.shopify-billing-stats section small{color:var(--text-secondary,#5d6978)}
+.shopify-billing-panel{padding:clamp(1rem,2.5vw,1.6rem);border:1px solid var(--border-color,#dae2e9);border-radius:18px;background:var(--surface-primary,#fff)}
+.shopify-billing-panel-title{display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap;margin-bottom:1.3rem}
+.shopify-billing-panel-title h2{margin:0 0 .5rem;font-size:1.1rem}
+.shopify-billing-panel-title p{margin:0;color:var(--text-secondary,#576878);font-size:.87rem;max-width:610px;line-height:1.5}
+.shopify-billing-actions{display:flex;gap:.55rem;flex-wrap:wrap}
+.shopify-billing-primary,.shopify-billing-secondary,.billing-channel-state button{display:inline-flex;align-items:center;justify-content:center;gap:.55rem;font:inherit;font-size:.83rem;font-weight:700;padding:.72rem .93rem;border-radius:9px;cursor:pointer;transition:background .15s}
+.shopify-billing-primary{background:#106d75;border:1px solid #106d75;color:#fff}
+.shopify-billing-primary:hover:not(:disabled){background:#08575e}
+.shopify-billing-secondary,.billing-channel-state button{background:var(--surface-primary,#fff);color:var(--text-primary,#253647);border:1px solid var(--border-color,#bfcbd5)}
+.shopify-billing-secondary:hover:not(:disabled){background:var(--surface-secondary,#f0f6f7)}
+.shopify-billing-primary:disabled,.shopify-billing-secondary:disabled{opacity:.5;cursor:not-allowed}
+.shopify-billing-list{display:grid;gap:.7rem}
+.shopify-billing-list>p{color:var(--text-secondary,#596979);font-size:.88rem}
+.shopify-billing-record{display:flex;justify-content:space-between;gap:1rem;align-items:center;flex-wrap:wrap;padding:1rem;border:1px solid var(--border-color,#e1e8ef);border-radius:12px}
+.shopify-billing-record>div{display:grid;gap:.35rem;min-width:0}
+.shopify-billing-record strong{font-size:.91rem}
+.shopify-billing-record small{color:var(--text-secondary,#647484);font-size:.78rem}
+.shopify-billing-record p{margin:.2rem 0 0;display:flex;align-items:center;gap:.35rem;flex-wrap:wrap;font-size:.83rem}
+.shopify-billing-review-pill{background:var(--surface-secondary,#f0f4f7);border-radius:50px;padding:.3rem .65rem;font-size:.74rem;font-weight:650;white-space:nowrap}
+.shopify-billing-notice,.shopify-billing-error{margin:.6rem 0;padding:.7rem .9rem;border-radius:8px;font-size:.87rem}
+.shopify-billing-notice{background:#ebf8f4;border:1px solid #bee3d9;color:#135d56}
+.shopify-billing-error{background:#fff0f0;border:1px solid #f3bbbb;color:#9f2b2b}
+.shopify-billing-muted{color:var(--text-secondary,#687582);font-size:.8rem;margin:.8rem 0}
+.shopify-billing-assessment{margin-top:1rem;border:1px solid #cedee4;padding:1rem;border-radius:11px;background:var(--surface-secondary,#f7fafb)}
+.shopify-billing-assessment p{margin:.5rem 0;line-height:1.5;font-size:.85rem}
+.shopify-billing-assessment ul{padding-left:1.2rem}
+.shopify-billing-assessment li{margin:.3rem 0}
+.shopify-billing-assessment small{color:var(--text-secondary,#657582)}
+.shopify-billing-footer{display:flex;align-items:flex-start;gap:.55rem;color:var(--text-secondary,#647484);font-size:.82rem;line-height:1.45}
+.shopify-billing-footer svg{flex-shrink:0}
+.billing-channel-state{max-width:730px;margin:3rem auto;background:var(--surface-primary,#fff);border:1px solid var(--border-color,#d5dee7);border-radius:18px;padding:2rem}
+.billing-channel-state h1{font-size:1.4rem;margin:0 0 .6rem}
+.billing-channel-state p{line-height:1.6}
+@media(max-width:790px){.shopify-billing-stats{grid-template-columns:1fr}.shopify-billing-actions{width:100%}.shopify-billing-actions button{flex:1}}
+@media(max-width:460px){.shopify-billing-actions{flex-direction:column}.shopify-billing-record .shopify-billing-secondary{width:100%}.shopify-billing-panel{padding:1rem}}
