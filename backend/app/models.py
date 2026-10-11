@@ -473,7 +473,7 @@ class WhatsAppMessageTemplate(Base):
 
 # OAuth state models are physically defined in app.model_domains.oauth.
 # These imports preserve the historical app.models import surface.
-from .model_domains.oauth import NuvemshopOAuthState, ShopifyOAuthState
+from .model_domains.oauth import NuvemshopOAuthState, ShopifyOAuthState, ShopifyPendingInstall
 
 
 # ============================================================
