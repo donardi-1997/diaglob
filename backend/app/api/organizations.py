@@ -351,7 +351,7 @@ def get_organization(
 
     paddle_api_key = os.getenv("PADDLE_API_KEY")
 
-    if subscription_id and paddle_api_key:
+    if (organization.billing_provider or "").strip().lower() == "paddle" and subscription_id and paddle_api_key:
         try:
             paddle_response = httpx.get(
                 (
@@ -391,6 +391,7 @@ def get_organization(
         "active": organization.active,
         "auto_renew_enabled":
             bool(organization.auto_renew_enabled),
+        "billing_provider": (organization.billing_provider or "").strip().lower() or None,
 
         "plan": organization.plan,
         "plan_name": plan["name"],
