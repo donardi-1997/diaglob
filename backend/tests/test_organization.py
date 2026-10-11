@@ -139,6 +139,19 @@ def client(db, membership):
 
 
 class TestOrganizationEndpoint:
+    def test_pending_shopify_provenance_returns_hint_not_payment_proof(
+        self, client, org,
+    ):
+        org.billing_onboarding_channel = "shopify_install"
+        org.billing_provider = None
+        resp = client.get("/api/organization")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["billing_onboarding_channel"] == "shopify_install"
+        assert data["billing_provider"] is None
+        assert "access_token" not in str(data)
+        assert "external_store_url" not in str(data)
+
     def test_organization_ok_local_data(
         self, client, org, membership
     ):
