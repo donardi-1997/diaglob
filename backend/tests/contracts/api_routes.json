@@ -193,6 +193,10 @@
   ],
   [
     "GET",
+    "/api/billing/shopify/trial-verification"
+  ],
+  [
+    "GET",
     "/api/carriers"
   ],
   [
