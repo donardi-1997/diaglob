@@ -13,6 +13,7 @@ import {
   refreshShopifySubscription,
   getShopifyBillingHistory,
   getShopifyPlanReviews,
+  parseShopifyHostedPricingReturn,
   stageShopifyPlanReview,
   verifyShopifyTrial,
   type ShopifyBillingCapabilities,
@@ -275,15 +276,13 @@ export default function ShopifyBillingWorkspace({ organization }: Props) {
       hostedReturnHandled.current
     ) return;
 
-    const params = new URLSearchParams(window.location.search);
     // Shopify appends plan_handle to the configured welcome link. Its value is
     // intentionally NOT trusted; presence only triggers fresh Partner checks.
-    if (!params.has("plan_handle")) return;
+    const hostedReturn = parseShopifyHostedPricingReturn(window.location.search);
+    if (!hostedReturn.shouldReverify) return;
     hostedReturnHandled.current = true;
 
-    params.delete("plan_handle");
-    params.delete("shop");
-    const cleanedQuery = params.toString();
+    const cleanedQuery = hostedReturn.cleanedSearch;
     window.history.replaceState(
       {},
       "",
