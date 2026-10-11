@@ -28,7 +28,7 @@
 
 - Shopify Partner owner must confirm the **existing Diaglob app identity**, approve final public/private plan prices, test intervals/handles and explicitly set protected Partner credentials. The price catalog must match live Shopify amounts. **Never** enter a merchant subscription amount in a UI to authorize a grant.
 - Validate hosted plan selection, welcome return redirect, fresh verification, installment/reinstall, upgrade/downgrade and replay in a development shop owned by the appropriate Partner organization at no charge. Do not switch the user's Shopify connector away from Bakatá.
-- **Lifecycle gap:** Shopify App Pricing does **not** send billing change webhooks after April 28, 2026. Subscription cancellation/freeze can happen outside redirect. Until a separate periodic Partner state checker plus audited access revocation is implemented and approved, enablement must remain OFF. The apply endpoint refuses absent or cancellation-scheduled subscriptions but cannot by itself revoke an *older* active grant.
+- **Subscription lifecycle:** Shopify App Pricing does **not** send billing change webhooks after April 28, 2026. `POST /api/billing/shopify/subscription-refresh` and `python -m app.shopify_billing_recheck --limit 50 --after-id 0` re-query Partner API. A confirmed inactive or changed plan sets `subscription_status=inactive` or `review_required`; the plan-limit access guard removes Shopify paid capacity without deleting merchant data. API outages do not fabricate cancellation. Signed uninstall and explicit commerce disconnect also suspend Shopify-paid access, never Paddle. **Operational blocker:** the command is not yet scheduled on production; run and alert it at least hourly, with correct pagination, before enabling. No production scheduler or Partner credentials were configured in this PR.
 - Free plans and no-charge development subscriptions require a documented, separate price-verification policy; current strict positive-price grant path deliberately rejects $0 as a paid entitlement.
 - Multi-merchant organizations remain fail closed. Decide whether Diaglob pricing is per Shopify shop or per Diaglob organization before opening this gate.
 - Privacy/compliance and Shopify App Store review remain independent P0 gates; see #148.
@@ -46,8 +46,8 @@
 
 1. Review CI/backend/frontend/tenancy negative tests and exact release SHA.
 2. Confirm successful Shopify App Pricing plan setup and live Partner API responses in authorized **development-only** environment.
-3. Build and verify subscription cancellation/freeze background enforcement and approved cross-shop policy **before enabling any production paid entitlement writes**.
+3. Authorize and configure the hourly scheduled `shopify_billing_recheck` command with alarms for failed batches, plus approved single-shop policy, **before enabling any production paid entitlement writes**.
 4. Explicit operator go/no-go for enabling production, with rollback and monitoring.
-5. Only then set the gate and complete merchant billing E2E.
+5. Only then set the gate and complete merchant billing E2E. Paid-plan transitions support both plan changes and monthly/annual interval changes; the latter are explicitly reverified by Partner. No-charge development-store test contracts still require a separately approved rule.
 
 Source: https://shopify.dev/docs/apps/launch/billing/shopify-app-pricing
