@@ -54,6 +54,16 @@ export default function BillingChannelPage() {
     case "paddle":
       return <PlansPage />;
     default:
+      if (organization.billing_onboarding_channel === "shopify_install") {
+        return (
+          <main className="billing-channel-state">
+            <h1>Termina de conectar tu tienda Shopify</h1>
+            <p>Tu cuenta de Diaglob está preparada para Shopify, pero todavía debemos verificar la instalación. Crea o selecciona una tienda y completa su autorización OAuth desde la sección Tiendas.</p>
+            <p>Mientras la conexión esté pendiente, los pagos y los cambios de plan permanecerán deshabilitados. No se ha creado ninguna suscripción.</p>
+            <a href="/app/stores">Ir a mis tiendas</a>
+          </main>
+        );
+      }
       return (
         <main className="billing-channel-state">
           <h1>Proveedor de facturación por confirmar</h1>
