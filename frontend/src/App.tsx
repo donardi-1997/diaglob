@@ -698,7 +698,7 @@ function App() {
                 />
               </Suspense>
             )}
-            {can("dashboard.read") && (
+            {can("dashboard.read") && !copilotOpen && (
               <FloatingCopilotButton
                 open={copilotOpen}
                 onToggle={() => setCopilotOpen((open) => !open)}

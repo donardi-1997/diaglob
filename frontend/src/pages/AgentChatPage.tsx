@@ -432,7 +432,7 @@ export default function AgentChatPage({
 
   const copy = useMemo(
     () => ({
-      title: t("copilotTitle", { defaultValue: "Copiloto IA" }),
+      title: "LIA",
       subtitle: t("copilotSubtitle", {
         defaultValue: "Consulta tu operación y ejecuta acciones con los permisos de tu usuario.",
       }),
@@ -449,7 +449,7 @@ export default function AgentChatPage({
         defaultValue: "Pregunta por tu operación o pide una acción...",
       }),
       history: t("copilotHistory", { defaultValue: "Historial" }),
-      loadError: t("copilotLoadError", { defaultValue: "No pudimos cargar el Copiloto." }),
+      loadError: t("copilotLoadError", { defaultValue: "No pudimos cargar a LIA." }),
       sendError: t("copilotSendError", { defaultValue: "No pudimos procesar el mensaje." }),
     }),
     [pageContext?.pageLabel, panelMode, t],
@@ -609,10 +609,11 @@ export default function AgentChatPage({
           <span />
         </div>
       )}
+        {panelMode && <button type="button" className="icon-button" style={{ position: "absolute", top: 12, right: 12 }} onClick={onClose} aria-label="Cerrar LIA" title="Cerrar LIA"><X size={18} /></button>}
         <div className="copilot-no-store">
           <Bot size={28} />
           <h2>{copy.title}</h2>
-          <p>Selecciona una tienda para usar el Copiloto.</p>
+          <p>Selecciona una tienda para conversar con LIA.</p>
         </div>
       </section>
     );
@@ -691,8 +692,8 @@ export default function AgentChatPage({
                 <button
                   type="button"
                   className="icon-button"
-                  title="Cerrar Copiloto"
-                  aria-label="Cerrar Copiloto"
+                  title="Cerrar LIA"
+                  aria-label="Cerrar LIA"
                   onClick={onClose}
                 >
                   <X size={16} />
@@ -727,7 +728,7 @@ export default function AgentChatPage({
             <p>
               {includePageContext
                 ? "Se enviará texto visible de esta vista. No se incluyen formularios, campos de entrada, código ni elementos marcados como privados."
-                : "El Copiloto responderá sin leer el contenido visible de esta vista."}
+                : "LIA responderá sin leer el contenido visible de esta vista."}
             </p>
           </div>
         )}
@@ -807,7 +808,7 @@ export default function AgentChatPage({
               {loadingChat && (
                 <div className="copilot-thinking">
                   <Loader2 className="spin" size={16} />
-                  <span>Diaglob está trabajando...</span>
+                  <span>LIA está trabajando...</span>
                 </div>
               )}
               <div ref={endRef} />
@@ -845,7 +846,7 @@ export default function AgentChatPage({
           <p>
             {panelMode && includePageContext
               ? `Usando contexto de ${pageContext?.pageLabel || "esta vista"} · Las acciones sensibles siguen requiriendo aprobación.`
-              : "El Copiloto solo puede usar herramientas permitidas para tu rol y tienda. Las acciones sensibles requieren tu aprobación."}
+              : "LIA solo puede usar herramientas permitidas para tu rol y tienda. Las acciones sensibles requieren tu aprobación."}
           </p>
         </footer>
       </div>

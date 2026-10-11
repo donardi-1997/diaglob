@@ -21,7 +21,7 @@ test("floating copilot stays inside the viewport", () => {
 test("floating copilot gets a safe default near the lower right", () => {
   assert.deepEqual(
     defaultFloatingPosition(1200, 800),
-    { x: 1120, y: 612 },
+    { x: 1120, y: 716 },
   );
 });
 

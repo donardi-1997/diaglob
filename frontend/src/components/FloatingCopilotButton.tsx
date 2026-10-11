@@ -4,7 +4,7 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { Sparkles, X } from "lucide-react";
+import { X } from "lucide-react";
 
 import {
   clampFloatingPosition,
@@ -14,7 +14,7 @@ import {
 } from "../services/floatingCopilotPosition";
 import "./FloatingCopilotButton.css";
 
-const STORAGE_KEY = "diaglob-copilot-fab-position";
+const STORAGE_KEY = "diaglob-copilot-fab-position-v2";
 const DRAG_THRESHOLD = 5;
 
 interface FloatingCopilotButtonProps {
@@ -141,9 +141,9 @@ export default function FloatingCopilotButton({
         left: `${position.x}px`,
         top: `${position.y}px`,
       }}
-      aria-label={open ? "Cerrar Copiloto IA" : "Abrir Copiloto IA"}
+      aria-label={open ? "Cerrar LIA" : "Hablar con LIA"}
       aria-pressed={open}
-      title={open ? "Cerrar Copiloto IA" : "Abrir Copiloto IA"}
+      title={open ? "Cerrar LIA" : "Hablar con LIA"}
       onPointerDown={startDrag}
       onPointerMove={moveDrag}
       onPointerUp={finishDrag}
@@ -152,10 +152,20 @@ export default function FloatingCopilotButton({
     >
       <span className="copilot-floating-button-glow" aria-hidden="true" />
       <span className="copilot-floating-button-icon">
-        {open ? <X size={22} /> : <Sparkles size={22} />}
+        {open ? (
+          <X size={21} />
+        ) : (
+          <img
+            src="/brand/diaglob-mark.svg"
+            alt=""
+            width={30}
+            height={30}
+            draggable={false}
+          />
+        )}
       </span>
       {!open && (
-        <span className="copilot-floating-button-label">Copiloto</span>
+        <span className="copilot-floating-button-label">Hablar con LIA</span>
       )}
     </button>
   );

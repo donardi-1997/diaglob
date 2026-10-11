@@ -33,7 +33,7 @@ export function defaultFloatingPosition(
   return clampFloatingPosition(
     {
       x: viewportWidth - COPILOT_FAB_SIZE - 24,
-      y: viewportHeight - COPILOT_FAB_SIZE - 132,
+      y: viewportHeight - COPILOT_FAB_SIZE - 28,
     },
     viewportWidth,
     viewportHeight,
