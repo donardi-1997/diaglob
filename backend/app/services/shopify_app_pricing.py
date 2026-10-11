@@ -37,6 +37,11 @@ SHOPIFY_APP_PRICING_INTERVAL_TO_MONTHS = {
     "ANNUAL": 12,
 }
 
+# Public Shopify App Store contract. Keep this separate from DIAGLOB's direct
+# Paddle catalog: Scale and 3/6-month periods are not offered through Shopify.
+SHOPIFY_APP_STORE_PLANS = ("starter", "growth", "pro")
+SHOPIFY_APP_STORE_TRIAL_DAYS = 3
+
 ACTIVE_SUBSCRIPTION_QUERY = """
 query DiaglobActiveSubscription($appId: ID!, $shopId: ID!) {
   activeSubscription(appId: $appId, shopId: $shopId) {
@@ -293,7 +298,7 @@ def resolve_verified_shopify_plan(
     if not isinstance(entry, dict):
         raise ShopifyAppPricingError("SHOPIFY_PLAN_HANDLE_UNKNOWN")
     plan = entry.get("plan")
-    if not isinstance(plan, str) or plan not in {"starter", "growth", "pro", "scale"}:
+    if not isinstance(plan, str) or plan not in SHOPIFY_APP_STORE_PLANS:
         raise ShopifyAppPricingError("SHOPIFY_PLAN_CATALOG_INVALID")
     periods = SHOPIFY_APP_PRICING_INTERVAL_TO_MONTHS
 
