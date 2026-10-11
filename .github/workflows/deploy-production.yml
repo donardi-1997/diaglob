@@ -250,6 +250,7 @@ jobs:
           check_url "Privacy policy" "https://diaglob.tech/privacy"
           check_url "Terms of service" "https://diaglob.tech/terms"
           check_url "Refund policy" "https://diaglob.tech/refund-policy"
+          check_url "Shopify support center" "https://diaglob.tech/support"
 
 
       - name: Verify billing onboarding public E2E boundaries (read only)
