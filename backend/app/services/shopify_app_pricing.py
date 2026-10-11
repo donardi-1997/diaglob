@@ -52,6 +52,36 @@ SHOPIFY_APP_PRICING_INTERVAL_TO_MONTHS = {
 SHOPIFY_APP_STORE_PLANS = ("starter", "growth", "pro")
 SHOPIFY_APP_STORE_TRIAL_DAYS = 3
 
+SUBSCRIPTION_TRIAL_EVENTS_QUERY = """
+query DiaglobSubscriptionTrialEvents($appId: ID!, $shopId: ID!) {
+  events(
+    filter: {
+      subjectId: $appId
+      shopId: $shopId
+      eventTypes: [SUBSCRIPTION_CREATED, SUBSCRIPTION_UPDATED]
+    }
+    first: 20
+  ) {
+    edges {
+      node {
+        eventType
+        occurredAt
+        shop { id }
+        ... on SubscriptionStatus {
+          plan {
+            handle
+            billingPeriod
+            trialDays
+            trialDaysRemaining
+          }
+        }
+      }
+    }
+  }
+}
+"""
+
+
 ACTIVE_SUBSCRIPTION_QUERY = """
 query DiaglobActiveSubscription($appId: ID!, $shopId: ID!) {
   activeSubscription(appId: $appId, shopId: $shopId) {
@@ -315,6 +345,111 @@ def get_active_shopify_subscription(
         current_cycle_end=cycle.get("endTime") if cycle else None,
         cancel_at_end_of_cycle=subscription.get("cancelAtEndOfCycle") is True,
     )
+
+
+@dataclass(frozen=True)
+class ShopifyTrialEvidence:
+    """Provider-backed trial settings for the currently verified plan."""
+
+    trial_days: int
+    trial_days_remaining: int
+    billing_period: str
+    event_type: str
+    occurred_at: str | None = None
+
+
+def get_shopify_trial_evidence(
+    shop_gid: str,
+    *,
+    current_handle: str,
+    current_billing_period: str,
+    http_client: httpx.Client | None = None,
+) -> ShopifyTrialEvidence:
+    """Read the latest matching subscription event and its configured trial.
+
+    The caller must first resolve the current handle from activeSubscription.
+    Redirect parameters are never accepted as trial evidence.
+    """
+    if (
+        not SHOP_GID_RE.fullmatch(shop_gid or "")
+        or not isinstance(current_handle, str)
+        or not current_handle.strip()
+        or current_billing_period not in SHOPIFY_APP_PRICING_INTERVAL_TO_MONTHS
+    ):
+        raise ShopifyAppPricingError("SHOPIFY_TRIAL_EVIDENCE_INVALID_REQUEST")
+
+    organization_id, app_gid, token = _configuration()
+    url = f"https://partners.shopify.com/{organization_id}/api/2026-10/graphql.json"
+    payload = {
+        "query": SUBSCRIPTION_TRIAL_EVENTS_QUERY,
+        "variables": {"appId": app_gid, "shopId": shop_gid},
+    }
+    try:
+        if http_client is None:
+            with httpx.Client(timeout=10) as client:
+                response = client.post(
+                    url,
+                    json=payload,
+                    headers={"X-Shopify-Access-Token": token},
+                )
+        else:
+            response = http_client.post(
+                url,
+                json=payload,
+                headers={"X-Shopify-Access-Token": token},
+            )
+        response.raise_for_status()
+        body: Any = response.json()
+    except (httpx.HTTPError, ValueError) as exc:
+        raise ShopifyAppPricingError("SHOPIFY_PARTNER_API_UNAVAILABLE") from exc
+
+    if not isinstance(body, dict) or body.get("errors"):
+        raise ShopifyAppPricingError("SHOPIFY_PARTNER_API_GRAPHQL_ERROR")
+    data = body.get("data")
+    events = data.get("events") if isinstance(data, dict) else None
+    edges = events.get("edges") if isinstance(events, dict) else None
+    if not isinstance(edges, list):
+        raise ShopifyAppPricingError("SHOPIFY_PARTNER_API_INVALID_RESPONSE")
+
+    for edge in edges:
+        node = edge.get("node") if isinstance(edge, dict) else None
+        if not isinstance(node, dict):
+            continue
+        linked_shop = node.get("shop")
+        if not isinstance(linked_shop, dict) or linked_shop.get("id") != shop_gid:
+            continue
+        if node.get("eventType") not in {"SUBSCRIPTION_CREATED", "SUBSCRIPTION_UPDATED"}:
+            continue
+        plan = node.get("plan")
+        if not isinstance(plan, dict):
+            continue
+        if (
+            plan.get("handle") != current_handle
+            or plan.get("billingPeriod") != current_billing_period
+        ):
+            continue
+        trial_days = plan.get("trialDays")
+        remaining = plan.get("trialDaysRemaining")
+        if (
+            type(trial_days) is not int
+            or type(remaining) is not int
+            or trial_days < 0
+            or remaining < 0
+            or remaining > trial_days
+        ):
+            raise ShopifyAppPricingError("SHOPIFY_TRIAL_EVIDENCE_INVALID")
+        occurred_at = node.get("occurredAt")
+        if occurred_at is not None and not isinstance(occurred_at, str):
+            raise ShopifyAppPricingError("SHOPIFY_TRIAL_EVIDENCE_INVALID")
+        return ShopifyTrialEvidence(
+            trial_days=trial_days,
+            trial_days_remaining=remaining,
+            billing_period=current_billing_period,
+            event_type=node["eventType"],
+            occurred_at=occurred_at,
+        )
+
+    raise ShopifyAppPricingError("SHOPIFY_TRIAL_EVIDENCE_NOT_FOUND")
 
 
 @dataclass(frozen=True)
