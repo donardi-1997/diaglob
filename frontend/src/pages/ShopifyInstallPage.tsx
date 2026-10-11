@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { ArrowRight, LockKeyhole, ShieldCheck, Store } from "lucide-react";
 
-import { connectShopify } from "../services/integrations";
+import { connectShopify, getPendingShopifyInstall, claimPendingShopifyInstall } from "../services/integrations";
 import { getStoresForManagement, type Store as DiaglobStore } from "../services/stores";
 import {
   eligibleShopifyInstallStores,
@@ -18,15 +18,41 @@ interface Props {
 export default function ShopifyInstallPage({ canWrite }: Props) {
   const location = useLocation();
   const navigate = useNavigate();
+  const oauthCompleted = location.search === "?authorized=1";
+  const [authorizedShop, setAuthorizedShop] = useState<string | null>(null);
+  const [checkingGrant, setCheckingGrant] = useState(oauthCompleted);
   const shop = useMemo(
-    () => parseShopifyInstallHint(location.search),
-    [location.search],
+    () => oauthCompleted ? authorizedShop : parseShopifyInstallHint(location.search),
+    [location.search, oauthCompleted, authorizedShop],
   );
   const [stores, setStores] = useState<DiaglobStore[]>([]);
   const [selected, setSelected] = useState("");
   const [loading, setLoading] = useState(true);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!oauthCompleted || !canWrite) {
+      setCheckingGrant(false);
+      return;
+    }
+    let live = true;
+    setCheckingGrant(true);
+    getPendingShopifyInstall()
+      .then((result) => {
+        if (!live) return;
+        if (!result.pending || !result.shop_domain) {
+          setError("La autorización de Shopify expiró o ya fue utilizada. Inicia la instalación nuevamente desde Shopify.");
+          return;
+        }
+        setAuthorizedShop(result.shop_domain);
+      })
+      .catch(() => {
+        if (live) setError("No fue posible recuperar la autorización de Shopify.");
+      })
+      .finally(() => { if (live) setCheckingGrant(false); });
+    return () => { live = false; };
+  }, [oauthCompleted, canWrite]);
 
   useEffect(() => {
     let active = true;
@@ -66,13 +92,18 @@ export default function ShopifyInstallPage({ canWrite }: Props) {
     setConnecting(true);
     setError("");
     try {
-      // Authorization is determined by DIAGLOB stores.write and OAuth state,
-      // not by the untrusted public Shopify 'shop' query parameter.
-      const result = await connectShopify(chosen.id, shop);
-      const destination = validatedShopifyAuthorizationUrl(
-        result.authorization_url, shop,
-      );
-      window.location.assign(destination);
+      if (oauthCompleted) {
+        // The grant is already verified by Shopify and bound by an HttpOnly,
+        // short-lived one-use cookie. Tenant authorization stays server-side.
+        await claimPendingShopifyInstall(chosen.id);
+        navigate("/app/stores?shopify=connected", { replace: true });
+      } else {
+        const result = await connectShopify(chosen.id, shop);
+        const destination = validatedShopifyAuthorizationUrl(
+          result.authorization_url, shop,
+        );
+        window.location.assign(destination);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "No fue posible conectar Shopify.");
       setConnecting(false);
@@ -86,9 +117,11 @@ export default function ShopifyInstallPage({ canWrite }: Props) {
         <p className="shopify-install-eyebrow">DIAGLOB + SHOPIFY</p>
         <h1>Conecta tu tienda Shopify</h1>
         <p>Selecciona la tienda de Diaglob que administrará tu operación. Solo después de confirmarlo te enviaremos a Shopify para aprobar los permisos.</p>
-        {!shop ? (
+        {checkingGrant ? (
+          <p role="status">Validando la autorización de Shopify…</p>
+        ) : !shop ? (
           <p className="shopify-install-error" role="alert">
-            El enlace de instalación no contiene una tienda Shopify válida.
+            {oauthCompleted ? (error || "La autorización de Shopify no está disponible.") : "El enlace de instalación no contiene una tienda Shopify válida."}
           </p>
         ) : (
           <>
@@ -98,7 +131,9 @@ export default function ShopifyInstallPage({ canWrite }: Props) {
               <strong>{shop}</strong>
             </div>
             <p className="shopify-install-hint">
-              El dominio aún no está verificado. La conexión solo se establecerá al completar la autorización de Shopify.
+              {oauthCompleted
+                ? "Shopify confirmó la tienda. Selecciona a qué espacio autorizado de Diaglob vincularla. No se generará ningún cargo."
+                : "El dominio aún no está verificado. La conexión solo se establecerá al completar la autorización de Shopify."}
             </p>
             {!canWrite ? (
               <p className="shopify-install-error" role="alert">
@@ -135,7 +170,7 @@ export default function ShopifyInstallPage({ canWrite }: Props) {
               disabled={!canWrite || !selected || !shop || connecting || loading}
               onClick={() => { void handleConnect(); }}
             >
-              {connecting ? "Redirigiendo a Shopify…" : "Continuar a Shopify"}
+              {connecting ? "Conectando…" : oauthCompleted ? "Finalizar conexión" : "Continuar a Shopify"}
               {!connecting && <ArrowRight size={18} aria-hidden="true" />}
             </button>
           </>

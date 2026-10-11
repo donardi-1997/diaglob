@@ -288,10 +288,17 @@ jobs:
 
           destination="$(grep -i '^location:' "$headers" | \
             tr -d '\r' | sed -E 's/^[^:]+:[[:space:]]*//')"
-          [[ "$destination" == 'https://diaglob.tech/shopify/install?shop=diaglob-poc.myshopify.com' ]] || {
-            echo 'Untrusted install handoff produced an unsafe redirect'
+          if [[ "$destination" == 'https://diaglob.tech/shopify/install?shop=diaglob-poc.myshopify.com' ]]; then
+            echo 'PASS: legacy install handoff (OAuth-first feature remains OFF)'
+          elif [[ "$destination" == "https://diaglob-poc.myshopify.com/admin/oauth/authorize?"* &&
+                  "$destination" == *"state="* &&
+                  "$destination" == *"client_id="* &&
+                  "$destination" == *"redirect_uri="* ]]; then
+            echo 'PASS: OAuth-first Shopify authorization redirect'
+          else
+            echo 'FAIL: install handoff destination was not an approved HTTPS route'
             exit 1
-          }
+          fi
           grep -qi '^cache-control: no-store' "$headers" || {
             echo 'Install handoff missing no-store'
             exit 1

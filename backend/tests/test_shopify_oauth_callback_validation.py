@@ -93,6 +93,9 @@ def test_duplicate_param_fails_before_service_and_token_exchange():
 def test_normal_params_are_forwarded_to_service_for_actual_hmac_verification():
     query = b"shop=test.myshopify.com&code=c&state=s&hmac=abc"
     with patch(
+        "app.api.shopify.shopify_public_install.pending_state_exists",
+        return_value=False,
+    ), patch(
         "app.api.shopify.svc_process_oauth_callback",
         return_value="https://diaglob.tech?shopify=connected",
     ) as svc:
