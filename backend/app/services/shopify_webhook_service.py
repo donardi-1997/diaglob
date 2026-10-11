@@ -257,7 +257,10 @@ def process_shopify_order_webhook(
                 },
                 "customer_id": order.customer_id,
             },
-            event_id=f"shopify:order:{external_order_id}:{fingerprint}",
+            event_id=(
+                f"shopify:order:{external_order_id}:created"
+                if created else f"shopify:order:{external_order_id}:{fingerprint}"
+            ),
         )
 
     return {
