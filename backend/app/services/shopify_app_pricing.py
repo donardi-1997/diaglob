@@ -25,6 +25,16 @@ query DiaglobShopIdentity {
 }
 """
 
+SHOP_DEVELOPMENT_IDENTITY_QUERY = """
+query DiaglobShopDevelopmentIdentity {
+  shop {
+    id
+    myshopifyDomain
+    plan { partnerDevelopment }
+  }
+}
+"""
+
 
 APP_GID_RE = re.compile(r"^gid://shopify/App/[0-9]+$")
 SHOP_GID_RE = re.compile(r"^gid://shopify/Shop/[0-9]+$")
@@ -133,6 +143,53 @@ def resolve_trusted_shop_gid(connection: Any) -> str:
     if response_domain != domain:
         raise ShopifyAppPricingError("SHOPIFY_IDENTITY_MISMATCH")
     return shop_gid
+
+
+def is_trusted_partner_development_shop(
+    connection: Any,
+    *,
+    expected_shop_gid: str,
+) -> bool:
+    """Confirm no-charge App Pricing is being exercised on a real dev shop.
+
+    This check uses the already installed Admin API token and verifies both the
+    exact Shop GID and myshopify domain again. A browser flag or a zero-dollar
+    Partner contract alone can never opt a production merchant into test mode.
+    """
+    if (
+        getattr(connection, "provider", None) != "shopify"
+        or getattr(connection, "status", None) != "connected"
+        or not SHOP_GID_RE.fullmatch(expected_shop_gid or "")
+    ):
+        raise ShopifyAppPricingError("SHOPIFY_CONNECTION_NOT_VERIFIED")
+    try:
+        domain = normalize_shop_domain(connection.external_store_url)
+        token = decrypt_shopify_secret(connection.access_token_encrypted)
+        response = ShopifyGraphQLClient(
+            shop_domain=domain,
+            access_token=token,
+        ).query(SHOP_DEVELOPMENT_IDENTITY_QUERY)
+    except (ValueError, RuntimeError, AttributeError) as exc:
+        raise ShopifyAppPricingError("SHOPIFY_IDENTITY_UNAVAILABLE") from exc
+    except Exception as exc:
+        raise ShopifyAppPricingError("SHOPIFY_IDENTITY_UNAVAILABLE") from exc
+
+    shop = response.get("shop") if isinstance(response, dict) else None
+    if not isinstance(shop, dict):
+        raise ShopifyAppPricingError("SHOPIFY_IDENTITY_INVALID")
+    try:
+        response_domain = normalize_shop_domain(shop.get("myshopifyDomain") or "")
+    except (ValueError, AttributeError) as exc:
+        raise ShopifyAppPricingError("SHOPIFY_IDENTITY_INVALID") from exc
+    plan = shop.get("plan")
+    if (
+        shop.get("id") != expected_shop_gid
+        or response_domain != domain
+        or not isinstance(plan, dict)
+        or type(plan.get("partnerDevelopment")) is not bool
+    ):
+        raise ShopifyAppPricingError("SHOPIFY_IDENTITY_INVALID")
+    return plan["partnerDevelopment"]
 
 
 def _configuration() -> tuple[str, str, str]:
@@ -259,6 +316,7 @@ def resolve_verified_shopify_plan(
     subscription: ShopifySubscriptionSnapshot,
     *,
     handle_catalog: dict[str, Any] | None = None,
+    allow_no_charge_testing: bool = False,
 ) -> VerifiedShopifyPlan:
     """Resolve only a verified, explicitly configured App Pricing plan.
 
@@ -333,9 +391,20 @@ def resolve_verified_shopify_plan(
     if len(subscription.eligible_amounts) != 1:
         raise ShopifyAppPricingError("SHOPIFY_PLAN_PRICE_UNVERIFIED")
     actual_amount = subscription.eligible_amounts[0]
-    if not _valid_usd_amount(actual_amount):
+    if (
+        type(actual_amount) is not str
+        or USD_AMOUNT_RE.fullmatch(actual_amount) is None
+    ):
         raise ShopifyAppPricingError("SHOPIFY_PLAN_PRICE_UNVERIFIED")
-    if Decimal(actual_amount) != Decimal(expected_amount):
+    actual_decimal = Decimal(actual_amount)
+    if actual_decimal == 0:
+        # Shopify intentionally rewrites paid App Pricing items to effective
+        # USD 0 on eligible development-store tests. This exception is safe
+        # only when the caller independently authenticated partnerDevelopment
+        # with the installed Admin API token.
+        if allow_no_charge_testing is not True:
+            raise ShopifyAppPricingError("SHOPIFY_PLAN_PRICE_UNVERIFIED")
+    elif actual_decimal != Decimal(expected_amount):
         raise ShopifyAppPricingError("SHOPIFY_PLAN_PRICE_MISMATCH")
     return VerifiedShopifyPlan(
         plan=plan,
