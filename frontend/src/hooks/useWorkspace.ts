@@ -22,6 +22,8 @@ export function useWorkspace() {
     localStorage.getItem("diaglob-organization-id") || "",
   );
   const [stores, setStores] = useState<Store[]>([]);
+  const [storesError, setStoresError] = useState(false);
+  const [storesLoading, setStoresLoading] = useState(false);
   const [selectedStoreId, setSelectedStoreId] = useState(
     localStorage.getItem("diaglob-store-id") || "",
   );
@@ -30,6 +32,7 @@ export function useWorkspace() {
     setCurrentUser(null);
     setOrganizations([]);
     setStores([]);
+    setStoresError(false);
     setOrganizationId("");
     setSelectedStoreId("");
     setSessionReady(false);
@@ -93,9 +96,12 @@ export function useWorkspace() {
   const loadStores = useCallback(async () => {
     if (!sessionReady || !organizationId) {
       setStores([]);
+      setStoresError(false);
       return;
     }
 
+    setStoresLoading(true);
+    setStoresError(false);
     try {
       const response = await getStores();
       setStores(response.items);
@@ -110,8 +116,10 @@ export function useWorkspace() {
       }
     } catch (error) {
       console.error("Unable to load stores", error);
-      setStores([]);
-      setSelectedStoreId("");
+      setStoresError(true);
+      // Preserve the last known list; an API outage is not an empty workspace.
+    } finally {
+      setStoresLoading(false);
     }
   }, [organizationId, sessionReady]);
 
@@ -184,6 +192,8 @@ export function useWorkspace() {
     organizationId,
     sessionReady,
     stores,
+    storesError,
+    storesLoading,
     selectedStoreId,
     selectedOrganization,
     selectedStore,
