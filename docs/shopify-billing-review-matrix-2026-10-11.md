@@ -95,11 +95,11 @@ Verify these cases separately:
 2. Open **Planes y facturación**.
 3. Confirm the page identifies billing as Shopify-managed and shows Starter / Growth / Pro, three-day trial, and monthly/annual billing.
 4. Click **Abrir planes de Shopify**. The destination must be the Shopify Admin hosted pricing page for the authenticated shop; DIAGLOB does not accept a browser-supplied shop or plan handle as proof.
-5. Select/approve a plan in Shopify.
-6. Return to DIAGLOB and run **Verificar suscripción**.
-7. When Shopify reports a different recognized plan/period, DIAGLOB records a transition requiring review.
-8. The owner stages the transition and checks its freshness.
-9. Only when the production entitlement gate is intentionally enabled may the owner apply it; DIAGLOB re-queries Shopify immediately before changing internal entitlements.
+5. Select/approve a plan in Shopify. The configured welcome link returns to `/app/plans` with Shopify redirect parameters.
+6. DIAGLOB removes the redirect parameters from the browser URL and uses their presence only to trigger a fresh Partner API verification; the values themselves never grant access.
+7. When Shopify reports a different recognized active plan/period, DIAGLOB records the transition. If the owner is signed in and the production entitlement gate is enabled, the UI automatically stages and applies the transition only after the existing second Partner verification succeeds.
+8. If the change is pending until end-of-cycle, the active subscription remains authoritative; DIAGLOB must not activate the future tier early.
+9. Use **Verificar trial de 3 días** to compare the current Partner subscription event's `trialDays` against the required value 3.
 10. Repeat the tier-change and cadence-change matrix.
 
 ## Release gates
