@@ -14,6 +14,7 @@ export interface ShopifyBillingVerification {
 }
 
 export interface ShopifyBillingCheck {
+  organization_id: number;
   verification_id: number;
   verified_at: string;
   status: string;
