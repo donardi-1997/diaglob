@@ -5,17 +5,18 @@ import os
 from fastapi import (
     APIRouter,
     BackgroundTasks,
+    Cookie,
     Depends,
     HTTPException,
     Request,
     Query,
 )
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..models import OrganizationMembership
+from ..models import OrganizationMembership, Store
 from ..shopify_client import (
     ShopifyAPIError,
     ShopifyAuthError,
@@ -62,6 +63,7 @@ from ..services.shopify_uninstall import (
     ShopifyUninstallError,
     process_shopify_uninstall,
 )
+from ..services import shopify_public_install
 from ..services.shopify_install_handoff import (
     ShopifyInstallHandoffError,
     build_shopify_install_handoff,
@@ -186,17 +188,63 @@ def _map_oauth_error(exc: Exception):
 
 
 @router.get("/api/shopify/install")
-def shopify_install_handoff(shop: str = Query(..., min_length=1, max_length=255)):
-    """Public handoff to the authenticated DIAGLOB store-selection screen.
+def shopify_install_handoff(
+    shop: str = Query(..., min_length=1, max_length=255),
+    db: Session = Depends(get_db),
+):
+    """For standalone App Store installs, redirect to OAuth before DIAGLOB UI.
 
-    This is NOT Shopify OAuth or trusted proof of shop ownership. No database
-    writes, installation, token exchange, customer data access or app grant.
+    The legacy DIAGLOB handoff remains available behind a disabled-by-default
+    rollout flag until the original Shopify app configuration is verified.
     """
+    if shopify_public_install.enabled():
+        try:
+            url = shopify_public_install.begin_public_install(db, shop)
+        except (ShopifyOAuthError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail="SHOPIFY_NOT_CONFIGURED") from exc
+        return RedirectResponse(url, status_code=303, headers={"Cache-Control": "no-store"})
     try:
         url = build_shopify_install_handoff(shop)
     except ShopifyInstallHandoffError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return RedirectResponse(url, status_code=303, headers={"Cache-Control": "no-store"})
+
+
+@router.get("/api/shopify/install/pending")
+def shopify_pending_install(
+    claim_secret: str | None = Cookie(None, alias=shopify_public_install.COOKIE_NAME),
+    membership: OrganizationMembership = Depends(require_permission("stores.write")),
+    db: Session = Depends(get_db),
+):
+    """Reveal only the pending authenticated shop domain to an authorized user."""
+    return shopify_public_install.pending_install_status(db, claim_secret)
+
+
+@router.post(
+    "/api/stores/{store_id}/shopify/install/claim",
+    dependencies=[Depends(require_authorized_path_store)],
+)
+def shopify_claim_install(
+    store_id: int,
+    claim_secret: str | None = Cookie(None, alias=shopify_public_install.COOKIE_NAME),
+    membership: OrganizationMembership = Depends(require_permission("stores.write")),
+    db: Session = Depends(get_db),
+    store: Store = Depends(require_authorized_path_store),
+):
+    try:
+        result = shopify_public_install.claim_install(
+            db, secret=claim_secret, membership=membership, store=store
+        )
+    except (ShopifyOAuthError, ShopifyConnectionError) as exc:
+        _map_oauth_error(exc)
+    response = JSONResponse(result, headers={"Cache-Control": "no-store"})
+    response.delete_cookie(
+        shopify_public_install.COOKIE_NAME,
+        path="/", domain="diaglob.tech", secure=True, httponly=True, samesite="lax",
+    )
+    return response
 
 
 @router.post("/api/stores/{store_id}/shopify/connect", dependencies=[Depends(require_authorized_path_store)])
@@ -257,11 +305,27 @@ def shopify_oauth_callback(
     except ShopifyCallbackQueryError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    # The one-use unbound state is never interpreted as an organization grant.
+    if shopify_public_install.pending_state_exists(db, query_params.get("state", "")):
+        try:
+            cookie_secret = shopify_public_install.finish_public_install(db, query_params)
+            redirect_url = shopify_public_install._frontend_install_url()
+        except (ShopifyOAuthError, ShopifyProviderError) as exc:
+            _map_oauth_error(exc)
+        response = RedirectResponse(
+            redirect_url, status_code=303, headers={"Cache-Control": "no-store"}
+        )
+        response.set_cookie(
+            shopify_public_install.COOKIE_NAME,
+            cookie_secret, max_age=1200, path="/", domain="diaglob.tech",
+            secure=True, httponly=True, samesite="lax",
+        )
+        return response
+
     try:
         redirect_url = svc_process_oauth_callback(db, query_params)
     except (ShopifyOAuthError, ShopifyProviderError, ShopifyConnectionError) as exc:
         _map_oauth_error(exc)
-
     return RedirectResponse(redirect_url)
 
 
