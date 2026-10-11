@@ -140,3 +140,19 @@ export async function applyVerifiedShopifyPlan(reviewId: number) {
   });
   return response.data;
 }
+
+
+export async function refreshShopifySubscription() {
+  const response = await api.post<{
+    organization_id: number;
+    subscription_status: "active" | "inactive" | "review_required";
+    changed: boolean;
+    verified_against_shopify: true;
+    verification_id: number;
+    plan: string;
+    applied: boolean;
+  }>("/api/billing/shopify/subscription-refresh", {}, {
+    headers: tenantHeaders,
+  });
+  return response.data;
+}
