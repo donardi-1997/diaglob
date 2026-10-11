@@ -11,8 +11,10 @@ from typing import Any
 from .shopify_app_pricing import (
     ShopifyAppPricingError,
     get_active_shopify_subscription,
+    is_trusted_partner_development_shop,
     resolve_trusted_shop_gid,
     resolve_verified_shopify_plan,
+    subscription_has_no_charge_effective_price,
 )
 
 
@@ -83,9 +85,17 @@ def preview_shopify_entitlement_reconciliation(
             status="subscription_inactive_requires_review",
         )
 
+    allow_no_charge_testing = False
+    if subscription_has_no_charge_effective_price(subscription):
+        allow_no_charge_testing = is_trusted_partner_development_shop(
+            connection,
+            expected_shop_gid=shop_gid,
+        )
+
     verified = resolve_verified_shopify_plan(
         subscription,
         handle_catalog=handle_catalog,
+        allow_no_charge_testing=allow_no_charge_testing,
     )
     current_months = getattr(organization, "billing_period_months", None)
     same_plan = (
