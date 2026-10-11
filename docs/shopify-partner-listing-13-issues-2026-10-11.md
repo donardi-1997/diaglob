@@ -1,3 +1,5 @@
+> **CORRECTION (2026-10-11, latest Partner screenshot):** Shopify now reports **12 listing issues**, not 13. The screenshot enumerates all exact fields: App category; Feature media, Screenshots, Support; Pricing plans; App store search terms; Sales Channel requirements; Merchant review email, App submission email; Test account, Screencast URL, Testing instructions. This earlier 13-item table is retained as a historical checkpoint and is **superseded** by [the verified 12-field resolution pack](shopify-app-store-12-issue-field-pack-2026-10-11.md). **No Partner listing issues have been marked resolved merely by drafting content.**
+
 # Shopify App Store: unlock listing → App Pricing → no-charge E2E
 
 **Checkpoint:** 2026-10-11. **Commercial release = NO-GO.**
