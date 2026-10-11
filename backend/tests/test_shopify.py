@@ -5560,3 +5560,36 @@ def test_shopify_webhook_emits_only_meaningful_order_transitions(
         "order.created", "order.updated", "order.cancelled",
     ]
     assert len({call.kwargs["event_id"] for call in emit.call_args_list}) == 3
+
+
+
+def test_shopify_order_flow_triggers_are_consistent():
+    from app.automations import VALID_TRIGGER_TYPES
+    from app.automation_flow_events import EVENT_TO_FLOW_TRIGGER
+    from app.automation_flow_graph import TRIGGER_TYPES
+
+    for event, trigger in (
+        ("order.updated", "order_updated"),
+        ("order.cancelled", "order_cancelled"),
+    ):
+        assert event in VALID_TRIGGER_TYPES
+        assert EVENT_TO_FLOW_TRIGGER[event] == trigger
+        assert trigger in TRIGGER_TYPES
+
+
+def test_shopify_sync_rejects_missing_product_page_cursor(db, shopify_connection):
+    from app.shopify_sync import sync_shopify_products
+
+    response = {
+        "products": {
+            "pageInfo": {"hasNextPage": True, "endCursor": None},
+            "edges": [],
+        }
+    }
+    with patch("app.shopify_sync.decrypt_shopify_secret", return_value="test"), patch(
+        "app.shopify_sync.ShopifyGraphQLClient.query", return_value=response,
+    ):
+        report = sync_shopify_products(db, shopify_connection)
+    assert report["ok"] is False
+    assert report["failed"] == 1
+    assert shopify_connection.last_sync_at is None
