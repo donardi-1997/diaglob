@@ -32,7 +32,7 @@ query {
 SHOPIFY_PRODUCTS_QUERY = """
 query ($cursor: String) {
   products(
-    first: 50
+    first: 5
     after: $cursor
   ) {
     pageInfo {
