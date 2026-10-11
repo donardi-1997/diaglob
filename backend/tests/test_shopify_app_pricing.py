@@ -8,6 +8,8 @@ import pytest
 
 from app.services.shopify_app_pricing import (
     SHOPIFY_APP_PRICING_INTERVAL_TO_MONTHS,
+    SHOPIFY_APP_STORE_PLANS,
+    SHOPIFY_APP_STORE_TRIAL_DAYS,
     ShopifyAppPricingError,
     get_active_shopify_subscription,
     resolve_verified_shopify_plan,
@@ -407,3 +409,90 @@ def test_shared_handle_config_cannot_mix_legacy_and_new_price_keys():
                 "prices": {"EVERY_30_DAYS": "49.00"},
             }},
         )
+
+
+def test_shopify_app_store_review_contract_has_three_public_plans_and_three_day_trial():
+    assert SHOPIFY_APP_STORE_PLANS == ("starter", "growth", "pro")
+    assert SHOPIFY_APP_STORE_TRIAL_DAYS == 3
+    assert set(SHOPIFY_APP_PRICING_INTERVAL_TO_MONTHS.values()) == {1, 12}
+
+
+@pytest.mark.parametrize(
+    "plan,handle,amount",
+    [
+        ("starter", "starter-review", "19.00"),
+        ("growth", "growth-review", "49.00"),
+        ("pro", "pro-review", "99.00"),
+    ],
+)
+@pytest.mark.parametrize(
+    "interval,months",
+    [("EVERY_30_DAYS", 1), ("ANNUAL", 12)],
+)
+def test_each_shopify_public_plan_resolves_for_monthly_and_annual_review(
+    plan, handle, amount, interval, months,
+):
+    subscription = ShopifySubscriptionSnapshot(
+        active=True,
+        billing_period=interval,
+        item_handles=(handle,),
+        eligible_handles=(handle,),
+        eligible_amounts=(amount,),
+        trial_ends_at="2026-10-14T18:00:00Z",
+    )
+    catalog = {
+        handle: {
+            "plan": plan,
+            "prices": {
+                "EVERY_30_DAYS": amount,
+                "ANNUAL": amount,
+            },
+        },
+    }
+
+    resolved = resolve_verified_shopify_plan(
+        subscription,
+        handle_catalog=catalog,
+    )
+
+    assert resolved.plan == plan
+    assert resolved.billing_period_months == months
+    assert subscription.trial_ends_at == "2026-10-14T18:00:00Z"
+
+
+def test_scale_is_not_a_shopify_app_store_public_plan():
+    subscription = ShopifySubscriptionSnapshot(
+        active=True,
+        billing_period="EVERY_30_DAYS",
+        item_handles=("scale-review",),
+        eligible_handles=("scale-review",),
+        eligible_amounts=("199.00",),
+    )
+    with pytest.raises(ShopifyAppPricingError, match="SHOPIFY_PLAN_CATALOG_INVALID"):
+        resolve_verified_shopify_plan(
+            subscription,
+            handle_catalog={
+                "scale-review": {
+                    "plan": "scale",
+                    "interval": "EVERY_30_DAYS",
+                    "amount_usd": "199.00",
+                },
+            },
+        )
+
+
+def test_shopify_billing_capabilities_publish_review_contract(monkeypatch):
+    from app.api.billing import shopify_billing_capabilities
+
+    monkeypatch.setenv("SHOPIFY_APP_STORE_HANDLE", "diaglob-app")
+    monkeypatch.delenv("SHOPIFY_BILLING_ENTITLEMENTS_ENABLED", raising=False)
+    result = shopify_billing_capabilities(
+        membership=SimpleNamespace(role="owner", organization_id=77),
+    )
+
+    assert result["shopify_hosted_pricing_configured"] is True
+    assert result["verified_entitlement_apply_enabled"] is False
+    assert result["paddle_checkout_available"] is False
+    assert result["public_plans"] == ["starter", "growth", "pro"]
+    assert result["trial_days"] == 3
+    assert result["billing_period_months"] == [1, 12]
