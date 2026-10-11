@@ -45,7 +45,7 @@ def confirm_shopify_install_billing(
         or not org.active
         or org.billing_onboarding_channel != "shopify_install"
         or org.billing_provider is not None
-        or (org.plan or "none").lower() != "none"
+        or (org.plan or "none").strip().lower() not in {"none", "trial"}
         or org.billing_customer_id
         or org.billing_subscription_id
         or org.billing_price_id
