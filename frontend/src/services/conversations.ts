@@ -24,8 +24,12 @@ export async function getConversations(storeId?: number) {
 }
 
 export async function getConversation(conversationId: number) {
+  // The inbox may list conversations from every authorized store.
+  // Avoid inheriting the active-store header for a different store.
+  // The backend still enforces organization and membership permissions.
   const response = await api.get<ConversationDetail>(
     `/api/conversations/${conversationId}`,
+    { headers: { "X-Diaglob-Global-Scope": "1" } },
   );
 
   return response.data;
