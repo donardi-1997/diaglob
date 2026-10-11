@@ -609,6 +609,7 @@ export default function AgentChatPage({
           <span />
         </div>
       )}
+        {panelMode && <button type="button" className="icon-button" style={{ position: "absolute", top: 12, right: 12 }} onClick={onClose} aria-label="Cerrar LIA" title="Cerrar LIA"><X size={18} /></button>}
         <div className="copilot-no-store">
           <Bot size={28} />
           <h2>{copy.title}</h2>
