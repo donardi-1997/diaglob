@@ -141,9 +141,9 @@ export default function FloatingCopilotButton({
         left: `${position.x}px`,
         top: `${position.y}px`,
       }}
-      aria-label={open ? "Cerrar Copiloto IA" : "Abrir Copiloto IA"}
+      aria-label={open ? "Cerrar LIA" : "Hablar con LIA"}
       aria-pressed={open}
-      title={open ? "Cerrar Copiloto IA" : "Abrir Copiloto IA"}
+      title={open ? "Cerrar LIA" : "Hablar con LIA"}
       onPointerDown={startDrag}
       onPointerMove={moveDrag}
       onPointerUp={finishDrag}
@@ -165,7 +165,7 @@ export default function FloatingCopilotButton({
         )}
       </span>
       {!open && (
-        <span className="copilot-floating-button-label">Copiloto</span>
+        <span className="copilot-floating-button-label">Hablar con LIA</span>
       )}
     </button>
   );
