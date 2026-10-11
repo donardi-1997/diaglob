@@ -108,6 +108,9 @@ export interface ShopifyBillingCapabilities {
   shopify_hosted_pricing_configured: boolean;
   verified_entitlement_apply_enabled: boolean;
   paddle_checkout_available: false;
+  public_plans: string[];
+  trial_days: number;
+  billing_period_months: number[];
 }
 
 export async function getShopifyBillingCapabilities() {
