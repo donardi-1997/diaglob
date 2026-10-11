@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime
+from types import SimpleNamespace
 
 from sqlalchemy.orm import Session
 
@@ -69,13 +70,32 @@ def refresh_shopify_billing_status(db: Session, *, organization_id: int) -> dict
             org, conn, connected_shopify_store_count=1,
         )
     except ShopifyAppPricingError as exc:
-        raise ShopifyTransitionReviewError(str(exc)) from exc
+        # Only an actual provider-confirmed *contract mismatch* can revoke
+        # stale paid privileges. Connectivity/configuration failures must not
+        # be mistaken for a cancellation.
+        if str(exc) in {
+            "SHOPIFY_PLAN_HANDLE_UNKNOWN",
+            "SHOPIFY_PLAN_PRICE_MISMATCH",
+            "SHOPIFY_PLAN_PRICE_UNVERIFIED",
+            "SHOPIFY_PLAN_ITEMS_UNRECOGNIZED",
+            "SHOPIFY_PLAN_INTERVAL_MISMATCH",
+        }:
+            preview = SimpleNamespace(
+                organization_id=organization_id,
+                current_plan=baseline_plan,
+                target_plan=None,
+                target_billing_period_months=None,
+                status="subscription_unrecognized_requires_review",
+            )
+        else:
+            raise ShopifyTransitionReviewError(str(exc)) from exc
     if preview.organization_id != organization_id or preview.current_plan != baseline_plan:
         raise ShopifyTransitionReviewError("SHOPIFY_BILLING_STATE_CHANGED")
     if preview.status not in {
         "plan_verified_no_change",
         "plan_transition_requires_review",
         "subscription_inactive_requires_review",
+        "subscription_unrecognized_requires_review",
     }:
         raise ShopifyTransitionReviewError("SHOPIFY_BILLING_INVALID_VERIFICATION")
 
@@ -85,6 +105,7 @@ def refresh_shopify_billing_status(db: Session, *, organization_id: int) -> dict
         "plan_verified_no_change": "active",
         "plan_transition_requires_review": "review_required",
         "subscription_inactive_requires_review": "inactive",
+        "subscription_unrecognized_requires_review": "review_required",
     }[preview.status]
     db.expire_all()
     org = db.query(Organization).filter(
