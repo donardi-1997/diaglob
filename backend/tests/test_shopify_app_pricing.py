@@ -418,19 +418,18 @@ def test_shopify_app_store_review_contract_has_three_public_plans_and_three_day_
 
 
 @pytest.mark.parametrize(
-    "plan,handle,amount",
+    "plan,handle,monthly,annual,interval,amount,months",
     [
-        ("starter", "starter-review", "19.00"),
-        ("growth", "growth-review", "49.00"),
-        ("pro", "pro-review", "99.00"),
+        ("starter", "starter-review", "19.00", "190.00", "EVERY_30_DAYS", "19.00", 1),
+        ("starter", "starter-review", "19.00", "190.00", "ANNUAL", "190.00", 12),
+        ("growth", "growth-review", "49.00", "490.00", "EVERY_30_DAYS", "49.00", 1),
+        ("growth", "growth-review", "49.00", "490.00", "ANNUAL", "490.00", 12),
+        ("pro", "pro-review", "99.00", "990.00", "EVERY_30_DAYS", "99.00", 1),
+        ("pro", "pro-review", "99.00", "990.00", "ANNUAL", "990.00", 12),
     ],
 )
-@pytest.mark.parametrize(
-    "interval,months",
-    [("EVERY_30_DAYS", 1), ("ANNUAL", 12)],
-)
 def test_each_shopify_public_plan_resolves_for_monthly_and_annual_review(
-    plan, handle, amount, interval, months,
+    plan, handle, monthly, annual, interval, amount, months,
 ):
     subscription = ShopifySubscriptionSnapshot(
         active=True,
@@ -444,8 +443,8 @@ def test_each_shopify_public_plan_resolves_for_monthly_and_annual_review(
         handle: {
             "plan": plan,
             "prices": {
-                "EVERY_30_DAYS": amount,
-                "ANNUAL": amount,
+                "EVERY_30_DAYS": monthly,
+                "ANNUAL": annual,
             },
         },
     }
