@@ -108,9 +108,19 @@ export default function ConversationsPage({
 
       setConversations(data.items);
 
-      if (data.items.length > 0) {
-        setSelectedId((current) => current ?? data.items[0].id);
-      }
+      // A store filter may exclude the previously selected conversation.
+      // Never request details for a conversation outside the new result set.
+      setSelectedId((current) => {
+        if (current !== null && data.items.some((item) => item.id === current)) {
+          return current;
+        }
+        return data.items[0]?.id ?? null;
+      });
+      setConversation((current) =>
+        current && data.items.some((item) => item.id === current.id)
+          ? current
+          : null,
+      );
     } catch (err) {
       console.error(err);
       setError(
