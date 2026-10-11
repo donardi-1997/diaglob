@@ -16,6 +16,7 @@ from ..models import (
     ShopifyBillingVerification,
     Store,
 )
+from .shopify_app_pricing import SHOPIFY_APP_STORE_PLANS
 
 _ALLOWED_STATUSES = frozenset({
     "plan_verified_no_change",
@@ -67,7 +68,7 @@ def record_shopify_billing_verification(
         if preview["status"] != "subscription_inactive_requires_review" or target_period is not None:
             raise ShopifyBillingEvidenceError("SHOPIFY_BILLING_EVIDENCE_INVALID")
     elif (
-        target_plan not in {"starter", "growth", "pro", "scale"}
+        target_plan not in SHOPIFY_APP_STORE_PLANS
         or type(target_period) is not int
         or target_period not in {1, 12}
         or preview["status"] == "subscription_inactive_requires_review"
