@@ -16,6 +16,8 @@ export type TriggerType =
   | "customer_segment"
   | "customer_created"
   | "order_created"
+  | "order_updated"
+  | "order_cancelled"
   | "failed_order"
   | "post_sales_case_created"
   | "post_sales_case_updated"
@@ -152,6 +154,8 @@ const TRIGGER_TYPES: TriggerType[] = [
   "customer_segment",
   "customer_created",
   "order_created",
+  "order_updated",
+  "order_cancelled",
   "failed_order",
   "post_sales_case_created",
   "post_sales_case_updated",
