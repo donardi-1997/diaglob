@@ -194,7 +194,7 @@ export default function ShopifyBillingWorkspace({ organization }: Props) {
         setNotice(
           result.matches_expected
             ? `Shopify confirmó un trial de ${result.observed_trial_days} días para el plan activo.`
-            : `Atención: Shopify reporta ${result.observed_trial_days} días de trial; Diaglob espera ${result.expected_trial_days}.`,
+            : `Atención: Shopify reporta ${result.observed_trial_days ?? "sin trial"}; Diaglob espera ${result.expected_trial_days} días.`,
         );
       } else if (action === "subscription") {
         const result = await refreshShopifySubscription();
@@ -397,7 +397,7 @@ export default function ShopifyBillingWorkspace({ organization }: Props) {
                   Trial Shopify: {trialVerification.matches_expected ? "configuración correcta" : "requiere corrección"}
                 </strong>
                 <p>
-                  Esperado: {trialVerification.expected_trial_days} días · observado: {trialVerification.observed_trial_days} días · restantes: {trialVerification.trial_days_remaining}.
+                  Esperado: {trialVerification.expected_trial_days} días · observado: {trialVerification.observed_trial_days ?? "sin configurar"}{trialVerification.observed_trial_days !== null ? " días" : ""} · restantes: {trialVerification.trial_days_remaining ?? "—"}.
                 </p>
                 <small>
                   Plan {trialVerification.plan} · {trialVerification.billing_period_months === 12 ? "anual" : "mensual"}
