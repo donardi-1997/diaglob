@@ -121,7 +121,7 @@ export default function AppShellV2({
   const currentItem = navigation.find((item) => item.key === activePage);
   const supportHref =
     supportUrl?.trim() ||
-    "mailto:adrianguerra9703@gmail.com?subject=Diaglob%20Support";
+    "/support";
 
   const groupedNavigation = useMemo(
     () =>
