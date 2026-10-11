@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from ..models import (
     CommerceConnection,
+    Organization,
     OrganizationMembership,
     ShopifyOAuthState,
     Store,
@@ -503,6 +504,22 @@ def disconnect(db: Session, organization_id: int, store_id: int) -> dict:
     )
     if not connection:
         raise ShopifyNotFoundError("SHOPIFY_NOT_CONNECTED")
+
+    # A merchant can disconnect commerce without cancelling Shopify App
+    # Pricing. Never retain paid DIAGLOB access on an absent installation.
+    # Paddle organizations merely lose the commerce connection.
+    billing_org = (
+        db.query(Organization)
+        .filter(Organization.id == organization_id)
+        .with_for_update()
+        .first()
+    )
+    if (
+        billing_org is not None
+        and billing_org.billing_provider == "shopify"
+        and billing_org.plan in {"starter", "growth", "pro", "scale"}
+    ):
+        billing_org.subscription_status = "inactive"
 
     db.delete(connection)
     db.commit()

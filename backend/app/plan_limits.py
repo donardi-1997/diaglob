@@ -62,6 +62,15 @@ def normalize_plan(
     )
 
 
+def _shopify_paid_access_suspended(organization) -> bool:
+    """Do not keep Shopify paid capacity after a confirmed cancellation/mismatch."""
+    provider = (getattr(organization, "billing_provider", None) or "").strip().lower()
+    status = (getattr(organization, "subscription_status", None) or "").strip().lower()
+    return provider == "shopify" and status in {
+        "inactive", "review_required", "frozen",
+    }
+
+
 def get_organization_limits(
     organization,
 ) -> OrganizationPlanLimits:
@@ -72,6 +81,9 @@ def get_organization_limits(
     Todas las tiendas de una organización comparten
     estos mismos límites.
     """
+
+    if _shopify_paid_access_suspended(organization):
+        return NO_PLAN_LIMITS
 
     plan = normalize_plan(
         getattr(
@@ -104,6 +116,8 @@ def get_limits_for_plan(
 def organization_has_plan(
     organization,
 ) -> bool:
+    if _shopify_paid_access_suspended(organization):
+        return False
     return (
         normalize_plan(
             getattr(

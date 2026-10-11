@@ -165,6 +165,14 @@
   ],
   [
     "GET",
+    "/api/billing/shopify/capabilities"
+  ],
+  [
+    "GET",
+    "/api/billing/shopify/hosted-plan-selection"
+  ],
+  [
+    "GET",
     "/api/billing/shopify/reconciliation-history"
   ],
   [
@@ -729,7 +737,15 @@
   ],
   [
     "POST",
+    "/api/billing/shopify/subscription-refresh"
+  ],
+  [
+    "POST",
     "/api/billing/shopify/transition-proposals"
+  ],
+  [
+    "POST",
+    "/api/billing/shopify/transition-proposals/{review_id}/apply"
   ],
   [
     "POST",

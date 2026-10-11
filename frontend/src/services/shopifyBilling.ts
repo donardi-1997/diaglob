@@ -101,3 +101,58 @@ export async function assessShopifyPlanReview(reviewId: number) {
   );
   return response.data;
 }
+
+
+export interface ShopifyBillingCapabilities {
+  organization_id: number;
+  shopify_hosted_pricing_configured: boolean;
+  verified_entitlement_apply_enabled: boolean;
+  paddle_checkout_available: false;
+}
+
+export async function getShopifyBillingCapabilities() {
+  const response = await api.get<ShopifyBillingCapabilities>(
+    "/api/billing/shopify/capabilities", { headers: tenantHeaders },
+  );
+  return response.data;
+}
+
+export async function getShopifyHostedPlanSelection() {
+  const response = await api.get<{
+    provider: "shopify";
+    hosted_by_shopify: true;
+    url: string;
+    entitlements_applied: false;
+  }>("/api/billing/shopify/hosted-plan-selection", { headers: tenantHeaders });
+  return response.data;
+}
+
+export async function applyVerifiedShopifyPlan(reviewId: number) {
+  const response = await api.post<{
+    review_id: number;
+    organization_id: number;
+    applied: boolean;
+    already_applied: boolean;
+    plan: string;
+    billing_period_months: number;
+  }>(`/api/billing/shopify/transition-proposals/${reviewId}/apply`, {}, {
+    headers: tenantHeaders,
+  });
+  return response.data;
+}
+
+
+export async function refreshShopifySubscription() {
+  const response = await api.post<{
+    organization_id: number;
+    subscription_status: "active" | "inactive" | "review_required";
+    changed: boolean;
+    verified_against_shopify: true;
+    verification_id: number;
+    plan: string;
+    applied: boolean;
+  }>("/api/billing/shopify/subscription-refresh", {}, {
+    headers: tenantHeaders,
+  });
+  return response.data;
+}

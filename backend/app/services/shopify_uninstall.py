@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 
 from ..model_domains.fulfillment_automation import AutoFulfillmentJob
-from ..models import CommerceConnection, ShopifyOAuthState
+from ..models import CommerceConnection, Organization, ShopifyOAuthState
 from ..shopify_oauth import normalize_shop_domain
 
 
@@ -105,6 +105,21 @@ def process_shopify_uninstall(
     connection.scopes = ""
     connection.last_error = "SHOPIFY_APP_UNINSTALLED"
     connection.updated_at = now
+
+    # A signed uninstall invalidates Shopify-billed paid access immediately.
+    # This does not cancel billing at Shopify or affect Paddle organizations.
+    billing_org = (
+        db.query(Organization)
+        .filter(Organization.id == connection.organization_id)
+        .with_for_update()
+        .first()
+    )
+    if (
+        billing_org is not None
+        and billing_org.billing_provider == "shopify"
+        and billing_org.plan in {"starter", "growth", "pro", "scale"}
+    ):
+        billing_org.subscription_status = "inactive"
 
     (
         db.query(ShopifyOAuthState)

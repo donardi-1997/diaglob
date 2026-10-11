@@ -105,7 +105,10 @@ def prepare_shopify_plan_transition(
     if (
         verification.status != "plan_transition_requires_review"
         or verification.target_plan not in _VALID_TARGET_PLANS
-        or verification.target_plan == verification.current_plan
+        or (
+            verification.target_plan == verification.current_plan
+            and organization.billing_period_months == verification.target_period_months
+        )
         or verification.target_period_months not in {1, 12}
         or latest is None or latest[0] != verification_id
         or verification.observed_at > now + timedelta(minutes=1)
