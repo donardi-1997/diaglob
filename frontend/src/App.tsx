@@ -685,6 +685,9 @@ function App() {
               onNavigate={handleNavigate}
               onSearchResult={handleSearchResult}
               stores={stores}
+              storesError={storesError}
+              storesLoading={storesLoading}
+              onRetryStores={loadStores}
               selectedStoreId={selectedStoreId}
               selectedStoreName={selectedStore?.name}
               onChangeStore={changeStore}
