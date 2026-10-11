@@ -835,3 +835,46 @@ def test_verified_shopify_uninstall_suspends_only_shopify_billing(
     db.refresh(org)
     assert result["action"] == "revoked"
     assert org.subscription_status == expected
+
+
+
+def test_shopify_same_plan_annual_change_requires_partner_period_confirmation(
+    sandbox, monkeypatch,
+):
+    import json
+    from app.services.shopify_verified_entitlement_apply import (
+        apply_verified_shopify_transition,
+    )
+    from app.services.shopify_app_pricing import ShopifySubscriptionSnapshot
+    db, org, _, _, receipt, _ = sandbox
+    receipt.target_plan = "starter"
+    receipt.target_period_months = 12
+    db.commit()
+    review = _prepare(sandbox)
+    monkeypatch.setenv("SHOPIFY_BILLING_ENTITLEMENTS_ENABLED", "true")
+    monkeypatch.setenv("SHOPIFY_APP_PRICING_HANDLES_JSON", json.dumps({
+        "starter-annual": {
+            "plan": "starter", "interval": "ANNUAL", "amount_usd": "190.00",
+        },
+    }))
+    snapshot = ShopifySubscriptionSnapshot(
+        active=True, billing_period="ANNUAL",
+        item_handles=("starter-annual",),
+        eligible_handles=("starter-annual",),
+        eligible_amounts=("190.00",),
+    )
+    with patch(
+        "app.services.shopify_verified_entitlement_apply.resolve_trusted_shop_gid",
+        return_value="gid://shopify/Shop/777",
+    ), patch(
+        "app.services.shopify_verified_entitlement_apply.get_active_shopify_subscription",
+        return_value=snapshot,
+    ):
+        applied = apply_verified_shopify_transition(
+            db, organization_id=org.id, review_id=review["id"],
+        )
+    assert applied["applied"] is True
+    db.refresh(org)
+    assert org.plan == "starter"
+    assert org.billing_period_months == 12
+    assert org.subscription_status == "active"
