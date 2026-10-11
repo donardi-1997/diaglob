@@ -36,6 +36,12 @@ from ..services.shopify_plan_transition_review import (
 from ..services.shopify_transition_assessment import (
     assess_shopify_transition_review,
 )
+from ..services.shopify_hosted_plan_selection import (
+    get_hosted_plan_selection,
+)
+from ..services.shopify_verified_entitlement_apply import (
+    apply_verified_shopify_transition,
+)
 from ..services.billing_service import (
     AutoRenewConflictError,
     DowngradeBlockedError,
@@ -119,6 +125,54 @@ _SHOPIFY_BILLING_TEMPORARY_ERRORS = frozenset({
     "SHOPIFY_PLAN_CATALOG_NOT_CONFIGURED",
     "SHOPIFY_PLAN_CATALOG_INVALID",
 })
+
+
+@router.get("/api/billing/shopify/hosted-plan-selection")
+def shopify_hosted_plan_selection(
+    membership: OrganizationMembership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+):
+    """Return a trusted Shopify-owned pricing URL, without redirecting or billing."""
+    if membership.role not in {"owner", "manager"}:
+        raise HTTPException(status_code=403, detail="Billing access denied")
+    try:
+        return get_hosted_plan_selection(
+            db, organization_id=membership.organization_id,
+        )
+    except ShopifyAppPricingError as exc:
+        code = str(exc)
+        raise HTTPException(
+            status_code=503 if code in _SHOPIFY_BILLING_TEMPORARY_ERRORS
+            or code == "SHOPIFY_HOSTED_PRICING_NOT_CONFIGURED" else 409,
+            detail={"code": code},
+        ) from exc
+
+
+@router.post("/api/billing/shopify/transition-proposals/{review_id}/apply")
+def apply_shopify_plan_transition(
+    review_id: int,
+    membership: OrganizationMembership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+):
+    """Explicit owner action; always rechecks Partner before entitlements change."""
+    if membership.role != "owner":
+        raise HTTPException(status_code=403, detail="Owner access required")
+    try:
+        return apply_verified_shopify_transition(
+            db, organization_id=membership.organization_id, review_id=review_id,
+        )
+    except ShopifyTransitionReviewError as exc:
+        db.rollback()
+        code = str(exc)
+        safe_code = (
+            code if code.startswith("SHOPIFY_") and
+            code.replace("_", "").isalnum()
+            else "SHOPIFY_TRANSITION_UNAVAILABLE"
+        )
+        raise HTTPException(
+            status_code=503 if safe_code in _SHOPIFY_BILLING_TEMPORARY_ERRORS else 409,
+            detail={"code": safe_code},
+        ) from exc
 
 
 @router.get("/api/billing/shopify/reconciliation-preview")
