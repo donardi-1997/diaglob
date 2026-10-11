@@ -191,3 +191,74 @@ def test_shopify_public_untrusted_url_cannot_claim_a_billing_channel(sandbox):
     process.assert_not_called()
     sandbox.expire_all()
     assert org.billing_provider is None
+
+
+
+@pytest.mark.parametrize(
+    "channel,expected_provider",
+    [("direct", "paddle"), ("shopify_install", None)],
+)
+def test_provision_endpoint_assigns_channel_and_does_not_mutate_on_retry(
+    sandbox, channel, expected_provider,
+):
+    from fastapi.security import HTTPAuthorizationCredentials
+    from starlette.requests import Request
+
+    from app.api.auth import provision_registration
+    from app.models import OrganizationMembership
+
+    credentials = HTTPAuthorizationCredentials(
+        scheme="Bearer", credentials="synthetic-cognito-token",
+    )
+    request = Request({
+        "type": "http",
+        "method": "POST",
+        "path": "/api/register/provision",
+        "headers": [],
+    })
+    payload = RegistrationProvisionRequest(
+        name="Merchant Owner",
+        organization_name="Synthetic Merchant",
+        registration_channel=channel,
+    )
+    with patch(
+        "app.api.auth.verify_cognito_access_token",
+        return_value={"sub": "synthetic-user-sub"},
+    ), patch("boto3.client") as cognito_factory, patch(
+        "app.services.product_analytics.track_signup_completed"
+    ):
+        cognito_factory.return_value.get_user.return_value = {
+            "UserAttributes": [
+                {"Name": "email", "Value": "merchant@example.com"},
+                {"Name": "email_verified", "Value": "true"},
+            ]
+        }
+        result = provision_registration(
+            request=request, payload=payload, credentials=credentials,
+            db=sandbox,
+        )
+        assert result["created"] is True
+        org = sandbox.get(Organization, result["organization"]["id"])
+        assert org.billing_provider == expected_provider
+        assert org.billing_onboarding_channel == channel
+        assert org.plan == "trial"
+        assert sandbox.query(OrganizationMembership).count() == 1
+
+        # A replay must never change the original billing origin, even if
+        # the client now claims the opposite signup channel.
+        retry_payload = RegistrationProvisionRequest(
+            name="Merchant Owner",
+            organization_name="Synthetic Merchant",
+            registration_channel=(
+                "shopify_install" if channel == "direct" else "direct"
+            ),
+        )
+        repeated = provision_registration(
+            request=request, payload=retry_payload, credentials=credentials,
+            db=sandbox,
+        )
+    assert repeated["created"] is False
+    sandbox.expire_all()
+    assert org.billing_provider == expected_provider
+    assert org.billing_onboarding_channel == channel
+    assert sandbox.query(Organization).count() == 1
