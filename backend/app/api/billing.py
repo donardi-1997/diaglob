@@ -45,6 +45,9 @@ from ..services.shopify_verified_entitlement_apply import (
 from ..services.shopify_billing_lifecycle import (
     refresh_shopify_billing_status,
 )
+from ..services.shopify_development_billing_probe import (
+    probe_shopify_development_subscription,
+)
 from ..services.billing_service import (
     AutoRenewConflictError,
     DowngradeBlockedError,
@@ -218,6 +221,98 @@ def apply_shopify_plan_transition(
         raise HTTPException(
             status_code=503 if safe_code in _SHOPIFY_BILLING_TEMPORARY_ERRORS else 409,
             detail={"code": safe_code},
+        ) from exc
+
+
+@router.get("/api/billing/shopify/development-probe")
+def shopify_development_subscription_probe(
+    membership: OrganizationMembership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+):
+    """Read-only test-store contract observation; no commercial plan grants.
+
+    This route is disabled by default. It is not proof of development-store
+    eligibility: the Partner owner must separately verify the storefront type
+    and that it belongs to the proper Shopify Partner organization.
+    """
+    if membership.role != "owner":
+        raise HTTPException(status_code=403, detail="Owner access required")
+    if os.getenv("SHOPIFY_BILLING_TEST_PROBE_ENABLED", "") != "true":
+        raise HTTPException(status_code=404, detail={"code": "SHOPIFY_TEST_PROBE_DISABLED"})
+    organization = membership.organization
+    if (
+        not organization.active
+        or (organization.billing_provider or "").strip().lower() != "shopify"
+    ):
+        raise HTTPException(
+            status_code=409, detail={"code": "SHOPIFY_BILLING_PROVENANCE_REQUIRED"},
+        )
+    bindings = (
+        db.query(CommerceConnection)
+        .filter(
+            CommerceConnection.organization_id == membership.organization_id,
+            CommerceConnection.provider == "shopify",
+        )
+        .limit(2)
+        .all()
+    )
+    if len(bindings) != 1:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "SHOPIFY_MULTISTORE_BILLING_REVIEW_REQUIRED"},
+        )
+    connection = bindings[0]
+    store = (
+        db.query(Store)
+        .filter(
+            Store.id == connection.store_id,
+            Store.organization_id == membership.organization_id,
+            Store.active.is_(True),
+            Store.deleted.is_(False),
+        ).first()
+    )
+    if connection.status != "connected" or store is None:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "SHOPIFY_BILLING_CONNECTION_REVIEW_REQUIRED"},
+        )
+    try:
+        return probe_shopify_development_subscription(
+            organization,
+            connection,
+            connected_shopify_store_count=1,
+        )
+    except ShopifyAppPricingError as exc:
+        # No Partner API exceptions, GIDs, handles or credentials cross HTTP.
+        code = str(exc)
+        safe_errors = {
+            "SHOPIFY_TEST_PROBE_DISABLED",
+            "SHOPIFY_TEST_SHOP_NOT_CONFIGURED",
+            "SHOPIFY_TEST_SHOP_NOT_ALLOWLISTED",
+            "SHOPIFY_TEST_PROBE_TENANT_REVIEW_REQUIRED",
+            "SHOPIFY_PARTNER_API_NOT_CONFIGURED",
+            "SHOPIFY_PARTNER_API_UNAVAILABLE",
+            "SHOPIFY_PARTNER_API_GRAPHQL_ERROR",
+            "SHOPIFY_PARTNER_API_INVALID_RESPONSE",
+            "SHOPIFY_IDENTITY_UNAVAILABLE",
+            "SHOPIFY_IDENTITY_INVALID",
+            "SHOPIFY_IDENTITY_MISMATCH",
+            "SHOPIFY_SUBSCRIPTION_SHOP_MISMATCH",
+        }
+        if code not in safe_errors:
+            code = "SHOPIFY_TEST_PROBE_UNAVAILABLE"
+        transient = {
+            "SHOPIFY_PARTNER_API_NOT_CONFIGURED",
+            "SHOPIFY_PARTNER_API_UNAVAILABLE",
+            "SHOPIFY_PARTNER_API_GRAPHQL_ERROR",
+            "SHOPIFY_PARTNER_API_INVALID_RESPONSE",
+            "SHOPIFY_IDENTITY_UNAVAILABLE",
+            "SHOPIFY_TEST_SHOP_NOT_CONFIGURED",
+            "SHOPIFY_TEST_PROBE_UNAVAILABLE",
+        }
+        raise HTTPException(
+            status_code=503 if code in transient else 409,
+            detail={"code": code},
         ) from exc
 
 

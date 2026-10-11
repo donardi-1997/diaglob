@@ -169,6 +169,10 @@
   ],
   [
     "GET",
+    "/api/billing/shopify/development-probe"
+  ],
+  [
+    "GET",
     "/api/billing/shopify/hosted-plan-selection"
   ],
   [
