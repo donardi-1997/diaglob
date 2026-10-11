@@ -6,10 +6,14 @@ import {
 import type { Organization } from "../services/organizations";
 import {
   assessShopifyPlanReview,
+  applyVerifiedShopifyPlan,
   checkShopifyBilling,
+  getShopifyBillingCapabilities,
+  getShopifyHostedPlanSelection,
   getShopifyBillingHistory,
   getShopifyPlanReviews,
   stageShopifyPlanReview,
+  type ShopifyBillingCapabilities,
   type ShopifyBillingCheck,
   type ShopifyBillingVerification,
   type ShopifyPlanReview,
@@ -41,6 +45,7 @@ const statusLabels: Record<string, string> = {
   plan_transition_requires_review: "Cambio de plan para revisión",
   subscription_inactive_requires_review: "Suscripción inactiva: revisión necesaria",
   pending_review: "Pendiente de revisión",
+  applied: "Plan aplicado y verificado",
   stale: "Caducada",
   blocked: "Bloqueada",
   ready_for_manual_review: "Lista para revisión manual",
@@ -58,6 +63,11 @@ const knownErrorCodes: Record<string, string> = {
   SHOPIFY_TRANSITION_REVIEW_ALREADY_PENDING: "Ya hay otra revisión de plan pendiente.",
   SHOPIFY_TRANSITION_INSTALLATION_OR_PLAN_CHANGED: "La instalación o el plan cambiaron.",
   SHOPIFY_TRANSITION_CONCURRENT_REVIEW: "Se está procesando otra propuesta. Actualiza el historial.",
+  SHOPIFY_ENTITLEMENT_ACTIVATION_DISABLED: "La aplicación de planes todavía no está autorizada en Diaglob.",
+  SHOPIFY_TRANSITION_PROVIDER_MISMATCH: "Shopify confirmó un plan o periodo diferente al esperado.",
+  SHOPIFY_TRANSITION_STATE_CHANGED: "La instalación o suscripción cambió durante la operación.",
+  SHOPIFY_SUBSCRIPTION_CANCELLATION_SCHEDULED: "Hay una cancelación programada; revisa el contrato en Shopify.",
+  SHOPIFY_HOSTED_PRICING_NOT_CONFIGURED: "Falta configurar el identificador de la app en Shopify.",
 };
 
 function billingErrorMessage(error: unknown): string {
@@ -93,9 +103,11 @@ export default function ShopifyBillingWorkspace({ organization }: Props) {
   const [history, setHistory] = useState<ShopifyBillingVerification[]>([]);
   const [reviews, setReviews] = useState<ShopifyPlanReview[]>([]);
   const [latestCheck, setLatestCheck] = useState<ShopifyBillingCheck | null>(null);
+  const [capabilities, setCapabilities] = useState<ShopifyBillingCapabilities | null>(null);
+  const [hostedPricingUrl, setHostedPricingUrl] = useState<string | null>(null);
   const [assessment, setAssessment] = useState<ShopifyReviewAssessment | null>(null);
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState<"refresh" | "check" | "stage" | "assess" | null>(null);
+  const [busy, setBusy] = useState<"refresh" | "check" | "stage" | "assess" | "hosted" | "apply" | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
@@ -120,13 +132,22 @@ export default function ShopifyBillingWorkspace({ organization }: Props) {
       return () => { mounted = false; };
     }
     setLoading(true);
-    Promise.all([getShopifyBillingHistory(), getShopifyPlanReviews()])
-      .then(([checks, proposals]) => {
+    Promise.all([
+      getShopifyBillingHistory(),
+      getShopifyPlanReviews(),
+      getShopifyBillingCapabilities(),
+    ])
+      .then(([checks, proposals, flags]) => {
         if (!mounted) return;
         if (checks.organization_id !== organization.id || proposals.organization_id !== organization.id) {
           setError("No se pudo confirmar la organización de facturación.");
           return;
         }
+        if (flags.organization_id !== organization.id || flags.paddle_checkout_available !== false) {
+          setError("No se pudo validar el canal de facturación.");
+          return;
+        }
+        setCapabilities(flags);
         setHistory(checks.items);
         setReviews(proposals.items);
       })
@@ -135,14 +156,42 @@ export default function ShopifyBillingWorkspace({ organization }: Props) {
     return () => { mounted = false; };
   }, [hasBillingAccess, organization.id]);
 
-  async function run(action: "refresh" | "check" | "stage" | "assess", reviewId?: number) {
+  async function run(
+    action: "refresh" | "check" | "stage" | "assess" | "hosted" | "apply",
+    reviewId?: number,
+  ) {
     if (!hasBillingAccess || busy) return;
-    if (action === "stage" && !isOwner) return;
+    if ((action === "stage" || action === "apply") && !isOwner) return;
+    if (action === "apply" && (
+      !capabilities?.verified_entitlement_apply_enabled ||
+      !assessment?.ready_for_manual_review ||
+      assessment.review_id !== reviewId
+    )) return;
+    if (action === "apply" && !window.confirm(
+      "Confirmar: Diaglob volverá a consultar Shopify y solo aplicará el plan si existe una suscripción activa y aprobada. No se efectuará ningún cobro desde Diaglob.",
+    )) return;
     setBusy(action);
     setError("");
     setNotice("");
     try {
-      if (action === "check") {
+      if (action === "hosted") {
+        const result = await getShopifyHostedPlanSelection();
+        if (
+          result.provider !== "shopify" || result.hosted_by_shopify !== true ||
+          result.entitlements_applied !== false ||
+          !result.url.startsWith("https://admin.shopify.com/store/")
+        ) throw new Error("Invalid Shopify redirect");
+        setHostedPricingUrl(result.url);
+        setNotice("Abre la página de planes de Shopify usando el enlace seguro.");
+      } else if (action === "apply" && reviewId) {
+        const result = await applyVerifiedShopifyPlan(reviewId);
+        if (result.organization_id !== organization.id) throw new Error("Wrong tenant");
+        setAssessment(null);
+        await refreshHistory();
+        setNotice(result.applied
+          ? "Shopify confirmó el contrato y el plan fue aplicado. Actualiza la página para ver los límites."
+          : "El plan ya había sido aplicado; no se repitió ninguna operación.");
+      } else if (action === "check") {
         const result = await checkShopifyBilling();
         if (result.applied !== false || result.requires_review !== true) {
           throw new Error("Unsafe provider response");
@@ -200,8 +249,10 @@ export default function ShopifyBillingWorkspace({ organization }: Props) {
       <div className="shopify-billing-caution" role="note">
         <AlertCircle size={20} aria-hidden="true" />
         <div>
-          <strong>La activación de planes aún no está habilitada.</strong>
-          <p>Las consultas y propuestas son solo de revisión. No generan cargos, no crean suscripciones y no cambian tus permisos. Una propuesta favorable no confirma un pago.</p>
+          <strong>{capabilities?.verified_entitlement_apply_enabled
+            ? "Los cambios requieren una confirmación nueva de Shopify."
+            : "La activación de planes aún no está habilitada."}</strong>
+          <p>Shopify administra los cobros. Verificar o preparar una propuesta no cambia el plan; la aplicación, si está habilitada, requiere confirmación activa de Shopify y autorización del propietario.</p>
         </div>
       </div>
 
@@ -228,6 +279,30 @@ export default function ShopifyBillingWorkspace({ organization }: Props) {
         </section>
       ) : (
         <>
+          <section className="shopify-billing-panel">
+            <div className="shopify-billing-panel-title">
+              <div>
+                <h2>Planes alojados en Shopify</h2>
+                <p>Los cambios y los cobros se realizan en Shopify Admin, no en Diaglob.</p>
+              </div>
+              <button type="button" className="shopify-billing-primary"
+                disabled={Boolean(busy) || loading || !capabilities?.shopify_hosted_pricing_configured}
+                onClick={() => { void run("hosted"); }}>
+                {busy === "hosted" ? "Verificando tienda…" : "Abrir planes de Shopify"}
+              </button>
+            </div>
+            {hostedPricingUrl && (
+              <p className="shopify-billing-notice">
+                <a href={hostedPricingUrl} target="_blank" rel="noopener noreferrer">
+                  Ir a la selección de planes en Shopify Admin
+                </a>
+              </p>
+            )}
+            {!capabilities?.shopify_hosted_pricing_configured && (
+              <p className="shopify-billing-muted">Los planes alojados aún requieren la configuración Partner de Diaglob.</p>
+            )}
+          </section>
+
           <section className="shopify-billing-panel">
             <div className="shopify-billing-panel-title">
               <div>
@@ -305,7 +380,14 @@ export default function ShopifyBillingWorkspace({ organization }: Props) {
                 {assessment.blockers.length > 0 && (
                   <ul>{assessment.blockers.map((code) => <li key={code}>{explanations[code] ?? "Se requiere una nueva verificación."}</li>)}</ul>
                 )}
-                <small>Comprobado: {formatDate(assessment.checked_at)} · Activación: deshabilitada</small>
+                <small>Comprobado: {formatDate(assessment.checked_at)} · Los contratos se revalidan antes de cualquier cambio.</small>
+                {isOwner && capabilities?.verified_entitlement_apply_enabled && assessment.ready_for_manual_review && (
+                  <button type="button" className="shopify-billing-primary"
+                    disabled={Boolean(busy)}
+                    onClick={() => { void run("apply", assessment.review_id); }}>
+                    {busy === "apply" ? "Confirmando con Shopify…" : "Aplicar plan verificado"}
+                  </button>
+                )}
               </div>
             )}
           </section>
