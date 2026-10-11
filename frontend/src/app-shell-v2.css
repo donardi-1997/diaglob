@@ -822,3 +822,29 @@
     animation: none;
   }
 }
+
+/* Clear, accessible actions for the store switcher's empty/error states. */
+.dg-store-menu-status {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  padding: 10px;
+  color: var(--dg-shell-muted);
+  font-size: 0.77rem;
+  line-height: 1.5;
+  max-width: 300px;
+}
+.dg-store-menu-status > button {
+  min-height: 36px;
+  padding: 8px 12px;
+  border: 1px solid var(--dg-shell-border-strong);
+  border-radius: 9px;
+  background: var(--dg-shell-accent-soft);
+  color: var(--dg-shell-accent);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.dg-store-menu-status > button:hover { filter: brightness(0.97); }
+.dg-store-menu-status > button:focus-visible { outline: 2px solid var(--dg-shell-accent); outline-offset: 2px; }
