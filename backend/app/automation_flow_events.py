@@ -16,6 +16,8 @@ logger = logging.getLogger(__name__)
 
 EVENT_TO_FLOW_TRIGGER = {
     "order.created": "order_created",
+    "order.updated": "order_updated",
+    "order.cancelled": "order_cancelled",
     "order.failed": "failed_order",
     "post_sales.case_created": "post_sales_case_created",
     "post_sales.case_updated": "post_sales_case_updated",
