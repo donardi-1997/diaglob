@@ -793,3 +793,45 @@ def test_shopify_lifecycle_reinstall_during_partner_check_fails_closed(
         with pytest.raises(ShopifyTransitionReviewError, match="STATE_CHANGED"):
             refresh_shopify_billing_status(db, organization_id=org.id)
     assert db.query(ShopifyBillingVerification).count() == 1
+
+
+
+@pytest.mark.parametrize("provider,expected", [
+    ("shopify", "inactive"), ("paddle", "active"),
+])
+def test_shopify_disconnect_only_suspends_shopify_billed_access(
+    sandbox, provider, expected,
+):
+    from app.services.shopify_service import disconnect
+    db, org, store, _, _, _ = sandbox
+    org.billing_provider = provider
+    org.subscription_status = "active"
+    db.commit()
+    result = disconnect(db, org.id, store.id)
+    db.refresh(org)
+    assert result["connected"] is False
+    assert org.subscription_status == expected
+
+
+@pytest.mark.parametrize("provider,expected", [
+    ("shopify", "inactive"), ("paddle", "active"),
+])
+def test_verified_shopify_uninstall_suspends_only_shopify_billing(
+    sandbox, provider, expected,
+):
+    from datetime import timezone
+    from app.services.shopify_uninstall import process_shopify_uninstall
+    db, org, _, _, _, _ = sandbox
+    org.billing_provider = provider
+    org.subscription_status = "active"
+    db.commit()
+    result = process_shopify_uninstall(
+        db,
+        topic="app/uninstalled",
+        header_shop_domain="synthetic-review.myshopify.com",
+        triggered_at=datetime.now(timezone.utc).isoformat(),
+        payload={"id": 717, "myshopify_domain": "synthetic-review.myshopify.com"},
+    )
+    db.refresh(org)
+    assert result["action"] == "revoked"
+    assert org.subscription_status == expected
