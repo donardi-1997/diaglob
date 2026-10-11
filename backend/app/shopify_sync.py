@@ -13,6 +13,7 @@ from .shopify_client import (
     ShopifyGraphQLError,
     ShopifyAPIError,
 )
+from .shopify_oauth import normalize_shop_domain
 from .shopify_security import (
     decrypt_shopify_secret,
 )
@@ -162,17 +163,25 @@ def test_shopify_connection(
 
     data = client.query(SHOPIFY_TEST_QUERY)
 
-    shop = data.get("shop") or {}
+    # A token response is not proof that the intended store is connected
+    # unless Shopify returns a matching canonical myshopifyDomain.
+    if not isinstance(data, dict) or not isinstance(data.get("shop"), dict):
+        raise ShopifyAPIError("SHOPIFY_SHOP_IDENTITY_UNVERIFIED")
+    shop = data["shop"]
+    provider_domain = shop.get("myshopifyDomain")
+    try:
+        expected = normalize_shop_domain(connection.external_store_url)
+        actual = normalize_shop_domain(provider_domain)
+    except (ValueError, AttributeError, TypeError) as exc:
+        raise ShopifyAPIError("SHOPIFY_SHOP_IDENTITY_UNVERIFIED") from exc
+    if actual != expected:
+        raise ShopifyAuthError("SHOPIFY_SHOP_IDENTITY_MISMATCH")
 
     return {
         "connected": True,
-        "shop_name": shop.get("name", ""),
-        "shop_domain": (
-            connection.external_store_url
-        ),
-        "currency": shop.get(
-            "currencyCode", ""
-        ),
+        "shop_name": shop.get("name") or "",
+        "shop_domain": actual,
+        "currency": shop.get("currencyCode") or "",
     }
 
 
