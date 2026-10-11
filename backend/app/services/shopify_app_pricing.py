@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any
 
 import httpx
@@ -40,7 +41,7 @@ query DiaglobActiveSubscription($appId: ID!, $shopId: ID!) {
     items {
       handle
       description
-      price { __typename active currency }
+      price { __typename active currency ... on FlatRatePrice { amount } }
     }
     pendingUpdate {
       billingPeriod
@@ -49,6 +50,18 @@ query DiaglobActiveSubscription($appId: ID!, $shopId: ID!) {
   }
 }
 """
+
+
+USD_AMOUNT_RE = re.compile(r"^(?:0|[1-9][0-9]{0,6})(?:\\.[0-9]{1,2})?$")
+
+
+def _valid_usd_amount(value: Any) -> bool:
+    """Allow only positive fixed-decimal amounts (never float, exponent or NaN)."""
+    return (
+        type(value) is str
+        and USD_AMOUNT_RE.fullmatch(value) is not None
+        and Decimal(value) > 0
+    )
 
 
 class ShopifyAppPricingError(RuntimeError):
@@ -63,6 +76,8 @@ class ShopifySubscriptionSnapshot:
     billing_period: str | None = None
     item_handles: tuple[str, ...] = ()
     eligible_handles: tuple[str, ...] = ()
+    # Untrusted Partner API amount for each eligible USD flat-rate item.
+    eligible_amounts: tuple[str | None, ...] = ()
     trial_ends_at: str | None = None
     current_cycle_end: str | None = None
     cancel_at_end_of_cycle: bool = False
@@ -196,11 +211,23 @@ def get_active_shopify_subscription(
         and item["price"].get("__typename") == "FlatRatePrice"
         and item["price"].get("currency") == "USD"
     )
+    eligible_amounts = tuple(
+        item["price"].get("amount")
+        if type(item["price"].get("amount")) is str else None
+        for item in items
+        if isinstance(item.get("handle"), str)
+        and item["handle"].strip()
+        and isinstance(item.get("price"), dict)
+        and item["price"].get("active") is True
+        and item["price"].get("__typename") == "FlatRatePrice"
+        and item["price"].get("currency") == "USD"
+    )
     return ShopifySubscriptionSnapshot(
         active=True,
         billing_period=subscription.get("billingPeriod"),
         item_handles=handles,
         eligible_handles=eligible_handles,
+        eligible_amounts=eligible_amounts,
         trial_ends_at=subscription.get("trialEndsAt"),
         current_cycle_end=cycle.get("endTime") if cycle else None,
         cancel_at_end_of_cycle=subscription.get("cancelAtEndOfCycle") is True,
@@ -228,7 +255,7 @@ def resolve_verified_shopify_plan(
     does not modify Paddle records or grant database entitlements.
 
     When handle_catalog is omitted, use operator-managed environment JSON:
-      {"actual_shopify_handle": {"plan": "starter", "interval": "EVERY_30_DAYS"}}
+      {"actual_shopify_handle": {"plan": "starter", "interval": "EVERY_30_DAYS", "amount_usd": "19.00"}}
 
     A subscription with multiple items (for example, unknown usage-based items)
     is deliberately not eligible until its actual contract structure is reviewed.
@@ -265,6 +292,20 @@ def resolve_verified_shopify_plan(
     periods = {"EVERY_30_DAYS": 1, "ANNUAL": 12}
     if not isinstance(interval, str) or interval not in periods or subscription.billing_period != interval:
         raise ShopifyAppPricingError("SHOPIFY_PLAN_INTERVAL_MISMATCH")
+
+    # A real Shopify item handle alone cannot prove approved merchant pricing.
+    # Require the confirmed flat-rate USD amount and an operator-maintained
+    # approved price. No float conversions, discount inference or silent defaults.
+    expected_amount = entry.get("amount_usd")
+    if not _valid_usd_amount(expected_amount):
+        raise ShopifyAppPricingError("SHOPIFY_PLAN_CATALOG_INVALID")
+    if len(subscription.eligible_amounts) != 1:
+        raise ShopifyAppPricingError("SHOPIFY_PLAN_PRICE_UNVERIFIED")
+    actual_amount = subscription.eligible_amounts[0]
+    if not _valid_usd_amount(actual_amount):
+        raise ShopifyAppPricingError("SHOPIFY_PLAN_PRICE_UNVERIFIED")
+    if Decimal(actual_amount) != Decimal(expected_amount):
+        raise ShopifyAppPricingError("SHOPIFY_PLAN_PRICE_MISMATCH")
     return VerifiedShopifyPlan(
         plan=plan,
         billing_period_months=periods[interval],
