@@ -27,6 +27,7 @@ from ..shopify_security import encrypt_shopify_secret
 from ..shopify_webhook_subscriptions import (
     ensure_shopify_order_webhooks,
 )
+from .billing_onboarding import confirm_shopify_install_billing
 from .marketing_acquisition import record_lifecycle_conversion
 from .trial_service import (
     TrialIdentityAlreadyUsed,
@@ -354,6 +355,15 @@ def process_oauth_callback(db: Session, query_params: dict) -> str:
         )
         db.commit()
 
+        # The signed OAuth callback is the only place allowed to finalize a
+        # Shopify-pending signup. No change to Paddle-owned organizations or
+        # paid entitlements, even when they connect Shopify for commerce.
+        confirm_shopify_install_billing(
+            db,
+            organization_id=oauth_state.organization_id,
+            connection_id=existing_connection.id,
+        )
+
         try:
             ensure_shopify_order_webhooks(existing_connection)
             db.commit()
@@ -422,6 +432,15 @@ def process_oauth_callback(db: Session, query_params: dict) -> str:
     )
 
     db.commit()
+
+    # A public /api/shopify/install?shop= hint cannot select a billing
+    # provider. Only a signed OAuth callback and an authorized DIAGLOB
+    # organization/store can complete Shopify billing provenance.
+    confirm_shopify_install_billing(
+        db,
+        organization_id=oauth_state.organization_id,
+        connection_id=connection.id,
+    )
 
     if trial_result.get("trial_activated"):
         try:
