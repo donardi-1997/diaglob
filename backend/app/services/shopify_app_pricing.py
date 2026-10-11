@@ -286,19 +286,38 @@ def resolve_verified_shopify_plan(
     if not isinstance(entry, dict):
         raise ShopifyAppPricingError("SHOPIFY_PLAN_HANDLE_UNKNOWN")
     plan = entry.get("plan")
-    interval = entry.get("interval")
     if not isinstance(plan, str) or plan not in {"starter", "growth", "pro", "scale"}:
         raise ShopifyAppPricingError("SHOPIFY_PLAN_CATALOG_INVALID")
     periods = {"EVERY_30_DAYS": 1, "ANNUAL": 12}
-    if not isinstance(interval, str) or interval not in periods or subscription.billing_period != interval:
-        raise ShopifyAppPricingError("SHOPIFY_PLAN_INTERVAL_MISMATCH")
+
+    # A single Shopify plan handle may support both monthly and annual billing.
+    # Keep the original single-period catalog shape for backwards compatibility.
+    # Never choose a price using a redirect, inferred annual discount or fallback.
+    if "prices" in entry:
+        if "interval" in entry or "amount_usd" in entry:
+            raise ShopifyAppPricingError("SHOPIFY_PLAN_CATALOG_INVALID")
+        prices = entry["prices"]
+        if (
+            not isinstance(prices, dict)
+            or not prices
+            or not set(prices).issubset(periods)
+            or any(not _valid_usd_amount(amount) for amount in prices.values())
+        ):
+            raise ShopifyAppPricingError("SHOPIFY_PLAN_CATALOG_INVALID")
+        if subscription.billing_period not in prices:
+            raise ShopifyAppPricingError("SHOPIFY_PLAN_INTERVAL_MISMATCH")
+        expected_amount = prices[subscription.billing_period]
+    else:
+        interval = entry.get("interval")
+        if not isinstance(interval, str) or interval not in periods or subscription.billing_period != interval:
+            raise ShopifyAppPricingError("SHOPIFY_PLAN_INTERVAL_MISMATCH")
+        expected_amount = entry.get("amount_usd")
+        if not _valid_usd_amount(expected_amount):
+            raise ShopifyAppPricingError("SHOPIFY_PLAN_CATALOG_INVALID")
 
     # A real Shopify item handle alone cannot prove approved merchant pricing.
     # Require the confirmed flat-rate USD amount and an operator-maintained
     # approved price. No float conversions, discount inference or silent defaults.
-    expected_amount = entry.get("amount_usd")
-    if not _valid_usd_amount(expected_amount):
-        raise ShopifyAppPricingError("SHOPIFY_PLAN_CATALOG_INVALID")
     if len(subscription.eligible_amounts) != 1:
         raise ShopifyAppPricingError("SHOPIFY_PLAN_PRICE_UNVERIFIED")
     actual_amount = subscription.eligible_amounts[0]
