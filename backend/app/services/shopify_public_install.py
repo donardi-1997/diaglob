@@ -7,6 +7,7 @@ a secure HttpOnly browser cookie by an authenticated authorized member.
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import secrets
 from datetime import datetime, timedelta
@@ -15,19 +16,22 @@ from urllib.parse import urlsplit
 from sqlalchemy.orm import Session
 
 from ..models import CommerceConnection, Organization, OrganizationMembership, ShopifyPendingInstall, Store
-from ..shopify_client import ShopifyAPIError, ShopifyAuthError, ShopifyGraphQLClient
+from ..shopify_client import (ShopifyAPIError, ShopifyAuthError, ShopifyGraphQLClient,
+                              ShopifyGraphQLError, ShopifyUserError)
 from ..shopify_oauth import (
     SHOPIFY_SCOPES, build_authorization_url, exchange_access_token,
     generate_oauth_state, normalize_shop_domain, verify_shopify_hmac,
 )
 from ..shopify_security import encrypt_shopify_secret
 from ..shopify_sync import SHOPIFY_TEST_QUERY
+from ..shopify_webhook_subscriptions import ensure_shopify_order_webhooks
 from .billing_onboarding import confirm_shopify_install_billing
 from .shopify_service import ShopifyConnectionError, ShopifyOAuthError, ShopifyProviderError
 
 COOKIE_NAME = "__Secure-diaglob-shopify-install"
 OAUTH_TTL = timedelta(minutes=10)
 CLAIM_TTL = timedelta(minutes=20)
+logger = logging.getLogger(__name__)
 
 
 def enabled() -> bool:
@@ -238,4 +242,27 @@ def claim_install(
     confirm_shopify_install_billing(
         db, organization_id=membership.organization_id, connection_id=connection.id
     )
-    return {"connected": True, "store_id": store.id, "shop_domain": grant.shop_domain}
+
+    # Match legacy OAuth: register order lifecycle and uninstall hooks after
+    # binding a verified shop. An API failure must not lose the saved grant;
+    # merchant administrators can retry the existing ensure-webhooks endpoint.
+    webhooks_ready = False
+    try:
+        ensure_shopify_order_webhooks(connection)
+        connection.last_error = None
+        db.commit()
+        webhooks_ready = True
+    except (ShopifyAPIError, ShopifyGraphQLError, ShopifyUserError) as exc:
+        connection.last_error = "WEBHOOK_SUBSCRIPTION_FAILED: " + str(exc)[:400]
+        db.commit()
+        logger.warning(
+            "Shopify webhook registration failed for store %s: %s",
+            store.id,
+            exc,
+        )
+    return {
+        "connected": True,
+        "store_id": store.id,
+        "shop_domain": grant.shop_domain,
+        "webhooks_ready": webhooks_ready,
+    }
