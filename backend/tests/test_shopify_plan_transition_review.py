@@ -468,3 +468,221 @@ def test_invalid_assessment_ids_fail_closed(sandbox):
             )
     assert db.query(ShopifyPlanTransitionReview).count() == 1
     assert proposal["applied"] is False
+
+
+# Actual Shopify App Pricing is owned by Shopify. All tests use mock snapshots,
+# not merchant calls, charge creation, or changes to a real account.
+
+def _approved_monthly_growth(monkeypatch):
+    import json
+    from app.services.shopify_app_pricing import ShopifySubscriptionSnapshot
+    monkeypatch.setenv("SHOPIFY_BILLING_ENTITLEMENTS_ENABLED", "true")
+    monkeypatch.setenv("SHOPIFY_APP_PRICING_HANDLES_JSON", json.dumps({
+        "growth-approved": {
+            "plan": "growth", "interval": "EVERY_30_DAYS",
+            "amount_usd": "49.00",
+        },
+    }))
+    return ShopifySubscriptionSnapshot(
+        active=True, billing_period="EVERY_30_DAYS",
+        item_handles=("growth-approved",),
+        eligible_handles=("growth-approved",),
+        eligible_amounts=("49.00",),
+    )
+
+
+def test_hosted_shopify_app_pricing_requires_auth_and_operator_handle(
+    sandbox, monkeypatch,
+):
+    from app.services.shopify_hosted_plan_selection import get_hosted_plan_selection
+    from app.services.shopify_app_pricing import ShopifyAppPricingError
+    db, org, _, conn, _, member = sandbox
+    with patch(
+        "app.services.shopify_hosted_plan_selection.resolve_trusted_shop_gid",
+        return_value="gid://shopify/Shop/777",
+    ) as shop:
+        with pytest.raises(ShopifyAppPricingError, match="NOT_CONFIGURED"):
+            get_hosted_plan_selection(db, organization_id=org.id)
+        monkeypatch.setenv("SHOPIFY_APP_STORE_HANDLE", "diaglob-app")
+        result = get_hosted_plan_selection(db, organization_id=org.id)
+    shop.assert_called_once_with(conn)
+    assert result == {
+        "provider": "shopify",
+        "hosted_by_shopify": True,
+        "url": "https://admin.shopify.com/store/synthetic-review/charges/diaglob-app/pricing_plans",
+        "entitlements_applied": False,
+    }
+    assert "PRIVATE_SYNTHETIC_TOKEN" not in str(result)
+    assert "gid://shopify" not in str(result)
+    org.billing_provider = "paddle"
+    db.commit()
+    with pytest.raises(ShopifyAppPricingError, match="PROVENANCE_REQUIRED"):
+        get_hosted_plan_selection(db, organization_id=org.id)
+
+
+def test_hosted_plan_selection_rejects_untrusted_app_handle_and_multishop(
+    sandbox, monkeypatch,
+):
+    from app.services.shopify_hosted_plan_selection import get_hosted_plan_selection
+    from app.services.shopify_app_pricing import ShopifyAppPricingError
+    db, org, _, _, _, _ = sandbox
+    monkeypatch.setenv("SHOPIFY_APP_STORE_HANDLE", "evil/path?next=https://other.example")
+    with patch("app.services.shopify_hosted_plan_selection.resolve_trusted_shop_gid") as verifier:
+        with pytest.raises(ShopifyAppPricingError, match="NOT_CONFIGURED"):
+            get_hosted_plan_selection(db, organization_id=org.id)
+        verifier.assert_not_called()
+
+
+def test_verified_shopify_transition_default_disabled_and_owner_only(
+    sandbox, monkeypatch,
+):
+    from app.services.shopify_verified_entitlement_apply import (
+        apply_verified_shopify_transition,
+    )
+    from app.api.billing import apply_shopify_plan_transition
+    db, org, _, _, _, member = sandbox
+    review = _prepare(sandbox)
+    monkeypatch.delenv("SHOPIFY_BILLING_ENTITLEMENTS_ENABLED", raising=False)
+    with pytest.raises(ShopifyTransitionReviewError, match="ACTIVATION_DISABLED"):
+        apply_verified_shopify_transition(
+            db, organization_id=org.id, review_id=review["id"],
+        )
+    member.role = "manager"
+    with pytest.raises(HTTPException) as response:
+        apply_shopify_plan_transition(
+            review_id=review["id"], membership=member, db=db,
+        )
+    assert response.value.status_code == 403
+    assert org.plan == "starter"
+
+
+def test_shopify_transition_applies_fresh_approved_partner_plan_once(
+    sandbox, monkeypatch,
+):
+    from app.services.shopify_verified_entitlement_apply import (
+        apply_verified_shopify_transition,
+    )
+    db, org, _, conn, _, _ = sandbox
+    review = _prepare(sandbox)
+    verified = _approved_monthly_growth(monkeypatch)
+    with patch(
+        "app.services.shopify_verified_entitlement_apply.resolve_trusted_shop_gid",
+        return_value="gid://shopify/Shop/777",
+    ) as identity, patch(
+        "app.services.shopify_verified_entitlement_apply.get_active_shopify_subscription",
+        return_value=verified,
+    ) as partner:
+        response = apply_verified_shopify_transition(
+            db, organization_id=org.id, review_id=review["id"],
+        )
+        replay = apply_verified_shopify_transition(
+            db, organization_id=org.id, review_id=review["id"],
+        )
+    assert response["applied"] is True
+    assert response["plan"] == "growth"
+    assert replay["applied"] is False and replay["already_applied"] is True
+    partner.assert_called_once_with("gid://shopify/Shop/777")
+    identity.assert_called_once()
+    db.refresh(org)
+    assert org.billing_provider == "shopify"
+    assert org.plan == "growth"
+    assert org.subscription_status == "active"
+    assert org.billing_period_months == 1
+    assert not org.billing_customer_id and not org.billing_subscription_id
+    from app.models import ShopifyPlanTransitionReview
+    assert db.get(ShopifyPlanTransitionReview, review["id"]).status == "applied"
+    assert conn.access_token_encrypted == "PRIVATE_SYNTHETIC_TOKEN"
+
+
+@pytest.mark.parametrize("condition", ["inactive", "cancelled", "wrong_price", "wrong_plan"])
+def test_shopify_transition_never_applies_unapproved_provider_state(
+    sandbox, monkeypatch, condition,
+):
+    from app.services.shopify_verified_entitlement_apply import (
+        apply_verified_shopify_transition,
+    )
+    from app.services.shopify_app_pricing import ShopifySubscriptionSnapshot
+    db, org, _, _, _, _ = sandbox
+    review = _prepare(sandbox)
+    verified = _approved_monthly_growth(monkeypatch)
+    if condition == "inactive":
+        verified = ShopifySubscriptionSnapshot(active=False)
+    elif condition == "cancelled":
+        verified = ShopifySubscriptionSnapshot(
+            **{**vars(verified), "cancel_at_end_of_cycle": True}
+        )
+    elif condition == "wrong_price":
+        verified = ShopifySubscriptionSnapshot(
+            **{**vars(verified), "eligible_amounts": ("1.00",)}
+        )
+    else:
+        verified = ShopifySubscriptionSnapshot(
+            **{**vars(verified), "eligible_handles": ("unknown",), "item_handles": ("unknown",)}
+        )
+    with patch(
+        "app.services.shopify_verified_entitlement_apply.resolve_trusted_shop_gid",
+        return_value="gid://shopify/Shop/777",
+    ), patch(
+        "app.services.shopify_verified_entitlement_apply.get_active_shopify_subscription",
+        return_value=verified,
+    ):
+        with pytest.raises(ShopifyTransitionReviewError):
+            apply_verified_shopify_transition(
+                db, organization_id=org.id, review_id=review["id"],
+            )
+    db.refresh(org)
+    assert org.plan == "starter"
+    assert org.subscription_status != "active"
+
+
+def test_shopify_transition_rechecks_installation_after_partner_response(
+    sandbox, monkeypatch,
+):
+    from app.services.shopify_verified_entitlement_apply import (
+        apply_verified_shopify_transition,
+    )
+    db, org, _, conn, _, _ = sandbox
+    review = _prepare(sandbox)
+    verified = _approved_monthly_growth(monkeypatch)
+
+    def reinstalled(*args):
+        conn.connected_at = datetime.utcnow()
+        db.commit()
+        return verified
+
+    with patch(
+        "app.services.shopify_verified_entitlement_apply.resolve_trusted_shop_gid",
+        return_value="gid://shopify/Shop/777",
+    ), patch(
+        "app.services.shopify_verified_entitlement_apply.get_active_shopify_subscription",
+        side_effect=reinstalled,
+    ):
+        with pytest.raises(ShopifyTransitionReviewError, match="STATE_CHANGED"):
+            apply_verified_shopify_transition(
+                db, organization_id=org.id, review_id=review["id"],
+            )
+    db.refresh(org)
+    assert org.plan == "starter"
+
+
+def test_shopify_transition_cross_tenant_replay_is_denied(sandbox, monkeypatch):
+    from app.services.shopify_verified_entitlement_apply import (
+        apply_verified_shopify_transition,
+    )
+    db, org, _, _, _, _ = sandbox
+    review = _prepare(sandbox)
+    _approved_monthly_growth(monkeypatch)
+    other = Organization(
+        name="Other Account", slug="other-customer-isolation",
+        billing_provider="shopify", plan="starter",
+    )
+    db.add(other)
+    db.commit()
+    with patch(
+        "app.services.shopify_verified_entitlement_apply.get_active_shopify_subscription"
+    ) as partner:
+        with pytest.raises(ShopifyTransitionReviewError, match="NOT_FOUND"):
+            apply_verified_shopify_transition(
+                db, organization_id=other.id, review_id=review["id"],
+            )
+        partner.assert_not_called()
