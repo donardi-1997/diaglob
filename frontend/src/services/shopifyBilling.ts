@@ -166,8 +166,8 @@ export interface ShopifyTrialVerification {
   plan: string;
   billing_period_months: number;
   expected_trial_days: number;
-  observed_trial_days: number;
-  trial_days_remaining: number;
+  observed_trial_days: number | null;
+  trial_days_remaining: number | null;
   trial_ends_at: string | null;
   matches_expected: boolean;
   verified_against_shopify: true;
