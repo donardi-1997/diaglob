@@ -63,6 +63,7 @@ const BillingChannelPage = lazy(() => import("./pages/BillingChannelPage"));
 const PublicLandingPage = lazy(() => import("./pages/PublicLandingPage"));
 const LegalPage = lazy(() => import("./pages/LegalPage"));
 const RefundPolicyPage = lazy(() => import("./pages/RefundPolicyPage"));
+const SupportPage = lazy(() => import("./pages/SupportPage"));
 const CommercePage = lazy(() => import("./pages/CommercePage"));
 const AutomationsPage = lazy(() => import("./pages/AutomationsPage"));
 const AgentChatPage = lazy(() => import("./pages/AgentChatPage"));
@@ -617,6 +618,14 @@ function App() {
         element={
           <Suspense fallback={<LoadingScreen />}>
             <LegalPage kind="terms" />
+          </Suspense>
+        }
+      />
+      <Route
+        path="/support"
+        element={
+          <Suspense fallback={<LoadingScreen />}>
+            <SupportPage />
           </Suspense>
         }
       />
