@@ -27,6 +27,7 @@ from ..services.shopify_app_pricing import (
 )
 from ..services.shopify_app_pricing_reconciliation import (
     preview_shopify_entitlement_reconciliation,
+    verify_shopify_trial_contract,
 )
 from ..services.shopify_billing_verification import (
     ShopifyBillingEvidenceError,
@@ -411,6 +412,75 @@ def preview_shopify_billing_reconciliation(
         "organization_id": preview.organization_id,
         "applied": False,
     }
+
+@router.get("/api/billing/shopify/trial-verification")
+def verify_shopify_billing_trial(
+    membership: OrganizationMembership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+):
+    """Verify the active plan's configured trial days against Partner events."""
+    if membership.role not in {"owner", "manager"}:
+        raise HTTPException(status_code=403, detail="Billing access denied")
+    organization = membership.organization
+    if (organization.billing_provider or "").strip().lower() != "shopify":
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "SHOPIFY_BILLING_PROVENANCE_REQUIRED"},
+        )
+
+    bindings = (
+        db.query(CommerceConnection)
+        .filter(
+            CommerceConnection.organization_id == membership.organization_id,
+            CommerceConnection.provider == "shopify",
+        )
+        .limit(2)
+        .all()
+    )
+    if len(bindings) != 1 or bindings[0].status != "connected":
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "SHOPIFY_BILLING_CONNECTION_REVIEW_REQUIRED"},
+        )
+    connection = bindings[0]
+    store = (
+        db.query(Store)
+        .filter(
+            Store.id == connection.store_id,
+            Store.organization_id == membership.organization_id,
+            Store.active.is_(True),
+            Store.deleted.is_(False),
+        )
+        .first()
+    )
+    if store is None:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "SHOPIFY_BILLING_CONNECTION_REVIEW_REQUIRED"},
+        )
+
+    try:
+        return verify_shopify_trial_contract(
+            organization,
+            connection,
+            connected_shopify_store_count=len(bindings),
+        )
+    except ShopifyAppPricingError as exc:
+        code = str(exc)
+        if not code.startswith("SHOPIFY_") or not code.replace("_", "").isalnum():
+            code = "SHOPIFY_TRIAL_VERIFICATION_UNAVAILABLE"
+        raise HTTPException(
+            status_code=(
+                503 if code in _SHOPIFY_BILLING_TEMPORARY_ERRORS
+                or code in {
+                    "SHOPIFY_TRIAL_EVIDENCE_NOT_FOUND",
+                    "SHOPIFY_TRIAL_VERIFICATION_UNAVAILABLE",
+                }
+                else 409
+            ),
+            detail={"code": code},
+        ) from exc
+
 
 @router.post("/api/billing/shopify/reconciliation-check")
 def check_shopify_billing_reconciliation(
