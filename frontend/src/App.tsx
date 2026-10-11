@@ -709,6 +709,7 @@ function App() {
                   storeName={selectedStore?.name}
                   pageContext={copilotPageContext}
                   onClose={() => setCopilotOpen(false)}
+                  onNavigateToStores={() => { setCopilotOpen(false); handleNavigate("stores"); }}
                 />
               </Suspense>
             )}
