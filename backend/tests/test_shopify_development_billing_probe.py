@@ -219,3 +219,22 @@ def test_dev_probe_route_only_queries_verification_service(monkeypatch):
     svc.assert_called_once()
     db.commit.assert_not_called()
     db.add.assert_not_called()
+
+
+@pytest.mark.parametrize("legacy_field", [
+    "billing_customer_id", "billing_subscription_id", "billing_price_id"
+])
+def test_dev_probe_does_not_cross_mixed_legacy_billing_provenance(
+    monkeypatch, legacy_field,
+):
+    _enabled(monkeypatch)
+    org = _org()
+    setattr(org, legacy_field, "legacy-paddle-reference")
+    with patch(
+        "app.services.shopify_development_billing_probe.resolve_trusted_shop_gid"
+    ) as identity:
+        with pytest.raises(ShopifyAppPricingError, match="TENANT_REVIEW"):
+            probe_shopify_development_subscription(
+                org, _conn(), connected_shopify_store_count=1
+            )
+        identity.assert_not_called()
