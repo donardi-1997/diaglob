@@ -42,3 +42,7 @@ Shopify App Store requirement 2.3.2 requires authentication before merchant-faci
 - [ ] Validate password/login, reviewer store data, privacy/terms/support pages, and production monitoring.
 
 **NO-GO** until Partner app configuration and real merchant E2E confirm the mode and install path.
+
+## Billing provenance hardening (2026-10-12)
+
+Pending Shopify OAuth credentials are *not* commercial entitlements. Before claiming an installation, DIAGLOB now rejects direct/Paddle organizations even if their historical onboarding channel still says `shopify_install`, and refuses fresh claims with legacy customer/subscription/price references, a paid non-Shopify plan or a pending non-Shopify upgrade. Eligible new tenants must have pending Shopify onboarding with no legacy billing association, or already have verified `billing_provider=shopify` for a legitimate reinstall. Ineligible claims must leave the OAuth grant unconsumed and create no connection. This guards against mixed-provider billing; it does not turn on App Pricing or establish Partner plan approval.

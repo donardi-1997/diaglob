@@ -162,6 +162,37 @@ def pending_install_status(db: Session, secret: str | None) -> dict:
     }
 
 
+def _eligible_shopify_claim_billing(organization: Organization | None) -> bool:
+    """Only pending Shopify onboarding or already Shopify-billed tenants.
+
+    The channel is a registration hint, not proof of Shopify billing. A paid
+    contract or legacy billing references require manual review before any
+    OAuth token can be attached to the organization.
+    """
+    if organization is None or not organization.active:
+        return False
+    if any((
+        organization.billing_customer_id,
+        organization.billing_subscription_id,
+        organization.billing_price_id,
+    )):
+        return False
+
+    provider = (organization.billing_provider or "").strip().lower()
+    if provider == "shopify":
+        # Existing verified Shopify tenants can reauthorize/reinstall without
+        # losing their legitimate plan or creating a new trial.
+        return True
+    if provider:
+        return False
+
+    return (
+        organization.billing_onboarding_channel == "shopify_install"
+        and (organization.plan or "none").strip().lower() in {"none", "trial"}
+        and not organization.pending_plan
+    )
+
+
 def claim_install(
     db: Session, *, secret: str | None,
     membership: OrganizationMembership, store: Store,
@@ -179,13 +210,10 @@ def claim_install(
         Organization.id == membership.organization_id,
         Organization.active.is_(True),
     ).with_for_update().first()
-    # The Shopify App Store must be billed through Shopify App Pricing.
-    # A new grant cannot attach to a direct/Paddle organization or issue
-    # the old DIAGLOB seven-day trial ahead of a verified Shopify plan.
-    if organization is None or (
-        organization.billing_onboarding_channel != "shopify_install"
-        and (organization.billing_provider or "").strip().lower() != "shopify"
-    ):
+    # An OAuth grant is not a subscription. A legacy Paddle customer or an
+    # already-paid direct organization must never be silently converted to
+    # Shopify billing, even if a stale shopify_install hint is present.
+    if not _eligible_shopify_claim_billing(organization):
         raise ShopifyConnectionError("SHOPIFY_BILLING_ORGANIZATION_REQUIRED")
 
     existing = db.query(CommerceConnection).filter(
