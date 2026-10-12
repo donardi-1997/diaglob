@@ -188,8 +188,9 @@ def verify_remote(db: Session, store: Store) -> dict:
     conn = _store_connection(db, store)
     if conn is None:
         return {"verified": False, "reason": "SHOPIFY_NOT_CONNECTED", "events_active": False}
-    if not NEEDED_SCOPES.issubset({s.strip() for s in (conn.scopes or "").split(",")}):
-        return {"verified": False, "reason": "SHOPIFY_PIXEL_SCOPES_MISSING", "events_active": False}
+    # Shopify WebPixel object requires read_pixels in addition to create scopes.
+    if "read_pixels" not in {s.strip() for s in (conn.scopes or "").split(",")}:
+        return {"verified": False, "reason": "SHOPIFY_PIXEL_READ_SCOPE_MISSING", "events_active": False}
     domain = normalize_shop_domain(conn.external_store_url)
     # A read-only Shopify check should not silently run for a merchant account.
     allowlisted = {
