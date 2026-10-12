@@ -14,7 +14,8 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..models import OrganizationMembership, WhatsAppConnection
 from ..permissions import has_permission
-from .deps import get_current_membership, require_permission
+from .deps import get_current_membership, get_allowed_store_ids, require_permission
+from .store_access import require_authorized_path_store
 from ..services.whatsapp_service import (
     WhatsAppConnectionError,
     WhatsAppNotConnectedError,
@@ -109,6 +110,11 @@ def _map_whatsapp_error(exc: Exception):
         raise HTTPException(status_code=409, detail={"code": code, "message": msg})
     if isinstance(exc, WhatsAppSendError):
         code = str(exc)
+        if code == "WHATSAPP_SERVICE_WINDOW_CLOSED":
+            raise HTTPException(status_code=409, detail={
+                "code": code,
+                "message": "La ventana de atención de 24 horas terminó. Usa una plantilla aprobada y el consentimiento correspondiente.",
+            })
         if code == "WHATSAPP_SEND_FAILED":
             raise HTTPException(status_code=502, detail={"code": code, "message": "No fue posible enviar el mensaje por WhatsApp."})
         raise HTTPException(status_code=400, detail=str(exc))
@@ -120,7 +126,7 @@ def _map_whatsapp_error(exc: Exception):
 # ============================================================
 
 
-@router.get("/api/stores/{store_id}/whatsapp/templates")
+@router.get("/api/stores/{store_id}/whatsapp/templates", dependencies=[Depends(require_authorized_path_store)])
 def list_store_whatsapp_templates(
     store_id: int,
     membership: OrganizationMembership = Depends(require_permission("automations.read")),
@@ -129,7 +135,7 @@ def list_store_whatsapp_templates(
     return svc_list_templates(db, membership.organization_id, store_id)
 
 
-@router.post("/api/stores/{store_id}/whatsapp/templates/sync")
+@router.post("/api/stores/{store_id}/whatsapp/templates/sync", dependencies=[Depends(require_authorized_path_store)])
 def sync_store_whatsapp_templates(
     store_id: int,
     membership: OrganizationMembership = Depends(require_permission("stores.write")),
@@ -141,7 +147,7 @@ def sync_store_whatsapp_templates(
         raise HTTPException(400, str(exc)) from exc
 
 
-@router.get("/api/stores/{store_id}/whatsapp")
+@router.get("/api/stores/{store_id}/whatsapp", dependencies=[Depends(require_authorized_path_store)])
 def get_whatsapp_connection(
     store_id: int,
     membership: OrganizationMembership = Depends(require_permission("stores.read")),
@@ -159,7 +165,7 @@ def get_whatsapp_connection(
     return result
 
 
-@router.post("/api/stores/{store_id}/whatsapp/connect")
+@router.post("/api/stores/{store_id}/whatsapp/connect", dependencies=[Depends(require_authorized_path_store)])
 def connect_whatsapp(
     store_id: int,
     payload: WhatsAppConnectRequest,
@@ -179,7 +185,7 @@ def connect_whatsapp(
         _map_whatsapp_error(exc)
 
 
-@router.delete("/api/stores/{store_id}/whatsapp/disconnect")
+@router.delete("/api/stores/{store_id}/whatsapp/disconnect", dependencies=[Depends(require_authorized_path_store)])
 def disconnect_whatsapp(
     store_id: int,
     membership: OrganizationMembership = Depends(require_permission("stores.write")),
@@ -262,6 +268,9 @@ def send_whatsapp_message(
     db: Session = Depends(get_db),
 ):
     try:
-        return svc_send_message(db, membership.organization_id, conversation_id, payload.text)
+        return svc_send_message(
+            db, membership.organization_id, conversation_id, payload.text,
+            allowed_store_ids=get_allowed_store_ids(membership),
+        )
     except (WhatsAppNotFoundError, WhatsAppNotConnectedError, WhatsAppSendError) as exc:
         _map_whatsapp_error(exc)
