@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..db import get_db
+from ..services.catalog_availability import availability_reason, variant_is_purchasable
 from ..models import (
     OrganizationMembership,
     Product,
@@ -86,8 +87,8 @@ def serialize_commerce_product(
                     variant.currency,
                 "inventory_quantity":
                     variant.inventory_quantity,
-                "available":
-                    variant.available,
+                "available": variant_is_purchasable(variant),
+                "availability_reason": availability_reason(variant),
             }
             for variant in product.variants
         ],
@@ -103,7 +104,8 @@ def get_allowed_store_ids(
     return [
         store.id
         for store in membership.stores
-        if store.active
+        if store.active and not store.deleted
+        and store.organization_id == membership.organization_id
     ]
 
 
@@ -122,10 +124,12 @@ def list_commerce_products(
 ):
     query = (
         db.query(Product)
+        .join(Store, Store.id == Product.store_id)
         .filter(
-            Product.organization_id
-            == membership.organization_id,
-
+            Product.organization_id == membership.organization_id,
+            Store.organization_id == membership.organization_id,
+            Store.active.is_(True),
+            Store.deleted.is_(False),
             Product.active.is_(True),
         )
     )
@@ -360,11 +364,13 @@ def get_commerce_product(
 ):
     query = (
         db.query(Product)
+        .join(Store, Store.id == Product.store_id)
         .filter(
             Product.id == product_id,
-
-            Product.organization_id
-            == membership.organization_id,
+            Product.organization_id == membership.organization_id,
+            Store.organization_id == membership.organization_id,
+            Store.active.is_(True),
+            Store.deleted.is_(False),
         )
     )
 
