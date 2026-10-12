@@ -78,6 +78,12 @@ def test_reject_missing_callback_extra_unsafe_redirect_and_scope_mismatch():
     assert "SHOPIFY_REDIRECTS_MISSING_OR_UNSAFE" in _audit(
         _config(redirects=f'["{CALLBACK_URI}", "http://evil.example"]')
     ).failures
+    assert "SHOPIFY_REDIRECTS_MISSING_OR_UNSAFE" in _audit(
+        _config(redirects=f'["{CALLBACK_URI}", "https://evil.example/oauth"]')
+    ).failures
+    assert "SHOPIFY_REDIRECTS_MISSING_OR_UNSAFE" in _audit(
+        _config(redirects=f'["{CALLBACK_URI}", 24]')
+    ).failures
     assert "SHOPIFY_SCOPES_DO_NOT_MATCH_BACKEND" in _audit(
         _config(scopes="read_products")
     ).failures
