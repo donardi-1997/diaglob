@@ -1,5 +1,4 @@
 """Inert Web Pixel provisioning: fail closed and never send events."""
-import json
 from unittest.mock import patch
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
@@ -8,7 +7,7 @@ import pytest
 from app.db import Base
 from app.models import CommerceConnection, MetaPixelConfiguration, Organization, Store
 from app.services.meta_pixel_provisioning import (
-    PixelProvisioningError, provision, readiness, remove_remote
+    PixelProvisioningError, provision, readiness, remove_remote, verify_remote
 )
 
 
@@ -88,7 +87,7 @@ def test_provision_creates_only_inert_pixel_settings(store_setup):
         result = provision(db, store)
         client.assert_called_once()
         args, kwargs = client.return_value.query.call_args
-        payload = json.loads(kwargs["variables"]["webPixel"]["settings"]) if "variables" in kwargs else json.loads(args[1]["webPixel"]["settings"])
+        payload = args[1]["webPixel"]["settings"]
     assert result["provisioned"] is True
     assert result["events_active"] is False
     assert payload["trackingEnabled"] == "false"
@@ -146,4 +145,60 @@ def test_production_merchant_not_mutated(store_setup, monkeypatch):
     with patch("app.services.meta_pixel_provisioning.ShopifyGraphQLClient") as client:
         with pytest.raises(PixelProvisioningError, match="SHOP_NOT_ALLOWLISTED"):
             provision(db, store)
+        client.assert_not_called()
+
+
+
+def test_read_only_remote_verify_detects_exact_inactive_shopify_record(store_setup):
+    db, store, row, conn = store_setup
+    row.web_pixel_gid = "gid://shopify/WebPixel/123"
+    row.source_id = "7bcdefab-0000-4000-8000-000000000001"
+    db.commit()
+    with patch("app.services.meta_pixel_provisioning.decrypt_shopify_secret",
+               return_value="only_fake"), patch(
+        "app.services.meta_pixel_provisioning.ShopifyGraphQLClient"
+    ) as client:
+        client.return_value.query.return_value = {
+            "webPixel": {"id": row.web_pixel_gid, "settings": {
+                "pixelId": row.pixel_id, "sourceId": row.source_id,
+                "trackingEnabled": "false",
+                "collectorUrl": "https://api.diaglob.tech/api/web-pixels/collect",
+            }}
+        }
+        result = verify_remote(db, store)
+        assert client.return_value.query.call_count == 1
+    assert result == {
+        "verified": True, "reason": "VERIFIED_INERT", "events_active": False
+    }
+
+
+def test_remote_pixel_drift_does_not_claim_live_tracking(store_setup):
+    db, store, row, conn = store_setup
+    row.web_pixel_gid = "gid://shopify/WebPixel/123"
+    row.source_id = "7bcdefab-0000-4000-8000-000000000001"
+    db.commit()
+    with patch("app.services.meta_pixel_provisioning.decrypt_shopify_secret",
+               return_value="only_fake"), patch(
+        "app.services.meta_pixel_provisioning.ShopifyGraphQLClient"
+    ) as client:
+        client.return_value.query.return_value = {
+            "webPixel": {"id": row.web_pixel_gid, "settings": {
+                "pixelId": "999999999999", "sourceId": row.source_id,
+                "trackingEnabled": "true",
+                "collectorUrl": "https://api.diaglob.tech/api/web-pixels/collect",
+            }}
+        }
+        result = verify_remote(db, store)
+    assert result["verified"] is False
+    assert result["reason"] == "REMOTE_SETTINGS_MISMATCH"
+    assert result["events_active"] is False
+
+
+def test_remote_query_refused_for_other_merchant(store_setup, monkeypatch):
+    db, store, row, conn = store_setup
+    row.web_pixel_gid = "gid://shopify/WebPixel/123"
+    conn.external_store_url = "not-authorized.myshopify.com"
+    db.commit()
+    with patch("app.services.meta_pixel_provisioning.ShopifyGraphQLClient") as client:
+        assert verify_remote(db, store)["reason"] == "SHOP_NOT_ALLOWLISTED"
         client.assert_not_called()
