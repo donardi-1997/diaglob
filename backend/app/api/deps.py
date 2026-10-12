@@ -296,6 +296,7 @@ def get_store_scope(
             Store.organization_id
             == membership.organization_id,
             Store.active.is_(True),
+            Store.deleted.is_(False),
         )
         .first()
     )
@@ -312,6 +313,11 @@ def get_store_scope(
     allowed_store_ids = {
         allowed_store.id
         for allowed_store in membership.stores
+        if (
+            allowed_store.organization_id == membership.organization_id
+            and allowed_store.active
+            and not allowed_store.deleted
+        )
     }
 
     if store.id not in allowed_store_ids:
@@ -332,7 +338,11 @@ def get_allowed_store_ids(
     return [
         store.id
         for store in membership.stores
-        if store.active
+        if (
+            store.organization_id == membership.organization_id
+            and store.active
+            and not store.deleted
+        )
     ]
 
 
