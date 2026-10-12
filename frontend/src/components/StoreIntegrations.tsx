@@ -32,6 +32,7 @@ import {
   getPaymentProviders,
   getPaymentStatus,
   getWhatsAppStatus,
+  getWhatsAppDiagnostics,
   syncNuvemshopOrders,
   syncNuvemshopProducts,
   testShopifyConnection,
@@ -41,6 +42,7 @@ import {
   type PaymentConnectionStatus,
   type PaymentProviderInfo,
   type WhatsAppConnectionStatus,
+  type WhatsAppDiagnosticStatus,
   type ShopifyTestResult,
   type ShopifySyncResult,
 } from "../services/integrations";
@@ -76,6 +78,10 @@ export default function StoreIntegrations({
 
   const [whatsapp, setWhatsApp] =
     useState<WhatsAppConnectionStatus | null>(null);
+  const [whatsappDiagnostics, setWhatsAppDiagnostics] =
+    useState<WhatsAppDiagnosticStatus | null>(null);
+  const [diagnosingWhatsApp, setDiagnosingWhatsApp] = useState(false);
+  const [whatsappDiagnosticError, setWhatsAppDiagnosticError] = useState("");
 
   const [nequiProviders, setNequiProviders] =
     useState<PaymentProviderInfo[]>([]);
@@ -186,6 +192,8 @@ export default function StoreIntegrations({
       setCommerce(commerceData);
       setNuvemshop(nuvemshopData);
       setWhatsApp(whatsappData);
+      setWhatsAppDiagnostics(null);
+      setWhatsAppDiagnosticError("");
 
       try {
         const providersData = await getPaymentProviders(storeId);
@@ -657,6 +665,21 @@ export default function StoreIntegrations({
   }
 
 
+  async function handleDiagnoseWhatsApp() {
+    setDiagnosingWhatsApp(true);
+    setWhatsAppDiagnosticError("");
+    try {
+      const result = await getWhatsAppDiagnostics(storeId);
+      setWhatsAppDiagnostics(result);
+    } catch {
+      setWhatsAppDiagnosticError(
+        "No pudimos comprobar la conexión con Meta. Revisa los permisos y vuelve a intentarlo.",
+      );
+    } finally {
+      setDiagnosingWhatsApp(false);
+    }
+  }
+
   async function handleDisconnectWhatsApp() {
     clearMessages();
 
@@ -741,7 +764,7 @@ export default function StoreIntegrations({
               }
             >
               {commerce?.connected
-                ? t("integrationsConnected")
+                ? "Configurado · Por verificar"
                 : t("integrationsDisconnected")}
             </span>
           </div>
@@ -1274,6 +1297,37 @@ export default function StoreIntegrations({
                       ? <Check size={13} />
                       : <Copy size={13} />}
                   </button>
+                )}
+              </div>
+            )}
+
+            <div className="store-integration-actions">
+              <button
+                type="button"
+                className="store-integration-button secondary"
+                disabled={diagnosingWhatsApp}
+                onClick={() => void handleDiagnoseWhatsApp()}
+              >
+                {diagnosingWhatsApp ? <Loader2 className="spin" size={15} /> : <Check size={15} />}
+                Verificar conexión con Meta
+              </button>
+            </div>
+            {whatsappDiagnosticError && (
+              <p role="alert" className="store-integration-detail">{whatsappDiagnosticError}</p>
+            )}
+            {whatsappDiagnostics && (
+              <div className="store-integration-detail" role="status" style={{ display: "block" }}>
+                <strong>
+                  {whatsappDiagnostics.provider_verified && whatsappDiagnostics.waba_subscription_verified
+                    && whatsappDiagnostics.webhook_signature_ready
+                    ? "Número y suscripción verificados"
+                    : "La integración necesita configuración adicional"}
+                </strong>
+                <p>Número de Meta: {whatsappDiagnostics.provider_verified ? "Verificado" : "Sin verificar"}</p>
+                <p>Suscripción WABA: {whatsappDiagnostics.waba_subscription_verified ? "Verificada" : "Sin verificar"}</p>
+                <p>Firma de webhooks: {whatsappDiagnostics.webhook_signature_ready ? "Configurada" : "Pendiente"}</p>
+                {whatsappDiagnostics.errors.length > 0 && (
+                  <p>Diagnóstico: {whatsappDiagnostics.errors.join(", ")}</p>
                 )}
               </div>
             )}

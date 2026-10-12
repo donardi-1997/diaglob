@@ -14,7 +14,8 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..models import OrganizationMembership, WhatsAppConnection
 from ..permissions import has_permission
-from .deps import get_current_membership, require_permission
+from .deps import get_current_membership, get_allowed_store_ids, require_permission
+from .store_access import require_authorized_path_store
 from ..services.whatsapp_service import (
     WhatsAppConnectionError,
     WhatsAppNotConnectedError,
@@ -27,6 +28,7 @@ from ..services.whatsapp_service import (
     send_message as svc_send_message,
     sync_templates as svc_sync_templates,
 )
+from ..services.whatsapp_diagnostics import diagnose_whatsapp
 from ..services.whatsapp_webhooks import (
     emit_webhook_events,
     process_webhook_payload,
@@ -109,6 +111,11 @@ def _map_whatsapp_error(exc: Exception):
         raise HTTPException(status_code=409, detail={"code": code, "message": msg})
     if isinstance(exc, WhatsAppSendError):
         code = str(exc)
+        if code == "WHATSAPP_SERVICE_WINDOW_CLOSED":
+            raise HTTPException(status_code=409, detail={
+                "code": code,
+                "message": "La ventana de atención de 24 horas terminó. Usa una plantilla aprobada y el consentimiento correspondiente.",
+            })
         if code == "WHATSAPP_SEND_FAILED":
             raise HTTPException(status_code=502, detail={"code": code, "message": "No fue posible enviar el mensaje por WhatsApp."})
         raise HTTPException(status_code=400, detail=str(exc))
@@ -120,7 +127,7 @@ def _map_whatsapp_error(exc: Exception):
 # ============================================================
 
 
-@router.get("/api/stores/{store_id}/whatsapp/templates")
+@router.get("/api/stores/{store_id}/whatsapp/templates", dependencies=[Depends(require_authorized_path_store)])
 def list_store_whatsapp_templates(
     store_id: int,
     membership: OrganizationMembership = Depends(require_permission("automations.read")),
@@ -129,7 +136,7 @@ def list_store_whatsapp_templates(
     return svc_list_templates(db, membership.organization_id, store_id)
 
 
-@router.post("/api/stores/{store_id}/whatsapp/templates/sync")
+@router.post("/api/stores/{store_id}/whatsapp/templates/sync", dependencies=[Depends(require_authorized_path_store)])
 def sync_store_whatsapp_templates(
     store_id: int,
     membership: OrganizationMembership = Depends(require_permission("stores.write")),
@@ -141,7 +148,7 @@ def sync_store_whatsapp_templates(
         raise HTTPException(400, str(exc)) from exc
 
 
-@router.get("/api/stores/{store_id}/whatsapp")
+@router.get("/api/stores/{store_id}/whatsapp", dependencies=[Depends(require_authorized_path_store)])
 def get_whatsapp_connection(
     store_id: int,
     membership: OrganizationMembership = Depends(require_permission("stores.read")),
@@ -153,13 +160,13 @@ def get_whatsapp_connection(
         raise HTTPException(status_code=404, detail=str(exc))
 
     # Only expose verify_token to users with stores.write permission
-    if not has_permission(membership.role, "stores.write"):
+    if not has_permission(membership.role, "stores.write") or os.getenv("WHATSAPP_WEBHOOK_VERIFY_TOKEN"):
         result["verify_token"] = None
 
     return result
 
 
-@router.post("/api/stores/{store_id}/whatsapp/connect")
+@router.post("/api/stores/{store_id}/whatsapp/connect", dependencies=[Depends(require_authorized_path_store)])
 def connect_whatsapp(
     store_id: int,
     payload: WhatsAppConnectRequest,
@@ -179,7 +186,7 @@ def connect_whatsapp(
         _map_whatsapp_error(exc)
 
 
-@router.delete("/api/stores/{store_id}/whatsapp/disconnect")
+@router.delete("/api/stores/{store_id}/whatsapp/disconnect", dependencies=[Depends(require_authorized_path_store)])
 def disconnect_whatsapp(
     store_id: int,
     membership: OrganizationMembership = Depends(require_permission("stores.write")),
@@ -189,6 +196,19 @@ def disconnect_whatsapp(
         return svc_disconnect(db, membership.organization_id, store_id)
     except (WhatsAppNotFoundError, WhatsAppNotConnectedError) as exc:
         _map_whatsapp_error(exc)
+
+
+@router.get(
+    "/api/stores/{store_id}/whatsapp/diagnostics",
+    dependencies=[Depends(require_authorized_path_store)],
+)
+def whatsapp_connection_diagnostics(
+    store_id: int,
+    membership: OrganizationMembership = Depends(require_permission("stores.read")),
+    db: Session = Depends(get_db),
+):
+    """Remote read-only Meta validation, without sending a WhatsApp message."""
+    return diagnose_whatsapp(db, membership.organization_id, store_id)
 
 
 @router.get("/api/webhooks/whatsapp")
@@ -203,18 +223,23 @@ def whatsapp_verify_webhook(
     if mode != "subscribe" or not token or not challenge:
         raise HTTPException(status_code=400, detail="Invalid verification request")
 
-    connection = (
-        db.query(WhatsAppConnection)
-        .filter(
-            WhatsAppConnection.verify_token == token,
-            WhatsAppConnection.status == "connected",
+    # Meta app webhooks have one app-level callback verification token.
+    # Keep legacy per-store verification only while a global token is absent.
+    shared_verify_token = os.getenv("WHATSAPP_WEBHOOK_VERIFY_TOKEN")
+    if shared_verify_token:
+        if not hmac.compare_digest(token, shared_verify_token):
+            raise HTTPException(status_code=403, detail="Invalid verify token")
+    else:
+        connection = (
+            db.query(WhatsAppConnection)
+            .filter(
+                WhatsAppConnection.verify_token == token,
+                WhatsAppConnection.status == "connected",
+            )
+            .first()
         )
-        .first()
-    )
-
-    if not connection:
-        raise HTTPException(status_code=403, detail="Invalid verify token")
-
+        if not connection:
+            raise HTTPException(status_code=403, detail="Invalid verify token")
     return PlainTextResponse(content=challenge)
 
 
@@ -262,6 +287,9 @@ def send_whatsapp_message(
     db: Session = Depends(get_db),
 ):
     try:
-        return svc_send_message(db, membership.organization_id, conversation_id, payload.text)
+        return svc_send_message(
+            db, membership.organization_id, conversation_id, payload.text,
+            allowed_store_ids=get_allowed_store_ids(membership),
+        )
     except (WhatsAppNotFoundError, WhatsAppNotConnectedError, WhatsAppSendError) as exc:
         _map_whatsapp_error(exc)

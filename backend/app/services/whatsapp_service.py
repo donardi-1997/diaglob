@@ -4,6 +4,7 @@ Handles connection CRUD, template management, and outbound message orchestration
 Does NOT import FastAPI.
 """
 import logging
+import os
 import secrets
 from datetime import datetime
 
@@ -21,6 +22,7 @@ from ..whatsapp_client import (
     list_whatsapp_templates,
     send_whatsapp_text_message,
 )
+from ..whatsapp_compliance import get_whatsapp_service_window_status
 from ..whatsapp_security import (
     decrypt_whatsapp_secret,
     encrypt_whatsapp_secret,
@@ -94,7 +96,7 @@ def get_connection(db: Session, organization_id: int, store_id: int) -> dict:
         "status": connection.status,
         "phone_number_id": connection.phone_number_id,
         "business_account_id": connection.business_account_id,
-        "verify_token": connection.verify_token,
+        "verify_token": None if os.getenv("WHATSAPP_WEBHOOK_VERIFY_TOKEN") else connection.verify_token,
         "connected_at": (
             connection.connected_at.isoformat() + "Z"
             if connection.connected_at
@@ -188,7 +190,7 @@ def connect(db: Session, organization_id: int, store_id: int, phone_number_id: s
         "store_id": store.id,
         "status": connection.status,
         "phone_number_id": connection.phone_number_id,
-        "verify_token": connection.verify_token,
+        "verify_token": None if os.getenv("WHATSAPP_WEBHOOK_VERIFY_TOKEN") else connection.verify_token,
     }
 
 
@@ -305,7 +307,10 @@ def sync_templates(db: Session, organization_id: int, store_id: int) -> dict:
     return list_templates(db, organization_id, store_id)
 
 
-def send_message(db: Session, organization_id: int, conversation_id: int, text: str) -> dict:
+def send_message(
+    db: Session, organization_id: int, conversation_id: int, text: str,
+    allowed_store_ids: list[int] | None = None,
+) -> dict:
     conversation = (
         db.query(Conversation)
         .filter(
@@ -314,7 +319,12 @@ def send_message(db: Session, organization_id: int, conversation_id: int, text: 
         )
         .first()
     )
-    if not conversation:
+    if not conversation or (
+        allowed_store_ids is not None and conversation.store_id not in allowed_store_ids
+    ):
+        raise WhatsAppNotFoundError("Conversation not found")
+
+    if conversation.channel != "WhatsApp":
         raise WhatsAppNotFoundError("Conversation not found")
 
     connection = (
@@ -330,8 +340,14 @@ def send_message(db: Session, organization_id: int, conversation_id: int, text: 
         raise WhatsAppNotConnectedError("WHATSAPP_NOT_CONNECTED")
 
     customer = db.query(Customer).filter(Customer.id == conversation.customer_id).first()
-    if not customer:
+    if not customer or customer.organization_id != organization_id:
         raise WhatsAppNotFoundError("Customer not found")
+
+    window = get_whatsapp_service_window_status(
+        db, organization_id, conversation.store_id, customer.id,
+    )
+    if not window["inside_window"]:
+        raise WhatsAppSendError("WHATSAPP_SERVICE_WINDOW_CLOSED")
 
     text = (text or "").strip()
     if not text:
