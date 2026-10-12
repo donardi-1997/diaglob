@@ -13,8 +13,9 @@ from app.models import CommerceConnection, Organization, ShopifyPendingInstall, 
 from app.api.shopify import shopify_install_handoff
 from app.services.shopify_public_install import (
     begin_public_install, finish_public_install, claim_install,
-    pending_install_status, ShopifyOAuthError,
+    pending_install_status, ShopifyOAuthError, _eligible_shopify_claim_billing,
 )
+from app.services.shopify_service import ShopifyConnectionError
 
 
 @pytest.fixture
@@ -197,3 +198,64 @@ def test_webhook_registration_error_preserves_connection_for_retry(database):
     assert connection.status == "connected"
     assert connection.last_error.startswith("WEBHOOK_SUBSCRIPTION_FAILED:")
     assert pending_install_status(database, cookie)["pending"] is False
+
+
+@pytest.mark.parametrize(
+    "provider,channel,plan,extra",
+    [
+        ("paddle", "shopify_install", "trial", {}),
+        ("paddle", "direct", "starter", {}),
+        (None, "direct", "trial", {}),
+        (None, "shopify_install", "starter", {}),
+        (None, "shopify_install", "trial", {"billing_customer_id": "legacy-customer"}),
+        (None, "shopify_install", "trial", {"billing_subscription_id": "legacy-sub"}),
+        (None, "shopify_install", "trial", {"billing_price_id": "legacy-price"}),
+        (None, "shopify_install", "trial", {"pending_plan": "pro"}),
+        (None, "shopify_install", "trial", {"active": False}),
+        ("shopify", "shopify_install", "pro", {"billing_subscription_id": "legacy-sub"}),
+    ],
+)
+def test_public_oauth_claim_rejects_incompatible_billing_before_binding(
+    database, provider, channel, plan, extra,
+):
+    _, state = _begin(database)
+    cookie, _ = _finish(database, state)
+    organization = Organization(
+        id=77, name="Unapproved channel", slug="unapproved-channel",
+        plan=plan, subscription_status="trial_pending",
+        billing_provider=provider, billing_onboarding_channel=channel,
+    )
+    for key, value in extra.items():
+        setattr(organization, key, value)
+    store = Store(
+        id=77, organization_id=77, name="Pending", slug="pending",
+        country_code="CO", currency="COP", timezone="America/Bogota",
+        active=True, deleted=False,
+    )
+    database.add_all([organization, store])
+    database.commit()
+    assert _eligible_shopify_claim_billing(organization) is False
+    with pytest.raises(
+        ShopifyConnectionError, match="SHOPIFY_BILLING_ORGANIZATION_REQUIRED"
+    ):
+        claim_install(
+            database, secret=cookie,
+            membership=SimpleNamespace(organization_id=77),
+            store=store,
+        )
+    database.rollback()
+    assert database.query(CommerceConnection).count() == 0
+    assert pending_install_status(database, cookie)["pending"] is True
+
+
+def test_verified_shopify_provenance_allows_paid_reinstallation_without_new_trial(
+    database,
+):
+    organization = Organization(
+        id=78, name="Shopify merchant", slug="shopify-merchant",
+        plan="pro", subscription_status="active",
+        billing_provider="shopify", billing_onboarding_channel="shopify_install",
+    )
+    database.add(organization)
+    database.commit()
+    assert _eligible_shopify_claim_billing(organization) is True
