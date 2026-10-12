@@ -16,7 +16,7 @@ from ..whatsapp_security import decrypt_whatsapp_secret
 
 def _version() -> str:
     version = os.getenv("WHATSAPP_GRAPH_API_VERSION", "v21.0")
-    return version if re.fullmatch(r"v[0-9]{1,2}\\.[0-9]", version) else "v21.0"
+    return version if re.fullmatch(r"v[0-9]{1,2}\.[0-9]", version) else "v21.0"
 
 
 def _graph_get(path: str, token: str, params: dict | None = None) -> dict:
