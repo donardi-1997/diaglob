@@ -18,14 +18,14 @@ Prerequisites: Node.js, Shopify CLI, authenticated access to the EXISTING Diaglo
 
    node scripts/shopify/prepare-meta-web-pixel.mjs --client-id CLIENT_ID_OF_EXISTING_DIAGLOB_APP
 
-The script links only the specified app via Shopify CLI, checks its actual Client ID, generates the official UID, and transfers the staged inert pixel source. It fails closed on app mismatch, UID missing, existing modified extension or invalid template. It does not create a new app, publish an extension, change scopes or enable events.
+The script operates from the dedicated shopify/cli-app workspace (which has its own package.json), links only the specified app via Shopify CLI, checks its actual Client ID, generates the official UID, and transfers the staged inert pixel source. It does not create another Shopify app, modify the Diaglob web backend, or require a generated app home. It fails closed on app mismatch, UID missing, existing modified extension or invalid template. It does not create a new app, publish an extension, change scopes or enable events.
 
 5. Confirm the app is the right one, its configuration is intact and the necessary scopes have been explicitly approved: write_pixels, read_customer_events and read_pixels. Changes to scopes may require merchant reauthorization.
 6. To create a preview app version but NOT release it, run:
 
    node scripts/shopify/prepare-meta-web-pixel.mjs --client-id CLIENT_ID_OF_EXISTING_DIAGLOB_APP --deploy-draft
 
-This invokes shopify app config validate and shopify app deploy --no-release. It NEVER executes shopify app release.
+This invokes shopify app config validate and shopify app deploy --no-release from shopify/cli-app using the CLI --path flag. Review shopify/cli-app/shopify.app.toml and shopify/cli-app/extensions/diaglob-meta-pixel before drafting. It NEVER executes shopify app release.
 
 ## Mandatory gates before recording customer events
 
