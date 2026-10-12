@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..models import MetaPixelConfiguration, OrganizationMembership, Store
+from ..shopify_client import ShopifyAPIError
 from ..services import meta_pixel_provisioning
 from .deps import require_permission
 from .store_access import require_authorized_path_store
@@ -142,6 +143,8 @@ def provision_meta_pixel(
         return meta_pixel_provisioning.provision(db, store)
     except meta_pixel_provisioning.PixelProvisioningError as exc:
         raise HTTPException(status_code=409, detail=exc.code) from exc
+    except ShopifyAPIError as exc:
+        raise HTTPException(status_code=503, detail="SHOPIFY_WEB_PIXEL_PROVIDER_UNAVAILABLE") from exc
 
 
 @router.post("/api/stores/{store_id}/meta-pixel/unprovision")
