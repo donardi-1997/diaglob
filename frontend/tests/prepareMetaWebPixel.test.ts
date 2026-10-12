@@ -33,13 +33,14 @@ function setup(scopes = "write_pixels,read_customer_events") {
   const root = mkdtempSync(join(tmpdir(), "diaglob-meta-cli-test-"));
   const src = join(repositoryRoot, "shopify", "web-pixel-staging");
   cpSync(src, join(root, "shopify", "web-pixel-staging"), { recursive: true });
-  writeFileSync(join(root, "shopify.app.toml"),
+  mkdirSync(join(root, "shopify", "cli-app"), { recursive: true });
+  writeFileSync(join(root, "shopify", "cli-app", "shopify.app.toml"),
     'client_id = "' + APP_ID + '"\n[access_scopes]\nscopes = "' + scopes + '"\n');
   const commands = [];
   const run = (...args) => {
     commands.push(args);
     if (args[0] === "app" && args[1] === "generate") {
-      const dir = join(root, "extensions", "diaglob-meta-pixel");
+      const dir = join(root, "shopify", "cli-app", "extensions", "diaglob-meta-pixel");
       mkdirSync(join(dir, "src"), { recursive: true });
       writeFileSync(join(dir, "shopify.extension.toml"),
         'type = "web_pixel_extension"\nname = "diaglob-meta-pixel"\nuid = "' + EXTENSION_UID + '"\n');
@@ -63,6 +64,8 @@ test("bootstrap only existing app and preserves CLI UID, never releases", () => 
     assert.equal(result.draftCreated, false);
     assert.equal(t.commands.length, 1);
     assert.equal(t.commands[0][1], "generate");
+    assert.ok(t.commands[0].includes(join(t.root, "shopify", "cli-app")));
+    assert.ok(existsSync(join(t.root, "shopify", "cli-app", "package.json")));
   } finally { t.cleanup(); }
 });
 
