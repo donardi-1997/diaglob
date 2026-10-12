@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { ArrowRight, LockKeyhole, ShieldCheck, Store } from "lucide-react";
+import { getMarkets, type Market } from "../services/markets";
 
 import { connectShopify, getPendingShopifyInstall, claimPendingShopifyInstall } from "../services/integrations";
-import { getStoresForManagement, type Store as DiaglobStore } from "../services/stores";
+import { createStore, getStoresForManagement, type Store as DiaglobStore } from "../services/stores";
 import {
   eligibleShopifyInstallStores,
+  buildPostOAuthStorePayload,
   parseShopifyInstallHint,
   validatedShopifyAuthorizationUrl,
 } from "../shopifyInstall";
@@ -13,9 +15,10 @@ import "../shopify-install.css";
 
 interface Props {
   canWrite: boolean;
+  onStoresChanged?: () => void;
 }
 
-export default function ShopifyInstallPage({ canWrite }: Props) {
+export default function ShopifyInstallPage({ canWrite, onStoresChanged }: Props) {
   const location = useLocation();
   const navigate = useNavigate();
   const oauthCompleted = location.search === "?authorized=1";
@@ -30,6 +33,11 @@ export default function ShopifyInstallPage({ canWrite }: Props) {
   const [loading, setLoading] = useState(true);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState("");
+  const [markets, setMarkets] = useState<Market[]>([]);
+  const [marketsLoading, setMarketsLoading] = useState(false);
+  const [marketsError, setMarketsError] = useState(false);
+  const [newStoreName, setNewStoreName] = useState("");
+  const [newCountry, setNewCountry] = useState("");
 
   useEffect(() => {
     if (!oauthCompleted || !canWrite) {
@@ -77,6 +85,57 @@ export default function ShopifyInstallPage({ canWrite }: Props) {
     return () => { active = false; };
   }, [shop, canWrite]);
 
+
+  useEffect(() => {
+    if (!oauthCompleted || !shop || !canWrite) return;
+    let live = true;
+    setMarketsLoading(true);
+    setMarketsError(false);
+    getMarkets()
+      .then((result) => {
+        if (live) setMarkets(result.items);
+      })
+      .catch(() => {
+        if (live) setMarketsError(true);
+      })
+      .finally(() => {
+        if (live) setMarketsLoading(false);
+      });
+    return () => { live = false; };
+  }, [oauthCompleted, shop, canWrite]);
+
+  // The shop label is merely a draft name. The domain is obtained from
+  // Shopify's verified pending grant, not from user input.
+  useEffect(() => {
+    if (oauthCompleted && shop) setNewStoreName(shop.split(".myshopify.com")[0]);
+  }, [oauthCompleted, shop]);
+
+  async function handleCreateAndConnect() {
+    if (!oauthCompleted || !authorizedShop || !canWrite || connecting || checkingGrant) return;
+    setError("");
+    setConnecting(true);
+    try {
+      const payload = buildPostOAuthStorePayload(
+        authorizedShop,
+        newStoreName,
+        newCountry,
+        markets.map((market) => market.country_code),
+      );
+      const created = await createStore(payload);
+      // Retain the new authorized store even if the claim or webhook setup
+      // fails. The user can retry binding without creating duplicate stores.
+      setStores((current) => [...current, created]);
+      setSelected(String(created.id));
+      onStoresChanged?.();
+      await claimPendingShopifyInstall(created.id);
+      navigate("/app/stores?shopify=connected", { replace: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No fue posible finalizar la conexión con Shopify.");
+    } finally {
+      setConnecting(false);
+    }
+  }
+
   const eligibleStores = useMemo(
     () => shop ? eligibleShopifyInstallStores(stores, shop) : [],
     [stores, shop],
@@ -116,7 +175,9 @@ export default function ShopifyInstallPage({ canWrite }: Props) {
         <div className="shopify-install-icon"><Store size={25} aria-hidden="true" /></div>
         <p className="shopify-install-eyebrow">DIAGLOB + SHOPIFY</p>
         <h1>Conecta tu tienda Shopify</h1>
-        <p>Selecciona la tienda de Diaglob que administrará tu operación. Solo después de confirmarlo te enviaremos a Shopify para aprobar los permisos.</p>
+        <p>{oauthCompleted
+          ? "Shopify ya autorizó la instalación. Selecciona una tienda de Diaglob o crea una nueva para finalizar la vinculación."
+          : "Selecciona la tienda de Diaglob que administrará tu operación. Después te enviaremos a Shopify para aprobar los permisos."}</p>
         {checkingGrant ? (
           <p role="status">Validando la autorización de Shopify…</p>
         ) : !shop ? (
@@ -141,6 +202,54 @@ export default function ShopifyInstallPage({ canWrite }: Props) {
               </p>
             ) : loading ? (
               <p role="status">Cargando las tiendas de tu organización…</p>
+            ) : eligibleStores.length === 0 && oauthCompleted ? (
+              <section className="shopify-install-bootstrap" aria-labelledby="shopify-new-store-title">
+                <h2 id="shopify-new-store-title">Crear una tienda para esta instalación</h2>
+                <p>La autorización de Shopify está confirmada, pero aún no hay una tienda local compatible. Elige el mercado donde operará y asígnale un nombre.</p>
+                <label className="shopify-install-label" htmlFor="shopify-new-store-name">
+                  Nombre de la tienda
+                  <input
+                    id="shopify-new-store-name"
+                    value={newStoreName}
+                    maxLength={150}
+                    onChange={(event) => setNewStoreName(event.target.value)}
+                    disabled={connecting}
+                  />
+                </label>
+                <label className="shopify-install-label" htmlFor="shopify-new-store-market">
+                  País / mercado
+                  <select
+                    id="shopify-new-store-market"
+                    value={newCountry}
+                    onChange={(event) => setNewCountry(event.target.value)}
+                    disabled={connecting || marketsLoading || marketsError}
+                  >
+                    <option value="">Seleccionar mercado…</option>
+                    {markets.map((market) => (
+                      <option key={market.country_code} value={market.country_code}>
+                        {market.country_name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {marketsLoading && <p role="status">Cargando mercados…</p>}
+                {marketsError && (
+                  <p role="alert" className="shopify-install-error">
+                    No pudimos cargar los mercados. Regresa a Tiendas y vuelve a intentar.
+                  </p>
+                )}
+                {error && <p role="alert" className="shopify-install-error">{error}</p>}
+                <button
+                  className="shopify-install-primary"
+                  type="button"
+                  disabled={connecting || !newStoreName.trim() || !newCountry || marketsLoading || marketsError}
+                  onClick={() => { void handleCreateAndConnect(); }}
+                >
+                  {connecting ? "Creando y conectando…" : "Crear tienda y finalizar conexión"}
+                  {!connecting && <ArrowRight size={18} aria-hidden="true" />}
+                </button>
+                <p className="shopify-install-hint">No se inicia una suscripción ni se crean pedidos. Las funciones de pago requieren la autorización de Shopify.</p>
+              </section>
             ) : eligibleStores.length === 0 ? (
               <p role="status">
                 No hay tiendas disponibles. Crea una tienda en Diaglob o revisa si ya tiene una integración asignada.
@@ -164,15 +273,17 @@ export default function ShopifyInstallPage({ canWrite }: Props) {
               </label>
             )}
             {error && <p className="shopify-install-error" role="alert">{error}</p>}
-            <button
-              className="shopify-install-primary"
-              type="button"
-              disabled={!canWrite || !selected || !shop || connecting || loading}
-              onClick={() => { void handleConnect(); }}
-            >
-              {connecting ? "Conectando…" : oauthCompleted ? "Finalizar conexión" : "Continuar a Shopify"}
-              {!connecting && <ArrowRight size={18} aria-hidden="true" />}
-            </button>
+            {eligibleStores.length > 0 && (
+              <button
+                className="shopify-install-primary"
+                type="button"
+                disabled={!canWrite || !selected || !shop || connecting || loading}
+                onClick={() => { void handleConnect(); }}
+              >
+                {connecting ? "Conectando…" : oauthCompleted ? "Finalizar conexión" : "Continuar a Shopify"}
+                {!connecting && <ArrowRight size={18} aria-hidden="true" />}
+              </button>
+            )}
           </>
         )}
         <button className="shopify-install-secondary" type="button" onClick={() => navigate("/app/stores")}>

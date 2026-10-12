@@ -42,3 +42,36 @@ export function validatedShopifyAuthorizationUrl(url: string, shop: string): str
   }
   return parsed.toString();
 }
+
+
+/**
+ * Builds a local Store payload ONLY after the caller has received the
+ * verified shop from /api/shopify/install/pending. Browser shop hints alone
+ * must never be treated as proof of Shopify ownership.
+ */
+export function buildPostOAuthStorePayload(
+  verifiedShop: string | null,
+  name: string,
+  countryCode: string,
+  allowedCountries: readonly string[],
+) {
+  if (
+    !verifiedShop ||
+    parseShopifyInstallHint(`?shop=${encodeURIComponent(verifiedShop)}`) !== verifiedShop
+  ) {
+    throw new Error("Shopify authorization is required before creating a store");
+  }
+  const cleanedName = name.trim();
+  if (!cleanedName || cleanedName.length > 150) {
+    throw new Error("Store name is required (maximum 150 characters)");
+  }
+  if (!/^[A-Z]{2}$/.test(countryCode) || !allowedCountries.includes(countryCode)) {
+    throw new Error("Select a supported market");
+  }
+  return {
+    name: cleanedName,
+    country_code: countryCode,
+    shopify_domain: verifiedShop,
+    active: true as const,
+  };
+}
