@@ -17,6 +17,7 @@ import {
 import GlobalSearchPalette from "./GlobalSearchPalette";
 import type { GlobalSearchResult } from "../services/globalSearch";
 import type { Store } from "../services/stores";
+import type { StoreAvailability } from "../services/storeAvailability";
 import "../app-shell-v2.css";
 import "../onboarding-activation-polish.css";
 
@@ -36,7 +37,7 @@ interface AppShellV2Props {
   stores: Store[];
   storesError: boolean;
   storesLoading: boolean;
-  limitedStoreAccess: boolean;
+  storeAvailability: StoreAvailability;
   canCreateStores: boolean;
   onRetryStores: () => void;
   selectedStoreId: string;
@@ -105,7 +106,7 @@ export default function AppShellV2({
   stores,
   storesError,
   storesLoading,
-  limitedStoreAccess,
+  storeAvailability,
   canCreateStores,
   onRetryStores,
   selectedStoreId,
@@ -323,13 +324,19 @@ export default function AppShellV2({
                   )}
                   {!storesLoading && !storesError && stores.filter((store) => store.active).length === 0 && (
                     <div className="dg-store-menu-status">
-                      {limitedStoreAccess
-                        ? "No tienes tiendas activas asignadas en esta organización."
-                        : "No hay tiendas activas en esta organización."}
-                      {canCreateStores ? (
+                      {storeAvailability === "unassigned"
+                        ? "La organización tiene tiendas activas, pero ninguna está asignada a tu usuario."
+                        : storeAvailability === "no-active-stores"
+                          ? "La organización no tiene tiendas activas."
+                          : storeAvailability === "mismatch"
+                            ? "Hay tiendas activas, pero el servidor no las devolvió. Revisa los permisos o solicita soporte."
+                            : "No se pudo verificar si la organización tiene tiendas activas."}
+                      {(storeAvailability === "no-active-stores" && canCreateStores) ? (
                         <button type="button" onClick={() => { navigate("stores"); setStoreMenuOpen(false); }}>Ir a Tiendas</button>
+                      ) : storeAvailability === "unassigned" ? (
+                        <span>Solicita al administrador que revise las tiendas asignadas a tu cuenta.</span>
                       ) : (
-                        <span>Solicita al administrador acceso a una tienda activa.</span>
+                        <button type="button" onClick={() => onRetryStores()}>Reintentar</button>
                       )}
                     </div>
                   )}
