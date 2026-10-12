@@ -525,6 +525,10 @@
   ],
   [
     "GET",
+    "/api/stores/{store_id}/meta-pixel/readiness"
+  ],
+  [
+    "GET",
     "/api/stores/{store_id}/nuvemshop/status"
   ],
   [
@@ -950,6 +954,14 @@
   [
     "POST",
     "/api/stores/{store_id}/instagram/connect"
+  ],
+  [
+    "POST",
+    "/api/stores/{store_id}/meta-pixel/provision"
+  ],
+  [
+    "POST",
+    "/api/stores/{store_id}/meta-pixel/unprovision"
   ],
   [
     "POST",

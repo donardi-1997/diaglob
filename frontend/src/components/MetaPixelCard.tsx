@@ -4,9 +4,13 @@ import { BarChart3, Loader2, AlertTriangle } from "lucide-react";
 
 import {
   getStoreMetaPixel,
+  getMetaPixelReadiness,
+  provisionMetaPixel,
+  unprovisionMetaPixel,
   removeStoreMetaPixel,
   saveStoreMetaPixel,
   type MetaPixelSettingsStatus,
+  type MetaPixelReadiness,
 } from "../services/integrations";
 
 type TrackingKind = MetaPixelSettingsStatus["existing_tracking"];
@@ -25,6 +29,7 @@ export default function MetaPixelCard({
     portuguese ? pt : english ? en : es;
 
   const [status, setStatus] = useState<MetaPixelSettingsStatus | null>(null);
+  const [readiness, setReadiness] = useState<MetaPixelReadiness | null>(null);
   const [pixelId, setPixelId] = useState("");
   const [existingTracking, setExistingTracking] = useState<TrackingKind>("unknown");
   const [busy, setBusy] = useState(false);
@@ -36,13 +41,15 @@ export default function MetaPixelCard({
     let mounted = true;
     setLoading(true);
     setStatus(null);
+    setReadiness(null);
     setPixelId("");
     setExistingTracking("unknown");
     setError("");
     setNotice("");
-    void getStoreMetaPixel(storeId)
-      .then((response) => {
+    void Promise.all([getStoreMetaPixel(storeId), getMetaPixelReadiness(storeId)])
+      .then(([response, gates]) => {
         if (!mounted) return;
+        setReadiness(gates);
         setStatus(response);
         setPixelId(response.pixel_id || "");
         setExistingTracking(response.existing_tracking);
@@ -73,6 +80,7 @@ export default function MetaPixelCard({
     try {
       const next = await saveStoreMetaPixel(storeId, pixelId, existingTracking);
       setStatus(next);
+      setReadiness(await getMetaPixelReadiness(storeId));
       setNotice(msg(
         "Configuración guardada. La medición sigue desactivada hasta instalar y validar la extensión de Shopify.",
         "Settings saved. Tracking remains off until the Shopify extension is installed and validated.",
@@ -96,6 +104,7 @@ export default function MetaPixelCard({
       setStatus(next);
       setPixelId("");
       setExistingTracking("unknown");
+      setReadiness(await getMetaPixelReadiness(storeId));
       setNotice(msg("Configuración eliminada.", "Configuration removed.", "Configuração removida."));
     } catch {
       setError(msg("No se pudo eliminar la configuración.",
@@ -104,6 +113,32 @@ export default function MetaPixelCard({
     } finally {
       setBusy(false);
     }
+  }
+
+  async function changeProvisioning(undo = false) {
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      if (undo) await unprovisionMetaPixel(storeId);
+      else await provisionMetaPixel(storeId);
+      const [next, gate] = await Promise.all([
+        getStoreMetaPixel(storeId), getMetaPixelReadiness(storeId),
+      ]);
+      setStatus(next);
+      setReadiness(gate);
+      setNotice(msg(
+        "Registro Shopify actualizado. El envío de eventos continúa desactivado.",
+        "Shopify pixel record updated. Event delivery remains disabled.",
+        "Registro Shopify atualizado. O envio de eventos permanece desativado.",
+      ));
+    } catch {
+      setError(msg(
+        "Shopify no permitió esta operación. Revisa permisos, despliegue y tienda de pruebas.",
+        "Shopify could not complete the operation. Verify permissions, deployment and test shop.",
+        "A Shopify não permitiu a operação. Verifique permissões e a loja de teste.",
+      ));
+    } finally { setBusy(false); }
   }
 
   return (
@@ -137,7 +172,7 @@ export default function MetaPixelCard({
             autoComplete="off"
             placeholder="123456789012345"
             value={pixelId}
-            disabled={!canWrite || busy}
+            disabled={!canWrite || busy || status?.extension_installed}
             onChange={(event) => setPixelId(event.target.value.trim())}
           />
           <label htmlFor={`meta-tracking-kind-${storeId}`}>
@@ -166,22 +201,38 @@ export default function MetaPixelCard({
           ) : null}
           {status?.configured ? (
             <p role="status">
-              {msg("Estado: pendiente de extensión y pruebas en Shopify.",
-                "Status: awaiting Shopify extension and testing.",
-                "Status: aguardando extensão e testes na Shopify.")}
+              {status.extension_installed
+                ? msg("Extensión registrada en Shopify, pero eventos aún desactivados.",
+                  "Shopify extension provisioned, but event delivery remains off.",
+                  "Extensão registrada na Shopify, mas eventos desativados.")
+                : msg("Estado: pendiente de extensión y pruebas en Shopify.",
+                  "Status: awaiting Shopify extension and testing.",
+                  "Status: aguardando extensão e testes na Shopify.")}
             </p>
           ) : null}
           {error && <p role="alert" className="stores-alert error">{error}</p>}
           {notice && <p role="status" className="stores-alert success">{notice}</p>}
           {canWrite && (
             <div className="store-integration-actions">
-              <button type="button" className="store-integration-button primary" disabled={busy || loading} onClick={() => void save()}>
+              <button type="button" className="store-integration-button primary" disabled={busy || loading || status?.extension_installed} onClick={() => void save()}>
                 {busy ? <Loader2 size={14} className="spin" /> : null}
                 {msg("Guardar Pixel", "Save Pixel", "Salvar Pixel")}
               </button>
-              {status?.configured && (
+              {status?.configured && !status.extension_installed && (
                 <button type="button" className="store-integration-button secondary" disabled={busy} onClick={() => void remove()}>
                   {msg("Quitar configuración", "Remove settings", "Remover configuração")}
+                </button>
+              )}
+              {readiness?.can_provision && !status?.extension_installed && (
+                <button type="button" className="store-integration-button secondary"
+                  disabled={busy} onClick={() => void changeProvisioning()}>
+                  {msg("Registrar extensión (sin eventos)", "Provision extension (no events)", "Registrar extensão (sem eventos)")}
+                </button>
+              )}
+              {status?.extension_installed && (
+                <button type="button" className="store-integration-button secondary"
+                  disabled={busy} onClick={() => void changeProvisioning(true)}>
+                  {msg("Retirar extensión Shopify", "Remove Shopify extension", "Remover extensão Shopify")}
                 </button>
               )}
             </div>

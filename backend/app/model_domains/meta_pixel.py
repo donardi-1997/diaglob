@@ -30,6 +30,9 @@ class MetaPixelConfiguration(Base):
     existing_tracking: Mapped[str] = mapped_column(
         String(30), nullable=False, default="unknown"
     )
+    # Shopify app pixel provisioning is distinct from event transmission.
+    web_pixel_gid: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    source_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # Activation is deliberately a future release gate: never activate here.
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     status: Mapped[str] = mapped_column(

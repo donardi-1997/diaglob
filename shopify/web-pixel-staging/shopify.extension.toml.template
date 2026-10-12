@@ -1,0 +1,28 @@
+# TEMPLATE ONLY. Shopify CLI must generate the real shopify.extension.toml
+# and its immutable UID for the EXISTING Diaglob app. Do not deploy this file.
+type = "web_pixel_extension"
+name = "diaglob-meta-pixel"
+runtime_context = "strict"
+[customer_privacy]
+analytics = true
+marketing = true
+preferences = false
+sale_of_data = "enabled"
+[settings]
+type = "object"
+[settings.fields.pixelId]
+name = "Meta Pixel ID"
+description = "Merchant-owned dataset/pixel ID"
+type = "single_line_text_field"
+[settings.fields.collectorUrl]
+name = "Diaglob collector URL"
+description = "Approved first-party event endpoint"
+type = "single_line_text_field"
+[settings.fields.sourceId]
+name = "Source ID"
+description = "Public, non-secret routing identifier"
+type = "single_line_text_field"
+[settings.fields.trackingEnabled]
+name = "Tracking enabled"
+description = "Must remain false until events/privacy validation is complete"
+type = "single_line_text_field"
