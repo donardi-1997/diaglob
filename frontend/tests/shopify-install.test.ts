@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  buildPostOAuthStorePayload,
   eligibleShopifyInstallStores,
   parseShopifyInstallHint,
   validatedShopifyAuthorizationUrl,
@@ -45,5 +46,41 @@ test("Shopify OAuth destination must be same-shop HTTPS and exact authorize path
     "https://demo.myshopify.com/admin/oauth/authorize?client_id=x",
   ]) {
     assert.throws(() => validatedShopifyAuthorizationUrl(invalid, "demo.myshopify.com"));
+  }
+});
+
+test("verified post-OAuth shop can bootstrap exactly one active local store", () => {
+  assert.deepEqual(
+    buildPostOAuthStorePayload(
+      "diaglob-poc.myshopify.com", " Diaglob POC ", "CO", ["CO", "MX"],
+    ),
+    {
+      name: "Diaglob POC",
+      country_code: "CO",
+      shopify_domain: "diaglob-poc.myshopify.com",
+      active: true,
+    },
+  );
+});
+
+test("post-OAuth store bootstrap rejects browser hints, malformed shops and unsupported markets", () => {
+  for (const shop of [null, "", "https://diaglob-poc.myshopify.com", "other.example.com", "DIAGLOB-POC.myshopify.com"]) {
+    assert.throws(
+      () => buildPostOAuthStorePayload(shop, "Store", "CO", ["CO"]),
+      /Shopify authorization is required/,
+    );
+  }
+
+  for (const name of [" ", "x".repeat(151)]) {
+    assert.throws(
+      () => buildPostOAuthStorePayload("diaglob-poc.myshopify.com", name, "CO", ["CO"]),
+      /Store name is required/,
+    );
+  }
+  for (const country of ["", "co", "US", "CO2"]) {
+    assert.throws(
+      () => buildPostOAuthStorePayload("diaglob-poc.myshopify.com", "Store", country, ["CO", "MX"]),
+      /Select a supported market/,
+    );
   }
 });
