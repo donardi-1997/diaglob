@@ -60,3 +60,26 @@ test("invalid events, invalid currencies and missing event ids fail closed", () 
   assert.equal(invalid?.currency, undefined);
   assert.equal(invalid?.value, undefined);
 });
+
+
+test("purchase deduplication correlates browser event with authenticated Shopify order", () => {
+  for (const order of ["42424242", "gid://shopify/Order/42424242"]) {
+    const event = convertShopifyEvent({
+      id: "browser_event_123", name: "checkout_completed",
+      data: {checkout: {order: {id: order}, totalPrice: {amount: "12.5", currencyCode: "COP"}}},
+    });
+    assert.equal(event?.event_id, "shopify:order:42424242");
+    assert.equal(event?.value, 12.5);
+    assert.equal(event?.currency, "COP");
+  }
+});
+
+test("missing price must not be misrepresented as a free purchase", () => {
+  for (const price of [null, undefined, ""]) {
+    const event = convertShopifyEvent({
+      id: "checkout-no-price", name: "checkout_completed",
+      data: {checkout: {totalPrice: {amount: price, currencyCode: "COP"}}},
+    });
+    assert.equal(event?.value, undefined);
+  }
+});
