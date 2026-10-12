@@ -810,3 +810,42 @@ export async function claimPendingShopifyInstall(storeId: number) {
   );
   return response.data;
 }
+
+
+/** Merchant measurement configuration only; no Pixel/CAPI deployment. */
+export interface MetaPixelSettingsStatus {
+  store_id: number;
+  configured: boolean;
+  pixel_id: string | null;
+  existing_tracking: "unknown" | "none" | "shopify_meta" | "manual_pixel";
+  enabled: boolean;
+  status: "not_configured" | "awaiting_extension";
+  extension_installed: boolean;
+  duplicate_tracking_risk: "unknown" | "high" | "none_reported";
+}
+
+export async function getStoreMetaPixel(storeId: number) {
+  const response = await api.get<MetaPixelSettingsStatus>(
+    `/api/stores/${storeId}/meta-pixel`,
+  );
+  return response.data;
+}
+
+export async function saveStoreMetaPixel(
+  storeId: number,
+  pixelId: string,
+  existingTracking: MetaPixelSettingsStatus["existing_tracking"],
+) {
+  const response = await api.put<MetaPixelSettingsStatus>(
+    `/api/stores/${storeId}/meta-pixel`,
+    { pixel_id: pixelId, existing_tracking: existingTracking },
+  );
+  return response.data;
+}
+
+export async function removeStoreMetaPixel(storeId: number) {
+  const response = await api.delete<MetaPixelSettingsStatus>(
+    `/api/stores/${storeId}/meta-pixel`,
+  );
+  return response.data;
+}
