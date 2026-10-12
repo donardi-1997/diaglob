@@ -621,6 +621,10 @@
   ],
   [
     "GET",
+    "/api/stores/{store_id}/whatsapp/diagnostics"
+  ],
+  [
+    "GET",
     "/api/stores/{store_id}/whatsapp/templates"
   ],
   [
