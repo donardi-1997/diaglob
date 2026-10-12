@@ -204,6 +204,12 @@ def publish_version(db: Session, organization_id: int, store_id: int, flow_id: i
     if ver.published_at:
         raise FlowConflictError("Version already published")
 
+    # Old or imported versions may have been accepted by weaker validators.
+    # Publication is the last chance to avoid ambiguous live execution.
+    errors = validate_graph(ver.graph)
+    if errors:
+        raise FlowValidationError(str(errors))
+
     ver.published_at = utcnow()
     flow.updated_at = utcnow()
     db.commit()
@@ -220,6 +226,10 @@ def activate_flow(db: Session, organization_id: int, store_id: int, flow_id: int
 
     if not ver.published_at:
         raise FlowConflictError("Version must be published before activation")
+
+    errors = validate_graph(ver.graph)
+    if errors:
+        raise FlowValidationError(str(errors))
 
     ver.activated_at = utcnow()
     flow.active_version_id = ver.id
