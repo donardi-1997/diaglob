@@ -78,6 +78,7 @@ from .api.billing import router as billing_router  # noqa: E402
 from .api.shopify_privacy_backlog import router as shopify_privacy_backlog_router  # noqa: E402
 from .api.ai_usage import router as ai_usage_router  # noqa: E402
 from .api.ai_agent import router as ai_agent_router  # noqa: E402
+from .api.agents import router as agents_router  # noqa: E402
 from .api.ai_chat import router as ai_chat_router  # noqa: E402
 from .api.commerce import router as commerce_router  # noqa: E402
 from .api.conversations import router as conversations_router  # noqa: E402
@@ -130,6 +131,7 @@ app.include_router(billing_router)
 app.include_router(shopify_privacy_backlog_router)
 app.include_router(ai_usage_router)
 app.include_router(ai_agent_router)
+app.include_router(agents_router)
 app.include_router(ai_chat_router)
 app.include_router(automations_router)
 app.include_router(whatsapp_router)
