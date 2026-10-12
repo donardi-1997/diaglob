@@ -22,6 +22,7 @@ import {
 } from "../services/conversations";
 
 import { type Store } from "../services/stores";
+import { createLatestRequestGuard } from "../services/latestRequestGuard";
 
 import type {
   ConversationDetail,
@@ -68,6 +69,8 @@ export default function ConversationsPage({
   const [inboxStoreFilter, setInboxStoreFilter] = useState<string>("all");
 
   const chatBodyRef = useRef<HTMLDivElement>(null);
+  const listRequestGuard = useRef(createLatestRequestGuard());
+  const detailRequestGuard = useRef(createLatestRequestGuard());
 
   useEffect(() => {
     const el = chatBodyRef.current;
@@ -76,15 +79,21 @@ export default function ConversationsPage({
   }, [conversation?.messages]);
 
   useEffect(() => {
-    loadConversations();
+    const requestId = listRequestGuard.current.issue();
+    void loadConversations(requestId);
+    return () => listRequestGuard.current.invalidate();
   }, [inboxStoreFilter]);
 
   useEffect(() => {
+    const requestId = detailRequestGuard.current.issue();
     if (selectedId === null) {
-      return;
+      setConversation(null);
+      setWhatsAppConnected(false);
+      setLoadingConversation(false);
+    } else {
+      void loadConversation(selectedId, requestId);
     }
-
-    loadConversation(selectedId);
+    return () => detailRequestGuard.current.invalidate();
   }, [selectedId]);
 
   useEffect(() => {
@@ -97,19 +106,19 @@ export default function ConversationsPage({
     setSelectedId(initialConversationId);
   }, [initialConversationId, initialStoreId, searchRequestKey]);
 
-  async function loadConversations() {
+  async function loadConversations(requestId: number) {
+    const isCurrent = () => listRequestGuard.current.isCurrent(requestId);
     try {
       setLoadingList(true);
       setError("");
 
-      // Use global scope header to get conversations from all stores
-      // when filter is "all", otherwise use specific store
-      const data = await getConversations(inboxStoreFilter === "all" ? undefined : Number(inboxStoreFilter));
+      // A stale filter response must never replace the current inbox.
+      const data = await getConversations(
+        inboxStoreFilter === "all" ? undefined : Number(inboxStoreFilter),
+      );
+      if (!isCurrent()) return;
 
       setConversations(data.items);
-
-      // A store filter may exclude the previously selected conversation.
-      // Never request details for a conversation outside the new result set.
       setSelectedId((current) => {
         if (current !== null && data.items.some((item) => item.id === current)) {
           return current;
@@ -122,39 +131,40 @@ export default function ConversationsPage({
           : null,
       );
     } catch (err) {
+      if (!isCurrent()) return;
       console.error(err);
-      setError(
-        t("conversationsLoadError"),
-      );
+      setError(t("conversationsLoadError"));
     } finally {
-      setLoadingList(false);
+      if (isCurrent()) setLoadingList(false);
     }
   }
 
-  async function loadConversation(id: number) {
+  async function loadConversation(id: number, requestId: number) {
+    const isCurrent = () => detailRequestGuard.current.isCurrent(requestId);
     try {
       setLoadingConversation(true);
+      setConversation(null);
+      setWhatsAppConnected(false);
       setError("");
 
       const data = await getConversation(id);
-
+      if (!isCurrent()) return;
       setConversation(data);
 
       if (data.store && data.channel === "WhatsApp") {
         try {
           const waStatus = await getWhatsAppStatus(data.store.id);
-          setWhatsAppConnected(waStatus.connected);
+          if (isCurrent()) setWhatsAppConnected(waStatus.connected);
         } catch {
-          setWhatsAppConnected(false);
+          if (isCurrent()) setWhatsAppConnected(false);
         }
-      } else {
-        setWhatsAppConnected(false);
       }
     } catch (err) {
+      if (!isCurrent()) return;
       console.error(err);
       setError(t("conversationLoadError"));
     } finally {
-      setLoadingConversation(false);
+      if (isCurrent()) setLoadingConversation(false);
     }
   }
 
@@ -178,11 +188,8 @@ export default function ConversationsPage({
       );
 
       setConversation((current) =>
-        current
-          ? {
-              ...current,
-              mode: nextMode,
-            }
+        current?.id === conversation.id
+          ? { ...current, mode: nextMode }
           : current,
       );
 
@@ -205,7 +212,7 @@ export default function ConversationsPage({
   }
 
   async function handleSendMessage() {
-    if (!conversation) {
+    if (!conversation || !canWrite) {
       return;
     }
 
@@ -248,14 +255,11 @@ export default function ConversationsPage({
       }
 
       setConversation((current) =>
-        current
+        current?.id === conversation.id
           ? {
               ...current,
               preview: text,
-              messages: [
-                ...current.messages,
-                newMessage,
-              ],
+              messages: [...current.messages, newMessage],
             }
           : current,
       );
@@ -318,7 +322,13 @@ export default function ConversationsPage({
             <div className="inbox-store-filter">
               <select
                 value={inboxStoreFilter}
-                onChange={(e) => setInboxStoreFilter(e.target.value)}
+                onChange={(e) => {
+                  // Clear old details before changing the store-scoped list.
+                  setSelectedId(null);
+                  setConversation(null);
+                  setWhatsAppConnected(false);
+                  setInboxStoreFilter(e.target.value);
+                }}
                 className="inbox-store-select"
               >
                 <option value="all">{t("allStores") || "Todas las tiendas"}</option>
@@ -473,7 +483,7 @@ export default function ConversationsPage({
                       : "primary-button"
                   }
                   onClick={toggleMode}
-                  disabled={changingMode}
+                  disabled={changingMode || !canWrite}
                 >
                   {changingMode ? (
                     <LoaderCircle
@@ -593,7 +603,7 @@ export default function ConversationsPage({
                         ? t("typeMessageWhatsApp")
                         : t("typeMessage")
                     }
-                    disabled={sendingMessage}
+                    disabled={sendingMessage || !canWrite}
                   />
 
                   <button
@@ -601,6 +611,7 @@ export default function ConversationsPage({
                     onClick={handleSendMessage}
                     disabled={
                       sendingMessage ||
+                      !canWrite ||
                       !message.trim()
                     }
                   >
@@ -692,12 +703,7 @@ export default function ConversationsPage({
             </InfoSection>
 
             <InfoSection title={t("shopify")}>
-              <div className="integration-status">
-                <span className="status-dot" />
-                {t("connected")}
-              </div>
-
-              <InfoRow
+               <InfoRow
                 label={t("orders")}
                 value={String(conversation.orders)}
               />
