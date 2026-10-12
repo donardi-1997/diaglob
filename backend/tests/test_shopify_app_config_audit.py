@@ -146,3 +146,15 @@ def test_invalid_toml_invalid_expected_mode_and_oversized_input_fail_closed():
     assert "EXPECTED_APP_IDENTITY_INCOMPLETE" in _audit(
         _config(), expected_embedded="false"
     ).failures
+
+
+def test_nested_nonstring_topic_cannot_crash_the_auditor():
+    malformed_topics = f'''
+[[webhooks.subscriptions]]
+compliance_topics = ["customers/data_request", ["customers/redact"], "shop/redact"]
+uri = "{COMPLIANCE_URI}"
+'''
+    result = _audit(_config(subscriptions=malformed_topics))
+    assert result.static_valid is False
+    assert "COMPLIANCE_UNKNOWN_TOPIC" in result.failures
+    assert "COMPLIANCE_TOPICS_MISSING_OR_DUPLICATED" in result.failures
