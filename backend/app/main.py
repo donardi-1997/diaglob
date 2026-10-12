@@ -90,6 +90,7 @@ from .api.health import router as health_router  # noqa: E402
 from .api.instagram import router as instagram_router  # noqa: E402
 from .api.knowledge import router as knowledge_router  # noqa: E402
 from .api.markets import router as markets_router  # noqa: E402
+from .api.meta_pixel import router as meta_pixel_router  # noqa: E402
 from .api.orders import router as orders_router  # noqa: E402
 from .api.organizations import router as organizations_router  # noqa: E402
 from .api.products import router as products_router  # noqa: E402
@@ -138,6 +139,7 @@ app.include_router(analytics_router)
 app.include_router(dropshipping_analytics_router)
 app.include_router(dropi_router)
 app.include_router(markets_router)
+app.include_router(meta_pixel_router)
 app.include_router(admin_router)
 
 

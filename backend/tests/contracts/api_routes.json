@@ -57,6 +57,10 @@
   ],
   [
     "DELETE",
+    "/api/stores/{store_id}/meta-pixel"
+  ],
+  [
+    "DELETE",
     "/api/stores/{store_id}/nuvemshop/disconnect"
   ],
   [
@@ -514,6 +518,10 @@
   [
     "GET",
     "/api/stores/{store_id}/instagram"
+  ],
+  [
+    "GET",
+    "/api/stores/{store_id}/meta-pixel"
   ],
   [
     "GET",
@@ -1138,6 +1146,10 @@
   [
     "PUT",
     "/api/stores/{store_id}/automations/{automation_id}"
+  ],
+  [
+    "PUT",
+    "/api/stores/{store_id}/meta-pixel"
   ],
   [
     "PUT",
