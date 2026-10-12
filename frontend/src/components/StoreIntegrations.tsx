@@ -49,6 +49,7 @@ import CJIntegrationCard from "./CJIntegrationCard";
 import CarrierIntegrationsCard from "./CarrierIntegrationsCard";
 import TelegramIntegrationCard from "./TelegramIntegrationCard";
 import InstagramIntegrationCard from "./InstagramIntegrationCard";
+import MetaPixelCard from "./MetaPixelCard";
 
 
 interface StoreIntegrationsProps {
@@ -720,6 +721,8 @@ export default function StoreIntegrations({
         </div>
       )}
 
+
+      <MetaPixelCard storeId={storeId} canWrite={canWrite} />
 
       <div className="store-integration-block shopify">
         <div className="store-integration-header">
