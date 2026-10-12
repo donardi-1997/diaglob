@@ -323,7 +323,7 @@ export async function connectWhatsApp(
       store_id: number;
       status: string;
       phone_number_id: string;
-      verify_token: string;
+      verify_token: string | null;
     }>(
       `/api/stores/${storeId}/whatsapp/connect`,
       {
@@ -886,5 +886,23 @@ export async function verifyStoreMetaPixelOnShopify(storeId: number) {
     reason: string;
     events_active: false;
   }>(`/api/stores/${storeId}/meta-pixel/verify-remote`);
+  return response.data;
+}
+
+
+export interface WhatsAppDiagnosticStatus {
+  configured: boolean;
+  provider_verified: boolean;
+  waba_subscription_verified: boolean;
+  webhook_signature_ready: boolean;
+  webhook_verify_configured: boolean;
+  errors: string[];
+}
+
+/** Read-only provider check. Does not send messages or subscribe the WABA. */
+export async function getWhatsAppDiagnostics(storeId: number) {
+  const response = await api.get<WhatsAppDiagnosticStatus>(
+    `/api/stores/${storeId}/whatsapp/diagnostics`,
+  );
   return response.data;
 }
