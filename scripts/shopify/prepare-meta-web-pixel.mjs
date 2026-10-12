@@ -115,7 +115,7 @@ export function prepareExistingExtension({ root, clientId, run = runShopify, dra
   // Scopes must be approved explicitly in the existing app configuration.
   const scopeString = /^\s*scopes\s*=\s*["']([^"']+)["']/m.exec(appConfig)?.[1] ?? "";
   const scopes = new Set(scopeString.split(",").map((s) => s.trim()));
-  const missing = ["write_pixels", "read_customer_events"].filter((scope) => !scopes.has(scope));
+  const missing = ["write_pixels", "read_customer_events", "read_pixels"].filter((scope) => !scopes.has(scope));
   if (missing.length) console.log("Missing scopes (approval required): " + missing.join(", "));
   if (draft) {
     if (missing.length) throw new Error("STOP: cannot prepare a draft app version without approved scopes.");
