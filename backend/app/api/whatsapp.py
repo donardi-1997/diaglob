@@ -160,7 +160,7 @@ def get_whatsapp_connection(
         raise HTTPException(status_code=404, detail=str(exc))
 
     # Only expose verify_token to users with stores.write permission
-    if not has_permission(membership.role, "stores.write"):
+    if not has_permission(membership.role, "stores.write") or os.getenv("WHATSAPP_WEBHOOK_VERIFY_TOKEN"):
         result["verify_token"] = None
 
     return result
