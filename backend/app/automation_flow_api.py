@@ -275,6 +275,9 @@ def publish_version(flow_id: int, version_id: int, db: Session = Depends(get_db)
         raise HTTPException(404, detail="Version not found")
     if ver.published_at:
         raise HTTPException(409, detail="Version already published")
+    errors = validate_graph(ver.graph)
+    if errors:
+        raise HTTPException(422, detail={"errors": errors})
     ver.published_at = utcnow()
     flow.updated_at = utcnow()
     db.commit()
@@ -294,6 +297,9 @@ def activate_flow(flow_id: int, db: Session = Depends(get_db), user: User = Depe
         raise HTTPException(404, detail="Current version not found")
     if not ver.published_at:
         raise HTTPException(409, detail="Version must be published before activation")
+    errors = validate_graph(ver.graph)
+    if errors:
+        raise HTTPException(422, detail={"errors": errors})
     ver.activated_at = utcnow()
     flow.active_version_id = ver.id
     flow.status = "active"

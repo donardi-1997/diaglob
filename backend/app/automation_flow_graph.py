@@ -175,13 +175,17 @@ def validate_graph(graph: dict[str, Any]) -> list[str]:
     for node in nodes:
         nid = node.get("id")
         ntype = node.get("type")
-        if ntype == "end":
-            continue
         out_edges = edge_by_source.get(nid, [])
+        if ntype == "end":
+            if out_edges:
+                errors.append(f"Node {nid}: end must not have outgoing edges")
+            continue
         if ntype == "condition":
             labels = {e.get("label") for e in out_edges}
-            if "true" not in labels and "false" not in labels:
+            if "true" not in labels or "false" not in labels:
                 errors.append(f"Node {nid}: condition must have true/false branches")
+            if len(out_edges) != 2 or labels != {"true", "false"}:
+                errors.append(f"Node {nid}: condition requires exactly two labeled branches")
             if len([e for e in out_edges if e.get("label") == "true"]) > 1:
                 errors.append(f"Node {nid}: duplicate true branch")
             if len([e for e in out_edges if e.get("label") == "false"]) > 1:
@@ -198,11 +202,11 @@ def validate_graph(graph: dict[str, Any]) -> list[str]:
                 if labels.count(label) > 1:
                     errors.append(f"Node {nid}: duplicate {label} branch")
         elif ntype == "trigger":
-            if len(out_edges) == 0:
-                errors.append(f"Node {nid}: trigger must have an outgoing edge")
+            if len(out_edges) != 1:
+                errors.append(f"Node {nid}: trigger must have exactly one outgoing edge")
         else:
-            if len(out_edges) == 0:
-                errors.append(f"Node {nid}: non-end node must have an outgoing edge")
+            if len(out_edges) != 1:
+                errors.append(f"Node {nid}: non-branch node must have exactly one outgoing edge")
 
     for edge in edges:
         src = edge.get("source")
@@ -213,6 +217,8 @@ def validate_graph(graph: dict[str, Any]) -> list[str]:
             errors.append(f"Edge references unknown target node '{tgt}'")
         if src == tgt:
             errors.append(f"Self-loop detected on node '{src}'")
+        if node_types.get(tgt) == "trigger":
+            errors.append(f"Node {tgt}: trigger must not have incoming edges")
 
     if not _is_dag(nodes, edges):
         errors.append("Flow contains a cycle (only DAGs allowed)")
