@@ -4,6 +4,7 @@ Handles connection CRUD, template management, and outbound message orchestration
 Does NOT import FastAPI.
 """
 import logging
+import os
 import secrets
 from datetime import datetime
 
@@ -95,7 +96,7 @@ def get_connection(db: Session, organization_id: int, store_id: int) -> dict:
         "status": connection.status,
         "phone_number_id": connection.phone_number_id,
         "business_account_id": connection.business_account_id,
-        "verify_token": connection.verify_token,
+        "verify_token": None if os.getenv("WHATSAPP_WEBHOOK_VERIFY_TOKEN") else connection.verify_token,
         "connected_at": (
             connection.connected_at.isoformat() + "Z"
             if connection.connected_at
@@ -189,7 +190,7 @@ def connect(db: Session, organization_id: int, store_id: int, phone_number_id: s
         "store_id": store.id,
         "status": connection.status,
         "phone_number_id": connection.phone_number_id,
-        "verify_token": connection.verify_token,
+        "verify_token": None if os.getenv("WHATSAPP_WEBHOOK_VERIFY_TOKEN") else connection.verify_token,
     }
 
 
