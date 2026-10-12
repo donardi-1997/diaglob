@@ -33,7 +33,7 @@ def store_setup(monkeypatch):
             organization_id=801, store_id=802, provider="shopify",
             external_store_url="diaglob-poc.myshopify.com",
             access_token_encrypted="synthetic_ciphertext",
-            scopes="read_products,write_pixels,read_customer_events",
+            scopes="read_products,write_pixels,read_customer_events,read_pixels",
             status="connected",
         )
         db.add_all([org, store, row, conn])
@@ -170,6 +170,18 @@ def test_read_only_remote_verify_detects_exact_inactive_shopify_record(store_set
     assert result == {
         "verified": True, "reason": "VERIFIED_INERT", "events_active": False
     }
+
+
+def test_verify_remote_requires_read_pixels(store_setup):
+    db, store, row, conn = store_setup
+    row.web_pixel_gid = "gid://shopify/WebPixel/123"
+    conn.scopes = "read_products,write_pixels,read_customer_events"
+    db.commit()
+    with patch("app.services.meta_pixel_provisioning.ShopifyGraphQLClient") as client:
+        result = verify_remote(db, store)
+        client.assert_not_called()
+    assert result["verified"] is False
+    assert result["reason"] == "SHOPIFY_PIXEL_READ_SCOPE_MISSING"
 
 
 def test_remote_pixel_drift_does_not_claim_live_tracking(store_setup):
