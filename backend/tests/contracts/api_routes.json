@@ -529,6 +529,10 @@
   ],
   [
     "GET",
+    "/api/stores/{store_id}/meta-pixel/verify-remote"
+  ],
+  [
+    "GET",
     "/api/stores/{store_id}/nuvemshop/status"
   ],
   [
