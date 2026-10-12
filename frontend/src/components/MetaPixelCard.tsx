@@ -7,6 +7,7 @@ import {
   getMetaPixelReadiness,
   provisionMetaPixel,
   unprovisionMetaPixel,
+  verifyStoreMetaPixelOnShopify,
   removeStoreMetaPixel,
   saveStoreMetaPixel,
   type MetaPixelSettingsStatus,
@@ -33,6 +34,7 @@ export default function MetaPixelCard({
   const [pixelId, setPixelId] = useState("");
   const [existingTracking, setExistingTracking] = useState<TrackingKind>("unknown");
   const [busy, setBusy] = useState(false);
+  const [remoteCheck, setRemoteCheck] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -42,6 +44,7 @@ export default function MetaPixelCard({
     setLoading(true);
     setStatus(null);
     setReadiness(null);
+    setRemoteCheck(null);
     setPixelId("");
     setExistingTracking("unknown");
     setError("");
@@ -119,6 +122,7 @@ export default function MetaPixelCard({
     setBusy(true);
     setError("");
     setNotice("");
+    setRemoteCheck(null);
     try {
       if (undo) await unprovisionMetaPixel(storeId);
       else await provisionMetaPixel(storeId);
@@ -138,6 +142,26 @@ export default function MetaPixelCard({
         "Shopify could not complete the operation. Verify permissions, deployment and test shop.",
         "A Shopify não permitiu a operação. Verifique permissões e a loja de teste.",
       ));
+    } finally { setBusy(false); }
+  }
+
+  async function checkRemote() {
+    setBusy(true);
+    setRemoteCheck(null);
+    setError("");
+    try {
+      const result = await verifyStoreMetaPixelOnShopify(storeId);
+      setRemoteCheck(result.verified
+        ? msg("Shopify confirma el registro inactivo. Las conversiones siguen apagadas.",
+              "Shopify confirms the inactive record. Conversions remain off.",
+              "A Shopify confirma o registro inativo. As conversões seguem desligadas.")
+        : msg("No se pudo verificar el registro: " + result.reason,
+              "Remote record not verified: " + result.reason,
+              "Registro remoto não verificado: " + result.reason));
+    } catch {
+      setError(msg("No se pudo consultar el registro de Shopify.",
+        "Unable to check Shopify's remote record.",
+        "Não foi possível consultar o registro da Shopify."));
     } finally { setBusy(false); }
   }
 
@@ -210,6 +234,7 @@ export default function MetaPixelCard({
                   "Status: aguardando extensão e testes na Shopify.")}
             </p>
           ) : null}
+          {remoteCheck && <p role="status" className="stores-alert">{remoteCheck}</p>}
           {error && <p role="alert" className="stores-alert error">{error}</p>}
           {notice && <p role="status" className="stores-alert success">{notice}</p>}
           {canWrite && (
@@ -227,6 +252,12 @@ export default function MetaPixelCard({
                 <button type="button" className="store-integration-button secondary"
                   disabled={busy} onClick={() => void changeProvisioning()}>
                   {msg("Registrar extensión (sin eventos)", "Provision extension (no events)", "Registrar extensão (sem eventos)")}
+                </button>
+              )}
+              {status?.extension_installed && (
+                <button type="button" className="store-integration-button secondary"
+                  disabled={busy} onClick={() => void checkRemote()}>
+                  {msg("Verificar en Shopify", "Verify on Shopify", "Verificar na Shopify")}
                 </button>
               )}
               {status?.extension_installed && (
