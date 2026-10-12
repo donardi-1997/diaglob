@@ -78,7 +78,11 @@ def diagnose_whatsapp(db: Session, organization_id: int, store_id: int) -> dict:
             for item in numbers
         )
         if not owned:
-            result["errors"].append("WHATSAPP_PHONE_NOT_IN_WABA")
+            result["errors"].append(
+                "WHATSAPP_PHONE_LIST_INCOMPLETE"
+                if (phones.get("paging") or {}).get("next")
+                else "WHATSAPP_PHONE_NOT_IN_WABA"
+            )
             return result
         result["provider_verified"] = True
         # If WABA has >100 numbers, absence on the first page is inconclusive.
