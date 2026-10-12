@@ -24,6 +24,14 @@ mutation DiaglobWebPixelCreate($webPixel: WebPixelInput!) {
   }
 }
 """
+WEB_PIXEL_VERIFY = """
+query DiaglobWebPixelVerify($id: ID) {
+  webPixel(id: $id) {
+    id
+    settings
+  }
+}
+"""
 WEB_PIXEL_DELETE = """
 mutation DiaglobWebPixelDelete($id: ID!) {
   webPixelDelete(id: $id) {
@@ -111,7 +119,7 @@ def provision(db: Session, store: Store) -> dict:
         shop_domain=normalize_shop_domain(conn.external_store_url),
         access_token=decrypt_shopify_secret(conn.access_token_encrypted),
     )
-    result = client.query(WEB_PIXEL_CREATE, {"webPixel": {"settings": json.dumps(settings)}})
+    result = client.query(WEB_PIXEL_CREATE, {"webPixel": {"settings": settings}})
     payload = result.get("webPixelCreate") or {}
     if payload.get("userErrors"):
         # Never leak customer or shop token strings from upstream.
@@ -162,3 +170,59 @@ def remove_remote(db: Session, store: Store):
     row.enabled = False
     db.commit()
     return {"provisioned": False, "events_active": False}
+
+
+def verify_remote(db: Session, store: Store) -> dict:
+    """Live, read-only Shopify WebPixel verification; never enable tracking.
+
+    A stored GID by itself is *not* proof that Shopify still has our pixel.
+    Returns only safe configuration flags. A public source_id is never treated
+    as a credential, and no buyer events are read or transmitted.
+    """
+    row = db.query(MetaPixelConfiguration).filter(
+        MetaPixelConfiguration.organization_id == store.organization_id,
+        MetaPixelConfiguration.store_id == store.id,
+    ).first()
+    if row is None or not row.web_pixel_gid:
+        return {"verified": False, "reason": "PIXEL_NOT_PROVISIONED", "events_active": False}
+    conn = _store_connection(db, store)
+    if conn is None:
+        return {"verified": False, "reason": "SHOPIFY_NOT_CONNECTED", "events_active": False}
+    if not NEEDED_SCOPES.issubset({s.strip() for s in (conn.scopes or "").split(",")}):
+        return {"verified": False, "reason": "SHOPIFY_PIXEL_SCOPES_MISSING", "events_active": False}
+    domain = normalize_shop_domain(conn.external_store_url)
+    # A read-only Shopify check should not silently run for a merchant account.
+    allowlisted = {
+        s.strip().lower() for s in
+        os.getenv("META_WEB_PIXEL_SHOP_ALLOWLIST", "").split(",") if s.strip()
+    }
+    if domain not in allowlisted:
+        return {"verified": False, "reason": "SHOP_NOT_ALLOWLISTED", "events_active": False}
+    client = ShopifyGraphQLClient(
+        shop_domain=domain,
+        access_token=decrypt_shopify_secret(conn.access_token_encrypted),
+    )
+    data = client.query(WEB_PIXEL_VERIFY, {"id": row.web_pixel_gid})
+    remote = data.get("webPixel") if isinstance(data, dict) else None
+    if not isinstance(remote, dict) or remote.get("id") != row.web_pixel_gid:
+        return {"verified": False, "reason": "REMOTE_PIXEL_NOT_FOUND", "events_active": False}
+    remote_settings = remote.get("settings")
+    if isinstance(remote_settings, str):
+        try:
+            remote_settings = json.loads(remote_settings)
+        except (ValueError, TypeError):
+            remote_settings = None
+    if not isinstance(remote_settings, dict):
+        return {"verified": False, "reason": "REMOTE_SETTINGS_INVALID", "events_active": False}
+    # The irreversible rollout boundary: we verify INERT settings only.
+    matches = (
+        remote_settings.get("pixelId") == row.pixel_id
+        and remote_settings.get("sourceId") == row.source_id
+        and remote_settings.get("trackingEnabled") == "false"
+        and remote_settings.get("collectorUrl") == "https://api.diaglob.tech/api/web-pixels/collect"
+    )
+    return {
+        "verified": bool(matches),
+        "reason": "VERIFIED_INERT" if matches else "REMOTE_SETTINGS_MISMATCH",
+        "events_active": False,
+    }

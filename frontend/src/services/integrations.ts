@@ -878,3 +878,13 @@ export async function unprovisionMetaPixel(storeId: number) {
   }>(`/api/stores/${storeId}/meta-pixel/unprovision`);
   return response.data;
 }
+
+
+export async function verifyStoreMetaPixelOnShopify(storeId: number) {
+  const response = await api.get<{
+    verified: boolean;
+    reason: string;
+    events_active: false;
+  }>(`/api/stores/${storeId}/meta-pixel/verify-remote`);
+  return response.data;
+}

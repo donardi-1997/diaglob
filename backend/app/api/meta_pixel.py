@@ -158,3 +158,20 @@ def unprovision_meta_pixel(
         return meta_pixel_provisioning.remove_remote(db, store)
     except meta_pixel_provisioning.PixelProvisioningError as exc:
         raise HTTPException(status_code=409, detail=exc.code) from exc
+
+
+
+@router.get("/api/stores/{store_id}/meta-pixel/verify-remote")
+def verify_meta_pixel_on_shopify(
+    store_id: int,
+    membership: OrganizationMembership = Depends(require_permission("stores.read")),
+    store: Store = Depends(require_authorized_path_store),
+    db: Session = Depends(get_db),
+):
+    """Real read-only Shopify check; do not infer live events from a local GID."""
+    try:
+        return meta_pixel_provisioning.verify_remote(db, store)
+    except meta_pixel_provisioning.PixelProvisioningError as exc:
+        raise HTTPException(status_code=409, detail=exc.code) from exc
+    except (ShopifyAPIError, RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=503, detail="SHOPIFY_WEB_PIXEL_VERIFY_UNAVAILABLE") from exc
