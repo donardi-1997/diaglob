@@ -208,12 +208,18 @@ export function useWorkspace() {
     [organizationId, organizations],
   );
 
+  // Never render a previous tenant's stores while the new tenant loads.
+  const availableStores = useMemo(
+    () => loadedStoresOrganizationId === organizationId ? stores : [],
+    [loadedStoresOrganizationId, organizationId, stores],
+  );
+
   const selectedStore = useMemo(
     () =>
-      stores.find(
+      availableStores.find(
         (store) => store.active && String(store.id) === selectedStoreId,
       ) || null,
-    [selectedStoreId, stores],
+    [selectedStoreId, availableStores],
   );
 
   const permissions = useMemo(
@@ -231,7 +237,7 @@ export function useWorkspace() {
     organizations,
     organizationId,
     sessionReady,
-    stores,
+    stores: availableStores,
     storesError,
     storesLoading,
     selectedStoreId,
