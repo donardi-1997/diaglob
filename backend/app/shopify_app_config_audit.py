@@ -92,7 +92,7 @@ def audit_shopify_app_config(
     urls = auth.get("redirect_urls") if isinstance(auth, dict) else None
     if (
         not isinstance(urls, list) or len(urls) != len(set(map(str, urls)))
-        or set(urls) != {CALLBACK_URI}
+        or set(map(str, urls)) != {CALLBACK_URI}
         or any(not _safe_https_address(url) for url in urls)
     ):
         failures.append("SHOPIFY_REDIRECTS_MISSING_OR_UNSAFE")
