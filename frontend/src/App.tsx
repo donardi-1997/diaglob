@@ -244,6 +244,7 @@ function App() {
     storesLoading,
     selectedStoreId,
     selectedStore,
+    selectedOrganization,
     can,
     changeStore,
     handleAuthenticated,
@@ -687,6 +688,8 @@ function App() {
               stores={stores}
               storesError={storesError}
               storesLoading={storesLoading}
+              limitedStoreAccess={selectedOrganization?.all_stores === false}
+              canCreateStores={can("stores.write")}
               onRetryStores={loadStores}
               selectedStoreId={selectedStoreId}
               selectedStoreName={selectedStore?.name}
