@@ -819,7 +819,7 @@ export interface MetaPixelSettingsStatus {
   pixel_id: string | null;
   existing_tracking: "unknown" | "none" | "shopify_meta" | "manual_pixel";
   enabled: boolean;
-  status: "not_configured" | "awaiting_extension";
+  status: "not_configured" | "awaiting_extension" | "provisioned";
   extension_installed: boolean;
   duplicate_tracking_risk: "unknown" | "high" | "none_reported";
 }
@@ -847,5 +847,34 @@ export async function removeStoreMetaPixel(storeId: number) {
   const response = await api.delete<MetaPixelSettingsStatus>(
     `/api/stores/${storeId}/meta-pixel`,
   );
+  return response.data;
+}
+
+
+export interface MetaPixelReadiness {
+  can_provision: boolean;
+  blockers: string[];
+  events_active: false;
+}
+
+/** Admin-only staging. Provisioning never starts transmitting customer events. */
+export async function getMetaPixelReadiness(storeId: number) {
+  const response = await api.get<MetaPixelReadiness>(
+    `/api/stores/${storeId}/meta-pixel/readiness`,
+  );
+  return response.data;
+}
+
+export async function provisionMetaPixel(storeId: number) {
+  const response = await api.post<{
+    provisioned: boolean; events_active: false; web_pixel_gid: string;
+  }>(`/api/stores/${storeId}/meta-pixel/provision`);
+  return response.data;
+}
+
+export async function unprovisionMetaPixel(storeId: number) {
+  const response = await api.post<{
+    provisioned: boolean; events_active: false;
+  }>(`/api/stores/${storeId}/meta-pixel/unprovision`);
   return response.data;
 }
