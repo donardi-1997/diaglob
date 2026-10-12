@@ -238,6 +238,7 @@ function App() {
   const {
     authenticated,
     currentUser,
+    organizationId,
     sessionReady,
     stores,
     storesError,
@@ -417,6 +418,7 @@ function App() {
       {appRouteAllowed && activePage === "plans" && <BillingChannelPage />}
       {appRouteAllowed && activePage === "conversations" && (
         <ConversationsPage
+          key={organizationId}
           stores={stores}
           canWrite={can("conversations.write")}
           initialConversationId={
@@ -456,7 +458,7 @@ function App() {
         <TeamPage stores={stores} canWrite={can("users.write")} />
       )}
       {appRouteAllowed && activePage === "agents" && (
-        <AgentsPage stores={stores} canWrite={can("agents.write")} />
+        <AgentsPage key={organizationId} stores={stores} canWrite={can("agents.write")} />
       )}
       {appRouteAllowed && activePage === "knowledge" && (
         <KnowledgeBasesPage
