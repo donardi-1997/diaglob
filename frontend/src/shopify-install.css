@@ -17,3 +17,9 @@
 .shopify-install-footer{display:flex;align-items:flex-start;gap:.65rem;color:var(--text-secondary,#566477);font-size:.8rem;border-top:1px solid var(--border-color,#dbe3ec);padding-top:1rem;margin-top:1.35rem}
 .shopify-install-footer svg{flex-shrink:0;margin-top:2px}
 @media(max-width:540px){.shopify-install-page{padding:1rem .75rem}.shopify-install-card{border-radius:16px}}
+
+.shopify-install-bootstrap{margin-top:1.3rem;padding:1rem;border:1px solid var(--border-color,#dbe3ec);background:var(--surface-secondary,#f0f4f8);border-radius:12px}
+.shopify-install-bootstrap h2{font-size:1.12rem;margin:0 0 .4rem}
+.shopify-install-bootstrap p{font-size:.88rem;margin:.3rem 0 .8rem}
+.shopify-install-label input{width:100%;box-sizing:border-box;border:1px solid #b7c6d3;padding:.85rem 1rem;border-radius:10px;background:var(--surface-primary,#fff);color:inherit;font:inherit}
+.shopify-install-label input:focus-visible,.shopify-install-label select:focus-visible{outline:2px solid #0b7474;outline-offset:2px}
