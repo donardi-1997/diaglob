@@ -92,13 +92,12 @@ def test_inactive_store_rejected(data):
 
 
 def test_routes_require_store_membership_and_role_permissions():
-    from app.api.deps import require_permission
     from app.api.store_access import require_authorized_path_store
     paths = [r for r in router.routes if "/meta-pixel" in r.path]
     assert len(paths) == 3
     for route in paths:
         assert any(
-            dependency.dependency is require_authorized_path_store
+            dependency.call is require_authorized_path_store
             for dependency in route.dependant.dependencies
         )
         assert any(
