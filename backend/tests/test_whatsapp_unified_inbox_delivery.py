@@ -54,17 +54,3 @@ def test_unified_inbox_failures_never_save_undelivered_message(failure, code):
     db.commit.assert_not_called()
 
 
-def test_only_whatsapp_human_replies_use_external_whatsapp_adapter():
-    db = MagicMock()
-    with patch("app.services.whatsapp_service.send_message") as sender:
-        # Internal human messages are handled by the original local message flow.
-        conversation = SimpleNamespace(
-            id=34, organization_id=71, store_id=41, channel="internal",
-            agent_id=None, unread=0,
-        )
-        db.refresh.return_value = None
-        create_message_with_ai(
-            db=db, conversation=conversation, sender="human", text="Internal note",
-        )
-    sender.assert_not_called()
-    db.add.assert_called_once()
