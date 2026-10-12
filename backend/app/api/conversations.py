@@ -360,6 +360,18 @@ def create_message(
         elif code == "INSTAGRAM_SEND_FAILED":
             status = 502
             message = "No fue posible enviar el mensaje por Instagram."
+        elif code == "WHATSAPP_NOT_CONNECTED":
+            status = 409
+            message = "WhatsApp no está conectado para esta tienda."
+        elif code == "WHATSAPP_CONVERSATION_NOT_FOUND":
+            status = 404
+            message = "Conversación de WhatsApp no disponible."
+        elif code == "WHATSAPP_SERVICE_WINDOW_CLOSED":
+            status = 409
+            message = "La ventana de 24 horas terminó. Usa una plantilla de WhatsApp aprobada."
+        elif code == "WHATSAPP_SEND_FAILED":
+            status = 502
+            message = "No fue posible enviar el mensaje por WhatsApp."
         else:
             status = 502
             message = "No fue posible enviar el mensaje por el canal externo."
