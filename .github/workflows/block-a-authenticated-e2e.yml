@@ -1,0 +1,59 @@
+name: Block A Authenticated E2E
+
+on:
+  workflow_dispatch:
+    inputs:
+      organization_id:
+        description: 'Authorized reviewer organization ID (optional for single-org)'
+        required: false
+        type: string
+      store_id:
+        description: 'Dedicated E2E store ID (optional)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  authenticated-readonly:
+    name: Read-only reviewer E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require reviewer secrets (fail closed)
+        shell: bash
+        env:
+          E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
+          E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$E2E_EMAIL" || -z "$E2E_PASSWORD" ]]; then
+            echo "::error::Configure dedicated E2E_EMAIL and E2E_PASSWORD repository secrets before running authenticated E2E."
+            exit 1
+          fi
+          echo "Dedicated reviewer credentials present; values remain redacted."
+
+      - name: Execute authenticated Block A read-only smoke
+        shell: pwsh
+        env:
+          E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
+          E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+          E2E_COGNITO_CLIENT_ID: ${{ vars.E2E_COGNITO_CLIENT_ID }}
+          E2E_ORGANIZATION_ID: ${{ inputs.organization_id }}
+          E2E_STORE_ID: ${{ inputs.store_id }}
+          E2E_API_URL: https://api.diaglob.tech
+          E2E_AWS_REGION: us-east-2
+          E2E_REPORT_PATH: ${{ runner.temp }}/block-a-e2e-report.json
+        run: ./scripts/e2e-block-a.ps1
+
+      - name: Upload redacted E2E evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: block-a-readonly-e2e
+          path: ${{ runner.temp }}/block-a-e2e-report.json
+          if-no-files-found: ignore
+          retention-days: 7
