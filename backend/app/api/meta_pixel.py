@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..models import MetaPixelConfiguration, OrganizationMembership, Store
+from ..services import meta_pixel_provisioning
 from .deps import require_permission
 from .store_access import require_authorized_path_store
 
@@ -41,10 +42,10 @@ def _format_settings(row: MetaPixelConfiguration | None, store_id: int) -> dict:
         "configured": True,
         "pixel_id": row.pixel_id,
         "existing_tracking": row.existing_tracking,
-        # Intentional safety gate: no pixel extension or browser events yet.
+        # Shopify may be provisioned while browser/server event collection stays OFF.
         "enabled": False,
-        "status": "awaiting_extension",
-        "extension_installed": False,
+        "status": "provisioned" if row.web_pixel_gid else "awaiting_extension",
+        "extension_installed": bool(row.web_pixel_gid),
         "duplicate_tracking_risk": (
             "high" if row.existing_tracking in {"shopify_meta", "manual_pixel"}
             else "unknown" if row.existing_tracking == "unknown" else "none_reported"
@@ -91,6 +92,8 @@ def set_meta_pixel(
         )
         db.add(row)
     else:
+        if row.web_pixel_gid:
+            raise HTTPException(status_code=409, detail="REMOVE_PROVISIONED_PIXEL_FIRST")
         row.pixel_id = payload.pixel_id
         row.existing_tracking = payload.existing_tracking
         row.enabled = False
@@ -108,6 +111,47 @@ def delete_meta_pixel(
 ):
     row = _load_config(db, store)
     if row is not None:
+        if row.web_pixel_gid:
+            raise HTTPException(status_code=409, detail="REMOVE_PROVISIONED_PIXEL_FIRST")
         db.delete(row)
         db.commit()
     return _format_settings(None, store.id)
+
+
+
+@router.get("/api/stores/{store_id}/meta-pixel/readiness")
+def meta_pixel_readiness(
+    store_id: int,
+    membership: OrganizationMembership = Depends(require_permission("stores.read")),
+    store: Store = Depends(require_authorized_path_store),
+    db: Session = Depends(get_db),
+):
+    """No Shopify request; indicates why provisioning is blocked."""
+    return meta_pixel_provisioning.readiness(db, store)
+
+
+@router.post("/api/stores/{store_id}/meta-pixel/provision")
+def provision_meta_pixel(
+    store_id: int,
+    membership: OrganizationMembership = Depends(require_permission("stores.write")),
+    store: Store = Depends(require_authorized_path_store),
+    db: Session = Depends(get_db),
+):
+    """Create INACTIVE app-pixel settings; never send merchant events."""
+    try:
+        return meta_pixel_provisioning.provision(db, store)
+    except meta_pixel_provisioning.PixelProvisioningError as exc:
+        raise HTTPException(status_code=409, detail=exc.code) from exc
+
+
+@router.post("/api/stores/{store_id}/meta-pixel/unprovision")
+def unprovision_meta_pixel(
+    store_id: int,
+    membership: OrganizationMembership = Depends(require_permission("stores.write")),
+    store: Store = Depends(require_authorized_path_store),
+    db: Session = Depends(get_db),
+):
+    try:
+        return meta_pixel_provisioning.remove_remote(db, store)
+    except meta_pixel_provisioning.PixelProvisioningError as exc:
+        raise HTTPException(status_code=409, detail=exc.code) from exc
