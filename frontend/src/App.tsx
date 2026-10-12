@@ -656,7 +656,7 @@ function App() {
             <LoadingScreen session />
           ) : (
             <Suspense fallback={<LoadingScreen />}>
-              <ShopifyInstallPage canWrite={can("stores.write")} />
+              <ShopifyInstallPage canWrite={can("stores.write")} onStoresChanged={loadStores} />
             </Suspense>
           )
         }
