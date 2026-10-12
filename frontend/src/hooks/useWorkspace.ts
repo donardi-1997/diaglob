@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { clearSession, hasSession } from "../services/authStorage";
 import { getStores, type Store } from "../services/stores";
+import { createLatestRequestGuard } from "../services/latestRequestGuard";
 import {
   getCurrentUser,
   getMyOrganizations,
@@ -24,11 +25,19 @@ export function useWorkspace() {
   const [stores, setStores] = useState<Store[]>([]);
   const [storesError, setStoresError] = useState(false);
   const [storesLoading, setStoresLoading] = useState(false);
+  const [loadedStoresOrganizationId, setLoadedStoresOrganizationId] = useState("");
+  const lastStoresOrganizationId = useRef("");
+  const storesRequestGuard = useRef(createLatestRequestGuard());
   const [selectedStoreId, setSelectedStoreId] = useState(
     localStorage.getItem("diaglob-store-id") || "",
   );
 
   const resetWorkspace = useCallback(() => {
+    // Logout must invalidate in-flight responses before clearing workspace state.
+    storesRequestGuard.current.invalidate();
+    lastStoresOrganizationId.current = "";
+    setLoadedStoresOrganizationId("");
+    setStoresLoading(false);
     setCurrentUser(null);
     setOrganizations([]);
     setStores([]);
@@ -94,40 +103,71 @@ export function useWorkspace() {
   }, [expireSession]);
 
   const loadStores = useCallback(async () => {
+    const requestId = storesRequestGuard.current.issue();
+
     if (!sessionReady || !organizationId) {
       setStores([]);
+      setLoadedStoresOrganizationId("");
       setStoresError(false);
+      setStoresLoading(false);
       return;
     }
+
+    // Never retain one organization's stores after the active tenant changes.
+    // Keep a saved selection only on the initial load of the same organization.
+    if (lastStoresOrganizationId.current !== organizationId) {
+      if (lastStoresOrganizationId.current) {
+        localStorage.removeItem("diaglob-store-id");
+        setSelectedStoreId("");
+      }
+      lastStoresOrganizationId.current = organizationId;
+      setStores([]);
+      setLoadedStoresOrganizationId("");
+    }
+
+    const isCurrent = () =>
+      storesRequestGuard.current.isCurrent(requestId) &&
+      localStorage.getItem("diaglob-organization-id") === organizationId;
 
     setStoresLoading(true);
     setStoresError(false);
     try {
       const response = await getStores();
+      if (!isCurrent()) return;
+
       setStores(response.items);
+      setLoadedStoresOrganizationId(organizationId);
 
       const savedStoreId = localStorage.getItem("diaglob-store-id");
       if (
         savedStoreId &&
-        !response.items.some((store) => String(store.id) === savedStoreId)
+        !response.items.some((store) => store.active && String(store.id) === savedStoreId)
       ) {
         localStorage.removeItem("diaglob-store-id");
         setSelectedStoreId("");
       }
     } catch (error) {
+      if (!isCurrent()) return;
       console.error("Unable to load stores", error);
       setStoresError(true);
-      // Preserve the last known list; an API outage is not an empty workspace.
+      // A same-organization retry retains its last known stores. A new tenant does not.
     } finally {
-      setStoresLoading(false);
+      if (isCurrent()) setStoresLoading(false);
     }
   }, [organizationId, sessionReady]);
 
   useEffect(() => {
     void loadStores();
+    return () => storesRequestGuard.current.invalidate();
   }, [loadStores]);
 
   useEffect(() => {
+    // Do not discard a persisted store before the first authorized store
+    // response arrives, or select a store from a previous organization.
+    if (!sessionReady || loadedStoresOrganizationId !== organizationId) {
+      return;
+    }
+
     const nextStoreId = resolveStoreId(stores, selectedStoreId);
 
     if (nextStoreId === selectedStoreId) {
@@ -141,7 +181,7 @@ export function useWorkspace() {
     }
 
     setSelectedStoreId(nextStoreId);
-  }, [stores, selectedStoreId]);
+  }, [stores, selectedStoreId, organizationId, loadedStoresOrganizationId, sessionReady]);
 
   const changeStore = useCallback((storeId: string) => {
     if (storeId) {
