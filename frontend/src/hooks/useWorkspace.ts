@@ -3,6 +3,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { clearSession, hasSession } from "../services/authStorage";
 import { getStores, type Store } from "../services/stores";
 import { createLatestRequestGuard } from "../services/latestRequestGuard";
+import { getCurrentOrganization } from "../services/organizations";
+import { classifyStoreAvailability, type StoreAvailability } from "../services/storeAvailability";
 import {
   getCurrentUser,
   getMyOrganizations,
@@ -25,6 +27,7 @@ export function useWorkspace() {
   const [stores, setStores] = useState<Store[]>([]);
   const [storesError, setStoresError] = useState(false);
   const [storesLoading, setStoresLoading] = useState(false);
+  const [storeAvailability, setStoreAvailability] = useState<StoreAvailability>("unknown");
   const [loadedStoresOrganizationId, setLoadedStoresOrganizationId] = useState("");
   const lastStoresOrganizationId = useRef("");
   const storesRequestGuard = useRef(createLatestRequestGuard());
@@ -38,6 +41,7 @@ export function useWorkspace() {
     lastStoresOrganizationId.current = "";
     setLoadedStoresOrganizationId("");
     setStoresLoading(false);
+    setStoreAvailability("unknown");
     setCurrentUser(null);
     setOrganizations([]);
     setStores([]);
@@ -108,6 +112,7 @@ export function useWorkspace() {
     if (!sessionReady || !organizationId) {
       setStores([]);
       setLoadedStoresOrganizationId("");
+      setStoreAvailability("unknown");
       setStoresError(false);
       setStoresLoading(false);
       return;
@@ -121,6 +126,7 @@ export function useWorkspace() {
         setSelectedStoreId("");
       }
       lastStoresOrganizationId.current = organizationId;
+      setStoreAvailability("unknown");
       setStores([]);
       setLoadedStoresOrganizationId("");
     }
@@ -137,6 +143,25 @@ export function useWorkspace() {
 
       setStores(response.items);
       setLoadedStoresOrganizationId(organizationId);
+
+      if (response.items.some((store) => store.active)) {
+        setStoreAvailability("available");
+      } else {
+        setStoreAvailability("unknown");
+        // Non-blocking diagnostic: /api/organization exposes only an
+        // already-authorized aggregate. A failed lookup never fabricates stores
+        // or changes membership. It must not delay the selector rendering.
+        void getCurrentOrganization()
+          .then((summary) => {
+            if (!isCurrent()) return;
+            setStoreAvailability(
+              classifyStoreAvailability(0, summary.active_stores, summary.all_stores),
+            );
+          })
+          .catch(() => {
+            if (isCurrent()) setStoreAvailability("unknown");
+          });
+      }
 
       const savedStoreId = localStorage.getItem("diaglob-store-id");
       if (
@@ -240,6 +265,7 @@ export function useWorkspace() {
     stores: availableStores,
     storesError,
     storesLoading,
+    storeAvailability,
     selectedStoreId,
     selectedOrganization,
     selectedStore,
