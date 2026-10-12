@@ -33,9 +33,8 @@ def create_message_with_ai(
 ) -> dict:
     """Persist a message and optionally generate an AI response.
 
-    Human messages for Telegram conversations are delivered through the
-    Telegram adapter so the unified inbox sends externally instead of only
-    writing an internal message.
+    Human messages for external conversations must be delivered through the
+    channel adapter, never saved only inside Diaglob as though delivered.
     """
     if (
         sender == "human"
@@ -81,6 +80,31 @@ def create_message_with_ai(
         except InstagramNotConnectedError as exc:
             raise ConversationDeliveryError("INSTAGRAM_NOT_CONNECTED") from exc
         except InstagramSendError as exc:
+            raise ConversationDeliveryError(str(exc)) from exc
+
+    if (
+        sender == "human"
+        and (conversation.channel or "").lower() == "whatsapp"
+    ):
+        from .whatsapp_service import (
+            WhatsAppNotConnectedError,
+            WhatsAppNotFoundError,
+            WhatsAppSendError,
+            send_message as send_whatsapp_message,
+        )
+
+        try:
+            return send_whatsapp_message(
+                db=db,
+                organization_id=conversation.organization_id,
+                conversation_id=conversation.id,
+                text=text,
+            )
+        except WhatsAppNotConnectedError as exc:
+            raise ConversationDeliveryError("WHATSAPP_NOT_CONNECTED") from exc
+        except WhatsAppNotFoundError as exc:
+            raise ConversationDeliveryError("WHATSAPP_CONVERSATION_NOT_FOUND") from exc
+        except WhatsAppSendError as exc:
             raise ConversationDeliveryError(str(exc)) from exc
 
     message = Message(
