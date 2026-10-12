@@ -28,6 +28,7 @@ from ..services.whatsapp_service import (
     send_message as svc_send_message,
     sync_templates as svc_sync_templates,
 )
+from ..services.whatsapp_diagnostics import diagnose_whatsapp
 from ..services.whatsapp_webhooks import (
     emit_webhook_events,
     process_webhook_payload,
@@ -197,6 +198,19 @@ def disconnect_whatsapp(
         _map_whatsapp_error(exc)
 
 
+@router.get(
+    "/api/stores/{store_id}/whatsapp/diagnostics",
+    dependencies=[Depends(require_authorized_path_store)],
+)
+def whatsapp_connection_diagnostics(
+    store_id: int,
+    membership: OrganizationMembership = Depends(require_permission("stores.read")),
+    db: Session = Depends(get_db),
+):
+    """Remote read-only Meta validation, without sending a WhatsApp message."""
+    return diagnose_whatsapp(db, membership.organization_id, store_id)
+
+
 @router.get("/api/webhooks/whatsapp")
 def whatsapp_verify_webhook(
     request: Request,
@@ -209,18 +223,23 @@ def whatsapp_verify_webhook(
     if mode != "subscribe" or not token or not challenge:
         raise HTTPException(status_code=400, detail="Invalid verification request")
 
-    connection = (
-        db.query(WhatsAppConnection)
-        .filter(
-            WhatsAppConnection.verify_token == token,
-            WhatsAppConnection.status == "connected",
+    # Meta app webhooks have one app-level callback verification token.
+    # Keep legacy per-store verification only while a global token is absent.
+    shared_verify_token = os.getenv("WHATSAPP_WEBHOOK_VERIFY_TOKEN")
+    if shared_verify_token:
+        if not hmac.compare_digest(token, shared_verify_token):
+            raise HTTPException(status_code=403, detail="Invalid verify token")
+    else:
+        connection = (
+            db.query(WhatsAppConnection)
+            .filter(
+                WhatsAppConnection.verify_token == token,
+                WhatsAppConnection.status == "connected",
+            )
+            .first()
         )
-        .first()
-    )
-
-    if not connection:
-        raise HTTPException(status_code=403, detail="Invalid verify token")
-
+        if not connection:
+            raise HTTPException(status_code=403, detail="Invalid verify token")
     return PlainTextResponse(content=challenge)
 
 
