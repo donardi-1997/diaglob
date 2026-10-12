@@ -64,10 +64,10 @@ def audit_shopify_app_config(
     failures: list[str] = []
 
     if (
-        not expected_client_id or not expected_client_id.strip()
+        not isinstance(expected_client_id, str) or not expected_client_id.strip()
         or not _safe_https_address(expected_application_url)
         or type(expected_embedded) is not bool
-        or not expected_scopes.strip()
+        or not isinstance(expected_scopes, str) or not expected_scopes.strip()
     ):
         return ShopifyConfigAudit(False, ("EXPECTED_APP_IDENTITY_INCOMPLETE",))
 
@@ -143,7 +143,7 @@ def audit_shopify_app_config(
             ):
                 failures.append("COMPLIANCE_SUBSCRIPTION_URI_OR_TOPICS_INVALID")
             for topic in topics:
-                if topic not in counts:
+                if not isinstance(topic, str) or topic not in counts:
                     failures.append("COMPLIANCE_UNKNOWN_TOPIC")
                 else:
                     counts[topic] += 1
