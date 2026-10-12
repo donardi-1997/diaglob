@@ -1,0 +1,7 @@
+{
+  "name": "diaglob-shopify-cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "CLI project for the existing Diaglob Shopify app. No independent app and no web server."
+}
