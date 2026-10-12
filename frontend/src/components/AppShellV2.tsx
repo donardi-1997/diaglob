@@ -307,7 +307,7 @@ export default function AppShellV2({
                 <span className="dg-store-icon"><ShoppingBag size={16} /></span>
                 <span className="dg-store-copy">
                   <small>{STORE_LABELS[locale]}</small>
-                  <strong>{selectedStoreName || (storesLoading ? "Cargando..." : storesError ? "Error de tiendas" : "Sin tienda")}</strong>
+                  <strong>{selectedStoreName || (storesLoading ? "Cargando..." : storesError ? "Error de tiendas" : storeAvailability === "unassigned" ? "Sin asignación" : storeAvailability === "no-active-stores" ? "Sin tiendas activas" : storeAvailability === "mismatch" ? "Error de visibilidad" : "Sin tienda")}</strong>
                 </span>
                 <ChevronDown size={15} />
               </button>
@@ -331,8 +331,12 @@ export default function AppShellV2({
                           : storeAvailability === "mismatch"
                             ? "Hay tiendas activas, pero el servidor no las devolvió. Revisa los permisos o solicita soporte."
                             : "No se pudo verificar si la organización tiene tiendas activas."}
-                      {(storeAvailability === "no-active-stores" && canCreateStores) ? (
-                        <button type="button" onClick={() => { navigate("stores"); setStoreMenuOpen(false); }}>Ir a Tiendas</button>
+                      {storeAvailability === "no-active-stores" ? (
+                        canCreateStores ? (
+                          <button type="button" onClick={() => { navigate("stores"); setStoreMenuOpen(false); }}>Ir a Tiendas</button>
+                        ) : (
+                          <span>Solicita al administrador que cree o active una tienda.</span>
+                        )
                       ) : storeAvailability === "unassigned" ? (
                         <span>Solicita al administrador que revise las tiendas asignadas a tu cuenta.</span>
                       ) : (
