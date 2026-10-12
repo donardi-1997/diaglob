@@ -184,11 +184,18 @@ def process_webhook_payload(db: Session, payload: dict) -> dict:
                 if new_status not in valid_statuses:
                     continue
 
+                # A signed Meta callback can contain statuses for many stores.
+                # A message ID alone is not permission to modify another
+                # tenant or store: bind status updates to the receiving phone.
                 existing = (
                     db.query(Message)
+                    .join(Conversation, Conversation.id == Message.conversation_id)
                     .filter(
                         Message.provider == "whatsapp",
                         Message.external_message_id == ext_msg_id,
+                        Conversation.organization_id == connection.organization_id,
+                        Conversation.store_id == connection.store_id,
+                        Conversation.channel == "WhatsApp",
                     )
                     .first()
                 )
