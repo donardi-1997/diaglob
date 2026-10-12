@@ -36,6 +36,8 @@ interface AppShellV2Props {
   stores: Store[];
   storesError: boolean;
   storesLoading: boolean;
+  limitedStoreAccess: boolean;
+  canCreateStores: boolean;
   onRetryStores: () => void;
   selectedStoreId: string;
   selectedStoreName?: string;
@@ -103,6 +105,8 @@ export default function AppShellV2({
   stores,
   storesError,
   storesLoading,
+  limitedStoreAccess,
+  canCreateStores,
   onRetryStores,
   selectedStoreId,
   selectedStoreName,
@@ -319,8 +323,14 @@ export default function AppShellV2({
                   )}
                   {!storesLoading && !storesError && stores.filter((store) => store.active).length === 0 && (
                     <div className="dg-store-menu-status">
-                      No hay tiendas activas. Abre Tiendas para crear o activar una.
-                      <button type="button" onClick={() => { navigate("stores"); setStoreMenuOpen(false); }}>Ir a Tiendas</button>
+                      {limitedStoreAccess
+                        ? "No tienes tiendas activas asignadas en esta organización."
+                        : "No hay tiendas activas en esta organización."}
+                      {canCreateStores ? (
+                        <button type="button" onClick={() => { navigate("stores"); setStoreMenuOpen(false); }}>Ir a Tiendas</button>
+                      ) : (
+                        <span>Solicita al administrador acceso a una tienda activa.</span>
+                      )}
                     </div>
                   )}
                   {stores.filter((store) => store.active).map((store) => (
