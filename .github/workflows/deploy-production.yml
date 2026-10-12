@@ -253,6 +253,24 @@ jobs:
           check_url "Shopify support center" "https://diaglob.tech/support"
 
 
+      - name: Verify Block A protected API routes (anonymous, read only)
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # A 404 indicates a missing route; 200 indicates an auth bypass.
+          # No credentials or application mutations are required.
+          for route in /api/me /api/stores /api/conversations /api/agents /api/ai/workforce; do
+            code="$(curl --silent --show-error --max-time 15 \
+              --output /dev/null --write-out '%{http_code}' \
+              "https://api.diaglob.tech$route")"
+            if [[ "$code" != "401" && "$code" != "403" ]]; then
+              echo "FAIL: anonymous $route returned HTTP $code (expected 401/403)"
+              exit 1
+            fi
+            echo "PASS: anonymous $route is registered and access-controlled (HTTP $code)"
+          done
+
       - name: Verify billing onboarding public E2E boundaries (read only)
         shell: bash
         run: |
