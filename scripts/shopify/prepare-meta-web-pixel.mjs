@@ -69,10 +69,14 @@ export function findWebPixelExtension(base) {
 }
 
 export function prepareExistingExtension({ root, clientId, run = runShopify, draft = false }) {
-  const configPath = join(root, "shopify.app.toml");
+  const appDir = join(root, "shopify", "cli-app");
+  mkdirSync(appDir, { recursive: true });
+  const packagePath = join(appDir, "package.json");
+  if (!existsSync(packagePath)) writeFileSync(packagePath, JSON.stringify({ name: "diaglob-shopify-cli", private: true, version: "0.0.0" }, null, 2) + "\n");
+  const configPath = join(appDir, "shopify.app.toml");
   if (!existsSync(configPath)) {
     console.log("Linking Diaglob's EXISTING app. Authenticate as its developer when prompted.");
-    run("app", "config", "link", "--client-id", clientId, "--file-name", "shopify.app.toml");
+    run("app", "config", "link", "--path", appDir, "--client-id", clientId, "--file-name", "shopify.app.toml");
   }
   if (!existsSync(configPath)) throw new Error("Shopify CLI did not create shopify.app.toml.");
   const appConfig = readFileSync(configPath, "utf8");
@@ -80,12 +84,12 @@ export function prepareExistingExtension({ root, clientId, run = runShopify, dra
     throw new Error("STOP: linked app Client ID mismatch. No extension generated.");
   }
 
-  const extensionRoot = join(root, "extensions");
+  const extensionRoot = join(appDir, "extensions");
   let extensionDir = findWebPixelExtension(extensionRoot);
   let newlyGenerated = false;
   if (!extensionDir) {
     console.log("Generating extension under the linked app; select JavaScript.");
-    run("app", "generate", "extension", "--template", "web_pixel", "--name", "diaglob-meta-pixel");
+    run("app", "generate", "extension", "--path", appDir, "--template", "web_pixel", "--name", "diaglob-meta-pixel");
     extensionDir = findWebPixelExtension(extensionRoot);
     newlyGenerated = true;
   }
@@ -119,11 +123,11 @@ export function prepareExistingExtension({ root, clientId, run = runShopify, dra
   if (missing.length) console.log("Missing scopes (approval required): " + missing.join(", "));
   if (draft) {
     if (missing.length) throw new Error("STOP: cannot prepare a draft app version without approved scopes.");
-    run("app", "config", "validate");
-    run("app", "deploy", "--no-release");
+    run("app", "config", "validate", "--path", appDir);
+    run("app", "deploy", "--path", appDir, "--no-release");
     console.log("Created UNRELEASED Shopify app version. No merchant rollout.");
   } else {
-    console.log("No app version created. Review changes and rerun with --deploy-draft.");
+    console.log("No app version created. Review shopify/cli-app and rerun with --deploy-draft.");
   }
   return { uid, extensionDir, missingScopes: missing, draftCreated: draft };
 }
