@@ -48,8 +48,8 @@ export default function MetaPixelCard({
     setNotice("");
     void Promise.all([getStoreMetaPixel(storeId), getMetaPixelReadiness(storeId)])
       .then(([response, gates]) => {
-        setReadiness(gates);
         if (!mounted) return;
+        setReadiness(gates);
         setStatus(response);
         setPixelId(response.pixel_id || "");
         setExistingTracking(response.existing_tracking);
