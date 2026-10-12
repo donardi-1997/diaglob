@@ -336,6 +336,28 @@ jobs:
           done
 
 
+      - name: Verify Shopify mandatory privacy webhook rejects invalid HMAC
+        shell: bash
+        run: |
+          set -euo pipefail
+          # This is deliberately an INVALID Shopify signature. Application
+          # code must reject it before parsing or writing any private data.
+          # Do not send a valid signed GDPR webhook from deployment CI.
+          code="$(curl --silent --show-error --max-time 20 \
+            --output /dev/null --write-out '%{http_code}' \
+            -X POST 'https://api.diaglob.tech/api/webhooks/shopify/compliance' \
+            -H 'Content-Type: application/json' \
+            -H 'X-Shopify-Topic: customers/redact' \
+            -H 'X-Shopify-Hmac-Sha256: invalid-hmac-test' \
+            --data-binary '{"shop_id":0,"shop_domain":"never-valid.myshopify.com"}')"
+          if [[ "$code" != "401" ]]; then
+            echo "FAIL: Shopify compliance webhook returned HTTP $code instead of 401"
+            exit 1
+          fi
+          echo 'PASS: Shopify mandatory compliance webhook is deployed and denies bad signatures (401)'
+          # This proves receiver/HMAC rejection only. App-level subscription
+          # and actual export/redaction are still NOT verified.
+
       - name: Audit Shopify Partner configuration on production (read only)
         env:
           PROD_HOST: ${{ secrets.PROD_HOST }}
