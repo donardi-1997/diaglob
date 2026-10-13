@@ -196,3 +196,57 @@ def test_cross_store_variants_cannot_be_mapped(db):
             db, org.id, store.id, 99999,
             external_product_id="X", external_variant_id="Y",
         )
+
+
+def test_read_only_connection_status_never_claims_order_permission(db):
+    from app.services import dropi_service
+
+    org, _outsider, store, *_ = seed(db)
+    status = dropi_service.get_connection(db, org.id, store.id)
+    assert status["connected"] is True
+    assert status["status"] == "verified"
+    assert status["access_mode"] == "read_only"
+    assert status["orders_write_enabled"] is False
+    assert status["shopify_dropify_coexistence"] == "requires_independent_token_validation"
+
+
+def test_stock_read_only_uses_separate_dropi_credential_and_never_writes(db, monkeypatch):
+    from app.services import dropi_service
+
+    org, outsider, store, *_ = seed(db)
+    captured = {}
+
+    def fake_decrypt(value):
+        assert value == "do-not-disclose"
+        return "private-test-token"
+
+    def fake_provider(token, product_id, *, country_code):
+        captured.update({"token": token, "id": product_id, "country": country_code})
+        return {"id": 18, "stock": 7, "variations": []}
+
+    monkeypatch.setattr(dropi_service, "decrypt_dropi_secret", fake_decrypt)
+    monkeypatch.setattr(dropi_service, "read_product_details", fake_provider)
+    result = dropi_service.inspect_product(db, org.id, store.id, "18")
+    assert captured == {"token": "private-test-token", "id": "18", "country": "CO"}
+    assert result["access_mode"] == "read_only"
+    assert result["stock_synced_to_shopify"] is False
+    assert "private-test-token" not in str(result)
+    with pytest.raises(dropi_service.DropiNotFoundError):
+        dropi_service.inspect_product(db, outsider.id, store.id, "18")
+
+
+def test_stock_read_only_unverified_stops_before_external_call(db, monkeypatch):
+    from app.services import dropi_service
+
+    org, _outsider, store, *_ = seed(db)
+    connection = db.query(DropiConnection).filter_by(store_id=store.id).one()
+    connection.status = "pending_validation"
+    db.commit()
+    monkeypatch.setattr(dropi_service, "decrypt_dropi_secret", lambda _value: "test-token")
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Unverified token must not reach Dropi")
+
+    monkeypatch.setattr(dropi_service, "read_product_details", forbidden)
+    with pytest.raises(dropi_service.DropiConnectionError, match="DROPPI_NOT_VERIFIED"):
+        dropi_service.inspect_product(db, org.id, store.id, "18")
