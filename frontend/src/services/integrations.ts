@@ -320,6 +320,84 @@ export async function previewDropiCatalog(storeId: number, limit = 5) {
 }
 
 
+
+export interface DropiVariantMapping {
+  provider: "dropi";
+  product_id: number;
+  product_title: string;
+  product_variant_id: number;
+  shopify_variant_id: string | null;
+  variant_title: string;
+  sku: string | null;
+  mapped: boolean;
+  external_product_id: string | null;
+  external_variant_id: string | null;
+  external_sku: string | null;
+  active: boolean;
+}
+
+export interface DropiMappings {
+  provider: "dropi";
+  items: DropiVariantMapping[];
+  total: number;
+  mapped: number;
+  unmapped: number;
+}
+
+export async function listDropiMappings(storeId: number) {
+  const response = await api.get<DropiMappings>(`/api/stores/${storeId}/dropi/mappings`);
+  return response.data;
+}
+
+export async function saveDropiMapping(
+  storeId: number,
+  variantId: number,
+  payload: { external_product_id: string; external_variant_id: string; external_sku?: string; active?: boolean },
+) {
+  const response = await api.put<DropiVariantMapping>(
+    `/api/stores/${storeId}/dropi/mappings/${variantId}`,
+    payload,
+  );
+  return response.data;
+}
+
+export async function deleteDropiMapping(storeId: number, variantId: number) {
+  const response = await api.delete<{ ok: boolean }>(
+    `/api/stores/${storeId}/dropi/mappings/${variantId}`,
+  );
+  return response.data;
+}
+
+export interface DropiOrderReadiness {
+  provider: "dropi";
+  order_id: number;
+  shopify_order_id: string | null;
+  order_number: string;
+  dry_run: boolean;
+  ready_for_provider_contract_test: boolean;
+  can_send_to_dropi: false;
+  idempotency_key: string;
+  rate_type: string;
+  missing_shipping_fields: string[];
+  blockers: string[];
+  items: Array<{
+    order_item_id: number;
+    shopify_variant_id: string | null;
+    sku: string | null;
+    quantity: number;
+    mapped: boolean;
+    dropi_product_id: string | null;
+    dropi_variant_id: string | null;
+  }>;
+}
+
+export async function getDropiOrderReadiness(storeId: number, orderId: number) {
+  const response = await api.get<DropiOrderReadiness>(
+    `/api/stores/${storeId}/dropi/orders/${orderId}/readiness`,
+  );
+  return response.data;
+}
+
 export interface WhatsAppConnectionStatus {
   connected: boolean;
   status: string;
