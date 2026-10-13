@@ -10,7 +10,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 from ..dropi_security import decrypt_dropi_secret, encrypt_dropi_secret
-from ..integrations.dropi_native import DropiNativeError, get_base_url, preview_products
+from ..integrations.dropi_native import DropiNativeError, get_base_url, preview_products, read_product_details
 from ..models import DropiConnection, Store
 
 logger = logging.getLogger(__name__)
@@ -61,6 +61,9 @@ def get_connection(db: Session, organization_id: int, store_id: int) -> dict:
             "connected_at": None,
             "last_sync_at": None,
             "last_error": None,
+            "access_mode": "read_only",
+            "orders_write_enabled": False,
+            "shopify_dropify_coexistence": "requires_independent_token_validation",
         }
 
     return {
@@ -80,6 +83,9 @@ def get_connection(db: Session, organization_id: int, store_id: int) -> dict:
             else None
         ),
         "last_error": connection.last_error,
+        "access_mode": "read_only",
+        "orders_write_enabled": False,
+        "shopify_dropify_coexistence": "requires_independent_token_validation",
     }
 
 
@@ -221,3 +227,28 @@ def preview_catalog(
     connection.last_error = None
     db.commit()
     return {"items": items, "total_returned": len(items), "country_code": store.country_code}
+
+def inspect_product(
+    db: Session,
+    organization_id: int,
+    store_id: int,
+    product_id: str,
+) -> dict:
+    """Read stock and variations for one product; no inventory sync or writes."""
+    store, connection, token = _connection_and_token(db, organization_id, store_id)
+    if connection.status != "verified":
+        raise DropiConnectionError("DROPPI_NOT_VERIFIED")
+    product = read_product_details(
+        token,
+        product_id,
+        country_code=store.country_code,
+    )
+    connection.last_sync_at = datetime.utcnow()
+    connection.last_error = None
+    db.commit()
+    return {
+        "provider": "dropi",
+        "access_mode": "read_only",
+        "stock_synced_to_shopify": False,
+        "item": product,
+    }
