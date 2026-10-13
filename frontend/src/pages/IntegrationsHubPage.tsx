@@ -241,6 +241,7 @@ const PROVIDER_COPY: Record<LocaleKey, Record<string, string>> = {
   es: {
     shopify: "Sincroniza productos, variantes y pedidos de tu tienda.",
     nuvemshop: "Conecta catálogo y pedidos para operar tiendas Nuvemshop.",
+    woocommerce: "Consulta productos y pedidos WooCommerce. Conecta Dropi mediante el plugin Dropify (pendiente de validación E2E).",
     whatsapp: "Centraliza conversaciones de WhatsApp y habilita automatizaciones.",
     telegram: "Recibe y responde conversaciones de Telegram desde Diaglob.",
     instagram: "Conecta mensajes de Instagram con tu bandeja y automatizaciones.",
@@ -254,6 +255,7 @@ const PROVIDER_COPY: Record<LocaleKey, Record<string, string>> = {
   en: {
     shopify: "Sync products, variants and orders from your store.",
     nuvemshop: "Connect catalog and orders to operate Nuvemshop stores.",
+    woocommerce: "Read WooCommerce catalog and orders. Connect Dropi through Dropify, subject to E2E validation.",
     whatsapp: "Centralize WhatsApp conversations and enable automations.",
     telegram: "Receive and reply to Telegram conversations from Diaglob.",
     instagram: "Connect Instagram messages to your inbox and automations.",
@@ -267,6 +269,7 @@ const PROVIDER_COPY: Record<LocaleKey, Record<string, string>> = {
   "pt-BR": {
     shopify: "Sincronize produtos, variantes e pedidos da sua loja.",
     nuvemshop: "Conecte catálogo e pedidos para operar lojas Nuvemshop.",
+    woocommerce: "Consulte produtos e pedidos WooCommerce. Use Dropify para vincular Dropi, com validação ponta a ponta pendente.",
     whatsapp: "Centralize conversas do WhatsApp e habilite automações.",
     telegram: "Receba e responda conversas do Telegram pela Diaglob.",
     instagram: "Conecte mensagens do Instagram à caixa de entrada e automações.",
@@ -283,6 +286,7 @@ const NEXT_STEP_COPY: Record<LocaleKey, Record<string, string>> = {
   es: {
     shopify: "Sincroniza el catálogo y valida variantes y precios antes de operar.",
     nuvemshop: "Sincroniza productos y pedidos y valida los datos en Comercio.",
+    woocommerce: "Prueba REST WooCommerce y valida un pedido Dropify → Dropi antes de automatizar.",
     whatsapp: "Envía un mensaje de prueba y confirma que llegue a Conversaciones.",
     telegram: "Prueba entrada y salida antes de activar automatizaciones.",
     instagram: "Valida un mensaje entrante antes de automatizar respuestas.",
@@ -295,6 +299,7 @@ const NEXT_STEP_COPY: Record<LocaleKey, Record<string, string>> = {
   en: {
     shopify: "Sync the catalog and validate variants and prices before operating.",
     nuvemshop: "Sync products and orders and validate the data in Commerce.",
+    woocommerce: "Test WooCommerce REST and verify a Dropify → Dropi test order before automation.",
     whatsapp: "Send a test message and confirm it reaches Conversations.",
     telegram: "Test inbound and outbound delivery before enabling automations.",
     instagram: "Validate one inbound message before automating replies.",
@@ -307,6 +312,7 @@ const NEXT_STEP_COPY: Record<LocaleKey, Record<string, string>> = {
   "pt-BR": {
     shopify: "Sincronize o catálogo e valide variantes e preços antes de operar.",
     nuvemshop: "Sincronize produtos e pedidos e valide os dados em Comércio.",
+    woocommerce: "Teste a API WooCommerce e valide um pedido Dropify → Dropi.",
     whatsapp: "Envie uma mensagem de teste e confirme que chega em Conversas.",
     telegram: "Teste entrada e saída antes de ativar automações.",
     instagram: "Valide uma mensagem recebida antes de automatizar respostas.",
@@ -321,6 +327,7 @@ const NEXT_STEP_COPY: Record<LocaleKey, Record<string, string>> = {
 const FALLBACK_CATALOG: Omit<OperationsIntegration, "connected" | "status">[] = [
   { key: "catalog:shopify", provider: "shopify", name: "Shopify", category: "commerce", available: true, scope: "store" },
   { key: "catalog:nuvemshop", provider: "nuvemshop", name: "Nuvemshop", category: "commerce", available: true, scope: "store" },
+  { key: "catalog:woocommerce", provider: "woocommerce", name: "WooCommerce + Dropify", category: "commerce", available: true, scope: "store" },
   { key: "catalog:whatsapp", provider: "whatsapp", name: "WhatsApp", category: "messaging", available: true, scope: "store" },
   { key: "catalog:telegram", provider: "telegram", name: "Telegram", category: "messaging", available: true, scope: "store" },
   { key: "catalog:instagram", provider: "instagram", name: "Instagram", category: "messaging", available: true, scope: "store" },
@@ -349,6 +356,7 @@ function normalizeProvider(integration: OperationsIntegration) {
   const raw = (integration.provider || integration.name || "").toLowerCase();
   if (raw.includes("shopify")) return "shopify";
   if (raw.includes("nuvem")) return "nuvemshop";
+  if (raw.includes("woocommerce") || raw.includes("dropify")) return "woocommerce";
   if (raw.includes("whatsapp")) return "whatsapp";
   if (raw.includes("telegram")) return "telegram";
   if (raw.includes("instagram")) return "instagram";
