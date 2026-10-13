@@ -14,7 +14,6 @@ import {
   Plug,
   ShoppingBag,
   Trash2,
-  Truck,
   Store,
 } from "lucide-react";
 
