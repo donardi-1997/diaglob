@@ -35,6 +35,17 @@ Código fuente público de Dropify: https://github.com/common-repository/wc-drop
 - La característica está deshabilitada en producción por defecto y no genera órdenes ni realiza importaciones masivas.
 - Pruebas unitarias con transporte HTTP simulado que no usan cuentas ni credenciales reales.
 
+## Convivencia con un token independiente (modo solo lectura)
+
+La arquitectura permite que un comerciante mantenga un token en **Dropify para Shopify** y registre **un segundo token, independiente, para Diaglob**. **La emisión y coexistencia real de dos tokens sigue sin estar validada con Dropi**. No copiar el token de Dropify a Diaglob: solicitar una nueva integración/token asociado a un dominio o identidad autorizada. No desactivar Dropify hasta terminar E2E.
+
+- Diaglob consulta mediante `POST /integrations/products/index` (solo lectura funcional pese al verbo POST) y `GET /integrations/products/v2/{id}` (stock y variaciones).
+- Se reutiliza `dropi-integration-key` solo para solicitudes autenticadas autorizadas por Dropi. No se implementan las llamadas de `orders/myorders` ni los endpoints de modificación del proveedor.
+- `DROPI_NATIVE_API_ENABLED` está apagado por defecto; al habilitarlo después de autorización, **solo permite las consultas anteriores**.
+- El estado de conexión anuncia `access_mode: "read_only"`, `orders_write_enabled: false` y `shopify_dropify_coexistence: "requires_independent_token_validation"`. Estos campos no constituyen verificación de que existen dos tokens activos.
+- El inventario mostrado es únicamente una **lectura de referencia**. No sincroniza Shopify, no reserva existencias y no debe presentarse como garantía de disponibilidad.
+- En modo convivencia **Dropify continúa siendo responsable de los pedidos** mientras no cambie la decisión operativa. Diaglob no envía pedidos, modificaciones de stock ni fulfillment a ninguna de las dos plataformas.
+
 ## Preparación de catálogo y órdenes, sin llamadas de escritura
 
 El backend reutiliza `supplier_variant_mappings` (utilizado por CJ), con `provider=dropi`; permite gestionar correspondencias entre la variante local Shopify y los IDs de producto/variante Dropi sin afectar al proveedor CJ ni requerir una migración. No hay correspondencia automática por SKU: podría despachar un producto o talla equivocados.
@@ -49,7 +60,7 @@ La interfaz de la tienda muestra un editor de variantes y permite revisar hasta 
 
 1. Confirmación por escrito de Dropi de que Diaglob puede utilizar un token de integración de tipo WooCommerce para integrar tiendas Shopify ajenas y de si el dominio/IP de Diaglob debe registrarse. Acordar disponibilidad, límites, webhooks y mantenimiento.
 2. Validar con **token de prueba** emitido para un dominio/IP autorizado, sin pegarlo en issues, chats o logs. La captura del token debe hacerse por la UI segura de Diaglob.
-3. E2E lectura de catálogo/variaciones, almacenes, stock y productos. Confirmar los campos por país y semántica de precios.
+3. E2E lectura de catálogo/variaciones, almacenes, stock y productos. Confirmar los campos por país y semántica de precios; revisar stock simple y variable y casos sin existencias.
 4. Crear mapeo persistente Dropi product/variation ID ↔ Diaglob ↔ Shopify product/variant ID, con idempotencia y manejo de SKUs múltiples.
 5. Convertir pedidos Shopify pagados/COD a orden Dropi con validación de dirección y región. **No habilitar el POST de órdenes hasta confirmar el contrato y el mecanismo de deduplicación en un entorno de prueba**.
 6. Reconciliar número de guía, transportadora, estados, inventario, cancelaciones, devoluciones y errores con webhooks firmados o polling permitido. No asumir que el webhook actual de Dropi verifica una firma o modifica pedidos.
@@ -60,7 +71,8 @@ La interfaz de la tienda muestra un editor de variantes y permite revisar hasta 
 - `GET /api/stores/{store_id}/dropi`: estado sin token.
 - `POST /api/stores/{store_id}/dropi/connect`: almacena token cifrado en `pending_validation`.
 - `POST /api/stores/{store_id}/dropi/test`: verifica catálogo en modo autorizado y cambia estado a `verified`.
-- `GET /api/stores/{store_id}/dropi/preview/products?limit=5`: lectura acotada tras verificación.
+- `GET /api/stores/{store_id}/dropi/preview/products?limit=5`: lectura acotada tras verificación (1–20 artículos).
+- `GET /api/stores/{store_id}/dropi/products/{product_id}`: lectura puntual de stock y variaciones con identificador de producto numérico; nunca actualiza Shopify.
 - `GET /api/stores/{store_id}/dropi/mappings`: correspondencias Dropi por variante.
 - `PUT /api/stores/{store_id}/dropi/mappings/{variant_id}`: crea/actualiza un mapeo explícito.
 - `DELETE /api/stores/{store_id}/dropi/mappings/{variant_id}`: elimina el mapeo.
