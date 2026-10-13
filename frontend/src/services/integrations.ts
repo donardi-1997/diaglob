@@ -906,3 +906,66 @@ export async function getWhatsAppDiagnostics(storeId: number) {
   );
   return response.data;
 }
+
+
+// WooCommerce is the supported bridge: Dropi token is configured in Dropify,
+// never submitted to Diaglob. Only WooCommerce REST credentials are stored here.
+export interface WooCommerceStatus {
+  provider: "woocommerce";
+  connected: boolean;
+  status: string;
+  external_store_url: string | null;
+  last_checked_at: string | null;
+  last_error: string | null;
+  dropi_bridge_status: "unverified";
+  next_step: string;
+}
+
+export interface WooCommercePreview {
+  provider: "woocommerce";
+  resource: "products" | "orders";
+  items: Array<Record<string, string | number | null>>;
+  total_returned: number;
+}
+
+export async function getWooCommerceStatus(storeId: number) {
+  const response = await api.get<WooCommerceStatus>(`/api/stores/${storeId}/woocommerce`);
+  return response.data;
+}
+
+export async function connectWooCommerce(
+  storeId: number,
+  site_url: string,
+  consumer_key: string,
+  consumer_secret: string,
+) {
+  const response = await api.post<WooCommerceStatus>(
+    `/api/stores/${storeId}/woocommerce/connect`,
+    { site_url, consumer_key, consumer_secret },
+  );
+  return response.data;
+}
+
+export async function testWooCommerce(storeId: number) {
+  const response = await api.post<WooCommerceStatus>(
+    `/api/stores/${storeId}/woocommerce/test`,
+  );
+  return response.data;
+}
+
+export async function previewWooCommerce(
+  storeId: number,
+  resource: "products" | "orders",
+) {
+  const response = await api.get<WooCommercePreview>(
+    `/api/stores/${storeId}/woocommerce/preview/${resource}`,
+  );
+  return response.data;
+}
+
+export async function disconnectWooCommerce(storeId: number) {
+  const response = await api.delete<WooCommerceStatus>(
+    `/api/stores/${storeId}/woocommerce/disconnect`,
+  );
+  return response.data;
+}
