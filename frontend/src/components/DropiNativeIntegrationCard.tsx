@@ -6,10 +6,12 @@ import {
   connectDropi,
   disconnectDropi,
   getDropiStatus,
+  inspectDropiProduct,
   previewDropiCatalog,
   testDropiConnection,
   type DropiCatalogPreview,
   type DropiConnectionStatus,
+  type DropiInventoryInspection,
 } from "../services/integrations";
 
 interface Props {
@@ -27,6 +29,7 @@ const errorMessages: Record<string, string> = {
   DROPI_COUNTRY_UNSUPPORTED: "Dropi no admite el país configurado para esta tienda.",
   DROPPI_ALREADY_CONNECTED: "Ya existe un token guardado. Desconéctalo antes de reemplazarlo.",
   DROPPI_NOT_VERIFIED: "Primero hay que validar el token de Dropi.",
+  DROPI_INVALID_PRODUCT_ID: "El ID del producto debe ser numérico.",
 };
 
 function getSafeError(err: unknown): string {
@@ -44,6 +47,7 @@ export default function DropiNativeIntegrationCard({
   const [status, setStatus] = useState<DropiConnectionStatus | null>(null);
   const [token, setToken] = useState("");
   const [catalog, setCatalog] = useState<DropiCatalogPreview | null>(null);
+  const [inventory, setInventory] = useState<DropiInventoryInspection | null>(null);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -54,6 +58,7 @@ export default function DropiNativeIntegrationCard({
     setLoading(true);
     setStatus(null);
     setCatalog(null);
+    setInventory(null);
     setToken("");
     setError("");
     getDropiStatus(storeId)
@@ -88,15 +93,21 @@ export default function DropiNativeIntegrationCard({
           <Truck size={17} />
           <strong>Dropi · Conector Diaglob</strong>
           <span className={verified ? "integration-status connected" : "integration-status disconnected"}>
-            {verified ? "Token validado" : saved ? "Pendiente de validación" : "Sin conectar"}
+            {verified ? "Validado · solo lectura" : saved ? "Pendiente de validación" : "Sin conectar"}
           </span>
         </div>
       </div>
 
       <div className="store-integration-detail">
         <p>
-          Usa tu token de integración de Dropi en Diaglob. No necesitas instalar WooCommerce:
-          Diaglob actúa como adaptador entre Dropi y tu tienda Shopify.
+          Diaglob puede consultar Dropi mediante un token de integración propio
+          y conectarse por separado a Shopify. No requiere instalar WooCommerce.
+        </p>
+        <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginTop: 8 }}>
+          <strong>Modo convivencia:</strong> mantén tu integración actual de Dropify
+          para pedidos y despachos. Solicita un token independiente para Diaglob,
+          si Dropi lo permite. Diaglob no enviará pedidos, ni modificará inventario
+          ni reemplazará la integración actual.
         </p>
         <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginTop: 8 }}>
           La compatibilidad del token y la autorización de Dropi deben verificarse antes
@@ -135,7 +146,7 @@ export default function DropiNativeIntegrationCard({
                 });
               }}
             >
-              <label htmlFor={`dropi-integration-token-${storeId}`}>Token de integración de Dropi</label>
+              <label htmlFor={`dropi-integration-token-${storeId}`}>Token separado para Diaglob (no el token de Dropify)</label>
               <input
                 id={`dropi-integration-token-${storeId}`}
                 type="password"
@@ -196,6 +207,7 @@ export default function DropiNativeIntegrationCard({
                     await disconnectDropi(storeId);
                     setStatus(await getDropiStatus(storeId));
                     setCatalog(null);
+                    setInventory(null);
                     setMessage("Token desconectado y eliminado.");
                   })}
                   disabled={busy}
@@ -213,14 +225,53 @@ export default function DropiNativeIntegrationCard({
             <div className="store-integration-detail">
               <strong>Productos consultados: {catalog.total_returned}</strong>
               <ul>
-                {catalog.items.map((item, index) => (
-                  <li key={String(item.id ?? index)}>
-                    {String(item.name ?? "Sin nombre")} · SKU: {String(item.sku ?? "—")}
-                  </li>
-                ))}
+                {catalog.items.map((item, index) => {
+                  const id = String(item.id ?? "");
+                  const inspectable = /^[0-9]{1,18}$/.test(id);
+                  return (
+                    <li key={id || String(index)}>
+                      {String(item.name ?? "Sin nombre")} · SKU: {String(item.sku ?? "—")}
+                      {inspectable && (
+                        <button
+                          type="button"
+                          className="store-integration-button secondary"
+                          style={{ margin: "4px 8px" }}
+                          disabled={busy}
+                          onClick={() => void execute(async () => {
+                            setInventory(await inspectDropiProduct(storeId, id));
+                            setMessage("Stock consultado en Dropi. No se actualizó Shopify.");
+                          })}
+                        >
+                          Consultar existencias
+                        </button>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           )}
+          {inventory && (
+            <div className="store-integration-detail" role="status">
+              <strong>Disponibilidad en Dropi: {String(inventory.item.name ?? inventory.item.id ?? "Producto")}</strong>
+              <p>Stock general: {inventory.item.stock ?? "No disponible"}</p>
+              <p>Variantes: {inventory.item.variations.length}</p>
+              {inventory.item.variations.length > 0 && (
+                <ul>
+                  {inventory.item.variations.map((item, index) => (
+                    <li key={String(item.id ?? index)}>
+                      {String(item.sku ?? item.id ?? "Variante")} ·
+                      Stock: {item.stock ?? "No disponible"}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <p style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>
+                Lectura de referencia; no reserva inventario ni modifica la tienda Shopify.
+              </p>
+            </div>
+          )}
+
         </>
       )}
     </div>
