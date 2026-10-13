@@ -9,7 +9,8 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from ..dropi_security import encrypt_dropi_secret
+from ..dropi_security import decrypt_dropi_secret, encrypt_dropi_secret
+from ..integrations.dropi_native import DropiNativeError, get_base_url, preview_products
 from ..models import DropiConnection, Store
 
 logger = logging.getLogger(__name__)
@@ -63,15 +64,11 @@ def get_connection(db: Session, organization_id: int, store_id: int) -> dict:
         }
 
     return {
-        "connected": connection.status == "connected",
-        "status": connection.status,
+        "connected": connection.status == "verified",
+        "status": "unverified" if connection.status == "connected" else connection.status,
         "external_store_id": connection.external_store_id,
         "api_url": connection.api_url,
-        "webhook_url": (
-            "https://api.diaglob.tech"
-            "/api/webhooks/dropi/"
-            f"{connection.webhook_token}"
-        ),
+        "webhook_url": None,  # Webhook ingestion is not implemented or authenticated yet.
         "connected_at": (
             connection.connected_at.isoformat() + "Z"
             if connection.connected_at
@@ -100,6 +97,7 @@ def connect(db: Session, organization_id: int, store_id: int, api_token: str) ->
     if existing_connection:
         raise DropiConnectionError("DROPPI_ALREADY_CONNECTED")
 
+    get_base_url(store.country_code)  # reject unsupported country before storing token
     api_token = (api_token or "").strip()
     if not api_token:
         raise DropiConnectionError("DROPPI_TOKEN_REQUIRED")
@@ -115,8 +113,9 @@ def connect(db: Session, organization_id: int, store_id: int, api_token: str) ->
         organization_id=organization_id,
         store_id=store.id,
         api_token_encrypted=encrypted_token,
+        api_url=get_base_url(store.country_code),
         webhook_token=secrets.token_urlsafe(32),
-        status="connected",
+        status="pending_validation",
         connected_at=now,
         last_sync_at=None,
         last_error=None,
@@ -135,14 +134,10 @@ def connect(db: Session, organization_id: int, store_id: int, api_token: str) ->
 
     return {
         "ok": True,
-        "connected": True,
+        "connected": False,
         "store_id": store.id,
         "status": connection.status,
-        "webhook_url": (
-            "https://api.diaglob.tech"
-            "/api/webhooks/dropi/"
-            f"{connection.webhook_token}"
-        ),
+        "webhook_url": None,
     }
 
 
@@ -164,3 +159,65 @@ def disconnect(db: Session, organization_id: int, store_id: int) -> dict:
     db.commit()
 
     return {"ok": True, "connected": False, "store_id": store.id}
+
+
+def _connection_and_token(
+    db: Session, organization_id: int, store_id: int
+) -> tuple[Store, DropiConnection, str]:
+    store = _require_store(db, organization_id, store_id)
+    connection = (
+        db.query(DropiConnection)
+        .filter(
+            DropiConnection.organization_id == organization_id,
+            DropiConnection.store_id == store.id,
+        )
+        .first()
+    )
+    if connection is None:
+        raise DropiNotFoundError("DROPPI_NOT_CONNECTED")
+    try:
+        token = decrypt_dropi_secret(connection.api_token_encrypted)
+    except (RuntimeError, ValueError) as exc:
+        raise DropiConnectionError("DROPPI_CREDENTIALS_UNAVAILABLE") from exc
+    return store, connection, token
+
+
+def test_connection(db: Session, organization_id: int, store_id: int) -> dict:
+    """Read one catalog item to validate a token; NEVER creates Dropi orders."""
+    store, connection, token = _connection_and_token(db, organization_id, store_id)
+    try:
+        preview_products(token, country_code=store.country_code, limit=1)
+    except DropiNativeError as exc:
+        # Disabled integrations never change connection state.
+        if str(exc) != "DROPI_PARTNER_APPROVAL_REQUIRED":
+            connection.status = "pending_validation"
+            connection.last_error = str(exc)
+            connection.updated_at = datetime.utcnow()
+            db.commit()
+        raise
+    connection.status = "verified"
+    connection.last_error = None
+    connection.last_sync_at = datetime.utcnow()
+    connection.updated_at = datetime.utcnow()
+    db.commit()
+    return {
+        **get_connection(db, organization_id, store_id),
+        "capabilities": {
+            "catalog_preview": True,
+            "order_creation": False,
+            "tracking": False,
+        },
+    }
+
+
+def preview_catalog(
+    db: Session, organization_id: int, store_id: int, limit: int = 5
+) -> dict:
+    store, connection, token = _connection_and_token(db, organization_id, store_id)
+    if connection.status != "verified":
+        raise DropiConnectionError("DROPPI_NOT_VERIFIED")
+    items = preview_products(token, country_code=store.country_code, limit=limit)
+    connection.last_sync_at = datetime.utcnow()
+    connection.last_error = None
+    db.commit()
+    return {"items": items, "total_returned": len(items), "country_code": store.country_code}
