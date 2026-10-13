@@ -64,7 +64,7 @@ La ruta `GET /api/stores/{store_id}/dropi/catalog?page=1&limit=20&query=...` con
 - Dropi usa `no_count=true`: no se inventan totales. `has_more` solo señala que llegó una página completa, no demuestra que exista otra página.
 - Las variantes incluidas en el listado se normalizan y limitan a 30; su ausencia se señala como dato desconocido, no como falta de variantes. La consulta individual de producto sigue disponible para stock/variaciones.
 - La comparación cruza exclusivamente registros de `supplier_variant_mappings` para `provider=dropi` que pertenecen a la organización y tienda. **Un SKU igual no autoriza vincular ni publicar**.
-- Si Dropi informó datos comparables de una variante, se señala SKU/stock igual o diferente. Si la respuesta no los incluyó, el resultado es **desconocido**; nunca se supone que hay cero stock.
+- Si Dropi informó datos comparables de una variante, se señala SKU/stock igual o diferente. Si la respuesta no los incluyó, el resultado es **desconocido**; nunca se supone que hay cero stock. Las existencias de Shopify provienen del último dato local sincronizado y pueden estar desactualizadas; una diferencia mostrada es una alerta de revisión, no una orden de reajuste.
 - El componente `DropiCatalogExplorer` permite navegar, buscar y revisar mapeos/diferencias desde la integración validada, sin modificar Shopify ni Dropi.
 - La normalización omite deliberadamente costos/precios/almacenes y datos privados hasta validar su semántica por país y token. No hay importación masiva, creación de productos, actualización de stock o escritura de pedidos.
 
