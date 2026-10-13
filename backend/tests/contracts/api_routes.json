@@ -537,6 +537,10 @@
   ],
   [
     "GET",
+    "/api/stores/{store_id}/dropi/products/{product_id}"
+  ],
+  [
+    "GET",
     "/api/stores/{store_id}/instagram"
   ],
   [
