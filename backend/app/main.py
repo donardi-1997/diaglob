@@ -106,6 +106,7 @@ from .api.suppliers import router as suppliers_router  # noqa: E402
 from .api.telegram import router as telegram_router  # noqa: E402
 from .api.unit_economics import router as unit_economics_router  # noqa: E402
 from .api.whatsapp import router as whatsapp_router  # noqa: E402
+from .api.woocommerce import router as woocommerce_router  # noqa: E402
 
 app.include_router(health_router)
 app.include_router(instagram_router)
@@ -140,6 +141,7 @@ app.include_router(conversations_router)
 app.include_router(analytics_router)
 app.include_router(dropshipping_analytics_router)
 app.include_router(dropi_router)
+app.include_router(woocommerce_router)
 app.include_router(markets_router)
 app.include_router(meta_pixel_router)
 app.include_router(admin_router)
