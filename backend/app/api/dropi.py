@@ -1,6 +1,6 @@
 """Dropi HTTP router."""
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -24,6 +24,7 @@ from ..services.dropi_service import (
     connect as svc_connect,
     disconnect as svc_disconnect,
     get_connection as svc_get_connection,
+    inspect_product as svc_inspect_product,
     preview_catalog as svc_preview_catalog,
     test_connection as svc_test_connection,
 )
@@ -69,7 +70,7 @@ def _map_dropi_error(exc: Exception):
         if code == "DROPI_PARTNER_APPROVAL_REQUIRED":
             status = 503
             message = "La integración directa requiere aprobación de Dropi. No se realizaron llamadas al proveedor."
-        elif code in {"DROPI_TOKEN_REQUIRED", "DROPI_INVALID_LIMIT", "DROPI_COUNTRY_UNSUPPORTED"}:
+        elif code in {"DROPI_TOKEN_REQUIRED", "DROPI_INVALID_LIMIT", "DROPI_INVALID_PRODUCT_ID", "DROPI_COUNTRY_UNSUPPORTED"}:
             status = 400
             message = "Revisa la configuración de Dropi."
         elif code in {"DROPI_AUTH_FAILED", "DROPI_AUTH_OR_PROVIDER_ERROR"}:
@@ -141,7 +142,7 @@ def test_dropi_connection(
 @router.get("/api/stores/{store_id}/dropi/preview/products")
 def preview_dropi_products(
     store_id: int,
-    limit: int = 5,
+    limit: int = Query(default=5, ge=1, le=20),
     membership: OrganizationMembership = Depends(require_permission("stores.read")),
     db: Session = Depends(get_db),
 ):
@@ -150,6 +151,21 @@ def preview_dropi_products(
     except (DropiNotFoundError, DropiConnectionError, DropiNativeError) as exc:
         _map_dropi_error(exc)
 
+
+
+@router.get("/api/stores/{store_id}/dropi/products/{product_id}")
+def inspect_dropi_product_stock(
+    store_id: int,
+    product_id: str,
+    membership: OrganizationMembership = Depends(require_permission("commerce.read")),
+    db: Session = Depends(get_db),
+):
+    try:
+        return svc_inspect_product(
+            db, membership.organization_id, store_id, product_id
+        )
+    except (DropiNotFoundError, DropiConnectionError, DropiNativeError) as exc:
+        _map_dropi_error(exc)
 
 
 def _map_mapping_error(exc: Exception):
