@@ -35,6 +35,16 @@ Código fuente público de Dropify: https://github.com/common-repository/wc-drop
 - La característica está deshabilitada en producción por defecto y no genera órdenes ni realiza importaciones masivas.
 - Pruebas unitarias con transporte HTTP simulado que no usan cuentas ni credenciales reales.
 
+## Preparación de catálogo y órdenes, sin llamadas de escritura
+
+El backend reutiliza `supplier_variant_mappings` (utilizado por CJ), con `provider=dropi`; permite gestionar correspondencias entre la variante local Shopify y los IDs de producto/variante Dropi sin afectar al proveedor CJ ni requerir una migración. No hay correspondencia automática por SKU: podría despachar un producto o talla equivocados.
+
+Para cada orden Shopify sincronizada se ofrece un diagnóstico **de solo lectura** con controles de pago/contraentrega confirmada, estado (no cancelado/fulfill), país/datos de envío y mapeo de todas sus líneas. Los datos personales de destinatarios no salen en el diagnóstico. La clave de idempotencia es determinística por organización/tienda/ID de pedido y sirve para la futura capa de despacho; **no constituye todavía un registro de deduplicación persistente**.
+
+La interfaz de la tienda muestra un editor de variantes y permite revisar hasta 10 órdenes recientes. La lista de mapeos muestra inicialmente las primeras 30 variantes; el backend devuelve las correspondencias completas.
+
+**El diagnóstico no expone ni prepara un cuerpo de solicitud con datos personales**. No se ha implementado el `POST orders/myorders` en el backend Diaglob, y todo resultado tiene `can_send_to_dropi=false`.
+
 ## Antes de habilitar en producción
 
 1. Confirmación por escrito de Dropi de que Diaglob puede utilizar un token de integración de tipo WooCommerce para integrar tiendas Shopify ajenas y de si el dominio/IP de Diaglob debe registrarse. Acordar disponibilidad, límites, webhooks y mantenimiento.
@@ -51,6 +61,10 @@ Código fuente público de Dropify: https://github.com/common-repository/wc-drop
 - `POST /api/stores/{store_id}/dropi/connect`: almacena token cifrado en `pending_validation`.
 - `POST /api/stores/{store_id}/dropi/test`: verifica catálogo en modo autorizado y cambia estado a `verified`.
 - `GET /api/stores/{store_id}/dropi/preview/products?limit=5`: lectura acotada tras verificación.
+- `GET /api/stores/{store_id}/dropi/mappings`: correspondencias Dropi por variante.
+- `PUT /api/stores/{store_id}/dropi/mappings/{variant_id}`: crea/actualiza un mapeo explícito.
+- `DELETE /api/stores/{store_id}/dropi/mappings/{variant_id}`: elimina el mapeo.
+- `GET /api/stores/{store_id}/dropi/orders/{order_id}/readiness`: analiza elegibilidad local y faltantes, sin enviar pedidos.
 - `DELETE /api/stores/{store_id}/dropi/disconnect`: elimina token.
 
 **Fuera de alcance intencionadamente:** API WooCommerce REST, emulación de WordPress, facturación, publicación de productos Shopify, pedidos reales a Dropi, sincronización logística y E2E externo.
