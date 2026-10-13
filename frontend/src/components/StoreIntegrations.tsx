@@ -48,6 +48,7 @@ import {
 } from "../services/integrations";
 
 import CJIntegrationCard from "./CJIntegrationCard";
+import WooCommerceIntegrationCard from "./WooCommerceIntegrationCard";
 import CarrierIntegrationsCard from "./CarrierIntegrationsCard";
 import TelegramIntegrationCard from "./TelegramIntegrationCard";
 import InstagramIntegrationCard from "./InstagramIntegrationCard";
@@ -758,12 +759,12 @@ export default function StoreIntegrations({
 
             <span
               className={
-                commerce?.connected
+                (commerce?.connected && commerce?.provider === "shopify")
                   ? "integration-status connected"
                   : "integration-status disconnected"
               }
             >
-              {commerce?.connected
+              {(commerce?.connected && commerce?.provider === "shopify")
                 ? "Configurado · Por verificar"
                 : t("integrationsDisconnected")}
             </span>
@@ -772,13 +773,13 @@ export default function StoreIntegrations({
 
         <div className="store-integration-domain">
           {
-            commerce?.external_store_url
+            (commerce?.provider === "shopify" ? commerce.external_store_url : null)
             || shopDomain
             || t("integrationsShopifyNoDomain")
           }
         </div>
 
-        {commerce?.connected && (
+        {(commerce?.connected && commerce?.provider === "shopify") && (
           <div className="store-integration-shopify-actions">
             <button
               type="button"
@@ -838,7 +839,7 @@ export default function StoreIntegrations({
 
         {canWrite && (
           <div className="store-integration-actions">
-            {commerce?.connected ? (
+            {(commerce?.connected && commerce?.provider === "shopify") ? (
               <button
                 type="button"
                 className="store-integration-button danger"
@@ -856,7 +857,7 @@ export default function StoreIntegrations({
                 type="button"
                 className="store-integration-button primary"
                 onClick={handleConnectShopify}
-                disabled={connectingShopify}
+                disabled={connectingShopify || Boolean(commerce?.connected)}
               >
                 {connectingShopify
                   ? <Loader2 className="spin" size={15} />
@@ -977,6 +978,12 @@ export default function StoreIntegrations({
       </div>
 
 
+      <WooCommerceIntegrationCard
+        storeId={storeId}
+        canWrite={canWrite}
+        otherCommerceProvider={commerce?.connected ? commerce.provider : null}
+      />
+
       <div className="store-integration-block dropi">
         <div className="store-integration-header">
           <div className="store-integration-title">
@@ -989,7 +996,9 @@ export default function StoreIntegrations({
                   : "integration-status disconnected"
               }
             >
-              {commerce?.dropi_detection?.status === "detected"
+              {commerce?.provider === "woocommerce" && commerce?.connected
+                ? "Vía WooCommerce · por verificar"
+                : commerce?.dropi_detection?.status === "detected"
                 ? "Detectado vía Shopify"
                 : "No detectado"}
             </span>
@@ -997,7 +1006,9 @@ export default function StoreIntegrations({
         </div>
 
         <div className="store-integration-detail">
-          {commerce?.dropi_detection?.status === "detected" ? (
+          {commerce?.provider === "woocommerce" && commerce.connected ? (
+            <p>El puente WooCommerce está conectado. Configura el token de Dropi exclusivamente en Dropify y valida una orden de prueba; aún no confirmamos la sincronización con Dropi.</p>
+          ) : commerce?.dropi_detection?.status === "detected" ? (
             <>
               <p>
                 Dropi fue detectado como proveedor de tu tienda Shopify.
