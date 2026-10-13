@@ -26,6 +26,9 @@ export interface DropiConnectionStatus {
   connected_at: string | null;
   last_sync_at: string | null;
   last_error: string | null;
+  access_mode: "read_only";
+  orders_write_enabled: false;
+  shopify_dropify_coexistence: string;
 }
 
 
@@ -319,6 +322,33 @@ export async function previewDropiCatalog(storeId: number, limit = 5) {
   return response.data;
 }
 
+
+
+
+export interface DropiInventoryInspection {
+  provider: "dropi";
+  access_mode: "read_only";
+  stock_synced_to_shopify: false;
+  item: {
+    id: string | number | null;
+    name: string | null;
+    sku: string | null;
+    type: string | null;
+    stock: number | null;
+    variations: Array<{
+      id: string | number | null;
+      sku: string | null;
+      stock: number | null;
+    }>;
+  };
+}
+
+export async function inspectDropiProduct(storeId: number, productId: string) {
+  const response = await api.get<DropiInventoryInspection>(
+    `/api/stores/${storeId}/dropi/products/${encodeURIComponent(productId)}`,
+  );
+  return response.data;
+}
 
 
 export interface DropiVariantMapping {
