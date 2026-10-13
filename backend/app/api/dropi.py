@@ -1,12 +1,22 @@
 """Dropi HTTP router."""
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..integrations.dropi_native import DropiNativeError
 from ..models import DropiConnection, OrganizationMembership
+from ..services.dropi_mappings import (
+    DropiMappingError,
+    delete_mapping as svc_delete_mapping,
+    list_mappings as svc_list_mappings,
+    upsert_mapping as svc_upsert_mapping,
+)
+from ..services.dropi_readiness import (
+    DropiReadinessError,
+    order_readiness as svc_order_readiness,
+)
 from .deps import require_permission
 from ..services.dropi_service import (
     DropiConnectionError,
@@ -22,7 +32,14 @@ router = APIRouter()
 
 
 class DropiConnectRequest(BaseModel):
-    api_token: str
+    api_token: str = Field(min_length=1, max_length=2048)
+
+
+class DropiVariantMappingRequest(BaseModel):
+    external_product_id: str = Field(min_length=1, max_length=255)
+    external_variant_id: str = Field(min_length=1, max_length=255)
+    external_sku: str | None = Field(default=None, max_length=255)
+    active: bool = True
 
 
 def _map_dropi_error(exc: Exception):
@@ -132,6 +149,76 @@ def preview_dropi_products(
         return svc_preview_catalog(db, membership.organization_id, store_id, limit=limit)
     except (DropiNotFoundError, DropiConnectionError, DropiNativeError) as exc:
         _map_dropi_error(exc)
+
+
+
+def _map_mapping_error(exc: Exception):
+    code = str(exc)
+    if code in {"DROPI_STORE_NOT_FOUND", "DROPI_VARIANT_NOT_FOUND", "DROPI_MAPPING_NOT_FOUND", "DROPI_ORDER_NOT_FOUND"}:
+        status = 404
+    elif code == "DROPI_MAPPING_IDS_REQUIRED":
+        status = 400
+    else:
+        status = 409
+    raise HTTPException(status_code=status, detail={"code": code, "message": "No fue posible completar la operación con Dropi."})
+
+
+@router.get("/api/stores/{store_id}/dropi/mappings")
+def list_dropi_mappings(
+    store_id: int,
+    membership: OrganizationMembership = Depends(require_permission("commerce.read")),
+    db: Session = Depends(get_db),
+):
+    try:
+        return svc_list_mappings(db, membership.organization_id, store_id)
+    except DropiMappingError as exc:
+        _map_mapping_error(exc)
+
+
+@router.put("/api/stores/{store_id}/dropi/mappings/{variant_id}")
+def upsert_dropi_mapping(
+    store_id: int,
+    variant_id: int,
+    payload: DropiVariantMappingRequest,
+    membership: OrganizationMembership = Depends(require_permission("commerce.write")),
+    db: Session = Depends(get_db),
+):
+    try:
+        return svc_upsert_mapping(
+            db, membership.organization_id, store_id, variant_id,
+            external_product_id=payload.external_product_id,
+            external_variant_id=payload.external_variant_id,
+            external_sku=payload.external_sku,
+            active=payload.active,
+        )
+    except DropiMappingError as exc:
+        _map_mapping_error(exc)
+
+
+@router.delete("/api/stores/{store_id}/dropi/mappings/{variant_id}")
+def delete_dropi_mapping(
+    store_id: int,
+    variant_id: int,
+    membership: OrganizationMembership = Depends(require_permission("commerce.write")),
+    db: Session = Depends(get_db),
+):
+    try:
+        return svc_delete_mapping(db, membership.organization_id, store_id, variant_id)
+    except DropiMappingError as exc:
+        _map_mapping_error(exc)
+
+
+@router.get("/api/stores/{store_id}/dropi/orders/{order_id}/readiness")
+def dropi_shopify_order_readiness(
+    store_id: int,
+    order_id: int,
+    membership: OrganizationMembership = Depends(require_permission("commerce.read")),
+    db: Session = Depends(get_db),
+):
+    try:
+        return svc_order_readiness(db, membership.organization_id, store_id, order_id)
+    except DropiReadinessError as exc:
+        _map_mapping_error(exc)
 
 
 @router.post("/api/webhooks/dropi/{webhook_token}")
