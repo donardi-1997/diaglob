@@ -250,3 +250,60 @@ def test_stock_read_only_unverified_stops_before_external_call(db, monkeypatch):
     monkeypatch.setattr(dropi_service, "read_product_details", forbidden)
     with pytest.raises(dropi_service.DropiConnectionError, match="DROPPI_NOT_VERIFIED"):
         dropi_service.inspect_product(db, org.id, store.id, "18")
+
+
+def test_paginated_catalog_comparison_is_tenant_scoped(db, monkeypatch):
+    from app.services import dropi_catalog_service, dropi_service
+    from app.integrations.dropi_catalog import normalize_product
+
+    org, outsider, store, _product, variant, *_ = seed(db)
+    dropi_mappings.upsert_mapping(
+        db, org.id, store.id, variant.id,
+        external_product_id="44", external_variant_id="50",
+    )
+    monkeypatch.setattr(dropi_service, "decrypt_dropi_secret", lambda _: "test-token")
+    calls = []
+
+    def fake_search(token, *, country_code, page, limit, query):
+        calls.append((token, country_code, page, limit, query))
+        product = normalize_product({
+            "id": 44,
+            "name": "Dropi Product",
+            "variations": [{"id": 50, "sku": "SHOP-M", "stock": 10}],
+        })
+        return {
+            "page": page, "limit": limit, "query": query,
+            "items": [product], "returned": 1, "has_more": False,
+            "next_page": None, "total": None,
+        }
+
+    monkeypatch.setattr(dropi_catalog_service, "search_products", fake_search)
+    result = dropi_catalog_service.list_catalog_page(
+        db, org.id, store.id, page=2, limit=5, query="zapatos",
+    )
+    assert calls == [("test-token", "CO", 2, 5, "zapatos")]
+    assert result["access_mode"] == "read_only"
+    assert result["shopify_write_performed"] is False
+    assert result["unmapped_products"] == 0
+    assert result["products_with_differences"] == 0
+    assert result["items"][0]["shopify_mappings"][0]["product_variant_id"] == variant.id
+
+    with pytest.raises(dropi_service.DropiNotFoundError):
+        dropi_catalog_service.list_catalog_page(db, outsider.id, store.id)
+
+
+def test_paginated_catalog_does_not_fetch_for_unverified_connection(db, monkeypatch):
+    from app.services import dropi_catalog_service, dropi_service
+
+    org, _outsider, store, *_ = seed(db)
+    connection = db.query(DropiConnection).filter_by(store_id=store.id).one()
+    connection.status = "pending_validation"
+    db.commit()
+    monkeypatch.setattr(dropi_service, "decrypt_dropi_secret", lambda _: "test-token")
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("Unverified connection should never contact Dropi")
+
+    monkeypatch.setattr(dropi_catalog_service, "search_products", forbidden)
+    with pytest.raises(dropi_service.DropiConnectionError, match="DROPPI_NOT_VERIFIED"):
+        dropi_catalog_service.list_catalog_page(db, org.id, store.id)
