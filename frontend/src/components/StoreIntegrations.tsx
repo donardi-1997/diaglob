@@ -48,6 +48,7 @@ import {
 } from "../services/integrations";
 
 import CJIntegrationCard from "./CJIntegrationCard";
+import DropiNativeIntegrationCard from "./DropiNativeIntegrationCard";
 import CarrierIntegrationsCard from "./CarrierIntegrationsCard";
 import TelegramIntegrationCard from "./TelegramIntegrationCard";
 import InstagramIntegrationCard from "./InstagramIntegrationCard";
@@ -977,64 +978,12 @@ export default function StoreIntegrations({
       </div>
 
 
-      <div className="store-integration-block dropi">
-        <div className="store-integration-header">
-          <div className="store-integration-title">
-            <Truck size={17} />
-            <strong>Dropi</strong>
-            <span
-              className={
-                commerce?.dropi_detection?.status === "detected"
-                  ? "integration-status connected"
-                  : "integration-status disconnected"
-              }
-            >
-              {commerce?.dropi_detection?.status === "detected"
-                ? "Detectado vía Shopify"
-                : "No detectado"}
-            </span>
-          </div>
-        </div>
-
-        <div className="store-integration-detail">
-          {commerce?.dropi_detection?.status === "detected" ? (
-            <>
-              <p>
-                Dropi fue detectado como proveedor de tu tienda Shopify.
-                Los productos de Dropi están disponibles en tu catálogo
-                y pueden ser recomendados por la IA cuando un cliente pregunta.
-              </p>
-              <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginTop: 8 }}>
-                <strong>Integración API directa pendiente:</strong> mantendremos esta conexión
-                en modo detección hasta recibir acceso y documentación oficial de Dropi.
-              </p>
-            </>
-          ) : commerce?.connected ? (
-            <>
-              <p>
-                Shopify está conectado, pero no se detectó Dropi como proveedor.
-              </p>
-              <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginTop: 8 }}>
-                Si usas Dropi, importa al menos un producto a Shopify para que Diaglob
-                pueda identificarlo. La conexión API directa se habilitará únicamente con acceso oficial.
-              </p>
-            </>
-          ) : (
-            <p>
-              Conecta Shopify primero para evaluar si Dropi está configurado como proveedor.
-            </p>
-          )}
-        </div>
-
-        {commerce?.dropi_detection?.status === "detected" && (
-          <div className="store-integration-detail" style={{ marginTop: 8, padding: "8px 12px", background: "var(--control-bg)", borderRadius: 8 }}>
-            <div style={{ fontSize: "0.78rem", color: "var(--green)", display: "flex", alignItems: "center", gap: 6 }}>
-              <Check size={14} />
-              <span>Tus productos de Dropi están disponibles para la IA</span>
-            </div>
-          </div>
-        )}
-      </div>
+      <DropiNativeIntegrationCard
+        storeId={storeId}
+        canWrite={canWrite}
+        shopifyConnected={Boolean(commerce?.connected && commerce.provider === "shopify")}
+        detectedFromShopify={commerce?.dropi_detection?.status === "detected"}
+      />
 
 
       {nequiProviders.length > 0 && (
