@@ -56,6 +56,18 @@ La interfaz de la tienda muestra un editor de variantes y permite revisar hasta 
 
 **El diagnóstico no expone ni prepara un cuerpo de solicitud con datos personales**. No se ha implementado el `POST orders/myorders` en el backend Diaglob, y todo resultado tiene `can_send_to_dropi=false`.
 
+## Bloque D: explorador del catálogo y comparación con Shopify
+
+La ruta `GET /api/stores/{store_id}/dropi/catalog?page=1&limit=20&query=...` consulta **una sola página por petición** y devuelve solo campos autorizados: ID, nombre, SKU, tipo, existencias informadas, variaciones si están presentes en la página y los mapeos ya confirmados de Shopify.
+
+- Parámetros acotados: página 1–1000, máximo 20 resultados por solicitud y búsqueda de hasta 100 caracteres. `startData=page`, como el plugin WooCommerce, pero el inicio de paginación se validará en pruebas reales.
+- Dropi usa `no_count=true`: no se inventan totales. `has_more` solo señala que llegó una página completa, no demuestra que exista otra página.
+- Las variantes incluidas en el listado se normalizan y limitan a 30; su ausencia se señala como dato desconocido, no como falta de variantes. La consulta individual de producto sigue disponible para stock/variaciones.
+- La comparación cruza exclusivamente registros de `supplier_variant_mappings` para `provider=dropi` que pertenecen a la organización y tienda. **Un SKU igual no autoriza vincular ni publicar**.
+- Si Dropi informó datos comparables de una variante, se señala SKU/stock igual o diferente. Si la respuesta no los incluyó, el resultado es **desconocido**; nunca se supone que hay cero stock.
+- El componente `DropiCatalogExplorer` permite navegar, buscar y revisar mapeos/diferencias desde la integración validada, sin modificar Shopify ni Dropi.
+- La normalización omite deliberadamente costos/precios/almacenes y datos privados hasta validar su semántica por país y token. No hay importación masiva, creación de productos, actualización de stock o escritura de pedidos.
+
 ## Antes de habilitar en producción
 
 1. Confirmación por escrito de Dropi de que Diaglob puede utilizar un token de integración de tipo WooCommerce para integrar tiendas Shopify ajenas y de si el dominio/IP de Diaglob debe registrarse. Acordar disponibilidad, límites, webhooks y mantenimiento.
@@ -73,6 +85,7 @@ La interfaz de la tienda muestra un editor de variantes y permite revisar hasta 
 - `POST /api/stores/{store_id}/dropi/test`: verifica catálogo en modo autorizado y cambia estado a `verified`.
 - `GET /api/stores/{store_id}/dropi/preview/products?limit=5`: lectura acotada tras verificación (1–20 artículos).
 - `GET /api/stores/{store_id}/dropi/products/{product_id}`: lectura puntual de stock y variaciones con identificador de producto numérico; nunca actualiza Shopify.
+- `GET /api/stores/{store_id}/dropi/catalog?page=1&limit=20&query=`: página de catálogo normalizada y comparación de productos con mapeos explícitos de Shopify.
 - `GET /api/stores/{store_id}/dropi/mappings`: correspondencias Dropi por variante.
 - `PUT /api/stores/{store_id}/dropi/mappings/{variant_id}`: crea/actualiza un mapeo explícito.
 - `DELETE /api/stores/{store_id}/dropi/mappings/{variant_id}`: elimina el mapeo.
