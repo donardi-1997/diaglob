@@ -2,7 +2,7 @@
 import httpx
 import pytest
 
-from app.integrations.dropi_native import DropiNativeError, get_base_url, preview_products
+from app.integrations.dropi_native import DropiNativeError, get_base_url, preview_products, read_product_details
 
 
 def test_public_country_allowlist_only():
@@ -87,3 +87,79 @@ def test_unsupported_limit(monkeypatch):
     monkeypatch.setenv("DROPI_NATIVE_API_ENABLED", "1")
     with pytest.raises(DropiNativeError, match="DROPI_INVALID_LIMIT"):
         preview_products("token", limit=100)
+
+
+def test_read_product_disabled_without_authorization(monkeypatch):
+    monkeypatch.delenv("DROPI_NATIVE_API_ENABLED", raising=False)
+    with pytest.raises(DropiNativeError, match="DROPI_PARTNER_APPROVAL_REQUIRED"):
+        read_product_details("unused", "12")
+
+
+@pytest.mark.parametrize("invalid", ["", "-5", "1/2", "../orders", "1?send=1", "０１", "1" * 30])
+def test_read_product_rejects_unsafe_ids(monkeypatch, invalid):
+    monkeypatch.setenv("DROPI_NATIVE_API_ENABLED", "1")
+    with pytest.raises(DropiNativeError, match="DROPI_INVALID_PRODUCT_ID"):
+        read_product_details("token", invalid)
+
+
+def test_read_product_stock_and_variations_sanitized(monkeypatch):
+    monkeypatch.setenv("DROPI_NATIVE_API_ENABLED", "true")
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(200, json={
+            "isSuccess": True,
+            "objects": {
+                "id": 12,
+                "name": "Camisa",
+                "sku": "ABC",
+                "type": "VARIABLE",
+                "stock": 50,
+                "supplier_email": "private@example.com",
+                "variations": [
+                    {"id": 123, "sku": "ABC-S", "stock": 12, "supplier_phone": "secret"}
+                ],
+            },
+        })
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = read_product_details("test-dropi-token", "12", client=client)
+
+    assert len(requests) == 1
+    assert requests[0].method == "GET"
+    assert str(requests[0].url) == "https://api.dropi.co/integrations/products/v2/12"
+    assert requests[0].headers["dropi-integration-key"] == "test-dropi-token"
+    assert result["stock"] == 50
+    assert result["variations"] == [{"id": 123, "sku": "ABC-S", "stock": 12}]
+    assert "private@example.com" not in repr(result)
+    assert "secret" not in repr(result)
+
+
+def test_read_product_fails_closed_for_invalid_provider_shape(monkeypatch):
+    monkeypatch.setenv("DROPI_NATIVE_API_ENABLED", "1")
+    with httpx.Client(transport=httpx.MockTransport(
+        lambda _: httpx.Response(200, json={"isSuccess": True, "objects": ["unexpected"]})
+    )) as client:
+        with pytest.raises(DropiNativeError, match="DROPI_INVALID_RESPONSE"):
+            read_product_details("test-token", "12", client=client)
+
+
+def test_read_product_never_follows_redirects(monkeypatch):
+    monkeypatch.setenv("DROPI_NATIVE_API_ENABLED", "1")
+    with httpx.Client(transport=httpx.MockTransport(
+        lambda _: httpx.Response(302, headers={"location": "http://localhost/private"})
+    ), follow_redirects=False) as client:
+        with pytest.raises(DropiNativeError, match="DROPI_REDIRECT_DENIED"):
+            read_product_details("test-token", "12", client=client)
+
+
+def test_read_product_rejects_oversized_variations(monkeypatch):
+    monkeypatch.setenv("DROPI_NATIVE_API_ENABLED", "1")
+    with httpx.Client(transport=httpx.MockTransport(
+        lambda _: httpx.Response(200, json={
+            "isSuccess": True, "objects": {"variations": [{"id": i} for i in range(101)]}
+        })
+    )) as client:
+        with pytest.raises(DropiNativeError, match="DROPI_RESPONSE_TOO_LARGE"):
+            read_product_details("test-token", "12", client=client)
