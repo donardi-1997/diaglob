@@ -287,6 +287,39 @@ export async function disconnectDropi(
 }
 
 
+
+export interface DropiCatalogPreview {
+  country_code: string;
+  total_returned: number;
+  items: Array<{
+    id: string | number | null;
+    name: string | null;
+    sku: string | null;
+    type: string | null;
+    stock: number | null;
+  }>;
+}
+
+export async function testDropiConnection(storeId: number) {
+  const response = await api.post<DropiConnectionStatus & {
+    capabilities: {
+      catalog_preview: boolean;
+      order_creation: boolean;
+      tracking: boolean;
+    };
+  }>(`/api/stores/${storeId}/dropi/test`);
+  return response.data;
+}
+
+export async function previewDropiCatalog(storeId: number, limit = 5) {
+  const response = await api.get<DropiCatalogPreview>(
+    `/api/stores/${storeId}/dropi/preview/products`,
+    { params: { limit } },
+  );
+  return response.data;
+}
+
+
 export interface WhatsAppConnectionStatus {
   connected: boolean;
   status: string;
