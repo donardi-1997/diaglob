@@ -66,7 +66,17 @@ def preview_products(
                 "Content-Type": "application/json",
                 "dropi-integration-key": token.strip(),
             },
-            json={"pageSize": limit, "startData": 0, "no_count": True},
+            json={
+                "startData": 1,
+                "pageSize": limit,
+                "order_type": "DESC",
+                "order_by": "created_at",
+                "keywords": "",
+                "active": True,
+                "no_count": True,
+                "integration": True,
+                **({"get_stock": False} if country_code.upper() in {"CO", "PE", "PA"} else {}),
+            },
         )
         if response.status_code in (401, 403):
             raise DropiNativeError("DROPI_AUTH_FAILED")
