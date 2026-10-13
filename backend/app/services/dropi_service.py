@@ -210,6 +210,7 @@ def test_connection(db: Session, organization_id: int, store_id: int) -> dict:
         **get_connection(db, organization_id, store_id),
         "capabilities": {
             "catalog_preview": True,
+            "inventory_read": True,
             "order_creation": False,
             "tracking": False,
         },
