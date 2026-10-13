@@ -113,3 +113,86 @@ def preview_products(
     finally:
         if owns_client:
             client.close()
+
+
+def read_product_details(
+    token: str,
+    product_id: str,
+    *,
+    country_code: str = "CO",
+    client: httpx.Client | None = None,
+) -> dict:
+    """Look up one Dropi product's stock and variations without any writes.
+
+    Uses the read-only GET used by Dropify for WooCommerce. Strictly allowlisted
+    URL and numeric product IDs prevent caller-controlled outbound URLs.
+    """
+    if os.getenv("DROPI_NATIVE_API_ENABLED", "").lower() not in {"1", "true"}:
+        raise DropiNativeError("DROPI_PARTNER_APPROVAL_REQUIRED")
+    if not isinstance(token, str) or not token.strip():
+        raise DropiNativeError("DROPI_TOKEN_REQUIRED")
+    if not isinstance(product_id, str) or not product_id.isascii() or not product_id.isdecimal() or not 1 <= len(product_id) <= 18:
+        raise DropiNativeError("DROPI_INVALID_PRODUCT_ID")
+
+    url = get_base_url(country_code) + "products/v2/" + product_id
+    owns_client = client is None
+    if owns_client:
+        client = httpx.Client(
+            timeout=httpx.Timeout(10.0, connect=4.0),
+            trust_env=False,
+            follow_redirects=False,
+        )
+    try:
+        response = client.get(
+            url,
+            headers={
+                "Accept": "application/json",
+                "dropi-integration-key": token.strip(),
+            },
+        )
+        if response.status_code in (401, 403):
+            raise DropiNativeError("DROPI_AUTH_FAILED")
+        if response.is_redirect:
+            raise DropiNativeError("DROPI_REDIRECT_DENIED")
+        if response.status_code >= 400:
+            raise DropiNativeError("DROPI_PROVIDER_UNAVAILABLE")
+        if len(response.content) > 2_000_000:
+            raise DropiNativeError("DROPI_RESPONSE_TOO_LARGE")
+        try:
+            data = response.json()
+        except ValueError as exc:
+            raise DropiNativeError("DROPI_INVALID_RESPONSE") from exc
+        if not isinstance(data, dict) or data.get("isSuccess") is not True:
+            raise DropiNativeError("DROPI_AUTH_OR_PROVIDER_ERROR")
+        product = data.get("objects")
+        if not isinstance(product, dict):
+            raise DropiNativeError("DROPI_INVALID_RESPONSE")
+        variations = product.get("variations") or []
+        if not isinstance(variations, list):
+            raise DropiNativeError("DROPI_INVALID_RESPONSE")
+        if len(variations) > 100:
+            raise DropiNativeError("DROPI_RESPONSE_TOO_LARGE")
+        if any(not isinstance(item, dict) for item in variations):
+            raise DropiNativeError("DROPI_INVALID_RESPONSE")
+        return {
+            "id": product.get("id"),
+            "name": product.get("name"),
+            "sku": product.get("sku"),
+            "type": product.get("type"),
+            "stock": product.get("stock"),
+            "variations": [
+                {
+                    "id": item.get("id"),
+                    "sku": item.get("sku"),
+                    "stock": item.get("stock"),
+                }
+                for item in variations
+            ],
+        }
+    except httpx.TimeoutException as exc:
+        raise DropiNativeError("DROPI_TIMEOUT") from exc
+    except httpx.RequestError as exc:
+        raise DropiNativeError("DROPI_NETWORK_ERROR") from exc
+    finally:
+        if owns_client:
+            client.close()
