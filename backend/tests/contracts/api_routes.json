@@ -521,6 +521,10 @@
   ],
   [
     "GET",
+    "/api/stores/{store_id}/dropi/preview/products"
+  ],
+  [
+    "GET",
     "/api/stores/{store_id}/instagram"
   ],
   [
@@ -970,6 +974,10 @@
   [
     "POST",
     "/api/stores/{store_id}/dropi/connect"
+  ],
+  [
+    "POST",
+    "/api/stores/{store_id}/dropi/test"
   ],
   [
     "POST",
