@@ -358,3 +358,65 @@ def test_duplicate_numeric_and_gid_representation_blocks_export(sandbox):
                        match="DUPLICATE_SHOPIFY_ORDER_ID"):
         build_encrypted_local_customer_export(db, request_id=RECEIPT_ID)
     assert db.query(Order).count() == 3
+
+
+def test_order_items_and_messages_remain_bounded_to_store_and_customer(sandbox):
+    from app.models import OrderItem
+
+    db, receipt = sandbox
+    orders = db.query(Order).order_by(Order.id).all()
+    for idx, order in enumerate(orders):
+        db.add(OrderItem(
+            order_id=order.id, organization_id=order.organization_id,
+            store_id=order.store_id, title=f"PRIVATE_ITEM_{idx}",
+            sku=f"SKU_{idx}", quantity=1, unit_price=2, currency="COP",
+        ))
+    db.commit()
+    result = build_encrypted_local_customer_export(db, request_id=RECEIPT_ID)
+    data = json.loads(decrypt_shopify_secret(result.encrypted_payload))
+    assert result.order_items == 1
+    assert result.messages == 1
+    assert data["orders"][0]["items"][0]["title"] == "PRIVATE_ITEM_0"
+    assert data["conversations"][0]["messages"][0]["text"] == "PRIVATE_MESSAGE_0"
+    assert "PRIVATE_ITEM_1" not in str(data)
+    assert "PRIVATE_MESSAGE_1" not in str(data)
+    assert receipt.completed_at is None
+
+
+def test_cross_tenant_order_item_link_blocks_export_instead_of_omitting(sandbox):
+    from app.models import OrderItem
+
+    db, receipt = sandbox
+    orders = db.query(Order).order_by(Order.id).all()
+    db.add(OrderItem(
+        order_id=orders[0].id, organization_id=receipt.organization_id,
+        store_id=orders[1].store_id, title="WRONG_STORE_ITEM",
+        quantity=1, unit_price=2, currency="COP",
+    ))
+    db.commit()
+    with pytest.raises(ShopifyLocalPrivacyError,
+                       match="ORDER_ITEM_TENANCY_MISMATCH"):
+        build_encrypted_local_customer_export(db, request_id=RECEIPT_ID)
+    assert receipt.completed_at is None
+    assert db.query(OrderItem).count() == 1
+
+
+def test_redaction_manifest_counts_order_items_by_scoped_order(sandbox):
+    from app.models import OrderItem
+
+    db, receipt = sandbox
+    orders = db.query(Order).order_by(Order.id).all()
+    for idx, order in enumerate(orders):
+        db.add(OrderItem(
+            order_id=order.id, organization_id=order.organization_id,
+            store_id=order.store_id, title=f"ITEM_{idx}",
+            quantity=1, unit_price=2, currency="COP",
+        ))
+    receipt.topic = "customers/redact"
+    db.commit()
+    manifest = build_local_redaction_manifest(db, request_id=RECEIPT_ID)
+    counts = {table: count for table, _, count in manifest.fields_by_table}
+    assert counts["order_items"] == 1
+    assert counts["messages"] == 1
+    assert manifest.mutation_allowed is False
+    assert db.query(OrderItem).count() == 2

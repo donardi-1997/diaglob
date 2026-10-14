@@ -181,6 +181,14 @@ def build_encrypted_local_customer_export(
     else:
         missing_orders = 0
     order_ids = [row.id for row in orders]
+    # A child pointing at an in-scope order but claiming another store/tenant
+    # indicates corrupted provenance. Block rather than silently omit it.
+    if order_ids and db.query(OrderItem.id).filter(
+        OrderItem.order_id.in_(order_ids),
+        (OrderItem.organization_id != receipt.organization_id)
+        | (OrderItem.store_id != receipt.store_id),
+    ).first() is not None:
+        raise ShopifyLocalPrivacyError("ORDER_ITEM_TENANCY_MISMATCH")
     items = _limited(db.query(OrderItem).filter(
         OrderItem.organization_id == receipt.organization_id,
         OrderItem.store_id == receipt.store_id,
@@ -337,6 +345,13 @@ def build_local_redaction_manifest(
             ConversationalCheckout.store_id == receipt.store_id,
             ConversationalCheckout.customer_id == customer_id,
         )
+    # Compute child coverage by the exact scoped parent subqueries.
+    # Product titles, SKUs and line item IDs form part of the order history.
+    order_items_count = db.query(OrderItem.id).filter(
+        OrderItem.organization_id == receipt.organization_id,
+        OrderItem.store_id == receipt.store_id,
+        OrderItem.order_id.in_(order_query.with_entities(Order.id)),
+    ).count()
     # Compute counts using database joins instead of retrieving message bodies.
     conversation_count = convo_query.count()
     messages_count = db.query(Message.id).join(
@@ -351,6 +366,8 @@ def build_local_redaction_manifest(
              profile_query.count()),
             ("orders", ("note", "shipping_address", "invoice_url", "external_last_error"),
              order_query.count()),
+            ("order_items", ("title", "sku", "shopify_line_item_id"),
+             order_items_count),
             ("conversations", ("preview", "tags"), conversation_count),
             ("messages", ("text", "external_message_id"), messages_count),
             ("conversational_checkouts", (
