@@ -47,3 +47,14 @@ def test_orders_redact_personal_data(authz, token):
     assert result["items"][0]["order_number"] == "#1001"
     assert "customer_email" not in str(result)
     assert result["limit"] == 20
+
+
+def test_embedded_home_does_not_advertise_unimplemented_modules():
+    from app.api.shopify_embedded import shopify_embedded_home
+
+    html = shopify_embedded_home().body.decode('utf-8')
+    assert 'data-panel="home"' in html
+    assert 'data-panel="products"' in html
+    assert 'data-panel="orders"' in html
+    assert 'data-panel="conversations"' not in html
+    assert 'data-panel="automations"' not in html
