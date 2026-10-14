@@ -64,8 +64,6 @@ def shopify_embedded_home() -> HTMLResponse:
 <button type="button" data-panel="home">Resumen</button>
 <button type="button" data-panel="products">Productos</button>
 <button type="button" data-panel="orders">Pedidos</button>
-<button type="button" data-panel="conversations">Conversaciones</button>
-<button type="button" data-panel="automations">Automatizaciones</button>
 </nav>
 <div id="metrics" class="grid" hidden>
 <div class="card"><div class="small">Productos sincronizados</div><div id="metric-products" class="metricnum">—</div></div>
