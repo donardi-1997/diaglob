@@ -21,7 +21,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
                 "frame-ancestors https://admin.shopify.com https://*.myshopify.com; "
                 "base-uri 'none'; object-src 'none'"
             )
-            response.headers.pop("X-Frame-Options", None)
+            if "X-Frame-Options" in response.headers:
+                del response.headers["X-Frame-Options"]
         else:
             response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
