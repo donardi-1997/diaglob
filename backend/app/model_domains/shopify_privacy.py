@@ -117,6 +117,7 @@ class ShopifyPrivacySuppression(Base):
     kind: Mapped[str] = mapped_column(String(20), nullable=False)
     selector_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     key_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    domain_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="staged", index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False
