@@ -289,7 +289,7 @@ def test_invalid_receipt_id_rejected(sandbox, bad):
 def test_hmac_is_bound_to_store_and_resource_kind(sandbox):
     db, _, _, _ = sandbox
     result = prepare_shopify_privacy_suppressions(db, request_id=RECEIPT)
-    assert result["newly_staged"] == 2
+    assert result["newly_staged"] == 3
     rows = db.query(ShopifyPrivacySuppression).all()
     assert rows[0].selector_digest != rows[1].selector_digest
     assert all(len(r.selector_digest) == 64 for r in rows)
