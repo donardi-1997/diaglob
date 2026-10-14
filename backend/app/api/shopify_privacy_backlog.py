@@ -5,10 +5,16 @@ import os
 import secrets
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..services.shopify_privacy_backlog import summarize_shopify_privacy_backlog
+from ..services.shopify_privacy_controls import (
+    ShopifyPrivacyControlError,
+    inspect_shopify_privacy_closure_controls,
+    submit_shopify_privacy_control_evidence,
+)
 from ..services.shopify_privacy_case_queue import list_shopify_privacy_cases
 from ..services.shopify_privacy_case_assessment import (
     ShopifyPrivacyAssessmentError,
@@ -212,4 +218,41 @@ def get_shopify_privacy_suppression_case(
     try:
         return inspect_shopify_privacy_suppressions(db, request_id=request_id)
     except ShopifySuppressionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+class PrivacyEvidenceSubmission(BaseModel):
+    artifact_sha256: str
+
+
+@router.get("/api/internal/shopify/privacy/cases/{request_id}/controls")
+def get_shopify_privacy_controls(
+    request_id: str,
+    x_internal_secret: str | None = Header(None, alias="X-Internal-Secret"),
+    db: Session = Depends(get_db),
+):
+    """Return open legal, subprocessor and recovery decisions without PII."""
+    _require_internal_secret(x_internal_secret)
+    try:
+        return inspect_shopify_privacy_closure_controls(db, request_id=request_id)
+    except ShopifyPrivacyControlError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/api/internal/shopify/privacy/cases/{request_id}/controls/{control}/evidence")
+def submit_shopify_privacy_evidence(
+    request_id: str,
+    control: str,
+    body: PrivacyEvidenceSubmission,
+    x_internal_secret: str | None = Header(None, alias="X-Internal-Secret"),
+    db: Session = Depends(get_db),
+):
+    """Record only external artifact digest. No approval or completion claim."""
+    _require_internal_secret(x_internal_secret)
+    try:
+        return submit_shopify_privacy_control_evidence(
+            db, request_id=request_id,
+            control=control, artifact_sha256=body.artifact_sha256,
+        )
+    except ShopifyPrivacyControlError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
