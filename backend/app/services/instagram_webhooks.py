@@ -53,17 +53,16 @@ def process_webhook_payload(db: Session, payload: dict) -> dict:
                 Store.id == connection.store_id,
                 Store.organization_id == connection.organization_id,
             ).first()
-            if store is None or not store.shopify_domain:
-                continue
-            reason, _ = evaluate_shopify_privacy_suppression(
-                db, organization_id=connection.organization_id,
-                store_id=connection.store_id,
-                shop_domain=store.shopify_domain, customer_id=None,
-                order_id=None, require_customer_id=False,
-                require_order_id=False,
-            )
-            if reason:
-                continue
+            if store is not None and store.shopify_domain:
+                reason, _ = evaluate_shopify_privacy_suppression(
+                    db, organization_id=connection.organization_id,
+                    store_id=connection.store_id,
+                    shop_domain=store.shopify_domain, customer_id=None,
+                    order_id=None, require_customer_id=False,
+                    require_order_id=False,
+                )
+                if reason:
+                    continue
             customer_key = f"instagram:{sender_id}"
             customer = db.query(Customer).filter(
                 Customer.organization_id == connection.organization_id,
