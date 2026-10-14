@@ -361,6 +361,14 @@
   ],
   [
     "GET",
+    "/api/shopify/embedded"
+  ],
+  [
+    "GET",
+    "/api/shopify/embedded/session"
+  ],
+  [
+    "GET",
     "/api/shopify/install"
   ],
   [
