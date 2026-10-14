@@ -332,3 +332,19 @@ def test_optional_signed_phone_tombstone_prevents_new_id_reingestion(
         email="different@example.com", phone="+57 (320) 111-2233",
     )["action"] == "suppressed_privacy"
     assert db.query(Customer).count() == 0
+
+
+def test_active_tombstone_blocks_domain_rebind_even_after_store_update(
+    sandbox, monkeypatch,
+):
+    db, _, stores, connections = sandbox
+    prepare_shopify_privacy_suppressions(db, request_id=RECEIPT)
+    monkeypatch.setenv("DIAGLOB_SHOPIFY_PRIVACY_SYNTHETIC_TESTS", "1")
+    activate_synthetic_privacy_suppressions(db, request_id=RECEIPT)
+    stores[0].shopify_domain = "new-shop-domain.myshopify.com"
+    connections[0].external_store_url = "new-shop-domain.myshopify.com"
+    db.commit()
+    with pytest.raises(ShopifyWebhookError, match="PRIVACY_SUPPRESSION_CHECK_UNAVAILABLE"):
+        _webhook(db, connections[0])
+    assert db.query(Customer).count() == 0
+    assert db.query(Order).count() == 0
