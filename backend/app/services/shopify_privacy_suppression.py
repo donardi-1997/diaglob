@@ -261,6 +261,28 @@ def activate_synthetic_privacy_suppressions(db: Session, *, request_id: str) -> 
     return changed
 
 
+def _check_restore_gate(db: Session) -> None:
+    """Optional externally anchored checkpoint, evaluated before any write path.
+
+    Production cannot safely activate tombstones until independently managed
+    checkpoint distribution is configured, including cold backup restores.
+    """
+    expected = os.getenv("SHOPIFY_PRIVACY_RESTORE_CHECKPOINT_HMAC")
+    if not expected:
+        return
+    from .shopify_privacy_restore import (
+        ShopifyRestoreVerificationError,
+        verify_shopify_suppression_restore,
+    )
+    try:
+        count = int(os.getenv("SHOPIFY_PRIVACY_RESTORE_MIN_RECORDS", "-1"))
+        verify_shopify_suppression_restore(
+            db, externally_stored_hmac=expected, minimum_records=count,
+        )
+    except (ShopifyRestoreVerificationError, ValueError) as exc:
+        raise ShopifySuppressionError("RESTORE_CHECKPOINT_VERIFICATION_FAILED") from exc
+
+
 def evaluate_shopify_privacy_suppression(
     db: Session, *, organization_id: int, store_id: int, shop_domain: str,
     customer_id: object, order_id: object,
@@ -273,6 +295,7 @@ def evaluate_shopify_privacy_suppression(
     customer ID when a customer tombstone exists, fail closed rather than
     recovering customer identity from email or phone. This gate is read-only.
     """
+    _check_restore_gate(db)
     rows = db.query(ShopifyPrivacySuppression).filter(
         ShopifyPrivacySuppression.organization_id == organization_id,
         ShopifyPrivacySuppression.store_id == store_id,
@@ -364,6 +387,7 @@ def evaluate_shopify_local_privacy(
     identity from a different store. Absent profile ID is permitted only when
     contact is known and does not match any active keyed tombstone.
     """
+    _check_restore_gate(db)
     active = db.query(ShopifyPrivacySuppression.id).filter(
         ShopifyPrivacySuppression.organization_id == organization_id,
         ShopifyPrivacySuppression.store_id == store_id,
