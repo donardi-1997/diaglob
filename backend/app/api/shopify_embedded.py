@@ -236,3 +236,47 @@ def embedded_overview(
         "status": "connected",
         "mode": "read_only",
     }
+
+@router.get("/api/shopify/embedded/data/{section}")
+def embedded_store_data(
+    section: str,
+    credentials: HTTPAuthorizationCredentials | None = Depends(_embedded_bearer),
+    diaglob_authorization: str | None = Header(None, alias="X-Diaglob-Authorization"),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Bounded, redacted, store-scoped reads; no customer PII or mutations."""
+    if section not in ("products", "orders"):
+        raise HTTPException(status_code=404, detail="Unknown section")
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        raise HTTPException(status_code=401, detail="Shopify ID token required")
+    if not diaglob_authorization or not diaglob_authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Diaglob access token required")
+    try:
+        identity = verify_shopify_id_token(credentials.credentials)
+    except ShopifyIdTokenError:
+        raise HTTPException(status_code=401, detail="Invalid Shopify session")
+    authorized = authorize_embedded_store(
+        db, identity["shop"], diaglob_authorization[len("Bearer "):]
+    )
+    from ..models import Product, Order
+    if section == "products":
+        rows = db.query(Product).filter(
+            Product.organization_id == authorized["organization_id"],
+            Product.store_id == authorized["store_id"],
+        ).order_by(Product.id.desc()).limit(50).all()
+        return {"section": section, "items": [
+            {"id": row.id, "title": row.title, "vendor": row.vendor,
+             "active": row.active, "shopify_product_id": row.shopify_product_id}
+            for row in rows
+        ], "limit": 50}
+    rows = db.query(Order).filter(
+        Order.organization_id == authorized["organization_id"],
+        Order.store_id == authorized["store_id"],
+    ).order_by(Order.id.desc()).limit(50).all()
+    return {"section": section, "items": [
+        {"id": row.id, "order_number": row.order_number,
+         "total_amount": str(row.total_amount), "currency": row.currency,
+         "financial_status": row.financial_status,
+         "fulfillment_status": row.fulfillment_status}
+        for row in rows
+    ], "limit": 50}
