@@ -318,7 +318,7 @@ def test_privacy_assessment_flags_new_sensitive_and_missing_tables(sandbox, monk
                         lambda: fake_inventory)
     result = assessment_module.assess_shopify_privacy_case(db, request_id=REQUEST_ID)
     assert "DATA_SURFACE_COVERAGE_INCOMPLETE" in result.blockers
-    assert "UNCLASSIFIED_SENSITIVE_TABLES_REQUIRE_REVIEW" in result.blockers
+    assert "UNCLASSIFIED_PII_TABLES_REQUIRE_REVIEW" in result.blockers
     assert "DECLARED_PRIVACY_TABLES_MISSING" in result.blockers
     assert "EXTERNAL_PRIVACY_AREAS_REQUIRE_REVIEW" in result.blockers
     assert result.fulfillment_authorized is False
