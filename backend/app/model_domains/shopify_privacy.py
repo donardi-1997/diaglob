@@ -95,7 +95,7 @@ class ShopifyPrivacyWorkItem(Base):
 
 
 class ShopifyPrivacySuppression(Base):
-    """Durable PII-free, shop-bound HMAC tombstone (staged until approved).
+    """Durable pseudonymous, shop-bound HMAC tombstone (staged until approved).
 
     The server must preserve SHOPIFY_PRIVACY_SUPPRESSION_KEY across deploys,
     restores and encryption-key rotations. No raw email, phone, IDs or addresses
