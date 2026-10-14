@@ -23,6 +23,7 @@ from ..whatsapp_client import (
     send_whatsapp_text_message,
 )
 from ..whatsapp_compliance import get_whatsapp_service_window_status
+from .shopify_privacy_suppression import evaluate_shopify_local_privacy
 from ..whatsapp_security import (
     decrypt_whatsapp_secret,
     encrypt_whatsapp_secret,
@@ -342,6 +343,12 @@ def send_message(
     customer = db.query(Customer).filter(Customer.id == conversation.customer_id).first()
     if not customer or customer.organization_id != organization_id:
         raise WhatsAppNotFoundError("Customer not found")
+
+    if evaluate_shopify_local_privacy(
+        db, organization_id=organization_id, store_id=conversation.store_id,
+        local_customer_id=customer.id,
+    ):
+        raise WhatsAppSendError("PRIVACY_SUPPRESSED")
 
     window = get_whatsapp_service_window_status(
         db, organization_id, conversation.store_id, customer.id,
