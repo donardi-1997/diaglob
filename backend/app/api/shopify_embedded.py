@@ -167,3 +167,39 @@ def authorize_embedded_session(
     return authorize_embedded_store(
         db, identity["shop"], diaglob_authorization[len("Bearer "):]
     )
+
+@router.get("/api/shopify/embedded/overview")
+def embedded_overview(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_embedded_bearer),
+    diaglob_authorization: str | None = Header(None, alias="X-Diaglob-Authorization"),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Read-only store metadata; fresh dual-token authorization on every request."""
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        raise HTTPException(status_code=401, detail="Shopify ID token required")
+    if not diaglob_authorization or not diaglob_authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Diaglob access token required")
+    try:
+        identity = verify_shopify_id_token(credentials.credentials)
+    except ShopifyIdTokenError:
+        raise HTTPException(status_code=401, detail="Invalid Shopify session")
+    granted = authorize_embedded_store(
+        db, identity["shop"], diaglob_authorization[len("Bearer "):]
+    )
+    from ..models import Store
+    store = db.query(Store).filter(
+        Store.id == granted["store_id"],
+        Store.organization_id == granted["organization_id"],
+        Store.active.is_(True),
+        Store.deleted.is_(False),
+    ).first()
+    if store is None:
+        raise HTTPException(status_code=403, detail="Store unavailable")
+    return {
+        "shop": identity["shop"],
+        "store_name": store.name,
+        "country_code": store.country_code,
+        "currency": store.currency,
+        "status": "connected",
+        "mode": "read_only",
+    }
