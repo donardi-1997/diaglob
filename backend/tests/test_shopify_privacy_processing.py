@@ -343,6 +343,8 @@ def test_encrypted_extraction_reads_only_signed_subject_in_one_store(sandbox):
         "orders": 1,
         "conversations": 0,
         "conversational_checkouts": 0,
+        "order_items": 0,
+        "messages": 0,
     }
     assert "SENSITIVE_NOTE" not in repr(result)
     assert b"SENSITIVE_NOTE" not in result.ciphertext
@@ -497,3 +499,64 @@ def test_extraction_is_disabled_by_default_and_on_file_database(sandbox, tmp_pat
                 encryption_key=Fernet.generate_key(), fixture_authorized=True,
             )
     file_engine.dispose()
+
+
+def test_fixture_extractor_includes_only_scoped_messages_and_order_items(sandbox):
+    from app.models import Conversation, Message, OrderItem
+
+    db, receipt = sandbox
+    buyer = db.query(Customer).one()
+    orders = db.query(Order).order_by(Order.id).all()
+    for index, order in enumerate(orders):
+        db.add(OrderItem(
+            order_id=order.id, organization_id=order.organization_id,
+            store_id=order.store_id, title=f"PRIVATE_PRODUCT_{index}",
+            quantity=1, unit_price=4, currency="COP",
+        ))
+        conversation = Conversation(
+            organization_id=receipt.organization_id,
+            store_id=order.store_id, customer_id=buyer.id,
+            preview=f"PRIVATE_PREVIEW_{index}",
+        )
+        db.add(conversation)
+        db.flush()
+        db.add(Message(
+            conversation_id=conversation.id, sender="customer",
+            text=f"PRIVATE_CHAT_{index}",
+        ))
+    db.commit()
+    key = Fernet.generate_key()
+    result = build_encrypted_shopify_fixture_extraction(
+        db, request_id=REQUEST_ID, encryption_key=key, fixture_authorized=True,
+    )
+    decoded = Fernet(key).decrypt(result.ciphertext).decode()
+    assert result.source_counts["order_items"] == 1
+    assert result.source_counts["messages"] == 1
+    assert "PRIVATE_PRODUCT_0" in decoded
+    assert "PRIVATE_CHAT_0" in decoded
+    assert "PRIVATE_PRODUCT_1" not in decoded
+    assert "PRIVATE_CHAT_1" not in decoded
+    assert result.delivery_authorized is False
+    assert receipt.completed_at is None
+
+
+def test_fixture_extractor_blocks_cross_store_order_item_provenance(sandbox):
+    from app.models import OrderItem
+    from app.services.shopify_privacy_scoped_extraction import (
+        ShopifyPrivacyExtractionError,
+    )
+
+    db, receipt = sandbox
+    orders = db.query(Order).order_by(Order.id).all()
+    db.add(OrderItem(
+        order_id=orders[0].id, organization_id=receipt.organization_id,
+        store_id=orders[1].store_id, title="PRIVATE_MISMATCH",
+        quantity=1, unit_price=4, currency="COP",
+    ))
+    db.commit()
+    with pytest.raises(ShopifyPrivacyExtractionError,
+                       match="ORDER_ITEM_TENANCY_MISMATCH"):
+        build_encrypted_shopify_fixture_extraction(
+            db, request_id=REQUEST_ID, encryption_key=Fernet.generate_key(),
+            fixture_authorized=True,
+        )
