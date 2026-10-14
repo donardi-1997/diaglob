@@ -22,11 +22,13 @@ from app.models import (
 from app.api.shopify_privacy_backlog import (
     get_shopify_privacy_case_processing,
     prepare_shopify_privacy_case,
+    prepare_pending_shopify_privacy_cases,
 )
 from app.services.shopify_privacy_processing import (
     ShopifyPrivacyProcessingError,
     get_shopify_privacy_processing_case,
     prepare_shopify_privacy_processing_case,
+    prepare_pending_shopify_privacy_processing_cases,
 )
 from app.shopify_security import encrypt_shopify_secret
 
@@ -227,3 +229,39 @@ def test_work_items_keep_no_customer_or_store_foreign_keys(sandbox):
     assert not model.foreign_keys
     assert "selector_encrypted" not in model.columns
     assert "payload" not in model.columns
+
+
+def test_bulk_preparation_skips_already_prepared_cases(sandbox):
+    db, _ = sandbox
+    first = prepare_pending_shopify_privacy_processing_cases(db, limit=10)
+    assert first["examined"] == 1
+    assert first["created"] == 1
+    assert first["errors"] == []
+    second = prepare_pending_shopify_privacy_processing_cases(db, limit=10)
+    assert second["examined"] == 0
+    assert second["created"] == 0
+    assert db.query(ShopifyPrivacyWorkItem).count() == 10
+
+
+@pytest.mark.parametrize("limit", [0, 51, True, "10"])
+def test_batch_limit_must_be_bounded_integer(sandbox, limit):
+    db, _ = sandbox
+    with pytest.raises(ShopifyPrivacyProcessingError,
+                       match="INVALID_PRIVACY_BATCH_LIMIT"):
+        prepare_pending_shopify_privacy_processing_cases(db, limit=limit)
+
+
+def test_bulk_endpoint_requires_internal_authentication(sandbox, monkeypatch):
+    db, _ = sandbox
+    monkeypatch.setenv("DIAGLOB_INTERNAL_SECRET", "strong-internal-test-secret")
+    with pytest.raises(HTTPException) as error:
+        prepare_pending_shopify_privacy_cases(
+            limit=10, x_internal_secret="no", db=db,
+        )
+    assert error.value.status_code == 401
+    assert db.query(ShopifyPrivacyWorkItem).count() == 0
+    outcome = prepare_pending_shopify_privacy_cases(
+        limit=10, x_internal_secret="strong-internal-test-secret", db=db,
+    )
+    assert outcome["created"] == 1
+    assert outcome["fulfillment_complete"] is False
