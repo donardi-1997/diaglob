@@ -111,6 +111,12 @@ def process_webhook_payload(db: Session, payload: dict) -> dict:
                     .first()
                 )
 
+                if customer and evaluate_shopify_local_privacy(
+                    db, organization_id=connection.organization_id,
+                    store_id=connection.store_id, local_customer_id=customer.id,
+                ):
+                    continue
+
                 if not customer:
                     contact = contact_map.get(wa_id) or {}
                     profile = contact.get("profile") or {}
