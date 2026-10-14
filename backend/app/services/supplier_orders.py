@@ -521,14 +521,20 @@ def sync_cj_supplier_order(
     if not supplier_order:
         raise SupplierOrderNotFound("SUPPLIER_ORDER_NOT_FOUND")
 
-    commerce_order = _require_commerce_order(
-        db, organization_id, store_id, supplier_order.order_id,
-    )
-    if evaluate_shopify_local_privacy(
-        db, organization_id=organization_id, store_id=store_id,
-        local_customer_id=commerce_order.customer_id,
-        shopify_order_id=commerce_order.shopify_order_id,
-    ):
+    if supplier_order.order_id is None:
+        privacy_block = evaluate_shopify_local_privacy(
+            db, organization_id=organization_id, store_id=store_id,
+        )
+    else:
+        commerce_order = _require_commerce_order(
+            db, organization_id, store_id, supplier_order.order_id,
+        )
+        privacy_block = evaluate_shopify_local_privacy(
+            db, organization_id=organization_id, store_id=store_id,
+            local_customer_id=commerce_order.customer_id,
+            shopify_order_id=commerce_order.shopify_order_id,
+        )
+    if privacy_block:
         raise SupplierOrderError("PRIVACY_SUPPRESSED")
 
     access_token = get_valid_cj_access_token(
