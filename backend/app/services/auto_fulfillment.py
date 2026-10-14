@@ -420,6 +420,17 @@ def process_auto_fulfillment_job(
             error="ORDER_NOT_ELIGIBLE",
         )
 
+    # Recheck at delivery time: this job may have been queued before redaction.
+    privacy_block = evaluate_shopify_local_privacy(
+        db, organization_id=job.organization_id, store_id=job.store_id,
+        local_customer_id=order.customer_id,
+        shopify_order_id=order.shopify_order_id,
+    )
+    if privacy_block:
+        return _mark_failure(
+            db, job, status="skipped", error="PRIVACY_SUPPRESSED",
+        )
+
     cj_connection = _cj_connection(
         db,
         job.organization_id,
