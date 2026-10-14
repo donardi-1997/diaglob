@@ -55,3 +55,38 @@ def audit_shopify_privacy_field_coverage(
             unmapped_columns=unmapped,
         ))
     return tuple(result)
+
+
+def summarize_shopify_privacy_export_schema_readiness(
+    metadata: MetaData | None = None,
+) -> dict:
+    """Report schema drift without reading rows or permitting a live export.
+
+    Coverage of column names is necessary but insufficient: lineage,
+    subject-to-record matching, retention and external processors still need
+    explicit approvals. Even a completely mapped schema cannot clear the gate.
+    """
+    audit = audit_shopify_privacy_field_coverage(metadata)
+    sources = [
+        {
+            "source": item.source,
+            "declared_field_count": len(item.declared_fields),
+            "missing_fields": list(item.missing_fields),
+            "unmapped_columns": list(item.unmapped_columns),
+            "status": item.status,
+        }
+        for item in audit
+    ]
+    blockers = ["FIELD_LEVEL_PROVENANCE_REQUIRES_REVIEW"]
+    if any(item.missing_fields for item in audit):
+        blockers.append("DECLARED_EXPORT_FIELDS_MISSING")
+    if any(item.unmapped_columns for item in audit):
+        blockers.append("UNMAPPED_EXPORT_COLUMNS_REQUIRE_REVIEW")
+    return {
+        "sources": sources,
+        "blockers": blockers,
+        "contains_personal_data": False,
+        "real_export_authorized": False,
+        "delivery_authorized": False,
+        "fulfillment_complete": False,
+    }
