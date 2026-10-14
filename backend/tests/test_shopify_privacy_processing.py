@@ -323,3 +323,177 @@ def test_privacy_assessment_flags_new_sensitive_and_missing_tables(sandbox, monk
     assert "EXTERNAL_PRIVACY_AREAS_REQUIRE_REVIEW" in result.blockers
     assert result.fulfillment_authorized is False
     assert receipt.completed_at is None
+
+
+def test_encrypted_extraction_reads_only_signed_subject_in_one_store(sandbox):
+    from app.services.shopify_privacy_scoped_extraction import (
+        build_encrypted_shopify_fixture_extraction,
+    )
+
+    db, receipt = sandbox
+    key = Fernet.generate_key()
+    result = build_encrypted_shopify_fixture_extraction(
+        db, request_id=REQUEST_ID, encryption_key=key, fixture_authorized=True,
+    )
+    assert result.fixture_only is True
+    assert result.delivery_authorized is False
+    assert result.fulfillment_complete is False
+    assert result.source_counts == {
+        "customer_store_profiles": 1,
+        "orders": 1,
+        "conversations": 0,
+        "conversational_checkouts": 0,
+    }
+    assert "SENSITIVE_NOTE" not in repr(result)
+    assert b"SENSITIVE_NOTE" not in result.ciphertext
+    decoded = json.loads(Fernet(key).decrypt(result.ciphertext))
+    assert decoded["fixture_only"] is True
+    assert decoded["sources"]["orders"][0]["note"] == (
+        f"SENSITIVE_NOTE_{receipt.store_id}"
+    )
+    assert len(decoded["sources"]["orders"]) == 1
+    assert "SENSITIVE_CUSTOMER" not in str(decoded)
+    assert db.query(Order).count() == 2
+    assert receipt.completed_at is None
+
+
+def test_extraction_does_not_include_other_customer_in_same_store(sandbox):
+    from app.services.shopify_privacy_scoped_extraction import (
+        build_encrypted_shopify_fixture_extraction,
+    )
+
+    db, receipt = sandbox
+    another = Customer(
+        organization_id=receipt.organization_id, name="OTHER_CUSTOMER", phone="777",
+    )
+    db.add(another)
+    db.flush()
+    db.add(CustomerStoreProfile(
+        organization_id=receipt.organization_id, store_id=receipt.store_id,
+        customer_id=another.id, external_customer_id="999", currency="COP",
+    ))
+    db.add(Order(
+        organization_id=receipt.organization_id, store_id=receipt.store_id,
+        customer_id=another.id, order_number="OTHER_ORDER",
+        total_amount=5, currency="COP", note="OTHER_NOTE",
+    ))
+    db.commit()
+    key = Fernet.generate_key()
+    result = build_encrypted_shopify_fixture_extraction(
+        db, request_id=REQUEST_ID, encryption_key=key, fixture_authorized=True,
+    )
+    decoded = Fernet(key).decrypt(result.ciphertext).decode()
+    assert "OTHER_ORDER" not in decoded
+    assert "OTHER_NOTE" not in decoded
+    assert "SENSITIVE_NOTE" in decoded
+
+
+def test_extraction_rejects_duplicate_shopify_customer_links(sandbox):
+    from app.services.shopify_privacy_scoped_extraction import (
+        ShopifyPrivacyExtractionError,
+        build_encrypted_shopify_fixture_extraction,
+    )
+
+    db, receipt = sandbox
+    another = Customer(
+        organization_id=receipt.organization_id, name="COLLISION", phone="888",
+    )
+    db.add(another)
+    db.flush()
+    db.add(CustomerStoreProfile(
+        organization_id=receipt.organization_id, store_id=receipt.store_id,
+        customer_id=another.id, external_customer_id="700", currency="COP",
+    ))
+    db.commit()
+    with pytest.raises(
+        ShopifyPrivacyExtractionError, match="AMBIGUOUS_OR_MISSING_CUSTOMER_LINK",
+    ):
+        build_encrypted_shopify_fixture_extraction(
+            db, request_id=REQUEST_ID, encryption_key=Fernet.generate_key(),
+            fixture_authorized=True,
+        )
+
+
+def test_extraction_blocks_unsigned_or_mismatched_shop(sandbox):
+    from app.services.shopify_privacy_scoped_extraction import (
+        ShopifyPrivacyExtractionError,
+        build_encrypted_shopify_fixture_extraction,
+    )
+
+    db, receipt = sandbox
+    db.query(ShopifyPrivacyAuditEvent).delete()
+    db.commit()
+    with pytest.raises(ShopifyPrivacyExtractionError, match="SIGNED_RECEIPT_REQUIRED"):
+        build_encrypted_shopify_fixture_extraction(
+            db, request_id=REQUEST_ID, encryption_key=Fernet.generate_key(),
+            fixture_authorized=True,
+        )
+    db.add(ShopifyPrivacyAuditEvent(
+        request_id=REQUEST_ID, event_type="received",
+        from_status=None, to_status=receipt.status,
+        reason_code="tenant_bound", actor_type="shopify_hmac_verified",
+        created_at=datetime.utcnow(),
+    ))
+    receipt.shop_domain = "other-shop.myshopify.com"
+    db.commit()
+    with pytest.raises(
+        ShopifyPrivacyExtractionError, match="UNVERIFIED_CUSTOMER_EXPORT_SCOPE",
+    ):
+        build_encrypted_shopify_fixture_extraction(
+            db, request_id=REQUEST_ID, encryption_key=Fernet.generate_key(),
+            fixture_authorized=True,
+        )
+
+
+def test_extraction_rejects_redaction_or_completed_receipts(sandbox):
+    from app.services.shopify_privacy_scoped_extraction import (
+        ShopifyPrivacyExtractionError,
+        build_encrypted_shopify_fixture_extraction,
+    )
+
+    db, receipt = sandbox
+    receipt.topic = "customers/redact"
+    db.commit()
+    with pytest.raises(
+        ShopifyPrivacyExtractionError, match="UNVERIFIED_CUSTOMER_EXPORT_SCOPE",
+    ):
+        build_encrypted_shopify_fixture_extraction(
+            db, request_id=REQUEST_ID, encryption_key=Fernet.generate_key(),
+            fixture_authorized=True,
+        )
+    receipt.topic = "customers/data_request"
+    receipt.completed_at = datetime.utcnow()
+    db.commit()
+    with pytest.raises(
+        ShopifyPrivacyExtractionError, match="UNVERIFIED_CUSTOMER_EXPORT_SCOPE",
+    ):
+        build_encrypted_shopify_fixture_extraction(
+            db, request_id=REQUEST_ID, encryption_key=Fernet.generate_key(),
+            fixture_authorized=True,
+        )
+
+
+def test_extraction_is_disabled_by_default_and_on_file_database(sandbox, tmp_path):
+    from app.services.shopify_privacy_scoped_extraction import (
+        ShopifyPrivacyExtractionError,
+        build_encrypted_shopify_fixture_extraction,
+    )
+
+    db, _ = sandbox
+    with pytest.raises(
+        ShopifyPrivacyExtractionError, match="LIVE_CUSTOMER_EXTRACTION_DISABLED",
+    ):
+        build_encrypted_shopify_fixture_extraction(
+            db, request_id=REQUEST_ID, encryption_key=Fernet.generate_key(),
+        )
+
+    file_engine = create_engine(f"sqlite:///{tmp_path / 'file.sqlite'}")
+    with Session(file_engine) as file_db:
+        with pytest.raises(
+            ShopifyPrivacyExtractionError, match="LIVE_CUSTOMER_EXTRACTION_DISABLED",
+        ):
+            build_encrypted_shopify_fixture_extraction(
+                file_db, request_id=REQUEST_ID,
+                encryption_key=Fernet.generate_key(), fixture_authorized=True,
+            )
+    file_engine.dispose()
