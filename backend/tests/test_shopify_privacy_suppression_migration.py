@@ -28,9 +28,9 @@ def test_shopify_suppression_migration_upgrade_and_downgrade():
         connection.execute(text(
             "INSERT INTO shopify_privacy_suppressions "
             "(organization_id,store_id,request_id,kind,selector_digest,"
-            "key_fingerprint,status,created_at) "
+            "key_fingerprint,domain_fingerprint,status,created_at) "
             "VALUES (1,2,'opaque-digest','customer','opaque-selector',"
-            "'test-only-key-tag','staged',CURRENT_TIMESTAMP)"
+            "'test-only-key-tag','test-only-domain-tag','staged',CURRENT_TIMESTAMP)"
         ))
     columns = {
         col["name"] for col in inspect(engine).get_columns(
@@ -39,7 +39,7 @@ def test_shopify_suppression_migration_upgrade_and_downgrade():
     }
     assert columns == {
         "id", "organization_id", "store_id", "request_id", "kind",
-        "selector_digest", "key_fingerprint", "status", "created_at",
+        "selector_digest", "key_fingerprint", "domain_fingerprint", "status", "created_at",
         "activated_at",
     }
     assert not inspect(engine).get_foreign_keys("shopify_privacy_suppressions")
