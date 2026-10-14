@@ -51,7 +51,7 @@ def test_orders_redact_personal_data(authz, token):
 
 def test_embedded_home_does_not_advertise_unimplemented_modules(monkeypatch):
     from app.api.shopify_embedded import shopify_embedded_home
-    monkeypatch.setattr('app.api.shopify_embedded.get_shopify_client_id', lambda: 'test-client-id')
+    monkeypatch.setenv('SHOPIFY_CLIENT_ID', 'c5fc9aed710462d41767477fa9e595c0')
 
     html = shopify_embedded_home().body.decode('utf-8')
     assert 'data-panel="home"' in html
