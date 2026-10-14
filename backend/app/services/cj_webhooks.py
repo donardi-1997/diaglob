@@ -319,11 +319,11 @@ def process_cj_webhook(
         Order.organization_id == supplier_order.organization_id,
         Order.store_id == supplier_order.store_id,
     ).first() if supplier_order.order_id is not None else None
-    if local_order is not None and evaluate_shopify_local_privacy(
-        db, organization_id=local_order.organization_id,
-        store_id=local_order.store_id,
-        local_customer_id=local_order.customer_id,
-        shopify_order_id=local_order.shopify_order_id,
+    if evaluate_shopify_local_privacy(
+        db, organization_id=supplier_order.organization_id,
+        store_id=supplier_order.store_id,
+        local_customer_id=local_order.customer_id if local_order else None,
+        shopify_order_id=local_order.shopify_order_id if local_order else None,
     ):
         receipt.processing_status = "ignored"
         receipt.error_code = "PRIVACY_SUPPRESSED"
