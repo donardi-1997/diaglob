@@ -369,6 +369,10 @@
   ],
   [
     "GET",
+    "/api/shopify/embedded/data/{section}"
+  ],
+  [
+    "GET",
     "/api/shopify/embedded/overview"
   ],
   [
