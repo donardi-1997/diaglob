@@ -42,6 +42,15 @@ def _key_fingerprint(key: bytes) -> str:
                     hashlib.sha256).hexdigest()
 
 
+def _domain_fingerprint(key: bytes, organization_id: int,
+                        store_id: int, domain: str) -> str:
+    material = json.dumps(
+        ["diaglob.shopify.suppression.shop-identity.v1",
+         organization_id, store_id, domain], separators=(",", ":"),
+    )
+    return hmac.new(key, material.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
 def _require_fingerprint(rows, fingerprint: str) -> None:
     if any(not hmac.compare_digest(x.key_fingerprint, fingerprint) for x in rows):
         raise ShopifySuppressionError("SUPPRESSION_KEY_MISMATCH")
@@ -161,7 +170,13 @@ def prepare_shopify_privacy_suppressions(db: Session, *, request_id: str) -> dic
         ShopifyPrivacySuppression.store_id == receipt.store_id,
     ).all()
     fingerprint = _key_fingerprint(key)
+    domain_fingerprint = _domain_fingerprint(
+        key, receipt.organization_id, receipt.store_id, domain,
+    )
     _require_fingerprint(existing, fingerprint)
+    if any(not hmac.compare_digest(row.domain_fingerprint, domain_fingerprint)
+           for row in existing):
+        raise ShopifySuppressionError("SUPPRESSION_SHOP_IDENTITY_MISMATCH")
     index = {(r.kind, r.selector_digest): r for r in existing}
     new_rows = []
     for kind, digest in digests:
@@ -170,6 +185,7 @@ def prepare_shopify_privacy_suppressions(db: Session, *, request_id: str) -> dic
                 request_id=request_id, organization_id=receipt.organization_id,
                 store_id=receipt.store_id, kind=kind, selector_digest=digest,
                 status="staged", key_fingerprint=fingerprint,
+                domain_fingerprint=domain_fingerprint,
                 created_at=datetime.utcnow(),
             ))
     if new_rows:
@@ -280,6 +296,10 @@ def evaluate_shopify_privacy_suppression(
     # A missing key must never allow a signed suppression to be bypassed.
     key = _secret()
     _require_fingerprint(rows, _key_fingerprint(key))
+    expected_domain = _domain_fingerprint(key, organization_id, store_id, domain)
+    if any(not hmac.compare_digest(row.domain_fingerprint, expected_domain)
+           for row in rows):
+        raise ShopifySuppressionError("SUPPRESSION_SHOP_IDENTITY_MISMATCH")
     active = {(x.kind, x.selector_digest) for x in rows}
     if ("shop", _digest(key=key, organization_id=organization_id,
                         store_id=store_id, domain=domain,
