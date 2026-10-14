@@ -18,7 +18,8 @@ from datetime import datetime
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from ..models import ShopifyPrivacyAuditEvent, ShopifyPrivacyRequest, ShopifyPrivacySuppression, Store
+from ..models import (ShopifyPrivacyAuditEvent, ShopifyPrivacyRequest,
+                      ShopifyPrivacySuppression, Store, Customer, CustomerStoreProfile)
 from ..shopify_oauth import normalize_shop_domain
 from ..shopify_security import decrypt_shopify_secret
 
@@ -264,6 +265,7 @@ def evaluate_shopify_privacy_suppression(
     db: Session, *, organization_id: int, store_id: int, shop_domain: str,
     customer_id: object, order_id: object,
     customer_email: object = None, customer_phone: object = None,
+    require_order_id: bool = True, require_customer_id: bool = True,
 ) -> tuple[str | None, bool]:
     """Return (suppression reason, contact-fallback forbidden).
 
@@ -306,18 +308,18 @@ def evaluate_shopify_privacy_suppression(
                         kind="shop", identity="all")) in active:
         return "shop", True
 
-    if order_id is None:
-        # An order event without an ID cannot be trusted for further writes.
+    if order_id is None and require_order_id:
         return "order_unresolved", True
-    try:
-        order_value = _numeric_id(order_id, "order")
-    except ShopifySuppressionError:
-        return "order_unresolved", True
-    order_hash = _digest(key=key, organization_id=organization_id,
-                         store_id=store_id, domain=domain,
-                         kind="order", identity=order_value)
-    if ("order", order_hash) in active:
-        return "order", True
+    if order_id is not None:
+        try:
+            order_value = _numeric_id(order_id, "order")
+        except ShopifySuppressionError:
+            return "order_unresolved", True
+        order_hash = _digest(key=key, organization_id=organization_id,
+                             store_id=store_id, domain=domain,
+                             kind="order", identity=order_value)
+        if ("order", order_hash) in active:
+            return "order", True
     for kind, raw_value, canonicalizer in (
         ("email", customer_email, _email),
         ("phone", customer_phone, _phone),
@@ -332,7 +334,7 @@ def evaluate_shopify_privacy_suppression(
             if (kind, selector_hash) in active:
                 return kind, True
     customer_blocks = any(x.kind in ("customer", "email", "phone") for x in rows)
-    if customer_blocks and customer_id is None:
+    if customer_blocks and customer_id is None and require_customer_id:
         return "customer_unresolved", True
     if customer_id is not None:
         try:
@@ -347,3 +349,59 @@ def evaluate_shopify_privacy_suppression(
         if ("customer", customer_hash) in active:
             return "customer", True
     return None, True
+
+
+def evaluate_shopify_local_privacy(
+    db: Session, *, organization_id: int, store_id: int,
+    local_customer_id: int | None = None,
+    customer_email: str | None = None, customer_phone: str | None = None,
+    shopify_order_id: str | None = None,
+) -> str | None:
+    """Guard manual orders, queued flow recipients and supplier dispatch.
+
+    No active tombstones -> no business impact. A local Customer reference is
+    not a Shopify ID; resolve the precise store profile, never infer Shopify
+    identity from a different store. Absent profile ID is permitted only when
+    contact is known and does not match any active keyed tombstone.
+    """
+    active = db.query(ShopifyPrivacySuppression.id).filter(
+        ShopifyPrivacySuppression.organization_id == organization_id,
+        ShopifyPrivacySuppression.store_id == store_id,
+        ShopifyPrivacySuppression.status == "active",
+    ).first()
+    if active is None:
+        return None
+    store = db.query(Store).filter(
+        Store.id == store_id, Store.organization_id == organization_id,
+    ).first()
+    if store is None or not store.shopify_domain:
+        raise ShopifySuppressionError("SHOP_IDENTITY_MISMATCH")
+    remote_id = None
+    if local_customer_id is not None:
+        customer = db.query(Customer).filter(
+            Customer.id == local_customer_id,
+            Customer.organization_id == organization_id,
+        ).first()
+        if customer is None:
+            return "customer_unresolved"
+        customer_email = customer_email or customer.email
+        customer_phone = customer_phone or customer.phone
+        profiles = db.query(CustomerStoreProfile).filter(
+            CustomerStoreProfile.organization_id == organization_id,
+            CustomerStoreProfile.store_id == store_id,
+            CustomerStoreProfile.customer_id == customer.id,
+        ).all()
+        if len(profiles) > 1:
+            return "customer_ambiguous"
+        if profiles:
+            remote_id = profiles[0].external_customer_id
+    if remote_id is None and not customer_email and not customer_phone:
+        return "customer_unresolved"
+    reason, _ = evaluate_shopify_privacy_suppression(
+        db, organization_id=organization_id, store_id=store_id,
+        shop_domain=store.shopify_domain, customer_id=remote_id,
+        order_id=shopify_order_id, customer_email=customer_email,
+        customer_phone=customer_phone,
+        require_customer_id=False, require_order_id=False,
+    )
+    return reason
