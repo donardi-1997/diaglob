@@ -55,6 +55,22 @@ def _numeric_id(value: object, kind: str) -> str:
     return str(int(match.group(2)))
 
 
+def _email(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().casefold()
+    if len(normalized) > 320 or "@" not in normalized or not normalized:
+        return None
+    return normalized
+
+
+def _phone(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    digits = "".join(ch for ch in value if ch.isascii() and ch.isdigit())
+    return digits if 7 <= len(digits) <= 20 else None
+
+
 def _digest(*, key: bytes, organization_id: int, store_id: int,
             domain: str, kind: str, identity: str) -> str:
     # Structured canonical context: no collisions across shops or ID types.
@@ -113,6 +129,12 @@ def _tombstone_specs(receipt: ShopifyPrivacyRequest):
     if subject is None:
         raise ShopifySuppressionError("EXACT_CUSTOMER_REQUIRED")
     specs = [("customer", _numeric_id(subject, "customer"))]
+    subject_email = _email(selectors["customer"].get("email"))
+    subject_phone = _phone(selectors["customer"].get("phone"))
+    if subject_email:
+        specs.append(("email", subject_email))
+    if subject_phone:
+        specs.append(("phone", subject_phone))
     order_ids = selectors.get("orders_to_redact")
     if order_ids is not None:
         if not isinstance(order_ids, list) or len(order_ids) > 500:
@@ -224,6 +246,7 @@ def activate_synthetic_privacy_suppressions(db: Session, *, request_id: str) -> 
 def evaluate_shopify_privacy_suppression(
     db: Session, *, organization_id: int, store_id: int, shop_domain: str,
     customer_id: object, order_id: object,
+    customer_email: object = None, customer_phone: object = None,
 ) -> tuple[str | None, bool]:
     """Return (suppression reason, contact-fallback forbidden).
 
@@ -274,7 +297,20 @@ def evaluate_shopify_privacy_suppression(
                          kind="order", identity=order_value)
     if ("order", order_hash) in active:
         return "order", True
-    customer_blocks = any(x.kind == "customer" for x in rows)
+    for kind, raw_value, canonicalizer in (
+        ("email", customer_email, _email),
+        ("phone", customer_phone, _phone),
+    ):
+        identifier = canonicalizer(raw_value)
+        if identifier is not None:
+            selector_hash = _digest(
+                key=key, organization_id=organization_id,
+                store_id=store_id, domain=domain, kind=kind,
+                identity=identifier,
+            )
+            if (kind, selector_hash) in active:
+                return kind, True
+    customer_blocks = any(x.kind in ("customer", "email", "phone") for x in rows)
     if customer_blocks and customer_id is None:
         return "customer_unresolved", True
     if customer_id is not None:
