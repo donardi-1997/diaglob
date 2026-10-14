@@ -15,6 +15,7 @@ from ..model_domains.supplier_orders import SupplierOrder, SupplierOrderItem
 from ..models import Order, OrderItem, Store
 from .supplier_connections import get_valid_cj_access_token
 from .supplier_mappings import resolve_cj_variant_mapping
+from .shopify_privacy_suppression import evaluate_shopify_local_privacy
 
 CJ_PROVIDER = "cj"
 _CANCELLABLE_CJ_STATUSES = {"CREATED", "IN_CART"}
@@ -317,6 +318,13 @@ def create_cj_supplier_order(
         store_id,
         order_id,
     )
+    if evaluate_shopify_local_privacy(
+        db, organization_id=organization_id, store_id=store_id,
+        local_customer_id=commerce_order.customer_id,
+        shopify_order_id=commerce_order.shopify_order_id,
+    ):
+        raise SupplierOrderError("PRIVACY_SUPPRESSED")
+
     idempotency_key = (idempotency_key or "").strip()
     if not idempotency_key:
         raise SupplierOrderError("IDEMPOTENCY_KEY_REQUIRED")
@@ -512,6 +520,16 @@ def sync_cj_supplier_order(
     )
     if not supplier_order:
         raise SupplierOrderNotFound("SUPPLIER_ORDER_NOT_FOUND")
+
+    commerce_order = _require_commerce_order(
+        db, organization_id, store_id, supplier_order.order_id,
+    )
+    if evaluate_shopify_local_privacy(
+        db, organization_id=organization_id, store_id=store_id,
+        local_customer_id=commerce_order.customer_id,
+        shopify_order_id=commerce_order.shopify_order_id,
+    ):
+        raise SupplierOrderError("PRIVACY_SUPPRESSED")
 
     access_token = get_valid_cj_access_token(
         db,
