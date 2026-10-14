@@ -138,7 +138,9 @@ no merchant foreign keys, allowing signed privacy evidence to survive
 uninstall. It stores only opaque request digests, organization/store IDs,
 subject *kind*, a keyed HMAC-SHA256 selector digest, a key fingerprint and
 staged/active state. No plaintext Shopify customer IDs, order IDs, emails or
-phones are persisted.
+phones are persisted. **Keyed digests are pseudonymous personal data, not
+anonymous data**; their retention, access and eventual disposal still require
+policy approval.
 
 ### Security requirements
 
