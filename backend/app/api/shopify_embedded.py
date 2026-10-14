@@ -11,6 +11,9 @@ from fastapi import APIRouter, HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from ..services.shopify_embedded_identity import verify_shopify_id_token, ShopifyIdTokenError
 from fastapi.responses import HTMLResponse
+from sqlalchemy.orm import Session
+from ..db import get_db
+from ..services.shopify_embedded_link import installed_shop_status
 
 router = APIRouter()
 
@@ -33,6 +36,7 @@ def shopify_embedded_home() -> HTMLResponse:
   <main>
     <h1>DIAGLOB</h1>
     <p id="status" role="status">Validando la sesión de Shopify…</p>
+    <p><a id="portal-link" hidden href="https://diaglob.tech/login">Abrir Diaglob e iniciar sesión</a></p>
     <script>
       (async function () {
         const status = document.getElementById('status');
@@ -47,7 +51,13 @@ def shopify_embedded_home() -> HTMLResponse:
           });
           if (!response.ok) throw new Error('Sesión no válida');
           const identity = await response.json();
-          status.textContent = 'Tienda verificada: ' + identity.shop + '. La vinculación con Diaglob está pendiente.';
+          if (identity.installation_status === 'connected') {
+            status.textContent = 'Shopify verificado y tienda conectada a Diaglob. Para acceder al panel, inicia sesión con tu cuenta Diaglob.';
+          } else {
+            status.textContent = 'Shopify verificado. Falta vincular esta tienda desde tu cuenta de Diaglob.';
+          }
+          const link = document.getElementById('portal-link');
+          if (link) link.hidden = false;
         } catch (error) {
           status.textContent = 'No pudimos validar tu sesión. Abre Diaglob desde Shopify Admin.';
         }
@@ -65,6 +75,7 @@ _embedded_bearer = HTTPBearer(auto_error=False)
 @router.get("/api/shopify/embedded/session")
 def verify_embedded_session(
     credentials: HTTPAuthorizationCredentials | None = Depends(_embedded_bearer),
+    db: Session = Depends(get_db),
 ) -> dict:
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise HTTPException(status_code=401, detail="Shopify ID token required")
@@ -72,4 +83,9 @@ def verify_embedded_session(
         verified = verify_shopify_id_token(credentials.credentials)
     except ShopifyIdTokenError:
         raise HTTPException(status_code=401, detail="Invalid Shopify session")
-    return {"authenticated": True, "shop": verified["shop"], "tenant_authorized": False}
+    return {
+        "authenticated": True,
+        "shop": verified["shop"],
+        "installation_status": installed_shop_status(db, verified["shop"]),
+        "tenant_authorized": False,
+    }
