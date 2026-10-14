@@ -103,15 +103,51 @@ def shopify_embedded_home() -> HTMLResponse:
         }
       })();
       let embeddedAccessToken = null;
+      let currentSection = 'home';
+      let currentPage = 1;
+      let totalPages = 1;
+      const searchForm = document.getElementById('search-form');
+      const pager = document.getElementById('pager');
       const output = document.getElementById('section-output');
-      async function showSection(section) {
-        document.querySelectorAll('[data-panel]').forEach(button => {
+      async function showSection(section, keepPage = false) {
+        if (!keepPage || section !== currentSection) currentPage = 1;
+        currentSection = section;
+        searchForm.hidden = !(section === 'products' || section === 'orders');
+        pager.hidden = true;
+        document.getElementById('metrics').hidden = section !== 'home';
+        searchForm.addEventListener('submit', event => {
+        event.preventDefault();
+        currentPage = 1;
+        showSection(currentSection, true);
+      });
+      document.getElementById('previous-page').addEventListener('click', () => {
+        if (currentPage > 1) { currentPage--; showSection(currentSection, true); }
+      });
+      document.getElementById('next-page').addEventListener('click', () => {
+        if (currentPage < totalPages) { currentPage++; showSection(currentSection, true); }
+      });
+      document.querySelectorAll('[data-panel]').forEach(button => {
           if (button.dataset.panel === section) button.setAttribute('aria-current', 'page');
           else button.removeAttribute('aria-current');
         });
         output.replaceChildren();
         if (section === 'home') {
-          output.textContent = 'Selecciona Productos o Pedidos para ver los registros sincronizados de esta tienda.';
+          output.textContent = 'Datos sincronizados en Diaglob. Las cifras no son consultas en tiempo real a Shopify.';
+          if (!embeddedAccessToken) return;
+          try {
+            const token = await window.shopify.idToken();
+            const metrics = await fetch('/api/shopify/embedded/metrics', {
+              cache: 'no-store', headers: {
+                Authorization: 'Bearer ' + token,
+                'X-Diaglob-Authorization': 'Bearer ' + embeddedAccessToken
+              }
+            });
+            if (!metrics.ok) throw new Error('No se pudieron cargar las métricas.');
+            const data = await metrics.json();
+            document.getElementById('metric-products').textContent = data.products;
+            document.getElementById('metric-orders').textContent = data.orders;
+            document.getElementById('metric-sync').textContent = data.last_product_sync || 'No registrada';
+          } catch (error) { output.textContent = error.message || 'Error al cargar métricas.'; }
           return;
         }
         if (section === 'conversations' || section === 'automations') {
@@ -125,7 +161,7 @@ def shopify_embedded_home() -> HTMLResponse:
         output.textContent = 'Cargando registros de la tienda…';
         try {
           const token = await window.shopify.idToken();
-          const response = await fetch('/api/shopify/embedded/data/' + section, {
+          const response = await fetch('/api/shopify/embedded/data/' + section + '?page=' + currentPage + '&search=' + encodeURIComponent(document.getElementById('filter-text').value.trim()), {
             cache: 'no-store',
             headers: {
               Authorization: 'Bearer ' + token,
@@ -139,6 +175,11 @@ def shopify_embedded_home() -> HTMLResponse:
           if (!response.ok) throw new Error('No se pudieron consultar los registros.');
           const result = await response.json();
           output.replaceChildren();
+          totalPages = Math.max(1, Math.ceil(result.total / result.limit));
+          pager.hidden = false;
+          document.getElementById('page-status').textContent = 'Página ' + currentPage + ' de ' + totalPages + ' · ' + result.total + ' registros';
+          document.getElementById('previous-page').disabled = currentPage <= 1;
+          document.getElementById('next-page').disabled = currentPage >= totalPages;
           if (!result.items.length) {
             output.textContent = 'No hay ' + (section === 'products' ? 'productos' : 'pedidos') + ' sincronizados en esta tienda.';
             return;
