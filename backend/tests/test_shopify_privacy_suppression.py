@@ -789,3 +789,147 @@ def test_queued_ai_reply_checks_tombstone_before_llm_or_provider(
         _deliver_answer(db, conversation, ai_message, "never deliver")
         send.assert_not_called()
         assert ai_message.delivery_status == "suppressed"
+
+
+def test_cj_provider_webhook_cannot_restore_suppressed_tracking(
+    sandbox, monkeypatch,
+):
+    from app.model_domains.supplier_integrations import SupplierConnection
+    from app.model_domains.supplier_orders import SupplierOrder
+    from app.model_domains.shipments import CJWebhookReceipt, Shipment
+    from app.services.cj_webhooks import (
+        compute_cj_webhook_signature, process_cj_webhook,
+    )
+    db, receipt, stores, connections = sandbox
+    _webhook(db, connections[0])
+    order = db.query(Order).one()
+    now = datetime.utcnow()
+    supplier_connection = SupplierConnection(
+        organization_id=receipt.organization_id,
+        store_id=stores[0].id, provider="cj",
+        external_account_id="synthetic-cj-privacy-id",
+        status="connected", connected_at=now,
+        created_at=now, updated_at=now,
+    )
+    db.add(supplier_connection)
+    db.flush()
+    supplier_order = SupplierOrder(
+        organization_id=receipt.organization_id,
+        store_id=stores[0].id, supplier_connection_id=supplier_connection.id,
+        order_id=order.id, provider="cj",
+        provider_order_number="synthetic-CJ-101",
+        external_order_id="CJ-101", supplier_status="SHIPPED",
+        creation_status="created", idempotency_key="synthetic-cj-101",
+        currency="COP", created_at=now, updated_at=now,
+    )
+    db.add(supplier_order)
+    db.commit()
+    prepare_shopify_privacy_suppressions(db, request_id=RECEIPT)
+    monkeypatch.setenv("DIAGLOB_SHOPIFY_PRIVACY_SYNTHETIC_TESTS", "1")
+    activate_synthetic_privacy_suppressions(db, request_id=RECEIPT)
+    webhook = {
+        "openId": "synthetic-cj-privacy-id",
+        "messageId": "cj-private-replayed",
+        "type": "LOGISTIC",
+        "params": {
+            "orderId": "CJ-101", "trackingNumber": "PRIVATE-TRACKING",
+            "trackingStatus": 12,
+        },
+    }
+    raw = json.dumps(webhook).encode()
+    sig = compute_cj_webhook_signature(webhook["openId"], raw)
+    response = process_cj_webhook(db, raw_body=raw, signature=sig)
+    assert response["ignored"] is True
+    assert db.query(Shipment).count() == 0
+    received = db.query(CJWebhookReceipt).one()
+    assert received.error_code == "PRIVACY_SUPPRESSED"
+    assert received.processing_status == "ignored"
+
+    from app.services.supplier_orders import (
+        SupplierOrderError, create_cj_supplier_order, sync_cj_supplier_order,
+    )
+    with pytest.raises(SupplierOrderError, match="PRIVACY_SUPPRESSED"):
+        create_cj_supplier_order(
+            db, receipt.organization_id, stores[0].id,
+            order_id=order.id, idempotency_key="new-cj-privacy-order",
+            items=[], shipping={}, from_country_code="CO",
+            logistic_name="TEST",
+        )
+    with pytest.raises(SupplierOrderError, match="PRIVACY_SUPPRESSED"):
+        sync_cj_supplier_order(
+            db, receipt.organization_id, stores[0].id, supplier_order.id,
+        )
+
+
+def test_direct_whatsapp_send_blocked_before_external_provider(
+    sandbox, monkeypatch,
+):
+    from app.models import WhatsAppConnection, Conversation
+    from app.services.whatsapp_service import send_message, WhatsAppSendError
+    db, receipt, stores, connections = sandbox
+    _webhook(db, connections[0])
+    buyer = db.query(Customer).one()
+    db.add(WhatsAppConnection(
+        organization_id=receipt.organization_id, store_id=stores[0].id,
+        phone_number_id="wa-privacy-send", business_account_id="wa-test",
+        access_token_encrypted="synthetic", verify_token="synthetic",
+        status="connected",
+    ))
+    conversation = Conversation(
+        organization_id=receipt.organization_id, store_id=stores[0].id,
+        customer_id=buyer.id, channel="WhatsApp",
+    )
+    db.add(conversation)
+    db.commit()
+    prepare_shopify_privacy_suppressions(db, request_id=RECEIPT)
+    monkeypatch.setenv("DIAGLOB_SHOPIFY_PRIVACY_SYNTHETIC_TESTS", "1")
+    activate_synthetic_privacy_suppressions(db, request_id=RECEIPT)
+    with patch("app.services.whatsapp_service.send_whatsapp_text_message") as send:
+        with pytest.raises(WhatsAppSendError, match="PRIVACY_SUPPRESSED"):
+            send_message(
+                db, receipt.organization_id, conversation.id,
+                "PRIVATE_WHATSAPP_TEXT",
+            )
+        send.assert_not_called()
+
+
+def test_instagram_direct_send_blocked_for_linked_shopify_buyer(
+    sandbox, monkeypatch,
+):
+    from app.instagram_models import InstagramConnection
+    from app.models import CustomerStoreProfile, Conversation
+    from app.services.instagram_service import send_message, InstagramSendError
+    db, receipt, stores, _ = sandbox
+    customer = Customer(
+        organization_id=receipt.organization_id,
+        name="PRIVATE_IG_BUYER", phone="instagram:synthig",
+    )
+    db.add(customer)
+    db.flush()
+    db.add(CustomerStoreProfile(
+        organization_id=receipt.organization_id, store_id=stores[0].id,
+        customer_id=customer.id, external_customer_id="700", currency="COP",
+    ))
+    db.add(InstagramConnection(
+        organization_id=receipt.organization_id, store_id=stores[0].id,
+        instagram_account_id="ig-privacy-send",
+        page_id="ig-test", username="ig-privacy",
+        access_token_encrypted="synthetic", status="connected",
+    ))
+    conversation = Conversation(
+        organization_id=receipt.organization_id,
+        store_id=stores[0].id, customer_id=customer.id,
+        channel="Instagram",
+    )
+    db.add(conversation)
+    db.commit()
+    prepare_shopify_privacy_suppressions(db, request_id=RECEIPT)
+    monkeypatch.setenv("DIAGLOB_SHOPIFY_PRIVACY_SYNTHETIC_TESTS", "1")
+    activate_synthetic_privacy_suppressions(db, request_id=RECEIPT)
+    with patch("app.services.instagram_service.instagram_send_message") as send:
+        with pytest.raises(InstagramSendError, match="PRIVACY_SUPPRESSED"):
+            send_message(
+                db, receipt.organization_id, conversation.id,
+                "PRIVATE_INSTAGRAM_TEXT",
+            )
+        send.assert_not_called()
