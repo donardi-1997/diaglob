@@ -448,3 +448,35 @@ def test_delivery_readiness_is_internal_only_and_rejects_other_topics(
     with pytest.raises(ShopifyPrivacyControlError,
                        match="CUSTOMER_EXPORT_TOPIC_REQUIRED"):
         inspect_shopify_privacy_delivery_readiness(db, request_id=RECEIPT_ID)
+
+
+def test_delivery_readiness_requires_signed_intake(sandbox):
+    from app.services.shopify_privacy_controls import ShopifyPrivacyControlError
+    from app.services.shopify_privacy_delivery_readiness import (
+        inspect_shopify_privacy_delivery_readiness,
+    )
+
+    db, receipt = sandbox
+    db.query(ShopifyPrivacyAuditEvent).delete()
+    db.commit()
+    with pytest.raises(ShopifyPrivacyControlError, match="SIGNED_INTAKE_REQUIRED"):
+        inspect_shopify_privacy_delivery_readiness(db, request_id=RECEIPT_ID)
+    assert receipt.completed_at is None
+
+
+def test_delivery_readiness_does_not_trust_mismatched_shop(sandbox):
+    from app.services.shopify_privacy_delivery_readiness import (
+        inspect_shopify_privacy_delivery_readiness,
+    )
+
+    db, receipt = sandbox
+    receipt.shop_domain = "unexpected-shop.myshopify.com"
+    db.commit()
+    readiness = inspect_shopify_privacy_delivery_readiness(
+        db, request_id=RECEIPT_ID,
+    )
+    assert readiness["signed_intake_verified"] is True
+    assert readiness["shop_scope_verified"] is False
+    assert "SHOPIFY_SUBJECT_OR_SHOP_NOT_VERIFIED" in readiness["blockers"]
+    assert readiness["delivery_authorized"] is False
+    assert readiness["fulfillment_complete"] is False
