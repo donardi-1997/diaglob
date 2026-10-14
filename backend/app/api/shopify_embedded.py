@@ -32,6 +32,19 @@ def shopify_embedded_home() -> HTMLResponse:
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="shopify-api-key" content="c5fc9aed710462d41767477fa9e595c0">
   <title>DIAGLOB — Shopify</title>
+  <style>
+  *{box-sizing:border-box}body{margin:0;background:#f3f7fc;color:#152e50;font:15px system-ui,sans-serif}
+  main{max-width:1120px;margin:auto;padding:32px}
+  h1{font-size:28px}p{line-height:1.55}
+  .card{background:white;border:1px solid #dce5f0;border-radius:16px;padding:24px;margin:14px 0}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+  .small{font-size:13px;color:#526783}
+  button,a.action{display:inline-block;background:#153f75;border:0;border-radius:9px;color:#fff;padding:12px 16px;text-decoration:none;cursor:pointer}
+  input{display:block;width:100%;max-width:390px;border:1px solid #bdcddd;border-radius:8px;padding:11px;margin:6px 0 14px}
+  label{display:block}h2{margin-top:0}
+  [hidden]{display:none!important}
+  @media(max-width:600px){main{padding:16px}.card{padding:16px}}
+  </style>
   <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>
 </head>
 <body>
