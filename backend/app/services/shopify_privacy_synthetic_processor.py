@@ -26,7 +26,11 @@ from .shopify_privacy_scope_preview import (
     ShopifyPrivacyScopeError,
     preview_shopify_privacy_scope,
 )
-from .shopify_privacy_local_processor import _canonical_order_ids, ShopifyLocalPrivacyError
+from .shopify_privacy_local_processor import (
+    _canonical_order_ids,
+    _canonical_stored_order_id,
+    ShopifyLocalPrivacyError,
+)
 
 # Defense in depth: the processor cannot run against the PostgreSQL production
 # database, even if someone accidentally imports the functions into a job.
@@ -417,8 +421,16 @@ def execute_synthetic_field_redaction(
         except (ValueError, TypeError, RuntimeError, ShopifyLocalPrivacyError) as exc:
             raise ShopifyPrivacySyntheticError("ORDER_SCOPE_UNAVAILABLE") from exc
         if requested is not None:
-            selected = [o for o in orders if o.shopify_order_id in requested]
-            if {o.shopify_order_id for o in selected} != requested:
+            selected = [
+                o for o in orders
+                if _canonical_stored_order_id(o.shopify_order_id) in requested
+            ]
+            canonical = [
+                _canonical_stored_order_id(o.shopify_order_id) for o in selected
+            ]
+            if len(set(canonical)) != len(canonical):
+                raise ShopifyPrivacySyntheticError("DUPLICATE_SHOPIFY_ORDER_ID")
+            if set(canonical) != requested:
                 raise ShopifyPrivacySyntheticError("REQUESTED_ORDER_SCOPE_UNRESOLVED")
             orders = selected
     checkouts = _limited(
