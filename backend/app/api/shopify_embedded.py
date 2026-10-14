@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import os
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from ..services.shopify_embedded_identity import verify_shopify_id_token, ShopifyIdTokenError
 from fastapi.responses import HTMLResponse
 
 router = APIRouter()
@@ -35,3 +37,19 @@ def shopify_embedded_home() -> HTMLResponse:
 </body>
 </html>"""
     return HTMLResponse(html, headers={"Cache-Control": "no-store"})
+
+# An ID token proves Shopify identity only; it is NOT a Diaglob tenant grant.
+_embedded_bearer = HTTPBearer(auto_error=False)
+
+
+@router.get("/api/shopify/embedded/session")
+def verify_embedded_session(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_embedded_bearer),
+) -> dict:
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        raise HTTPException(status_code=401, detail="Shopify ID token required")
+    try:
+        verified = verify_shopify_id_token(credentials.credentials)
+    except ShopifyIdTokenError:
+        raise HTTPException(status_code=401, detail="Invalid Shopify session")
+    return {"authenticated": True, "shop": verified["shop"], "tenant_authorized": False}
