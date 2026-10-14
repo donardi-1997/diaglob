@@ -222,6 +222,27 @@ def prepare_shopify_privacy_processing_case(
     if existing:
         if len(existing) != len(specs) or {x.area for x in existing} != set(specs):
             raise ShopifyPrivacyProcessingError("INCOMPLETE_PRIVACY_WORK_ITEM_SET")
+        # Lightweight webhook intake intentionally avoids tenant queries.
+        # After an independent, signed scope assessment, promote only
+        # identity evidence (not export/redaction/legal clearance).
+        if assessment.verified_shop_scope:
+            current = {item.area: item for item in existing}
+            updates = (
+                ("shop_identity", "blocked", "SHOP_SCOPE_NOT_VERIFIED",
+                 "verified", None),
+                ("subject_linkage", "blocked", "SUBJECT_OR_STORE_UNRESOLVED",
+                 "review_required", "FIELD_LEVEL_SUBJECT_LINKAGE_REQUIRED"),
+            )
+            changed = False
+            for area, old_status, old_blocker, new_status, new_blocker in updates:
+                item = current[area]
+                if item.status == old_status and item.blocker_code == old_blocker:
+                    item.status = new_status
+                    item.blocker_code = new_blocker
+                    item.updated_at = datetime.utcnow()
+                    changed = True
+            if changed:
+                db.commit()
         return _serialize(receipt, existing, created=False)
     now = datetime.utcnow()
     items = [
