@@ -249,27 +249,94 @@ def build_encrypted_local_customer_export(
 def build_local_redaction_manifest(
     db: Session, *, request_id: str,
 ) -> LocalRedactionManifest:
-    """Identify redactable local fields; never run mutations or claim completion."""
+    """Exact local-field impact for a verified redaction request; no mutations.
+
+    Customer requests honor Shopify orders_to_redact when provided. Order
+    numbers and email/phone are never used as identity substitutes. Unknown
+    explicitly requested orders are a blocker, not permission to redact any
+    other customer's data.
+    """
     receipt = _receipt(db, request_id)
     if receipt.topic not in {"customers/redact", "shop/redact"}:
         raise ShopifyLocalPrivacyError("REDACTION_TOPIC_REQUIRED")
     preview = preview_shopify_privacy_scope(db, receipt)
-    # The manifest describes field-level operations only. Retention/legal holds,
-    # external processors, shared identities and backups are unresolved.
+    if receipt.topic == "shop/redact":
+        profile_query = db.query(CustomerStoreProfile).filter(
+            CustomerStoreProfile.organization_id == receipt.organization_id,
+            CustomerStoreProfile.store_id == receipt.store_id,
+        )
+        order_query = db.query(Order).filter(
+            Order.organization_id == receipt.organization_id,
+            Order.store_id == receipt.store_id,
+        )
+        convo_query = db.query(Conversation).filter(
+            Conversation.organization_id == receipt.organization_id,
+            Conversation.store_id == receipt.store_id,
+        )
+        checkout_query = db.query(ConversationalCheckout).filter(
+            ConversationalCheckout.organization_id == receipt.organization_id,
+            ConversationalCheckout.store_id == receipt.store_id,
+        )
+    else:
+        selector = _selectors(receipt)
+        customer = selector.get("customer")
+        if not isinstance(customer, dict) or customer.get("id") is None:
+            raise ShopifyLocalPrivacyError("EXACT_CUSTOMER_ID_REQUIRED")
+        profiles = _limited(db.query(CustomerStoreProfile).filter(
+            CustomerStoreProfile.organization_id == receipt.organization_id,
+            CustomerStoreProfile.store_id == receipt.store_id,
+            CustomerStoreProfile.external_customer_id == str(customer["id"]).strip(),
+        ), "profiles")
+        if len(profiles) != 1:
+            raise ShopifyLocalPrivacyError("SHOPIFY_SUBJECT_UNRESOLVED_OR_AMBIGUOUS")
+        customer_id = profiles[0].customer_id
+        profile_query = db.query(CustomerStoreProfile).filter(
+            CustomerStoreProfile.id == profiles[0].id,
+        )
+        order_query = db.query(Order).filter(
+            Order.organization_id == receipt.organization_id,
+            Order.store_id == receipt.store_id,
+            Order.customer_id == customer_id,
+        )
+        selected_orders = _canonical_order_ids(selector.get("orders_to_redact"))
+        if selected_orders is not None:
+            matched = _limited(order_query.filter(
+                Order.shopify_order_id.in_(selected_orders),
+            ), "orders")
+            if {x.shopify_order_id for x in matched} != selected_orders:
+                raise ShopifyLocalPrivacyError("REQUESTED_ORDER_SCOPE_UNRESOLVED")
+            order_query = order_query.filter(Order.shopify_order_id.in_(selected_orders))
+        convo_query = db.query(Conversation).filter(
+            Conversation.organization_id == receipt.organization_id,
+            Conversation.store_id == receipt.store_id,
+            Conversation.customer_id == customer_id,
+        )
+        checkout_query = db.query(ConversationalCheckout).filter(
+            ConversationalCheckout.organization_id == receipt.organization_id,
+            ConversationalCheckout.store_id == receipt.store_id,
+            ConversationalCheckout.customer_id == customer_id,
+        )
+    # Compute counts using database joins instead of retrieving message bodies.
+    conversation_count = convo_query.count()
+    messages_count = db.query(Message.id).join(
+        Conversation, Conversation.id == Message.conversation_id,
+    ).filter(
+        Conversation.id.in_(convo_query.with_entities(Conversation.id)),
+    ).count()
     return LocalRedactionManifest(
         request_id=request_id, topic=receipt.topic,
         fields_by_table=(
             ("customer_store_profiles", ("external_customer_id", "last_order_ref"),
-             preview.matched_customer_profiles),
+             profile_query.count()),
             ("orders", ("note", "shipping_address", "invoice_url", "external_last_error"),
-             preview.matched_store_orders),
-            ("conversations", ("preview", "tags"), preview.matched_store_conversations),
-            ("messages", ("text", "external_message_id"), -1),
+             order_query.count()),
+            ("conversations", ("preview", "tags"), conversation_count),
+            ("messages", ("text", "external_message_id"), messages_count),
             ("conversational_checkouts", (
                 "customer_name", "phone", "address_raw", "address_line",
                 "address_complement", "neighborhood", "city", "region",
                 "postal_code", "delivery_reference", "failure_reason",
-            ), preview.matched_conversational_checkouts),
+            ), checkout_query.count()),
         ),
         shared_customer_records_protected=preview.shared_customers_protected,
     )
