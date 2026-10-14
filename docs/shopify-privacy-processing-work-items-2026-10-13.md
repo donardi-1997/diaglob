@@ -80,3 +80,51 @@ ruff check app/model_domains/shopify_privacy.py app/models.py app/services/shopi
 Run migrations in a test environment first and validate the revision graph.
 Until approved, do not turn on automatic customer-data redaction or claim any
 prepared case is complete.
+
+
+## Local customer-data processing block
+
+The service `backend/app/services/shopify_privacy_local_processor.py` adds
+two distinct operations for **verified HMAC-received requests**:
+
+1. `build_encrypted_local_customer_export(db, request_id=...)` reads only
+   the exactly matched Shopify customer-store profile, its linked orders and
+   order items, conversations/messages, and conversational checkouts. A
+   Shopify-provided `orders_requested` list restricts the selected orders.
+   Unknown referenced orders count as unresolved; the service never uses
+   email, phone or human-visible order numbers as a substitute identifier.
+   Ambiguous/missing customer IDs, multiple profiles, unauthorized stores,
+   invalid selectors, oversized rowsets and missing signed intake fail closed.
+   The response includes ciphertext encrypted using
+   `SHOPIFY_TOKEN_ENCRYPTION_KEY` but is available only inside trusted
+   Python services; **no current HTTP endpoint or database table receives
+   the payload**. The export is incomplete by design: global identity,
+   agents, automations, processors, files and legal retention remain uncovered.
+   The service does not log, persist or deliver the export.
+
+2. `build_local_redaction_manifest(db, request_id=...)` identifies the exact
+   affected local row counts and candidate PII fields, including a restricted
+   `orders_to_redact` subset when supplied. It preserves shared customer
+   identity and never alters, deletes or commits any record. Unknown order
+   IDs in an explicit redact request are blocked rather than broadening scope.
+
+Only approved internal callers may invoke the following metadata-only routes:
+
+- `POST /api/internal/shopify/privacy/cases/{request_id}/local-export/inspect`
+  returns counts and an unresolved-order count, not ciphertext or SHA-256.
+- `GET /api/internal/shopify/privacy/cases/{request_id}/local-redaction/manifest`
+  returns field names and row counts, not PII, and always
+  `mutation_allowed=false`.
+
+Both endpoints require `X-Internal-Secret` before invoking the processor.
+
+**Remaining requirements before real deletion or disclosure:**
+a legal hold and fiscal-retention decision per field and record; clear
+provenance for global identities and message contents; suppression of future
+Shopify imports/automation replay; deletion workflows covering providers and
+backups; identity-verified merchant delivery; a completion evidence trail.
+The existing SQLite synthetic redaction test service is still restricted to
+pytest and cannot operate against production PostgreSQL.
+
+New contract tests:
+`pytest -q tests/test_shopify_privacy_local_processor.py`.
