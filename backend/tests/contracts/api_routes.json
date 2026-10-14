@@ -373,6 +373,10 @@
   ],
   [
     "GET",
+    "/api/shopify/embedded/metrics"
+  ],
+  [
+    "GET",
     "/api/shopify/embedded/overview"
   ],
   [
