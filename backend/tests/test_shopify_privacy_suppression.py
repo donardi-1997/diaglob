@@ -1049,3 +1049,43 @@ def test_telegram_linked_shopify_subject_cannot_ingest_or_send(
                 db, receipt.organization_id, conversation.id, "private outbound",
             )
         provider.assert_not_called()
+
+
+def test_whatsapp_status_callback_does_not_restore_suppressed_message_metadata(
+    sandbox, monkeypatch,
+):
+    from app.models import WhatsAppConnection, Conversation, Message
+    from app.services.whatsapp_webhooks import process_webhook_payload
+    db, receipt, stores, connections = sandbox
+    _webhook(db, connections[0])
+    customer = db.query(Customer).one()
+    conversation = Conversation(
+        organization_id=receipt.organization_id, store_id=stores[0].id,
+        customer_id=customer.id, channel="WhatsApp",
+    )
+    db.add(conversation)
+    db.flush()
+    message = Message(
+        conversation_id=conversation.id, sender="human", text="PRIVATE_STATUS",
+        provider="whatsapp", external_message_id="wamid-private-status",
+        delivery_status="sent",
+    )
+    db.add(message)
+    db.add(WhatsAppConnection(
+        organization_id=receipt.organization_id, store_id=stores[0].id,
+        phone_number_id="privacy-status-business", business_account_id="priv-status",
+        access_token_encrypted="synthetic", verify_token="synthetic",
+        status="connected",
+    ))
+    db.commit()
+    prepare_shopify_privacy_suppressions(db, request_id=RECEIPT)
+    monkeypatch.setenv("DIAGLOB_SHOPIFY_PRIVACY_SYNTHETIC_TESTS", "1")
+    activate_synthetic_privacy_suppressions(db, request_id=RECEIPT)
+    process_webhook_payload(db, {
+        "entry": [{"changes": [{"field": "messages", "value": {
+            "metadata": {"phone_number_id": "privacy-status-business"},
+            "statuses": [{"id": "wamid-private-status", "status": "delivered"}],
+        }}]}],
+    })
+    db.refresh(message)
+    assert message.delivery_status == "sent"
