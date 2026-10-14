@@ -95,7 +95,69 @@ def shopify_embedded_home() -> HTMLResponse:
           status.textContent = 'No pudimos validar tu sesión. Abre Diaglob desde Shopify Admin.';
         }
       })();
+      let embeddedAccessToken = null;
+      const output = document.getElementById('section-output');
+      async function showSection(section) {
+        document.querySelectorAll('[data-panel]').forEach(button => {
+          if (button.dataset.panel === section) button.setAttribute('aria-current', 'page');
+          else button.removeAttribute('aria-current');
+        });
+        output.replaceChildren();
+        if (section === 'home') {
+          output.textContent = 'Selecciona Productos o Pedidos para ver los registros sincronizados de esta tienda.';
+          return;
+        }
+        if (section === 'conversations' || section === 'automations') {
+          output.textContent = 'Este módulo estará disponible próximamente.';
+          return;
+        }
+        if (!embeddedAccessToken) {
+          output.textContent = 'Tu sesión ha finalizado. Vuelve a iniciar sesión.';
+          return;
+        }
+        output.textContent = 'Cargando registros de la tienda…';
+        try {
+          const token = await window.shopify.idToken();
+          const response = await fetch('/api/shopify/embedded/data/' + section, {
+            cache: 'no-store',
+            headers: {
+              Authorization: 'Bearer ' + token,
+              'X-Diaglob-Authorization': 'Bearer ' + embeddedAccessToken
+            }
+          });
+          if (response.status === 401 || response.status === 403) {
+            embeddedAccessToken = null;
+            throw new Error('Tu sesión expiró o ya no tienes permisos. Vuelve a iniciar sesión.');
+          }
+          if (!response.ok) throw new Error('No se pudieron consultar los registros.');
+          const result = await response.json();
+          output.replaceChildren();
+          if (!result.items.length) {
+            output.textContent = 'No hay ' + (section === 'products' ? 'productos' : 'pedidos') + ' sincronizados en esta tienda.';
+            return;
+          }
+          result.items.forEach(item => {
+            const line = document.createElement('div');
+            line.className = 'itemrow';
+            const title = document.createElement('strong');
+            title.textContent = section === 'products' ? item.title : item.order_number;
+            const details = document.createElement('span');
+            details.textContent = section === 'products'
+              ? [item.vendor || 'Sin proveedor', item.active ? 'Activo' : 'Inactivo'].join(' · ')
+              : [item.total_amount + ' ' + item.currency, item.financial_status || 'Sin estado de pago', item.fulfillment_status || 'Pendiente'].join(' · ');
+            line.append(title, details);
+            output.appendChild(line);
+          });
+        } catch (error) {
+          output.textContent = error.message || 'No se pudieron cargar los datos.';
+        }
+      }
+      document.querySelectorAll('[data-panel]').forEach(button =>
+        button.addEventListener('click', () => showSection(button.dataset.panel))
+      );
       document.getElementById('logout').addEventListener('click', () => {
+        embeddedAccessToken = null;
+        output.replaceChildren();
         document.getElementById('overview').hidden = true;
         document.getElementById('welcome').hidden = false;
         document.getElementById('diaglob-login').hidden = false;
@@ -152,7 +214,9 @@ def shopify_embedded_home() -> HTMLResponse:
           document.getElementById('country').textContent = data.country_code;
           document.getElementById('currency').textContent = data.currency;
           document.getElementById('welcome').hidden = true;
+          embeddedAccessToken = login.AuthenticationResult.AccessToken;
           document.getElementById('overview').hidden = false;
+          await showSection('home');
           document.getElementById('diaglob-login').hidden = true;
         } catch (error) {
           status.textContent = error.message || 'No fue posible comprobar la autorización.';
