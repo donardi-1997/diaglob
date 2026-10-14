@@ -136,8 +136,8 @@ The migration `c0d1e2f3a4b5` adds a durable,
 store-scoped `shopify_privacy_suppressions` table. The table intentionally has
 no merchant foreign keys, allowing signed privacy evidence to survive
 uninstall. It stores only opaque request digests, organization/store IDs,
-subject *kind*, a keyed HMAC-SHA256 selector digest, a key fingerprint and
-staged/active state. No plaintext Shopify customer IDs, order IDs, emails or
+subject *kind*, a keyed HMAC-SHA256 selector digest, a key fingerprint, a pinned
+Shopify-domain fingerprint and staged/active state. No plaintext Shopify customer IDs, order IDs, emails or
 phones are persisted. **Keyed digests are pseudonymous personal data, not
 anonymous data**; their retention, access and eventual disposal still require
 policy approval.
@@ -148,7 +148,8 @@ policy approval.
   32 UTF-8 bytes in the backend secret manager **before any staging**.
 - This is **not** `SHOPIFY_CLIENT_SECRET` or the token encryption key. Preserve
   it unchanged across deployments and restored snapshots. Key mismatch,
-  missing key, or shop-domain drift fail closed when active rows exist.
+  missing key, shop-domain drift or even a fully rebound shop/store identity
+  fail closed when active rows exist.
 - The key is never logged or returned. Rotation requires a specifically
   reviewed rehash/migration procedure; do **not** just replace the value,
   since this would make existing tombstones unmatchable.
