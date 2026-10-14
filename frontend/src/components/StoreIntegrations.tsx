@@ -977,13 +977,14 @@ export default function StoreIntegrations({
       </div>
 
 
-      <DropiNativeIntegrationCard
+      {import.meta.env.VITE_DROPI_NATIVE_ADAPTER_ENABLED === "true" && (
+        <DropiNativeIntegrationCard
         storeId={storeId}
         canWrite={canWrite}
         shopifyConnected={Boolean(commerce?.connected && commerce.provider === "shopify")}
         detectedFromShopify={commerce?.dropi_detection?.status === "detected"}
-      />
-
+        />
+      )}
 
       {nequiProviders.length > 0 && (
         <div className="store-integration-block nequi">
