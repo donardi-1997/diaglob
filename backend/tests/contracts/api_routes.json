@@ -301,6 +301,10 @@
   ],
   [
     "GET",
+    "/api/internal/shopify/privacy/cases/{request_id}/suppressions"
+  ],
+  [
+    "GET",
     "/api/knowledge-bases"
   ],
   [
@@ -854,6 +858,10 @@
   [
     "POST",
     "/api/internal/shopify/privacy/cases/{request_id}/prepare"
+  ],
+  [
+    "POST",
+    "/api/internal/shopify/privacy/cases/{request_id}/suppressions/prepare"
   ],
   [
     "POST",
