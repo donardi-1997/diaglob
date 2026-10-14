@@ -34,7 +34,7 @@ def shopify_embedded_home() -> HTMLResponse:
   <title>DIAGLOB — Shopify</title>
   <style>
   *{box-sizing:border-box}body{margin:0;background:#f3f7fc;color:#152e50;font:15px system-ui,sans-serif}
-  main{max-width:1120px;margin:auto;padding:32px}
+  main{max-width:1440px;margin:auto;padding:28px}
   h1{font-size:28px}p{line-height:1.55}
   .card{background:white;border:1px solid #dce5f0;border-radius:16px;padding:24px;margin:14px 0}
   .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
@@ -44,7 +44,7 @@ def shopify_embedded_home() -> HTMLResponse:
   label{display:block}h2{margin-top:0}
   [hidden]{display:none!important}
   @media(max-width:600px){main{padding:16px}.card{padding:16px}}
-  .tabbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:20px}.tabbar button{background:#e6edf7;color:#153f75}.tabbar button[aria-current="page"]{background:#153f75;color:white}.itemrow{padding:12px;border-bottom:1px solid #e0e6ed}.itemrow strong{display:block}.itemrow span{font-size:13px;color:#546980}</style>
+  .tabbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:20px}.tabbar button{background:#e6edf7;color:#153f75}.tabbar button[aria-current="page"]{background:#153f75;color:white}.searchbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:18px 0}.searchbar input{margin:0;max-width:360px}.pager{display:flex;align-items:center;gap:12px;margin-top:16px}.pager button{padding:9px 14px}.pager button:disabled{opacity:.45;cursor:not-allowed}.metricnum{font-size:24px;font-weight:800;margin-top:8px}.itemrow{padding:12px;border-bottom:1px solid #e0e6ed}.itemrow strong{display:block}.itemrow span{font-size:13px;color:#546980}</style>
   <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>
 </head>
 <body>
@@ -67,7 +67,14 @@ def shopify_embedded_home() -> HTMLResponse:
 <button type="button" data-panel="conversations">Conversaciones</button>
 <button type="button" data-panel="automations">Automatizaciones</button>
 </nav>
-<div id="section-output" role="status" aria-live="polite"></div><button type="button" id="logout">Cerrar sesión</button></section><script>
+<div id="metrics" class="grid" hidden>
+<div class="card"><div class="small">Productos sincronizados</div><div id="metric-products" class="metricnum">—</div></div>
+<div class="card"><div class="small">Pedidos registrados</div><div id="metric-orders" class="metricnum">—</div></div>
+<div class="card"><div class="small">Última sincronización de productos</div><div id="metric-sync" class="metricnum small">No registrada</div></div>
+</div>
+<form id="search-form" class="searchbar" hidden><label for="filter-text">Buscar</label><input id="filter-text" name="search" maxlength="100" placeholder="Buscar en esta tienda"><button type="submit">Buscar</button></form>
+<div id="section-output" role="status" aria-live="polite"></div>
+<div id="pager" class="pager" hidden><button type="button" id="previous-page">Anterior</button><span id="page-status"></span><button type="button" id="next-page">Siguiente</button></div><button type="button" id="logout">Cerrar sesión</button></section><script>
       (async function () {
         const status = document.getElementById('status');
         try {
