@@ -621,3 +621,171 @@ def test_legacy_automation_whatsapp_is_blocked_before_provider_call(
     )
     assert result["status"] == "skipped"
     assert result["reason"] == "PRIVACY_SUPPRESSED"
+
+
+def test_whatsapp_inbound_suppression_blocks_pii_before_customer_creation(
+    sandbox, monkeypatch,
+):
+    from app.models import WhatsAppConnection, Message, Conversation
+    from app.services.whatsapp_webhooks import process_webhook_payload
+    db, receipt, stores, _ = sandbox
+    receipt.selector_encrypted = encrypt_shopify_secret(json.dumps({
+        "customer": {"id": 700, "phone": "+57 320 111 2233"},
+    }))
+    db.add(WhatsAppConnection(
+        organization_id=receipt.organization_id, store_id=receipt.store_id,
+        phone_number_id="privacy-phone-id",
+        business_account_id="privacy-business-id",
+        access_token_encrypted="synthetic", verify_token="synthetic",
+        status="connected",
+    ))
+    db.commit()
+    prepare_shopify_privacy_suppressions(db, request_id=RECEIPT)
+    monkeypatch.setenv("DIAGLOB_SHOPIFY_PRIVACY_SYNTHETIC_TESTS", "1")
+    activate_synthetic_privacy_suppressions(db, request_id=RECEIPT)
+    response = process_webhook_payload(db, {
+        "entry": [{"changes": [{"field": "messages", "value": {
+            "metadata": {"phone_number_id": "privacy-phone-id"},
+            "messages": [{"from": "573201112233", "id": "private-wa-msg",
+                          "type": "text", "text": {"body": "sensitive text"}}],
+        }}]}],
+    })
+    assert response["new_messages"] == []
+    assert db.query(Customer).count() == 0
+    assert db.query(Conversation).count() == 0
+    assert db.query(Message).count() == 0
+
+
+def test_instagram_redacted_shop_drops_inbound_and_linked_subject(
+    sandbox, monkeypatch,
+):
+    from app.instagram_models import InstagramConnection
+    from app.models import Conversation, Message
+    from app.services.instagram_webhooks import process_webhook_payload
+    db, receipt, stores, _ = sandbox
+    db.add(InstagramConnection(
+        organization_id=receipt.organization_id, store_id=stores[0].id,
+        instagram_account_id="test-ig-account",
+        page_id="test-ig-page", username="test",
+        access_token_encrypted="synthetic", status="connected",
+    ))
+    receipt.topic = "shop/redact"
+    db.commit()
+    prepare_shopify_privacy_suppressions(db, request_id=RECEIPT)
+    monkeypatch.setenv("DIAGLOB_SHOPIFY_PRIVACY_SYNTHETIC_TESTS", "1")
+    activate_synthetic_privacy_suppressions(db, request_id=RECEIPT)
+    payload = {"object": "instagram", "entry": [{
+        "id": "test-ig-account", "messaging": [{
+            "sender": {"id": "synthetic-ig-sender"},
+            "message": {"mid": "private-ig-msg", "text": "private text"},
+        }],
+    }]}
+    response = process_webhook_payload(db, payload)
+    assert response["new_messages"] == []
+    assert db.query(Customer).count() == 0
+    assert db.query(Conversation).count() == 0
+    assert db.query(Message).count() == 0
+
+
+def test_linked_instagram_sender_is_suppressed_without_name_guess(
+    sandbox, monkeypatch,
+):
+    from app.instagram_models import InstagramConnection
+    from app.models import CustomerStoreProfile, Message
+    from app.services.instagram_webhooks import process_webhook_payload
+    db, receipt, stores, _ = sandbox
+    customer = Customer(
+        organization_id=receipt.organization_id, name="PRIVATE_LINKED_BUYER",
+        phone="instagram:private-sender",
+    )
+    db.add(customer)
+    db.flush()
+    db.add(CustomerStoreProfile(
+        organization_id=receipt.organization_id, store_id=stores[0].id,
+        customer_id=customer.id, external_customer_id="700",
+        currency="COP",
+    ))
+    db.add(InstagramConnection(
+        organization_id=receipt.organization_id, store_id=stores[0].id,
+        instagram_account_id="linked-ig-account", page_id="linked-ig-page",
+        username="linked", access_token_encrypted="synthetic",
+        status="connected",
+    ))
+    db.commit()
+    prepare_shopify_privacy_suppressions(db, request_id=RECEIPT)
+    monkeypatch.setenv("DIAGLOB_SHOPIFY_PRIVACY_SYNTHETIC_TESTS", "1")
+    activate_synthetic_privacy_suppressions(db, request_id=RECEIPT)
+    result = process_webhook_payload(db, {
+        "object": "instagram", "entry": [{
+            "id": "linked-ig-account", "messaging": [{
+                "sender": {"id": "private-sender"},
+                "message": {"mid": "linked-private", "text": "private"},
+            }],
+        }],
+    })
+    assert result["new_messages"] == []
+    assert db.query(Message).count() == 0
+    assert db.query(Customer).count() == 1
+
+
+def test_ai_agent_tool_excludes_suppressed_customer_and_order(
+    sandbox, monkeypatch,
+):
+    from types import SimpleNamespace
+    from app.services.agent_tool_executor import (
+        _customers_search, _orders_list, _orders_get,
+        AgentToolExecutionError,
+    )
+    db, receipt, stores, connections = sandbox
+    _webhook(db, connections[0])
+    buyer = db.query(Customer).one()
+    order = db.query(Order).one()
+    prepare_shopify_privacy_suppressions(db, request_id=RECEIPT)
+    monkeypatch.setenv("DIAGLOB_SHOPIFY_PRIVACY_SYNTHETIC_TESTS", "1")
+    activate_synthetic_privacy_suppressions(db, request_id=RECEIPT)
+    membership = SimpleNamespace(organization_id=receipt.organization_id)
+    assert _customers_search(db, membership, stores[0].id, {})["count"] == 0
+    assert _orders_list(db, membership, stores[0].id, {})["count"] == 0
+    with pytest.raises(AgentToolExecutionError, match="PRIVACY_SUPPRESSED"):
+        _orders_get(db, membership, stores[0].id, {"order_id": order.id})
+    assert buyer.name == "Secret"
+
+
+def test_queued_ai_reply_checks_tombstone_before_llm_or_provider(
+    sandbox, monkeypatch,
+):
+    from app.models import Conversation, Message
+    from app.services.checkout_reply_service import generate_checkout_or_auto_reply
+    from app.ai_reply_service import generate_auto_reply, _deliver_answer
+    db, receipt, stores, connections = sandbox
+    _webhook(db, connections[0])
+    customer = db.query(Customer).one()
+    conversation = Conversation(
+        organization_id=receipt.organization_id, store_id=stores[0].id,
+        customer_id=customer.id, channel="WhatsApp", mode="ai",
+    )
+    db.add(conversation)
+    db.flush()
+    incoming = Message(
+        conversation_id=conversation.id, sender="customer", text="private inbound",
+    )
+    db.add(incoming)
+    db.commit()
+    prepare_shopify_privacy_suppressions(db, request_id=RECEIPT)
+    monkeypatch.setenv("DIAGLOB_SHOPIFY_PRIVACY_SYNTHETIC_TESTS", "1")
+    activate_synthetic_privacy_suppressions(db, request_id=RECEIPT)
+    with patch("app.ai_reply_service._resolve_agent") as resolve, patch(
+        "app.ai_reply_service.send_whatsapp_text_message"
+    ) as send:
+        generate_checkout_or_auto_reply(conversation.id, db=db)
+        generate_auto_reply(conversation.id, db=db)
+        resolve.assert_not_called()
+        send.assert_not_called()
+        ai_message = Message(
+            conversation_id=conversation.id, sender="ai", text="never deliver",
+        )
+        db.add(ai_message)
+        db.commit()
+        _deliver_answer(db, conversation, ai_message, "never deliver")
+        send.assert_not_called()
+        assert ai_message.delivery_status == "suppressed"
