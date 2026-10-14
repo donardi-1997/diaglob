@@ -107,6 +107,80 @@ def _task_specs(topic: str, *, verified_scope: bool, signed: bool):
     return specs
 
 
+
+def stage_shopify_privacy_receipt_work_items(
+    db: Session, receipt: ShopifyPrivacyRequest,
+) -> None:
+    """Stage review-only work in the *same transaction* as signed webhook intake.
+
+    This makes no customer/store lookups and does not call any provider:
+    Shopify must receive an HTTP acknowledgement within five seconds.
+    The signed receipt, audit and ten blocked tasks commit atomically.
+    """
+    if receipt.topic not in {
+        "customers/data_request", "customers/redact", "shop/redact",
+    }:
+        raise ShopifyPrivacyProcessingError("UNSUPPORTED_PRIVACY_TOPIC")
+    specs = _task_specs(receipt.topic, verified_scope=False, signed=True)
+    now = datetime.utcnow()
+    for area, (action, status, blocker) in specs.items():
+        db.add(ShopifyPrivacyWorkItem(
+            request_id=receipt.request_id,
+            area=area,
+            action=action,
+            status=status,
+            blocker_code=blocker,
+            created_at=now,
+            updated_at=now,
+        ))
+    db.add(ShopifyPrivacyAuditEvent(
+        request_id=receipt.request_id,
+        event_type="processing_prepared",
+        from_status=receipt.status,
+        to_status=receipt.status,
+        reason_code="signed_receipt_tasks_staged_without_data_access",
+        actor_type="internal_privacy_processor",
+        created_at=now,
+    ))
+
+
+def ensure_shopify_privacy_receipt_work_items(
+    db: Session, receipt: ShopifyPrivacyRequest,
+) -> None:
+    """Repair a committed legacy receipt on retry, without duplicate tasks.
+
+    A partially populated queue is not accepted as ready: return an error so
+    operators can investigate rather than acknowledging a broken GDPR case.
+    """
+    specs = _task_specs(receipt.topic, verified_scope=False, signed=True)
+    existing = db.query(ShopifyPrivacyWorkItem).filter(
+        ShopifyPrivacyWorkItem.request_id == receipt.request_id,
+    ).all()
+    if existing:
+        if len(existing) != len(specs) or {x.area for x in existing} != set(specs):
+            raise ShopifyPrivacyProcessingError("INCOMPLETE_PRIVACY_WORK_ITEM_SET")
+        return
+    signed = db.query(ShopifyPrivacyAuditEvent.id).filter(
+        ShopifyPrivacyAuditEvent.request_id == receipt.request_id,
+        ShopifyPrivacyAuditEvent.event_type == "received",
+        ShopifyPrivacyAuditEvent.actor_type == "shopify_hmac_verified",
+    ).first()
+    if signed is None:
+        raise ShopifyPrivacyProcessingError("SIGNED_INTAKE_EVIDENCE_MISSING")
+    stage_shopify_privacy_receipt_work_items(db, receipt)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        saved = db.query(ShopifyPrivacyWorkItem).filter(
+            ShopifyPrivacyWorkItem.request_id == receipt.request_id,
+        ).all()
+        if len(saved) != len(specs) or {x.area for x in saved} != set(specs):
+            raise ShopifyPrivacyProcessingError("PRIVACY_WORK_ITEM_CONFLICT")
+
+
+
+
 def prepare_shopify_privacy_processing_case(
     db: Session, *, request_id: str,
 ) -> dict | None:
