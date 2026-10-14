@@ -525,6 +525,10 @@
   ],
   [
     "GET",
+    "/api/stores/{store_id}/dropi/catalog"
+  ],
+  [
+    "GET",
     "/api/stores/{store_id}/dropi/mappings"
   ],
   [

@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..integrations.dropi_native import DropiNativeError
 from ..models import DropiConnection, OrganizationMembership
+from ..services.dropi_catalog_service import list_catalog_page as svc_list_catalog_page
 from ..services.dropi_mappings import (
     DropiMappingError,
     delete_mapping as svc_delete_mapping,
@@ -70,7 +71,7 @@ def _map_dropi_error(exc: Exception):
         if code == "DROPI_PARTNER_APPROVAL_REQUIRED":
             status = 503
             message = "La integración directa requiere aprobación de Dropi. No se realizaron llamadas al proveedor."
-        elif code in {"DROPI_TOKEN_REQUIRED", "DROPI_INVALID_LIMIT", "DROPI_INVALID_PRODUCT_ID", "DROPI_COUNTRY_UNSUPPORTED"}:
+        elif code in {"DROPI_TOKEN_REQUIRED", "DROPI_INVALID_LIMIT", "DROPI_INVALID_PAGE", "DROPI_INVALID_QUERY", "DROPI_INVALID_PRODUCT_ID", "DROPI_COUNTRY_UNSUPPORTED"}:
             status = 400
             message = "Revisa la configuración de Dropi."
         elif code in {"DROPI_AUTH_FAILED", "DROPI_AUTH_OR_PROVIDER_ERROR"}:
@@ -151,6 +152,28 @@ def preview_dropi_products(
     except (DropiNotFoundError, DropiConnectionError, DropiNativeError) as exc:
         _map_dropi_error(exc)
 
+
+
+@router.get("/api/stores/{store_id}/dropi/catalog")
+def get_dropi_catalog_page(
+    store_id: int,
+    page: int = Query(default=1, ge=1, le=1000),
+    limit: int = Query(default=20, ge=1, le=20),
+    query: str = Query(default="", max_length=100),
+    membership: OrganizationMembership = Depends(require_permission("commerce.read")),
+    db: Session = Depends(get_db),
+):
+    try:
+        return svc_list_catalog_page(
+            db,
+            membership.organization_id,
+            store_id,
+            page=page,
+            limit=limit,
+            query=query,
+        )
+    except (DropiNotFoundError, DropiConnectionError, DropiNativeError) as exc:
+        _map_dropi_error(exc)
 
 
 @router.get("/api/stores/{store_id}/dropi/products/{product_id}")

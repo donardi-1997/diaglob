@@ -196,3 +196,98 @@ def read_product_details(
     finally:
         if owns_client:
             client.close()
+
+def search_products(
+    token: str,
+    *,
+    country_code: str = "CO",
+    page: int = 1,
+    limit: int = 20,
+    query: str = "",
+    client: httpx.Client | None = None,
+) -> dict:
+    """Fetch exactly one page, with a user-supplied *search term*, never a URL.
+
+    Pagination follows Dropify's `startData=current_page` convention.
+    `has_more` is heuristic; Dropi's no_count mode has no reliable total.
+    """
+    from .dropi_catalog import normalize_product
+
+    if os.getenv("DROPI_NATIVE_API_ENABLED", "").lower() not in {"1", "true"}:
+        raise DropiNativeError("DROPI_PARTNER_APPROVAL_REQUIRED")
+    if not isinstance(token, str) or not token.strip():
+        raise DropiNativeError("DROPI_TOKEN_REQUIRED")
+    if isinstance(page, bool) or not isinstance(page, int) or not 1 <= page <= 1000:
+        raise DropiNativeError("DROPI_INVALID_PAGE")
+    if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 20:
+        raise DropiNativeError("DROPI_INVALID_LIMIT")
+    if not isinstance(query, str) or len(query) > 100 or any(ord(ch) < 32 for ch in query):
+        raise DropiNativeError("DROPI_INVALID_QUERY")
+
+    country = (country_code or "").upper()
+    url = get_base_url(country) + "products/index"
+    owns_client = client is None
+    if owns_client:
+        client = httpx.Client(
+            timeout=httpx.Timeout(10.0, connect=4.0),
+            trust_env=False,
+            follow_redirects=False,
+        )
+    try:
+        response = client.post(
+            url,
+            headers={
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+                "dropi-integration-key": token.strip(),
+            },
+            json={
+                "startData": page,
+                "pageSize": limit,
+                "order_type": "DESC",
+                "order_by": "created_at",
+                "keywords": query.strip(),
+                "active": True,
+                "no_count": True,
+                "integration": True,
+                **({"get_stock": False} if country in {"CO", "PE", "PA"} else {}),
+            },
+        )
+        if response.status_code in (401, 403):
+            raise DropiNativeError("DROPI_AUTH_FAILED")
+        if response.is_redirect:
+            raise DropiNativeError("DROPI_REDIRECT_DENIED")
+        if response.status_code >= 400:
+            raise DropiNativeError("DROPI_PROVIDER_UNAVAILABLE")
+        if len(response.content) > 2_000_000:
+            raise DropiNativeError("DROPI_RESPONSE_TOO_LARGE")
+        try:
+            result = response.json()
+        except ValueError as exc:
+            raise DropiNativeError("DROPI_INVALID_RESPONSE") from exc
+        if not isinstance(result, dict) or result.get("isSuccess") is not True:
+            raise DropiNativeError("DROPI_AUTH_OR_PROVIDER_ERROR")
+        items = result.get("objects")
+        if not isinstance(items, list) or any(not isinstance(item, dict) for item in items):
+            raise DropiNativeError("DROPI_INVALID_RESPONSE")
+        if len(items) > limit:
+            # The provider exceeded the requested bound; fail closed.
+            raise DropiNativeError("DROPI_INVALID_RESPONSE")
+        products = [normalize_product(item) for item in items]
+        return {
+            "page": page,
+            "limit": limit,
+            "query": query.strip(),
+            "items": products,
+            "returned": len(products),
+            "has_more": len(products) == limit and page < 1000,
+            "next_page": page + 1 if len(products) == limit and page < 1000 else None,
+            "total": None,  # the provider is queried with no_count=true
+        }
+    except httpx.TimeoutException as exc:
+        raise DropiNativeError("DROPI_TIMEOUT") from exc
+    except httpx.RequestError as exc:
+        raise DropiNativeError("DROPI_NETWORK_ERROR") from exc
+    finally:
+        if owns_client:
+            client.close()

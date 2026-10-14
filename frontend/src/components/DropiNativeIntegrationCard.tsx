@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import DropiOperationsPanel from "./DropiOperationsPanel";
+import DropiCatalogExplorer from "./DropiCatalogExplorer";
 import { Check, Loader2, Plug, RefreshCw, Trash2, Truck } from "lucide-react";
 
 import {
@@ -218,6 +219,7 @@ export default function DropiNativeIntegrationCard({
               )}
             </div>
           )}
+          {verified && <DropiCatalogExplorer storeId={storeId} />}
           {shopifyConnected && (
             <DropiOperationsPanel storeId={storeId} canWrite={canWrite} />
           )}

@@ -325,6 +325,61 @@ export async function previewDropiCatalog(storeId: number, limit = 5) {
 
 
 
+export interface DropiCatalogMapping {
+  product_variant_id: number;
+  shopify_variant_id: string | null;
+  shopify_product_id: string | null;
+  shopify_product_title: string;
+  shopify_sku: string | null;
+  dropi_variant_id: string;
+  sku_check: "match" | "different" | "unknown";
+  stock_check: "match" | "different" | "unknown";
+}
+
+export interface DropiCatalogProduct {
+  id: string | null;
+  name: string | null;
+  sku: string | null;
+  type: string | null;
+  stock: number | null;
+  variants: Array<{ id: string | null; sku: string | null; stock: number | null }>;
+  variants_in_page: boolean;
+  variants_truncated: boolean;
+  shopify_mappings: DropiCatalogMapping[];
+  mapping_status: "linked" | "unmapped";
+  differences_detected: boolean;
+}
+
+export interface DropiCatalogPage {
+  provider: "dropi";
+  country_code: string;
+  access_mode: "read_only";
+  shopify_write_performed: false;
+  page: number;
+  limit: number;
+  query: string;
+  items: DropiCatalogProduct[];
+  returned: number;
+  has_more: boolean;
+  next_page: number | null;
+  total: null;
+  unmapped_products: number;
+  products_with_differences: number;
+}
+
+export async function searchDropiCatalog(
+  storeId: number,
+  page = 1,
+  query = "",
+  limit = 20,
+) {
+  const response = await api.get<DropiCatalogPage>(
+    `/api/stores/${storeId}/dropi/catalog`,
+    { params: { page, query, limit } },
+  );
+  return response.data;
+}
+
 export interface DropiInventoryInspection {
   provider: "dropi";
   access_mode: "read_only";
