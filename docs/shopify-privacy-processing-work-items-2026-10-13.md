@@ -31,7 +31,7 @@ documentation examples. Use only over TLS and an approved internal environment.
 - `GET /api/internal/shopify/privacy/cases`: redacted case list.
 - `GET /api/internal/shopify/privacy/cases/{request_id}/assessment`:
   signed receipt, scope and coverage validation.
-- `POST /api/internal/shopify/privacy/cases/{request_id}/prepare`:
+- `POST /api/internal/shopify/privacy/prepare-pending?limit=20`:\n  prepare at most 20 outstanding signed cases in a bounded batch (max 50);\n  cases with existing tasks are skipped and failures return opaque IDs/codes.\n- `POST /api/internal/shopify/privacy/cases/{request_id}/prepare`:
   prepare ten work items; idempotent and auditable.
 - `GET /api/internal/shopify/privacy/cases/{request_id}/processing`:
   return work items and blocker codes only.
