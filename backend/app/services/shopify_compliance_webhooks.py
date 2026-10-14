@@ -20,6 +20,7 @@ from ..models import ShopifyPrivacyAuditEvent, ShopifyPrivacyRequest
 from ..shopify_oauth import normalize_shop_domain
 from ..shopify_security import encrypt_shopify_secret
 from .shopify_webhook_service import resolve_shopify_connection
+from .shopify_privacy_processing import prepare_shopify_privacy_processing_case
 
 logger = logging.getLogger(__name__)
 
@@ -121,6 +122,9 @@ def process_shopify_compliance_webhook(
         ShopifyPrivacyRequest.request_id == receipt_id,
     ).first()
     if existing is not None:
+        # Recover a previously committed receipt whose processing handoff
+        # failed: never acknowledge an unprepared duplicate with HTTP 200.
+        prepare_shopify_privacy_processing_case(db, request_id=receipt_id)
         return _receipt(existing, duplicate=True)
 
     # Encryption is mandatory: if key is unavailable fail/retry, never persist
@@ -168,7 +172,15 @@ def process_shopify_compliance_webhook(
         ).first()
         if already_recorded is None:
             raise
+        prepare_shopify_privacy_processing_case(db, request_id=receipt_id)
         return _receipt(already_recorded, duplicate=True)
+
+    # Receipt + signed audit are committed first, so a transient handoff
+    # failure cannot lose the original Shopify request. The subsequent
+    # idempotent queue creation MUST succeed before we acknowledge 200.
+    # A 5xx tells Shopify to retry; that retry completes the missing work.
+    # The tasks are review-only: no customer export, deletion, or delivery.
+    prepare_shopify_privacy_processing_case(db, request_id=receipt_id)
 
     logger.info(
         "shopify.compliance.persisted topic=%s request=%s mapped=%s",
@@ -186,6 +198,7 @@ def _receipt(request: ShopifyPrivacyRequest, *, duplicate: bool) -> dict[str, An
         "topic": request.topic,
         "request_id": request.request_id,
         "store_connected": request.organization_id is not None,
+        "processing_tasks_prepared": True,
         "redaction_status": (
             "pending_policy_review"
             if request.topic in {"customers/redact", "shop/redact"}
