@@ -115,17 +115,6 @@ def shopify_embedded_home() -> HTMLResponse:
         searchForm.hidden = !(section === 'products' || section === 'orders');
         pager.hidden = true;
         document.getElementById('metrics').hidden = section !== 'home';
-        searchForm.addEventListener('submit', event => {
-        event.preventDefault();
-        currentPage = 1;
-        showSection(currentSection, true);
-      });
-      document.getElementById('previous-page').addEventListener('click', () => {
-        if (currentPage > 1) { currentPage--; showSection(currentSection, true); }
-      });
-      document.getElementById('next-page').addEventListener('click', () => {
-        if (currentPage < totalPages) { currentPage++; showSection(currentSection, true); }
-      });
       document.querySelectorAll('[data-panel]').forEach(button => {
           if (button.dataset.panel === section) button.setAttribute('aria-current', 'page');
           else button.removeAttribute('aria-current');
@@ -200,6 +189,17 @@ def shopify_embedded_home() -> HTMLResponse:
           output.textContent = error.message || 'No se pudieron cargar los datos.';
         }
       }
+        searchForm.addEventListener('submit', event => {
+        event.preventDefault();
+        currentPage = 1;
+        showSection(currentSection, true);
+      });
+      document.getElementById('previous-page').addEventListener('click', () => {
+        if (currentPage > 1) { currentPage--; showSection(currentSection, true); }
+      });
+      document.getElementById('next-page').addEventListener('click', () => {
+        if (currentPage < totalPages) { currentPage++; showSection(currentSection, true); }
+      });
       document.querySelectorAll('[data-panel]').forEach(button =>
         button.addEventListener('click', () => showSection(button.dataset.panel))
       );
