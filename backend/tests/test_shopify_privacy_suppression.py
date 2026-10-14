@@ -506,3 +506,52 @@ def test_local_privacy_gate_allows_other_contact_but_not_old_identity(
         db, organization_id=stores[1].organization_id, store_id=stores[1].id,
         customer_email="private@example.com",
     ) is None
+
+
+def test_offsite_checkpoint_blocks_empty_restored_ledger(
+    sandbox, monkeypatch,
+):
+    from app.services.shopify_privacy_restore import (
+        create_shopify_suppression_checkpoint,
+    )
+    db, _, stores, connections = sandbox
+    prepare_shopify_privacy_suppressions(db, request_id=RECEIPT)
+    checkpoint = create_shopify_suppression_checkpoint(db)
+    # Simulate restoring a database snapshot from before privacy processing.
+    db.query(ShopifyPrivacySuppression).delete()
+    db.commit()
+    monkeypatch.setenv(
+        "SHOPIFY_PRIVACY_RESTORE_CHECKPOINT_HMAC", checkpoint["checkpoint_hmac"],
+    )
+    monkeypatch.setenv(
+        "SHOPIFY_PRIVACY_RESTORE_MIN_RECORDS",
+        str(checkpoint["total_records"]),
+    )
+    with pytest.raises(ShopifyWebhookError, match="PRIVACY_SUPPRESSION_CHECK_UNAVAILABLE"):
+        _webhook(db, connections[0])
+    with pytest.raises(ShopifySuppressionError, match="RESTORE_CHECKPOINT_VERIFICATION_FAILED"):
+        from app.services.shopify_privacy_suppression import evaluate_shopify_local_privacy
+        evaluate_shopify_local_privacy(
+            db, organization_id=stores[0].organization_id,
+            store_id=stores[0].id,
+            customer_email="private@example.com",
+        )
+    assert db.query(Customer).count() == 0
+    assert db.query(Order).count() == 0
+
+
+def test_offsite_checkpoint_unchanged_allows_unrelated_store_after_activation(
+    sandbox, monkeypatch,
+):
+    from app.services.shopify_privacy_restore import (
+        create_shopify_suppression_checkpoint,
+    )
+    db, _, _, connections = sandbox
+    prepare_shopify_privacy_suppressions(db, request_id=RECEIPT)
+    monkeypatch.setenv("DIAGLOB_SHOPIFY_PRIVACY_SYNTHETIC_TESTS", "1")
+    activate_synthetic_privacy_suppressions(db, request_id=RECEIPT)
+    checkpoint = create_shopify_suppression_checkpoint(db)
+    monkeypatch.setenv("SHOPIFY_PRIVACY_RESTORE_CHECKPOINT_HMAC", checkpoint["checkpoint_hmac"])
+    monkeypatch.setenv("SHOPIFY_PRIVACY_RESTORE_MIN_RECORDS", str(checkpoint["total_records"]))
+    assert _webhook(db, connections[0])["action"] == "suppressed_privacy"
+    assert _webhook(db, connections[1])["action"] == "created"
