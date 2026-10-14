@@ -365,6 +365,10 @@
   ],
   [
     "GET",
+    "/api/shopify/embedded/authorize"
+  ],
+  [
+    "GET",
     "/api/shopify/embedded/session"
   ],
   [
