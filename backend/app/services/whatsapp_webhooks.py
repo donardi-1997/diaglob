@@ -237,14 +237,20 @@ def process_webhook_payload(db: Session, payload: dict) -> dict:
                 )
 
                 if existing:
-                    existing.delivery_status = new_status
-
                     conversation = (
                         db.query(Conversation)
                         .filter(Conversation.id == existing.conversation_id)
                         .first()
                     )
-
+                    if conversation and evaluate_shopify_local_privacy(
+                        db, organization_id=connection.organization_id,
+                        store_id=connection.store_id,
+                        local_customer_id=conversation.customer_id,
+                    ):
+                        # Provider status retries must not revive a previously
+                        # suppressed conversation's metadata.
+                        continue
+                    existing.delivery_status = new_status
                     if conversation:
                         conversation.updated_at = datetime.utcnow()
 
