@@ -358,3 +358,93 @@ def test_duplicate_numeric_and_gid_representation_blocks_export(sandbox):
                        match="DUPLICATE_SHOPIFY_ORDER_ID"):
         build_encrypted_local_customer_export(db, request_id=RECEIPT_ID)
     assert db.query(Order).count() == 3
+
+
+def test_delivery_readiness_lists_retention_and_transport_blockers_without_pii(sandbox):
+    from app.services.shopify_privacy_delivery_readiness import (
+        inspect_shopify_privacy_delivery_readiness,
+    )
+
+    db, receipt = sandbox
+    state = inspect_shopify_privacy_delivery_readiness(
+        db, request_id=RECEIPT_ID,
+    )
+    assert state["signed_intake_verified"] is True
+    assert state["shop_scope_verified"] is True
+    assert state["retention_controls"]
+    assert state["processor_controls"]
+    assert state["backup_controls"]
+    assert state["delivery_controls"]
+    assert len(state["required_delivery_safeguards"]) >= 6
+    assert "RETENTION_SCHEDULE_AND_LEGAL_HOLDS_UNAPPROVED" in state["blockers"]
+    assert "SECURE_DELIVERY_TRANSPORT_NOT_IMPLEMENTED" in state["blockers"]
+    assert state["retention_approved"] is False
+    assert state["secure_delivery_enabled"] is False
+    assert state["delivery_authorized"] is False
+    assert state["fulfillment_complete"] is False
+    for private in ("PRIVATE_", "shared@example.com", "private-shop-"):
+        assert private not in str(state)
+    assert receipt.completed_at is None
+
+
+def test_submitted_or_manually_marked_verified_evidence_never_releases_data(sandbox):
+    from app.models import ShopifyPrivacyControlEvidence
+    from app.services.shopify_privacy_controls import ALL_CONTROLS
+    from app.services.shopify_privacy_delivery_readiness import (
+        inspect_shopify_privacy_delivery_readiness,
+    )
+
+    db, receipt = sandbox
+    for control in ALL_CONTROLS:
+        db.add(ShopifyPrivacyControlEvidence(
+            request_id=RECEIPT_ID, control=control,
+            artifact_sha256="c" * 64, status="verified",
+            created_at=datetime.utcnow(),
+        ))
+    db.commit()
+    state = inspect_shopify_privacy_delivery_readiness(
+        db, request_id=RECEIPT_ID,
+    )
+    all_controls = (
+        state["retention_controls"] + state["processor_controls"]
+        + state["backup_controls"] + state["delivery_controls"]
+    )
+    assert all(item["evidence_submitted"] for item in all_controls)
+    assert all(item["independently_verified"] is False for item in all_controls)
+    assert state["delivery_authorized"] is False
+    assert state["fulfillment_complete"] is False
+    assert receipt.completed_at is None
+
+
+def test_delivery_readiness_is_internal_only_and_rejects_other_topics(
+    sandbox, monkeypatch,
+):
+    from unittest.mock import patch
+    from app.api.shopify_privacy_backlog import get_shopify_privacy_delivery_readiness
+    from app.services.shopify_privacy_controls import ShopifyPrivacyControlError
+    from app.services.shopify_privacy_delivery_readiness import (
+        inspect_shopify_privacy_delivery_readiness,
+    )
+
+    db, receipt = sandbox
+    monkeypatch.setenv("DIAGLOB_INTERNAL_SECRET", "delivery-review-test-secret")
+    with patch(
+        "app.api.shopify_privacy_backlog.inspect_shopify_privacy_delivery_readiness"
+    ) as checker:
+        with pytest.raises(HTTPException) as error:
+            get_shopify_privacy_delivery_readiness(
+                request_id=RECEIPT_ID, x_internal_secret="invalid", db=db,
+            )
+        assert error.value.status_code == 401
+        checker.assert_not_called()
+    response = get_shopify_privacy_delivery_readiness(
+        request_id=RECEIPT_ID,
+        x_internal_secret="delivery-review-test-secret", db=db,
+    )
+    assert response["delivery_authorized"] is False
+
+    receipt.topic = "customers/redact"
+    db.commit()
+    with pytest.raises(ShopifyPrivacyControlError,
+                       match="CUSTOMER_EXPORT_TOPIC_REQUIRED"):
+        inspect_shopify_privacy_delivery_readiness(db, request_id=RECEIPT_ID)
