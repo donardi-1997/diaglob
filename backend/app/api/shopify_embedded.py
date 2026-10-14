@@ -88,6 +88,11 @@ def shopify_embedded_home() -> HTMLResponse:
           status.textContent = 'No pudimos validar tu sesión. Abre Diaglob desde Shopify Admin.';
         }
       })();
+      document.getElementById('logout').addEventListener('click', () => {
+        document.getElementById('overview').hidden = true;
+        document.getElementById('welcome').hidden = false;
+        document.getElementById('diaglob-login').hidden = false;
+      });
       document.getElementById('login-form').addEventListener('submit', async function (event) {
         event.preventDefault();
         const form = event.currentTarget;
@@ -125,7 +130,22 @@ def shopify_embedded_home() -> HTMLResponse:
           if (!authorization.ok) throw new Error('Tu cuenta Diaglob no tiene acceso autorizado a esta tienda.');
           const result = await authorization.json();
           if (!result.authorized) throw new Error('No se pudo comprobar el acceso.');
-          status.textContent = 'Cuenta Diaglob autorizada para esta tienda. Ya puedes acceder al panel Diaglob.';
+          const overviewToken = await window.shopify.idToken();
+          const summary = await fetch('/api/shopify/embedded/overview', {
+            cache: 'no-store',
+            headers: {
+              Authorization: 'Bearer ' + overviewToken,
+              'X-Diaglob-Authorization': 'Bearer ' + login.AuthenticationResult.AccessToken
+            }
+          });
+          if (!summary.ok) throw new Error('No se pudo cargar el resumen.');
+          const data = await summary.json();
+          document.getElementById('store-title').textContent = data.store_name;
+          document.getElementById('store-domain').textContent = data.shop;
+          document.getElementById('country').textContent = data.country_code;
+          document.getElementById('currency').textContent = data.currency;
+          document.getElementById('welcome').hidden = true;
+          document.getElementById('overview').hidden = false;
           document.getElementById('diaglob-login').hidden = true;
         } catch (error) {
           status.textContent = error.message || 'No fue posible comprobar la autorización.';
