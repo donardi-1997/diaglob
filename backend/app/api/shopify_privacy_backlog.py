@@ -15,6 +15,9 @@ from ..services.shopify_privacy_controls import (
     inspect_shopify_privacy_closure_controls,
     submit_shopify_privacy_control_evidence,
 )
+from ..services.shopify_privacy_delivery_readiness import (
+    inspect_shopify_privacy_delivery_readiness,
+)
 from ..services.shopify_privacy_case_queue import list_shopify_privacy_cases
 from ..services.shopify_privacy_case_assessment import (
     ShopifyPrivacyAssessmentError,
@@ -254,5 +257,19 @@ def submit_shopify_privacy_evidence(
             db, request_id=request_id,
             control=control, artifact_sha256=body.artifact_sha256,
         )
+    except ShopifyPrivacyControlError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/api/internal/shopify/privacy/cases/{request_id}/delivery-readiness")
+def get_shopify_privacy_delivery_readiness(
+    request_id: str,
+    x_internal_secret: str | None = Header(None, alias="X-Internal-Secret"),
+    db: Session = Depends(get_db),
+):
+    """Return only unresolved retention and secure-delivery gates, never PII."""
+    _require_internal_secret(x_internal_secret)
+    try:
+        return inspect_shopify_privacy_delivery_readiness(db, request_id=request_id)
     except ShopifyPrivacyControlError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

@@ -301,6 +301,10 @@
   ],
   [
     "GET",
+    "/api/internal/shopify/privacy/cases/{request_id}/delivery-readiness"
+  ],
+  [
+    "GET",
     "/api/internal/shopify/privacy/cases/{request_id}/local-redaction/manifest"
   ],
   [
