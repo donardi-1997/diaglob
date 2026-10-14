@@ -93,4 +93,34 @@ class ShopifyPrivacyWorkItem(Base):
     )
 
 
-__all__ = ["ShopifyPrivacyRequest", "ShopifyPrivacyAuditEvent", "ShopifyPrivacyWorkItem"]
+
+class ShopifyPrivacySuppression(Base):
+    """Durable PII-free, shop-bound HMAC tombstone (staged until approved).
+
+    The server must preserve SHOPIFY_PRIVACY_SUPPRESSION_KEY across deploys,
+    restores and encryption-key rotations. No raw email, phone, IDs or addresses
+    are stored; no tenant foreign key means records survive shop unlink.
+    """
+
+    __tablename__ = "shopify_privacy_suppressions"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id", "store_id", "kind", "selector_digest",
+            name="uq_shopify_privacy_suppression_subject",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    organization_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    store_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    request_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    selector_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="staged", index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+    activated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+__all__ = ["ShopifyPrivacyRequest", "ShopifyPrivacyAuditEvent", "ShopifyPrivacyWorkItem", "ShopifyPrivacySuppression"]
