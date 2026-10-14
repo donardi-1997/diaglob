@@ -122,6 +122,14 @@ def _canonical_order_ids(value) -> set[str] | None:
     return ids
 
 
+def _canonical_stored_order_id(value) -> str | None:
+    """Normalize Shopify REST numeric IDs and Admin GraphQL Order GIDs."""
+    if not isinstance(value, str):
+        return None
+    match = re.fullmatch(r"(?:gid://shopify/Order/)?([0-9]{1,30})", value)
+    return str(int(match.group(1))) if match else None
+
+
 def build_encrypted_local_customer_export(
     db: Session, *, request_id: str,
 ) -> LocalCustomerExport:
@@ -161,9 +169,14 @@ def build_encrypted_local_customer_export(
         Order.customer_id == customer_id,
     ).order_by(Order.id), "orders")
     if requested is not None:
-        selected = [x for x in orders if x.shopify_order_id in requested]
-        found = {x.shopify_order_id for x in selected}
-        missing_orders = len(requested - found)
+        selected = [
+            x for x in orders
+            if _canonical_stored_order_id(x.shopify_order_id) in requested
+        ]
+        canonical = [_canonical_stored_order_id(x.shopify_order_id) for x in selected]
+        if len(set(canonical)) != len(canonical):
+            raise ShopifyLocalPrivacyError("DUPLICATE_SHOPIFY_ORDER_ID")
+        missing_orders = len(requested - set(canonical))
         orders = selected
     else:
         missing_orders = 0
@@ -300,12 +313,20 @@ def build_local_redaction_manifest(
         )
         selected_orders = _canonical_order_ids(selector.get("orders_to_redact"))
         if selected_orders is not None:
+            aliases = set(selected_orders) | {
+                f"gid://shopify/Order/{oid}" for oid in selected_orders
+            }
             matched = _limited(order_query.filter(
-                Order.shopify_order_id.in_(selected_orders),
+                Order.shopify_order_id.in_(aliases),
             ), "orders")
-            if {x.shopify_order_id for x in matched} != selected_orders:
+            canonical = [
+                _canonical_stored_order_id(x.shopify_order_id) for x in matched
+            ]
+            if len(set(canonical)) != len(canonical):
+                raise ShopifyLocalPrivacyError("DUPLICATE_SHOPIFY_ORDER_ID")
+            if set(canonical) != selected_orders:
                 raise ShopifyLocalPrivacyError("REQUESTED_ORDER_SCOPE_UNRESOLVED")
-            order_query = order_query.filter(Order.shopify_order_id.in_(selected_orders))
+            order_query = order_query.filter(Order.shopify_order_id.in_(aliases))
         convo_query = db.query(Conversation).filter(
             Conversation.organization_id == receipt.organization_id,
             Conversation.store_id == receipt.store_id,
