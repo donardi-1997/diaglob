@@ -1,0 +1,24 @@
+# Shopify app configuration reconstructed from the active DIAGLOB version
+# "diaglob-shopify-oauth-v2" (2026-10-14). Verify app binding in Shopify CLI
+# BEFORE running shopify app deploy. The active version will not change until deployed.
+name = "DIAGLOB"
+client_id = "c5fc9aed710462d41767477fa9e595c0"
+application_url = "https://api.diaglob.tech"
+embedded = true
+
+[access_scopes]
+# Keep exact ACTIVE version scopes; backend OAuth currently differs.
+scopes = "read_customers,read_inventory,read_orders,write_orders,read_products,write_products"
+
+[auth]
+redirect_urls = ["https://api.diaglob.tech/api/shopify/callback"]
+
+[webhooks]
+api_version = "2026-07"
+
+[[webhooks.subscriptions]]
+compliance_topics = ["customers/data_request", "customers/redact", "shop/redact"]
+uri = "https://api.diaglob.tech/api/webhooks/shopify/compliance"
+
+[build]
+automatically_update_urls_on_dev = false
