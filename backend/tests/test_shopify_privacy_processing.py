@@ -503,6 +503,9 @@ def test_extraction_is_disabled_by_default_and_on_file_database(sandbox, tmp_pat
 
 def test_fixture_extractor_includes_only_scoped_messages_and_order_items(sandbox):
     from app.models import Conversation, Message, OrderItem
+    from app.services.shopify_privacy_scoped_extraction import (
+        build_encrypted_shopify_fixture_extraction,
+    )
 
     db, receipt = sandbox
     buyer = db.query(Customer).one()
@@ -544,6 +547,7 @@ def test_fixture_extractor_blocks_cross_store_order_item_provenance(sandbox):
     from app.models import OrderItem
     from app.services.shopify_privacy_scoped_extraction import (
         ShopifyPrivacyExtractionError,
+        build_encrypted_shopify_fixture_extraction,
     )
 
     db, receipt = sandbox
