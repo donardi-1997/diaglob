@@ -348,3 +348,161 @@ def test_active_tombstone_blocks_domain_rebind_even_after_store_update(
         _webhook(db, connections[0])
     assert db.query(Customer).count() == 0
     assert db.query(Order).count() == 0
+
+
+def test_manual_draft_and_cod_cannot_reintroduce_suppressed_buyer(
+    sandbox, monkeypatch,
+):
+    from app.shopify_orders import create_shopify_draft_order
+    from app.shopify_cod_orders import create_shopify_cod_order
+    db, _, stores, connections = sandbox
+    existing = _webhook(db, connections[0])
+    assert existing["action"] == "created"
+    customer = db.query(Customer).one()
+    prepare_shopify_privacy_suppressions(db, request_id=RECEIPT)
+    monkeypatch.setenv("DIAGLOB_SHOPIFY_PRIVACY_SYNTHETIC_TESTS", "1")
+    activate_synthetic_privacy_suppressions(db, request_id=RECEIPT)
+    with pytest.raises(ValueError, match="SHOPIFY_PRIVACY_SUPPRESSED"):
+        create_shopify_draft_order(
+            db=db, store=stores[0], connection=connections[0],
+            items_payload=[], customer_email="private@example.com",
+        )
+    with pytest.raises(ValueError, match="SHOPIFY_PRIVACY_SUPPRESSED"):
+        create_shopify_cod_order(
+            db=db, store=stores[0], connection=connections[0],
+            customer_id=customer.id, variant_local_id=123, quantity=1,
+            customer_email="private@example.com", customer_phone="555000",
+            shipping_address={}, note="test", idempotency_key="privacy-test",
+        )
+    assert db.query(Order).count() == 1
+
+
+def test_queued_order_cannot_be_reenqueued_after_suppression(
+    sandbox, monkeypatch,
+):
+    from app.services.auto_fulfillment import enqueue_shopify_order
+    db, _, _, connections = sandbox
+    _webhook(db, connections[0])
+    order = db.query(Order).one()
+    order.payment_status = "paid"
+    db.commit()
+    prepare_shopify_privacy_suppressions(db, request_id=RECEIPT)
+    monkeypatch.setenv("DIAGLOB_SHOPIFY_PRIVACY_SYNTHETIC_TESTS", "1")
+    activate_synthetic_privacy_suppressions(db, request_id=RECEIPT)
+    assert enqueue_shopify_order(db, order.id) is None
+    assert db.query(Order).count() == 1
+
+
+def test_restored_tombstone_ledger_detects_rollback_and_rotation(
+    sandbox, monkeypatch,
+):
+    from app.services.shopify_privacy_restore import (
+        ShopifyRestoreVerificationError,
+        create_shopify_suppression_checkpoint,
+        verify_shopify_suppression_restore,
+    )
+    db, _, _, _ = sandbox
+    prepare_shopify_privacy_suppressions(db, request_id=RECEIPT)
+    snapshot = create_shopify_suppression_checkpoint(db)
+    assert snapshot["total_records"] == 3
+    assert len(snapshot["checkpoint_hmac"]) == 64
+    ok = verify_shopify_suppression_restore(
+        db, externally_stored_hmac=snapshot["checkpoint_hmac"],
+        minimum_records=snapshot["total_records"],
+    )
+    assert ok["recovery_verified"] is True
+    assert ok["provider_erasure_verified"] is False
+    db.query(ShopifyPrivacySuppression).filter(
+        ShopifyPrivacySuppression.kind == "order",
+    ).delete()
+    db.commit()
+    with pytest.raises(ShopifyRestoreVerificationError, match="SUPPRESSION_LEDGER_ROLLBACK"):
+        verify_shopify_suppression_restore(
+            db, externally_stored_hmac=snapshot["checkpoint_hmac"],
+            minimum_records=snapshot["total_records"],
+        )
+    with pytest.raises(ShopifyRestoreVerificationError, match="EXTERNAL_LEDGER_REQUIRED"):
+        verify_shopify_suppression_restore(
+            db, externally_stored_hmac="", minimum_records=0,
+        )
+    monkeypatch.setenv(
+        "SHOPIFY_PRIVACY_SUPPRESSION_KEY", "another-test-key-longer-than-32-bytes-restore-123",
+    )
+    with pytest.raises(ShopifyRestoreVerificationError, match="SUPPRESSION_KEY_MISMATCH"):
+        create_shopify_suppression_checkpoint(db)
+
+
+def test_privacy_controls_record_evidence_but_cannot_claim_approval(sandbox, monkeypatch):
+    from app.models import ShopifyPrivacyControlEvidence
+    from app.services.shopify_privacy_controls import (
+        inspect_shopify_privacy_closure_controls,
+        submit_shopify_privacy_control_evidence,
+        ShopifyPrivacyControlError,
+    )
+    from app.api.shopify_privacy_backlog import (
+        PrivacyEvidenceSubmission, get_shopify_privacy_controls,
+        submit_shopify_privacy_evidence,
+    )
+    db, receipt, _, _ = sandbox
+    report = inspect_shopify_privacy_closure_controls(db, request_id=RECEIPT)
+    assert report["retention_approved"] is False
+    assert report["restore_verified"] is False
+    assert report["closure_ready"] is False
+    assert report["days_remaining_for_shopify_response"] <= 30
+    digest = "a" * 64
+    first = submit_shopify_privacy_control_evidence(
+        db, request_id=RECEIPT, control="financial_orders",
+        artifact_sha256=digest,
+    )
+    second = submit_shopify_privacy_control_evidence(
+        db, request_id=RECEIPT, control="financial_orders",
+        artifact_sha256=digest,
+    )
+    assert first["recorded"] is True and second["recorded"] is False
+    assert first["verified"] is False
+    assert db.query(ShopifyPrivacyControlEvidence).count() == 1
+    updated = inspect_shopify_privacy_closure_controls(db, request_id=RECEIPT)
+    assert updated["submitted_artifacts"] == 1
+    assert updated["validated_artifacts"] == 0
+    assert updated["closure_ready"] is False
+    with pytest.raises(ShopifyPrivacyControlError, match="UNKNOWN_PRIVACY_CONTROL"):
+        submit_shopify_privacy_control_evidence(
+            db, request_id=RECEIPT, control="invented",
+            artifact_sha256=digest,
+        )
+    monkeypatch.setenv("DIAGLOB_INTERNAL_SECRET", "control-review-test-secret")
+    with pytest.raises(HTTPException) as error:
+        submit_shopify_privacy_evidence(
+            request_id=RECEIPT, control="database_backups",
+            body=PrivacyEvidenceSubmission(artifact_sha256=digest),
+            x_internal_secret="bad", db=db,
+        )
+    assert error.value.status_code == 401
+    got = get_shopify_privacy_controls(
+        request_id=RECEIPT,
+        x_internal_secret="control-review-test-secret", db=db,
+    )
+    assert got["fulfillment_complete"] is False
+    assert "private@example.com" not in str(got)
+
+
+def test_local_privacy_gate_allows_other_contact_but_not_old_identity(
+    sandbox, monkeypatch,
+):
+    from app.services.shopify_privacy_suppression import evaluate_shopify_local_privacy
+    db, _, stores, _ = sandbox
+    prepare_shopify_privacy_suppressions(db, request_id=RECEIPT)
+    monkeypatch.setenv("DIAGLOB_SHOPIFY_PRIVACY_SYNTHETIC_TESTS", "1")
+    activate_synthetic_privacy_suppressions(db, request_id=RECEIPT)
+    assert evaluate_shopify_local_privacy(
+        db, organization_id=stores[0].organization_id, store_id=stores[0].id,
+        customer_email="private@example.com",
+    ) == "email"
+    assert evaluate_shopify_local_privacy(
+        db, organization_id=stores[0].organization_id, store_id=stores[0].id,
+        customer_email="someone-else@example.com",
+    ) is None
+    assert evaluate_shopify_local_privacy(
+        db, organization_id=stores[1].organization_id, store_id=stores[1].id,
+        customer_email="private@example.com",
+    ) is None
