@@ -122,7 +122,7 @@ def assess_shopify_privacy_case(
     ):
         blockers.append("DATA_SURFACE_COVERAGE_INCOMPLETE")
     if inventory.unclassified_sensitive_tables:
-        blockers.append("UNCLASSIFIED_SENSITIVE_TABLES_REQUIRE_REVIEW")
+        blockers.append("UNCLASSIFIED_PII_TABLES_REQUIRE_REVIEW")
     if inventory.missing_declared_tables:
         blockers.append("DECLARED_PRIVACY_TABLES_MISSING")
     if inventory.external_review_areas:
