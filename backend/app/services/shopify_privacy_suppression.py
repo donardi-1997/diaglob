@@ -36,6 +36,16 @@ def _secret() -> bytes:
     return value.encode("utf-8")
 
 
+def _key_fingerprint(key: bytes) -> str:
+    return hmac.new(key, b"diaglob.shopify.suppression.key-identity.v1",
+                    hashlib.sha256).hexdigest()
+
+
+def _require_fingerprint(rows, fingerprint: str) -> None:
+    if any(not hmac.compare_digest(x.key_fingerprint, fingerprint) for x in rows):
+        raise ShopifySuppressionError("SUPPRESSION_KEY_MISMATCH")
+
+
 def _numeric_id(value: object, kind: str) -> str:
     if isinstance(value, bool) or not isinstance(value, (str, int)):
         raise ShopifySuppressionError("INVALID_SHOPIFY_RESOURCE_ID")
@@ -127,6 +137,8 @@ def prepare_shopify_privacy_suppressions(db: Session, *, request_id: str) -> dic
         ShopifyPrivacySuppression.organization_id == receipt.organization_id,
         ShopifyPrivacySuppression.store_id == receipt.store_id,
     ).all()
+    fingerprint = _key_fingerprint(key)
+    _require_fingerprint(existing, fingerprint)
     index = {(r.kind, r.selector_digest): r for r in existing}
     new_rows = []
     for kind, digest in digests:
@@ -134,7 +146,8 @@ def prepare_shopify_privacy_suppressions(db: Session, *, request_id: str) -> dic
             new_rows.append(ShopifyPrivacySuppression(
                 request_id=request_id, organization_id=receipt.organization_id,
                 store_id=receipt.store_id, kind=kind, selector_digest=digest,
-                status="staged", created_at=datetime.utcnow(),
+                status="staged", key_fingerprint=fingerprint,
+                created_at=datetime.utcnow(),
             ))
     if new_rows:
         db.add_all(new_rows)
@@ -242,6 +255,7 @@ def evaluate_shopify_privacy_suppression(
         raise ShopifySuppressionError("SHOP_IDENTITY_MISMATCH") from exc
     # A missing key must never allow a signed suppression to be bypassed.
     key = _secret()
+    _require_fingerprint(rows, _key_fingerprint(key))
     active = {(x.kind, x.selector_digest) for x in rows}
     if ("shop", _digest(key=key, organization_id=organization_id,
                         store_id=store_id, domain=domain,
