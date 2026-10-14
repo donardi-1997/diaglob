@@ -18,6 +18,7 @@ from ..services.shopify_privacy_processing import (
     ShopifyPrivacyProcessingError,
     get_shopify_privacy_processing_case,
     prepare_shopify_privacy_processing_case,
+    prepare_pending_shopify_privacy_processing_cases,
 )
 
 router = APIRouter()
@@ -105,3 +106,17 @@ def get_shopify_privacy_case_processing(
     if result is None:
         raise HTTPException(status_code=404, detail="Privacy request not found")
     return result
+
+
+@router.post("/api/internal/shopify/privacy/prepare-pending")
+def prepare_pending_shopify_privacy_cases(
+    limit: int = Query(20, ge=1, le=50),
+    x_internal_secret: str | None = Header(None, alias="X-Internal-Secret"),
+    db: Session = Depends(get_db),
+):
+    """Create review work items for signed cases, in a bounded batch."""
+    _require_internal_secret(x_internal_secret)
+    try:
+        return prepare_pending_shopify_privacy_processing_cases(db, limit=limit)
+    except ShopifyPrivacyProcessingError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
