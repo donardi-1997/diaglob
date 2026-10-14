@@ -44,4 +44,4 @@ def test_orders_redact_personal_data(authz, token):
     result = embedded_store_data("orders", credentials=AUTH, diaglob_authorization="Bearer cognito", db=db)
     assert result["items"][0]["order_number"] == "#1001"
     assert "customer_email" not in str(result)
-    assert result["limit"] == 50
+    assert result["limit"] == 20
