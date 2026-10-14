@@ -44,7 +44,7 @@ def shopify_embedded_home() -> HTMLResponse:
   label{display:block}h2{margin-top:0}
   [hidden]{display:none!important}
   @media(max-width:600px){main{padding:16px}.card{padding:16px}}
-  </style>
+  .tabbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:20px}.tabbar button{background:#e6edf7;color:#153f75}.tabbar button[aria-current="page"]{background:#153f75;color:white}.itemrow{padding:12px;border-bottom:1px solid #e0e6ed}.itemrow strong{display:block}.itemrow span{font-size:13px;color:#546980}</style>
   <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>
 </head>
 <body>
@@ -60,7 +60,14 @@ def shopify_embedded_home() -> HTMLResponse:
       </form>
     </section>
     <p><a id="portal-link" hidden href="https://diaglob.tech/login" target="_blank" rel="noopener noreferrer">Abrir panel Diaglob</a></p>
-    </div><section id="overview" class="card" hidden><h2 id="store-title"></h2><p id="store-domain"></p><div class="grid"><div class="card">Conexión: Shopify</div><div class="card">País: <b id="country"></b></div><div class="card">Moneda: <b id="currency"></b></div><div class="card">Acceso: solo lectura</div></div><p class="small">Productos, pedidos, conversaciones y automatizaciones: próximamente.</p><button type="button" id="logout">Cerrar sesión</button></section><script>
+    </div><section id="overview" class="card" hidden><h2 id="store-title"></h2><p id="store-domain"></p><div class="grid"><div class="card">Conexión: Shopify</div><div class="card">País: <b id="country"></b></div><div class="card">Moneda: <b id="currency"></b></div><div class="card">Acceso: solo lectura</div></div><nav class="tabbar" aria-label="Módulos de Diaglob">
+<button type="button" data-panel="home">Resumen</button>
+<button type="button" data-panel="products">Productos</button>
+<button type="button" data-panel="orders">Pedidos</button>
+<button type="button" data-panel="conversations">Conversaciones</button>
+<button type="button" data-panel="automations">Automatizaciones</button>
+</nav>
+<div id="section-output" role="status" aria-live="polite"></div><button type="button" id="logout">Cerrar sesión</button></section><script>
       (async function () {
         const status = document.getElementById('status');
         try {
