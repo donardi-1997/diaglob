@@ -128,3 +128,69 @@ pytest and cannot operate against production PostgreSQL.
 
 New contract tests:
 `pytest -q tests/test_shopify_privacy_local_processor.py`.
+
+
+## Tombstone / replay-suppression block
+
+The migration `c0d1e2f3a4b5` adds a durable,
+store-scoped `shopify_privacy_suppressions` table. The table intentionally has
+no merchant foreign keys, allowing signed privacy evidence to survive
+uninstall. It stores only opaque request digests, organization/store IDs,
+subject *kind*, a keyed HMAC-SHA256 selector digest, a key fingerprint and
+staged/active state. No plaintext Shopify customer IDs, order IDs, emails or
+phones are persisted.
+
+### Security requirements
+
+- Set `SHOPIFY_PRIVACY_SUPPRESSION_KEY` to a strong random value of at least
+  32 UTF-8 bytes in the backend secret manager **before any staging**.
+- This is **not** `SHOPIFY_CLIENT_SECRET` or the token encryption key. Preserve
+  it unchanged across deployments and restored snapshots. Key mismatch,
+  missing key, or shop-domain drift fail closed when active rows exist.
+- The key is never logged or returned. Rotation requires a specifically
+  reviewed rehash/migration procedure; do **not** just replace the value,
+  since this would make existing tombstones unmatchable.
+- The HMAC context includes organization, store, canonical Shopify domain,
+  resource kind and canonical resource ID. When included in signed receipts,
+  normalized email and phone can also be included to prevent a different
+  Shopify customer ID from reintroducing deleted contact details.
+- Signed `customers/data_request` callbacks do **not** prepare tombstones.
+  Only `customers/redact` and `shop/redact` are eligible, and the shop
+  binding must be verified from the original signed request.
+
+### Preparation and inspection
+
+- `POST /api/internal/shopify/privacy/cases/{request_id}/suppressions/prepare`
+  creates `staged` rows atomically and idempotently for exact signed selectors.
+  It is protected by `X-Internal-Secret` and does not approve erasure.
+- `GET /api/internal/shopify/privacy/cases/{request_id}/suppressions`
+  returns only counts and the explicit statement that production activation
+  is not authorized.
+
+**Staged rows do not block orders.** Production activation remains
+intentionally unimplemented until the local and external erasure paths, legal
+retention approval and replay/restore suppression policy are independently
+verified. A synthetic-only activation routine exists, gated by SQLite,
+`PYTEST_CURRENT_TEST` and
+`DIAGLOB_SHOPIFY_PRIVACY_SYNTHETIC_TESTS=1`.
+
+### Replay ingress covered now
+
+`process_shopify_order_webhook` checks active tombstones before writing
+customer/order data or dispatching downstream fulfillment automations. It
+recognizes numeric REST and GraphQL resource IDs. A match returns
+`action="suppressed_privacy"` without PII or local order IDs.
+When active customer tombstones exist, deliveries without an exact Shopify
+customer ID are not inferred from email/phone. Other allowed customers on
+that store no longer reuse a shared customer row by contact matching.
+A missing/mismatched suppression key or shop domain causes a retryable HTTP
+503, not a bypass.
+
+**Coverage is limited to this webhook ingress.** Full suppression of user
+created orders, other commerce providers, historical queued automations,
+warehouse/shipping syncs, data restores and reinstalled store identities is
+not yet verified. Those surfaces remain blockers for live erasure and privacy
+completion.
+
+New tests:
+`pytest -q tests/test_shopify_privacy_suppression.py`.
