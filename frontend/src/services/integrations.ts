@@ -26,6 +26,9 @@ export interface DropiConnectionStatus {
   connected_at: string | null;
   last_sync_at: string | null;
   last_error: string | null;
+  access_mode: "read_only";
+  orders_write_enabled: false;
+  shopify_dropify_coexistence: string;
 }
 
 
@@ -286,6 +289,144 @@ export async function disconnectDropi(
   return response.data;
 }
 
+
+
+export interface DropiCatalogPreview {
+  country_code: string;
+  total_returned: number;
+  items: Array<{
+    id: string | number | null;
+    name: string | null;
+    sku: string | null;
+    type: string | null;
+    stock: number | null;
+  }>;
+}
+
+export async function testDropiConnection(storeId: number) {
+  const response = await api.post<DropiConnectionStatus & {
+    capabilities: {
+      catalog_preview: boolean;
+      order_creation: boolean;
+      tracking: boolean;
+    };
+  }>(`/api/stores/${storeId}/dropi/test`);
+  return response.data;
+}
+
+export async function previewDropiCatalog(storeId: number, limit = 5) {
+  const response = await api.get<DropiCatalogPreview>(
+    `/api/stores/${storeId}/dropi/preview/products`,
+    { params: { limit } },
+  );
+  return response.data;
+}
+
+
+
+
+export interface DropiInventoryInspection {
+  provider: "dropi";
+  access_mode: "read_only";
+  stock_synced_to_shopify: false;
+  item: {
+    id: string | number | null;
+    name: string | null;
+    sku: string | null;
+    type: string | null;
+    stock: number | null;
+    variations: Array<{
+      id: string | number | null;
+      sku: string | null;
+      stock: number | null;
+    }>;
+  };
+}
+
+export async function inspectDropiProduct(storeId: number, productId: string) {
+  const response = await api.get<DropiInventoryInspection>(
+    `/api/stores/${storeId}/dropi/products/${encodeURIComponent(productId)}`,
+  );
+  return response.data;
+}
+
+
+export interface DropiVariantMapping {
+  provider: "dropi";
+  product_id: number;
+  product_title: string;
+  product_variant_id: number;
+  shopify_variant_id: string | null;
+  variant_title: string;
+  sku: string | null;
+  mapped: boolean;
+  external_product_id: string | null;
+  external_variant_id: string | null;
+  external_sku: string | null;
+  active: boolean;
+}
+
+export interface DropiMappings {
+  provider: "dropi";
+  items: DropiVariantMapping[];
+  total: number;
+  mapped: number;
+  unmapped: number;
+}
+
+export async function listDropiMappings(storeId: number) {
+  const response = await api.get<DropiMappings>(`/api/stores/${storeId}/dropi/mappings`);
+  return response.data;
+}
+
+export async function saveDropiMapping(
+  storeId: number,
+  variantId: number,
+  payload: { external_product_id: string; external_variant_id: string; external_sku?: string; active?: boolean },
+) {
+  const response = await api.put<DropiVariantMapping>(
+    `/api/stores/${storeId}/dropi/mappings/${variantId}`,
+    payload,
+  );
+  return response.data;
+}
+
+export async function deleteDropiMapping(storeId: number, variantId: number) {
+  const response = await api.delete<{ ok: boolean }>(
+    `/api/stores/${storeId}/dropi/mappings/${variantId}`,
+  );
+  return response.data;
+}
+
+export interface DropiOrderReadiness {
+  provider: "dropi";
+  order_id: number;
+  shopify_order_id: string | null;
+  order_number: string;
+  dry_run: boolean;
+  ready_for_provider_contract_test: boolean;
+  can_send_to_dropi: false;
+  idempotency_key: string;
+  rate_type: string;
+  missing_shipping_fields: string[];
+  blockers: string[];
+  items: Array<{
+    order_item_id: number;
+    shopify_variant_id: string | null;
+    sku: string | null;
+    quantity: number;
+    mapped: boolean;
+    dropi_product_id: string | null;
+    dropi_variant_id: string | null;
+  }>;
+}
+
+export async function getDropiOrderReadiness(storeId: number, orderId: number) {
+  const response = await api.get<DropiOrderReadiness>(
+    `/api/stores/${storeId}/dropi/orders/${orderId}/readiness`,
+  );
+  return response.data;
+}
 
 export interface WhatsAppConnectionStatus {
   connected: boolean;

@@ -53,6 +53,10 @@
   ],
   [
     "DELETE",
+    "/api/stores/{store_id}/dropi/mappings/{variant_id}"
+  ],
+  [
+    "DELETE",
     "/api/stores/{store_id}/instagram/disconnect"
   ],
   [
@@ -521,6 +525,22 @@
   ],
   [
     "GET",
+    "/api/stores/{store_id}/dropi/mappings"
+  ],
+  [
+    "GET",
+    "/api/stores/{store_id}/dropi/orders/{order_id}/readiness"
+  ],
+  [
+    "GET",
+    "/api/stores/{store_id}/dropi/preview/products"
+  ],
+  [
+    "GET",
+    "/api/stores/{store_id}/dropi/products/{product_id}"
+  ],
+  [
+    "GET",
     "/api/stores/{store_id}/instagram"
   ],
   [
@@ -973,6 +993,10 @@
   ],
   [
     "POST",
+    "/api/stores/{store_id}/dropi/test"
+  ],
+  [
+    "POST",
     "/api/stores/{store_id}/instagram/connect"
   ],
   [
@@ -1178,6 +1202,10 @@
   [
     "PUT",
     "/api/stores/{store_id}/automations/{automation_id}"
+  ],
+  [
+    "PUT",
+    "/api/stores/{store_id}/dropi/mappings/{variant_id}"
   ],
   [
     "PUT",
