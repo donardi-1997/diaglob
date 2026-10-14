@@ -14,6 +14,11 @@ from ..services.shopify_privacy_case_assessment import (
     ShopifyPrivacyAssessmentError,
     assess_shopify_privacy_case,
 )
+from ..services.shopify_privacy_processing import (
+    ShopifyPrivacyProcessingError,
+    get_shopify_privacy_processing_case,
+    prepare_shopify_privacy_processing_case,
+)
 
 router = APIRouter()
 
@@ -66,3 +71,37 @@ def get_shopify_privacy_case_assessment(
     if assessment is None:
         raise HTTPException(status_code=404, detail="Privacy request not found")
     return assessment.safe_dict()
+
+
+@router.post("/api/internal/shopify/privacy/cases/{request_id}/prepare")
+def prepare_shopify_privacy_case(
+    request_id: str,
+    x_internal_secret: str | None = Header(None, alias="X-Internal-Secret"),
+    db: Session = Depends(get_db),
+):
+    """Persist review tasks after signed intake; no PII export or erasure."""
+    _require_internal_secret(x_internal_secret)
+    try:
+        result = prepare_shopify_privacy_processing_case(db, request_id=request_id)
+    except ShopifyPrivacyProcessingError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if result is None:
+        raise HTTPException(status_code=404, detail="Privacy request not found")
+    return result
+
+
+@router.get("/api/internal/shopify/privacy/cases/{request_id}/processing")
+def get_shopify_privacy_case_processing(
+    request_id: str,
+    x_internal_secret: str | None = Header(None, alias="X-Internal-Secret"),
+    db: Session = Depends(get_db),
+):
+    """Inspect per-source blockers without exposing selectors or PII."""
+    _require_internal_secret(x_internal_secret)
+    try:
+        result = get_shopify_privacy_processing_case(db, request_id=request_id)
+    except ShopifyPrivacyProcessingError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if result is None:
+        raise HTTPException(status_code=404, detail="Privacy request not found")
+    return result
