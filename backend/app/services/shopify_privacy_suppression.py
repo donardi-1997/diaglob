@@ -2,8 +2,9 @@
 
 Prepared tombstones have NO effect until explicitly activated. Production
 activation intentionally does not exist pending approved retention/erasure
-policy. SQLite synthetic activation is test-only. Identifiers never persist
-as plaintext or unkeyed digests, and no routine can mark GDPR complete.
+policy. SQLite synthetic activation is test-only. Identifiers never persist as plaintext or unkeyed digests. Keyed digests
+remain pseudonymous personal data requiring controlled retention and access.
+No routine can mark GDPR complete.
 """
 from __future__ import annotations
 
