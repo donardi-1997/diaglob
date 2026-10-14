@@ -17,7 +17,8 @@ from ..models import (
     WhatsAppConnection,
 )
 from .checkout_reply_service import generate_checkout_or_auto_reply
-from .shopify_privacy_suppression import evaluate_shopify_local_privacy
+from .shopify_privacy_suppression import evaluate_shopify_local_privacy, evaluate_shopify_privacy_suppression
+from ..models import Store, CustomerStoreProfile
 
 logger = logging.getLogger(__name__)
 
@@ -96,11 +97,23 @@ def process_webhook_payload(db: Session, payload: dict) -> dict:
 
                 # Signed suppression guard runs before creating customer,
                 # message, conversation or scheduling an AI reply.
-                if evaluate_shopify_local_privacy(
-                    db, organization_id=connection.organization_id,
-                    store_id=connection.store_id, customer_phone=wa_id,
-                ):
-                    continue
+                # WhatsApp phone is NOT a Shopify customer ID. Check only
+                # exact signed phone HMAC and shop-wide tombstones here.
+                shop = db.query(Store).filter(
+                    Store.id == connection.store_id,
+                    Store.organization_id == connection.organization_id,
+                ).first()
+                if shop is not None and shop.shopify_domain:
+                    reason, _ = evaluate_shopify_privacy_suppression(
+                        db, organization_id=connection.organization_id,
+                        store_id=connection.store_id,
+                        shop_domain=shop.shopify_domain,
+                        customer_id=None, order_id=None,
+                        customer_phone=wa_id,
+                        require_customer_id=False, require_order_id=False,
+                    )
+                    if reason:
+                        continue
 
                 customer = (
                     db.query(Customer)
@@ -111,7 +124,15 @@ def process_webhook_payload(db: Session, payload: dict) -> dict:
                     .first()
                 )
 
-                if customer and evaluate_shopify_local_privacy(
+                # Only linked Shopify profiles may be matched by customer ID.
+                # Do not quarantine unrelated WhatsApp buyers by ambiguity.
+                linked_profile = db.query(CustomerStoreProfile.id).filter(
+                    CustomerStoreProfile.organization_id == connection.organization_id,
+                    CustomerStoreProfile.store_id == connection.store_id,
+                    CustomerStoreProfile.customer_id == customer.id,
+                    CustomerStoreProfile.external_customer_id.isnot(None),
+                ).first() if customer else None
+                if linked_profile and evaluate_shopify_local_privacy(
                     db, organization_id=connection.organization_id,
                     store_id=connection.store_id, local_customer_id=customer.id,
                 ):
