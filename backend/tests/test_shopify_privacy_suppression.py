@@ -555,3 +555,69 @@ def test_offsite_checkpoint_unchanged_allows_unrelated_store_after_activation(
     monkeypatch.setenv("SHOPIFY_PRIVACY_RESTORE_MIN_RECORDS", str(checkpoint["total_records"]))
     assert _webhook(db, connections[0])["action"] == "suppressed_privacy"
     assert _webhook(db, connections[1])["action"] == "created"
+
+
+def test_leased_automation_flow_cannot_contact_deleted_customer(
+    sandbox, monkeypatch,
+):
+    from types import SimpleNamespace
+    from app.automation_flow_engine import process_flow_recipient
+    from app.models import AutomationFlowRecipientExecution, AutomationFlowRun
+    db, _, stores, connections = sandbox
+    _webhook(db, connections[0])
+    customer = db.query(Customer).one()
+    prepare_shopify_privacy_suppressions(db, request_id=RECEIPT)
+    monkeypatch.setenv("DIAGLOB_SHOPIFY_PRIVACY_SYNTHETIC_TESTS", "1")
+    activate_synthetic_privacy_suppressions(db, request_id=RECEIPT)
+    recipient = SimpleNamespace(
+        id=8001, status="active", claim_token="queued-token",
+        claim_expires_at=None, flow_run_id=9001, customer_id=customer.id,
+    )
+    run = SimpleNamespace(
+        id=9001, organization_id=stores[0].organization_id,
+        store_id=stores[0].id, total_recipients=1,
+        completed_recipients=0, failed_recipients=0, status="running",
+        completed_at=None,
+    )
+    original_get = db.get
+
+    def fake_get(model, obj_id):
+        if model is AutomationFlowRecipientExecution and obj_id == recipient.id:
+            return recipient
+        if model is AutomationFlowRun and obj_id == run.id:
+            return run
+        return original_get(model, obj_id)
+
+    monkeypatch.setattr(db, "get", fake_get)
+    assert process_flow_recipient(
+        db, recipient.id, claim_token="queued-token",
+    ) == "privacy_suppressed"
+    assert recipient.status == "failed"
+    assert recipient.error_code == "privacy_suppressed"
+    assert run.failed_recipients == 1
+
+
+def test_legacy_automation_whatsapp_is_blocked_before_provider_call(
+    sandbox, monkeypatch,
+):
+    from app.automations import execute_send_whatsapp_message
+    from app.models import Conversation
+    db, _, stores, connections = sandbox
+    _webhook(db, connections[0])
+    customer = db.query(Customer).one()
+    conversation = Conversation(
+        organization_id=stores[0].organization_id, store_id=stores[0].id,
+        customer_id=customer.id,
+    )
+    db.add(conversation)
+    db.commit()
+    prepare_shopify_privacy_suppressions(db, request_id=RECEIPT)
+    monkeypatch.setenv("DIAGLOB_SHOPIFY_PRIVACY_SYNTHETIC_TESTS", "1")
+    activate_synthetic_privacy_suppressions(db, request_id=RECEIPT)
+    result = execute_send_whatsapp_message(
+        db, stores[0].organization_id, stores[0].id,
+        action={"conversation_id": conversation.id},
+        payload={}, execution=None,
+    )
+    assert result["status"] == "skipped"
+    assert result["reason"] == "PRIVACY_SUPPRESSED"
