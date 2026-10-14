@@ -186,3 +186,42 @@ def prepare_shopify_privacy_processing_case(
             raise ShopifyPrivacyProcessingError("PRIVACY_WORK_ITEM_CONFLICT")
         return _serialize(receipt, saved, created=False)
     return _serialize(receipt, items, created=True)
+
+
+def prepare_pending_shopify_privacy_processing_cases(
+    db: Session, *, limit: int = 20,
+) -> dict:
+    """Create bounded work queues for signed requests not yet prepared."""
+    if type(limit) is not int or not 1 <= limit <= 50:
+        raise ShopifyPrivacyProcessingError("INVALID_PRIVACY_BATCH_LIMIT")
+    signed = db.query(ShopifyPrivacyAuditEvent.id).filter(
+        ShopifyPrivacyAuditEvent.request_id == ShopifyPrivacyRequest.request_id,
+        ShopifyPrivacyAuditEvent.event_type == "received",
+        ShopifyPrivacyAuditEvent.actor_type == "shopify_hmac_verified",
+    ).exists()
+    prepared = db.query(ShopifyPrivacyWorkItem.id).filter(
+        ShopifyPrivacyWorkItem.request_id == ShopifyPrivacyRequest.request_id,
+    ).exists()
+    candidates = db.query(ShopifyPrivacyRequest.request_id).filter(
+        signed, ~prepared,
+    ).order_by(
+        ShopifyPrivacyRequest.created_at, ShopifyPrivacyRequest.id,
+    ).limit(limit).all()
+
+    created = 0
+    errors = []
+    for (opaque_id,) in candidates:
+        try:
+            result = prepare_shopify_privacy_processing_case(
+                db, request_id=opaque_id,
+            )
+            if result and result["created"]:
+                created += 1
+        except ShopifyPrivacyProcessingError as exc:
+            errors.append({"request_id": opaque_id, "code": str(exc)})
+    return {
+        "examined": len(candidates),
+        "created": created,
+        "errors": errors,
+        "fulfillment_complete": False,
+    }
