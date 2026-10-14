@@ -229,6 +229,17 @@ def evaluate_shopify_privacy_suppression(
         domain = normalize_shop_domain(shop_domain)
     except (ValueError, TypeError, AttributeError) as exc:
         raise ShopifySuppressionError("SHOP_IDENTITY_MISMATCH") from exc
+    # A reused local store ID or changed domain may never bypass a tombstone.
+    store = db.query(Store).filter(
+        Store.id == store_id, Store.organization_id == organization_id,
+    ).first()
+    if store is None or not store.shopify_domain:
+        raise ShopifySuppressionError("SHOP_IDENTITY_MISMATCH")
+    try:
+        if normalize_shop_domain(store.shopify_domain) != domain:
+            raise ShopifySuppressionError("SHOP_IDENTITY_MISMATCH")
+    except (ValueError, TypeError, AttributeError) as exc:
+        raise ShopifySuppressionError("SHOP_IDENTITY_MISMATCH") from exc
     # A missing key must never allow a signed suppression to be bypassed.
     key = _secret()
     active = {(x.kind, x.selector_digest) for x in rows}
