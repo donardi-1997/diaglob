@@ -20,7 +20,10 @@ from ..models import ShopifyPrivacyAuditEvent, ShopifyPrivacyRequest
 from ..shopify_oauth import normalize_shop_domain
 from ..shopify_security import encrypt_shopify_secret
 from .shopify_webhook_service import resolve_shopify_connection
-from .shopify_privacy_processing import prepare_shopify_privacy_processing_case
+from .shopify_privacy_processing import (
+    ensure_shopify_privacy_receipt_work_items,
+    stage_shopify_privacy_receipt_work_items,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -124,7 +127,7 @@ def process_shopify_compliance_webhook(
     if existing is not None:
         # Recover a previously committed receipt whose processing handoff
         # failed: never acknowledge an unprepared duplicate with HTTP 200.
-        prepare_shopify_privacy_processing_case(db, request_id=receipt_id)
+        ensure_shopify_privacy_receipt_work_items(db, existing)
         return _receipt(existing, duplicate=True)
 
     # Encryption is mandatory: if key is unavailable fail/retry, never persist
@@ -162,6 +165,10 @@ def process_shopify_compliance_webhook(
             created_at=datetime.utcnow(),
         )
     )
+    # Stage all ten review-only work items in the same transaction as
+    # signed receipt and audit. No costly tenant-data assessment on a
+    # request that Shopify requires us to acknowledge within five seconds.
+    stage_shopify_privacy_receipt_work_items(db, request)
     try:
         db.commit()
     except IntegrityError:
@@ -172,15 +179,8 @@ def process_shopify_compliance_webhook(
         ).first()
         if already_recorded is None:
             raise
-        prepare_shopify_privacy_processing_case(db, request_id=receipt_id)
+        ensure_shopify_privacy_receipt_work_items(db, already_recorded)
         return _receipt(already_recorded, duplicate=True)
-
-    # Receipt + signed audit are committed first, so a transient handoff
-    # failure cannot lose the original Shopify request. The subsequent
-    # idempotent queue creation MUST succeed before we acknowledge 200.
-    # A 5xx tells Shopify to retry; that retry completes the missing work.
-    # The tasks are review-only: no customer export, deletion, or delivery.
-    prepare_shopify_privacy_processing_case(db, request_id=receipt_id)
 
     logger.info(
         "shopify.compliance.persisted topic=%s request=%s mapped=%s",
