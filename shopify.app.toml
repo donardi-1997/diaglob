@@ -3,7 +3,7 @@
 # BEFORE running shopify app deploy. The active version will not change until deployed.
 name = "DIAGLOB"
 client_id = "c5fc9aed710462d41767477fa9e595c0"
-application_url = "https://api.diaglob.tech"
+application_url = "https://api.diaglob.tech/api/shopify/embedded"
 embedded = true
 
 [access_scopes]
