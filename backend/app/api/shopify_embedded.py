@@ -44,7 +44,7 @@ def shopify_embedded_home() -> HTMLResponse:
   label{display:block}h2{margin-top:0}
   [hidden]{display:none!important}
   @media(max-width:600px){main{padding:16px}.card{padding:16px}}
-  </style>
+  .tabbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:20px}.tabbar button{background:#e6edf7;color:#153f75}.tabbar button[aria-current="page"]{background:#153f75;color:white}.itemrow{padding:12px;border-bottom:1px solid #e0e6ed}.itemrow strong{display:block}.itemrow span{font-size:13px;color:#546980}</style>
   <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>
 </head>
 <body>
@@ -60,7 +60,14 @@ def shopify_embedded_home() -> HTMLResponse:
       </form>
     </section>
     <p><a id="portal-link" hidden href="https://diaglob.tech/login" target="_blank" rel="noopener noreferrer">Abrir panel Diaglob</a></p>
-    </div><section id="overview" class="card" hidden><h2 id="store-title"></h2><p id="store-domain"></p><div class="grid"><div class="card">Conexión: Shopify</div><div class="card">País: <b id="country"></b></div><div class="card">Moneda: <b id="currency"></b></div><div class="card">Acceso: solo lectura</div></div><p class="small">Productos, pedidos, conversaciones y automatizaciones: próximamente.</p><button type="button" id="logout">Cerrar sesión</button></section><script>
+    </div><section id="overview" class="card" hidden><h2 id="store-title"></h2><p id="store-domain"></p><div class="grid"><div class="card">Conexión: Shopify</div><div class="card">País: <b id="country"></b></div><div class="card">Moneda: <b id="currency"></b></div><div class="card">Acceso: solo lectura</div></div><nav class="tabbar" aria-label="Módulos de Diaglob">
+<button type="button" data-panel="home">Resumen</button>
+<button type="button" data-panel="products">Productos</button>
+<button type="button" data-panel="orders">Pedidos</button>
+<button type="button" data-panel="conversations">Conversaciones</button>
+<button type="button" data-panel="automations">Automatizaciones</button>
+</nav>
+<div id="section-output" role="status" aria-live="polite"></div><button type="button" id="logout">Cerrar sesión</button></section><script>
       (async function () {
         const status = document.getElementById('status');
         try {
@@ -88,7 +95,69 @@ def shopify_embedded_home() -> HTMLResponse:
           status.textContent = 'No pudimos validar tu sesión. Abre Diaglob desde Shopify Admin.';
         }
       })();
+      let embeddedAccessToken = null;
+      const output = document.getElementById('section-output');
+      async function showSection(section) {
+        document.querySelectorAll('[data-panel]').forEach(button => {
+          if (button.dataset.panel === section) button.setAttribute('aria-current', 'page');
+          else button.removeAttribute('aria-current');
+        });
+        output.replaceChildren();
+        if (section === 'home') {
+          output.textContent = 'Selecciona Productos o Pedidos para ver los registros sincronizados de esta tienda.';
+          return;
+        }
+        if (section === 'conversations' || section === 'automations') {
+          output.textContent = 'Este módulo estará disponible próximamente.';
+          return;
+        }
+        if (!embeddedAccessToken) {
+          output.textContent = 'Tu sesión ha finalizado. Vuelve a iniciar sesión.';
+          return;
+        }
+        output.textContent = 'Cargando registros de la tienda…';
+        try {
+          const token = await window.shopify.idToken();
+          const response = await fetch('/api/shopify/embedded/data/' + section, {
+            cache: 'no-store',
+            headers: {
+              Authorization: 'Bearer ' + token,
+              'X-Diaglob-Authorization': 'Bearer ' + embeddedAccessToken
+            }
+          });
+          if (response.status === 401 || response.status === 403) {
+            embeddedAccessToken = null;
+            throw new Error('Tu sesión expiró o ya no tienes permisos. Vuelve a iniciar sesión.');
+          }
+          if (!response.ok) throw new Error('No se pudieron consultar los registros.');
+          const result = await response.json();
+          output.replaceChildren();
+          if (!result.items.length) {
+            output.textContent = 'No hay ' + (section === 'products' ? 'productos' : 'pedidos') + ' sincronizados en esta tienda.';
+            return;
+          }
+          result.items.forEach(item => {
+            const line = document.createElement('div');
+            line.className = 'itemrow';
+            const title = document.createElement('strong');
+            title.textContent = section === 'products' ? item.title : item.order_number;
+            const details = document.createElement('span');
+            details.textContent = section === 'products'
+              ? [item.vendor || 'Sin proveedor', item.active ? 'Activo' : 'Inactivo'].join(' · ')
+              : [item.total_amount + ' ' + item.currency, item.financial_status || 'Sin estado de pago', item.fulfillment_status || 'Pendiente'].join(' · ');
+            line.append(title, details);
+            output.appendChild(line);
+          });
+        } catch (error) {
+          output.textContent = error.message || 'No se pudieron cargar los datos.';
+        }
+      }
+      document.querySelectorAll('[data-panel]').forEach(button =>
+        button.addEventListener('click', () => showSection(button.dataset.panel))
+      );
       document.getElementById('logout').addEventListener('click', () => {
+        embeddedAccessToken = null;
+        output.replaceChildren();
         document.getElementById('overview').hidden = true;
         document.getElementById('welcome').hidden = false;
         document.getElementById('diaglob-login').hidden = false;
@@ -145,7 +214,9 @@ def shopify_embedded_home() -> HTMLResponse:
           document.getElementById('country').textContent = data.country_code;
           document.getElementById('currency').textContent = data.currency;
           document.getElementById('welcome').hidden = true;
+          embeddedAccessToken = login.AuthenticationResult.AccessToken;
           document.getElementById('overview').hidden = false;
+          await showSection('home');
           document.getElementById('diaglob-login').hidden = true;
         } catch (error) {
           status.textContent = error.message || 'No fue posible comprobar la autorización.';
@@ -236,3 +307,47 @@ def embedded_overview(
         "status": "connected",
         "mode": "read_only",
     }
+
+@router.get("/api/shopify/embedded/data/{section}")
+def embedded_store_data(
+    section: str,
+    credentials: HTTPAuthorizationCredentials | None = Depends(_embedded_bearer),
+    diaglob_authorization: str | None = Header(None, alias="X-Diaglob-Authorization"),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Bounded, redacted, store-scoped reads; no customer PII or mutations."""
+    if section not in ("products", "orders"):
+        raise HTTPException(status_code=404, detail="Unknown section")
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        raise HTTPException(status_code=401, detail="Shopify ID token required")
+    if not diaglob_authorization or not diaglob_authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Diaglob access token required")
+    try:
+        identity = verify_shopify_id_token(credentials.credentials)
+    except ShopifyIdTokenError:
+        raise HTTPException(status_code=401, detail="Invalid Shopify session")
+    authorized = authorize_embedded_store(
+        db, identity["shop"], diaglob_authorization[len("Bearer "):]
+    )
+    from ..models import Product, Order
+    if section == "products":
+        rows = db.query(Product).filter(
+            Product.organization_id == authorized["organization_id"],
+            Product.store_id == authorized["store_id"],
+        ).order_by(Product.id.desc()).limit(50).all()
+        return {"section": section, "items": [
+            {"id": row.id, "title": row.title, "vendor": row.vendor,
+             "active": row.active, "shopify_product_id": row.shopify_product_id}
+            for row in rows
+        ], "limit": 50}
+    rows = db.query(Order).filter(
+        Order.organization_id == authorized["organization_id"],
+        Order.store_id == authorized["store_id"],
+    ).order_by(Order.id.desc()).limit(50).all()
+    return {"section": section, "items": [
+        {"id": row.id, "order_number": row.order_number,
+         "total_amount": str(row.total_amount), "currency": row.currency,
+         "financial_status": row.financial_status,
+         "fulfillment_status": row.fulfillment_status}
+        for row in rows
+    ], "limit": 50}
