@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..services.shopify_embedded_link import installed_shop_status
 from ..services.shopify_embedded_authorization import authorize_embedded_store
+from ..auth import AWS_REGION, COGNITO_CLIENT_ID
 
 router = APIRouter()
 
@@ -37,7 +38,15 @@ def shopify_embedded_home() -> HTMLResponse:
   <main>
     <h1>DIAGLOB</h1>
     <p id="status" role="status">Validando la sesión de Shopify…</p>
-    <p><a id="portal-link" hidden href="https://diaglob.tech/login">Abrir Diaglob e iniciar sesión</a></p>
+    <section id="diaglob-login" hidden aria-label="Ingreso a Diaglob">
+      <p>Inicia sesión con tu cuenta de Diaglob para confirmar tus permisos sobre esta tienda.</p>
+      <form id="login-form">
+        <label>Correo <input name="email" type="email" autocomplete="username" required></label>
+        <label>Contraseña <input name="password" type="password" autocomplete="current-password" required></label>
+        <button type="submit">Validar acceso</button>
+      </form>
+    </section>
+    <p><a id="portal-link" hidden href="https://diaglob.tech/login" target="_blank" rel="noopener noreferrer">Abrir panel Diaglob</a></p>
     <script>
       (async function () {
         const status = document.getElementById('status');
@@ -59,14 +68,64 @@ def shopify_embedded_home() -> HTMLResponse:
           }
           const link = document.getElementById('portal-link');
           if (link) link.hidden = false;
+          if (identity.installation_status === 'connected') {
+            document.getElementById('diaglob-login').hidden = false;
+          }
         } catch (error) {
           status.textContent = 'No pudimos validar tu sesión. Abre Diaglob desde Shopify Admin.';
         }
       })();
+      document.getElementById('login-form').addEventListener('submit', async function (event) {
+        event.preventDefault();
+        const form = event.currentTarget;
+        const status = document.getElementById('status');
+        const submit = form.querySelector('button');
+        submit.disabled = true;
+        const email = form.elements.namedItem('email').value;
+        const passwordInput = form.elements.namedItem('password');
+        const password = passwordInput.value;
+        try {
+          const cognito = await fetch('https://cognito-idp.__AWS_REGION__.amazonaws.com/', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-amz-json-1.1',
+              'X-Amz-Target': 'AWSCognitoIdentityProviderService.InitiateAuth'
+            },
+            body: JSON.stringify({
+              AuthFlow: 'USER_PASSWORD_AUTH',
+              ClientId: '__COGNITO_CLIENT_ID__',
+              AuthParameters: { USERNAME: email, PASSWORD: password }
+            })
+          });
+          const login = await cognito.json();
+          if (!cognito.ok || !login.AuthenticationResult?.AccessToken) {
+            throw new Error('No fue posible iniciar sesión. Usa el portal Diaglob si tu cuenta requiere pasos adicionales.');
+          }
+          const shopifyToken = await window.shopify.idToken();
+          const authorization = await fetch('/api/shopify/embedded/authorize', {
+            headers: {
+              Authorization: 'Bearer ' + shopifyToken,
+              'X-Diaglob-Authorization': 'Bearer ' + login.AuthenticationResult.AccessToken
+            },
+            cache: 'no-store'
+          });
+          if (!authorization.ok) throw new Error('Tu cuenta Diaglob no tiene acceso autorizado a esta tienda.');
+          const result = await authorization.json();
+          if (!result.authorized) throw new Error('No se pudo comprobar el acceso.');
+          status.textContent = 'Cuenta Diaglob autorizada para esta tienda. Ya puedes acceder al panel Diaglob.';
+          document.getElementById('diaglob-login').hidden = true;
+        } catch (error) {
+          status.textContent = error.message || 'No fue posible comprobar la autorización.';
+        } finally {
+          passwordInput.value = '';
+          submit.disabled = false;
+        }
+      });
     </script>
   </main>
 </body>
 </html>"""
+    html = html.replace("__AWS_REGION__", AWS_REGION).replace("__COGNITO_CLIENT_ID__", COGNITO_CLIENT_ID)
     return HTMLResponse(html, headers={"Cache-Control": "no-store"})
 
 # An ID token proves Shopify identity only; it is NOT a Diaglob tenant grant.
