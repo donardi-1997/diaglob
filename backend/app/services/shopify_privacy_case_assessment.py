@@ -144,3 +144,51 @@ def assess_shopify_privacy_case(
         external_review_area_count=len(inventory.external_review_areas),
         blockers=tuple(blockers),
     )
+
+
+def prepare_shopify_privacy_export_manifest(
+    db: Session, *, request_id: str,
+) -> dict | None:
+    """Preview source coverage for customer access requests, without exporting PII.
+
+    A signed receipt and a verified subject/store are required before even
+    returning source counts. This manifest is NOT an export, fulfillment, or a
+    delivery authorization; unresolved processors stay blocked.
+    """
+    assessment = assess_shopify_privacy_case(db, request_id=request_id)
+    if assessment is None:
+        return None
+    if not assessment.verified_signed_intake:
+        raise ShopifyPrivacyAssessmentError("SIGNED_INTAKE_EVIDENCE_MISSING")
+
+    receipt = db.query(ShopifyPrivacyRequest).filter(
+        ShopifyPrivacyRequest.request_id == request_id,
+    ).first()
+    if receipt is None or receipt.topic != "customers/data_request":
+        raise ShopifyPrivacyAssessmentError("CUSTOMER_EXPORT_TOPIC_REQUIRED")
+    if not assessment.verified_shop_scope:
+        raise ShopifyPrivacyAssessmentError("SHOPIFY_SUBJECT_UNRESOLVED")
+
+    sources = (
+        ("customer_store_profiles", assessment.matched_customer_profiles),
+        ("orders", assessment.matched_store_orders),
+        ("conversations", assessment.matched_store_conversations),
+        ("conversational_checkouts", assessment.matched_conversational_checkouts),
+    )
+    return {
+        "request_id": request_id,
+        "topic": "customers/data_request",
+        "scope_status": assessment.scope_status,
+        "sources": [
+            {"name": name, "matching_records": count, "status": "review_required"}
+            for name, count in sources
+        ],
+        "shared_customers_protected": assessment.shared_customers_protected,
+        "unclassified_sensitive_table_count": assessment.unclassified_sensitive_table_count,
+        "external_review_area_count": assessment.external_review_area_count,
+        "blockers": list(assessment.blockers),
+        "contains_personal_data": False,
+        "export_generated": False,
+        "delivery_authorized": False,
+        "fulfillment_complete": False,
+    }

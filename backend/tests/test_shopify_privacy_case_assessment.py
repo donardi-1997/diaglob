@@ -192,3 +192,58 @@ def test_assessment_endpoint_returns_sanitized_result(sandbox, monkeypatch):
     assert data["verified_shop_scope"] is True
     assert data["fulfillment_authorized"] is False
     assert "private@example.com" not in str(data)
+
+
+def test_export_manifest_is_scoped_and_contains_no_personal_data(sandbox):
+    from app.services.shopify_privacy_case_assessment import (
+        prepare_shopify_privacy_export_manifest,
+    )
+    db, receipt = sandbox
+    manifest = prepare_shopify_privacy_export_manifest(db, request_id=REQUEST_ID)
+    sources = {item["name"]: item for item in manifest["sources"]}
+    assert sources["orders"]["matching_records"] == 1
+    assert sources["customer_store_profiles"]["matching_records"] == 1
+    assert manifest["shared_customers_protected"] == 1
+    assert all(item["status"] == "review_required" for item in manifest["sources"])
+    assert manifest["contains_personal_data"] is False
+    assert manifest["export_generated"] is False
+    assert manifest["delivery_authorized"] is False
+    assert manifest["fulfillment_complete"] is False
+    assert receipt.completed_at is None
+    for private in ("SENSITIVE", "PRIVATE_SHOP_ID", "private@example.com"):
+        assert private not in str(manifest)
+
+
+def test_export_manifest_rejects_unsigned_and_unresolved_requests(sandbox):
+    from app.services.shopify_privacy_case_assessment import (
+        prepare_shopify_privacy_export_manifest,
+    )
+    db, receipt = sandbox
+    db.query(ShopifyPrivacyAuditEvent).delete()
+    db.commit()
+    with pytest.raises(ShopifyPrivacyAssessmentError,
+                       match="SIGNED_INTAKE_EVIDENCE_MISSING"):
+        prepare_shopify_privacy_export_manifest(db, request_id=REQUEST_ID)
+
+    db.add(ShopifyPrivacyAuditEvent(
+        request_id=REQUEST_ID, event_type="received",
+        actor_type="shopify_hmac_verified", reason_code="tenant_bound",
+        to_status=receipt.status, created_at=datetime.utcnow(),
+    ))
+    receipt.shop_domain = "incorrect.myshopify.com"
+    db.commit()
+    with pytest.raises(ShopifyPrivacyAssessmentError,
+                       match="SHOPIFY_SUBJECT_UNRESOLVED"):
+        prepare_shopify_privacy_export_manifest(db, request_id=REQUEST_ID)
+
+
+def test_export_manifest_rejects_redaction_topic(sandbox):
+    from app.services.shopify_privacy_case_assessment import (
+        prepare_shopify_privacy_export_manifest,
+    )
+    db, receipt = sandbox
+    receipt.topic = "customers/redact"
+    db.commit()
+    with pytest.raises(ShopifyPrivacyAssessmentError,
+                       match="CUSTOMER_EXPORT_TOPIC_REQUIRED"):
+        prepare_shopify_privacy_export_manifest(db, request_id=REQUEST_ID)
