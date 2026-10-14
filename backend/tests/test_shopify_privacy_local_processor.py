@@ -325,3 +325,36 @@ def test_synthetic_redaction_does_not_mutate_if_requested_order_missing(
         execute_synthetic_field_redaction(db, receipt)
     assert db.query(Order).filter(Order.note == "PRIVATE_NOTE_0").count() == 1
     assert db.query(Message).filter(Message.text == "PRIVATE_MESSAGE_0").count() == 1
+
+
+def test_graphql_order_gid_matches_shopify_numeric_payload(sandbox):
+    db, receipt = sandbox
+    target = db.query(Order).filter(Order.shopify_order_id == "101").one()
+    target.shopify_order_id = "gid://shopify/Order/101"
+    db.commit()
+    export = build_encrypted_local_customer_export(db, request_id=RECEIPT_ID)
+    assert export.orders == 1
+    assert export.requested_orders_not_resolved == 0
+    receipt.topic = "customers/redact"
+    receipt.selector_encrypted = encrypt_shopify_secret(json.dumps({
+        "customer": {"id": 700}, "orders_to_redact": [101],
+    }))
+    db.commit()
+    manifest = build_local_redaction_manifest(db, request_id=RECEIPT_ID)
+    assert dict((name, count) for name, _, count in manifest.fields_by_table)["orders"] == 1
+
+
+def test_duplicate_numeric_and_gid_representation_blocks_export(sandbox):
+    db, receipt = sandbox
+    target = db.query(Order).filter(Order.shopify_order_id == "101").one()
+    db.add(Order(
+        organization_id=target.organization_id, store_id=target.store_id,
+        customer_id=target.customer_id, shopify_order_id="gid://shopify/Order/101",
+        order_number="DUPLICATE_GID", total_amount=3, currency="COP",
+        note="DUPLICATE_GID_PRIVATE",
+    ))
+    db.commit()
+    with pytest.raises(ShopifyLocalPrivacyError,
+                       match="DUPLICATE_SHOPIFY_ORDER_ID"):
+        build_encrypted_local_customer_export(db, request_id=RECEIPT_ID)
+    assert db.query(Order).count() == 3
