@@ -125,4 +125,29 @@ class ShopifyPrivacySuppression(Base):
     activated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
-__all__ = ["ShopifyPrivacyRequest", "ShopifyPrivacyAuditEvent", "ShopifyPrivacyWorkItem", "ShopifyPrivacySuppression"]
+
+class ShopifyPrivacyControlEvidence(Base):
+    """Unverified artifact reference for an independent privacy control review.
+
+    No raw evidence, legal conclusions, identifiers or personal data stored.
+    """
+
+    __tablename__ = "shopify_privacy_control_evidence"
+    __table_args__ = (
+        UniqueConstraint(
+            "request_id", "control", "artifact_sha256",
+            name="uq_shopify_privacy_control_evidence",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    request_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    control: Mapped[str] = mapped_column(String(80), nullable=False)
+    artifact_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+
+
+__all__ = ["ShopifyPrivacyRequest", "ShopifyPrivacyAuditEvent", "ShopifyPrivacyWorkItem", "ShopifyPrivacySuppression", "ShopifyPrivacyControlEvidence"]
