@@ -16,6 +16,7 @@ from ..integrations.telegram.client import (
     set_webhook,
 )
 from ..models import Conversation, Customer, Message, Store
+from .shopify_privacy_suppression import evaluate_shopify_local_privacy
 from ..telegram_models import TelegramConnection
 from ..telegram_security import decrypt_telegram_secret, encrypt_telegram_secret
 
@@ -217,6 +218,12 @@ def send_message(
     customer = db.query(Customer).filter(Customer.id == conversation.customer_id).first()
     if not customer or not customer.phone.startswith("telegram:"):
         raise TelegramSendError("TELEGRAM_CHAT_NOT_FOUND")
+
+    if evaluate_shopify_local_privacy(
+        db, organization_id=organization_id, store_id=conversation.store_id,
+        local_customer_id=customer.id,
+    ):
+        raise TelegramSendError("PRIVACY_SUPPRESSED")
 
     clean_text = (text or "").strip()
     if not clean_text:

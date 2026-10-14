@@ -16,6 +16,8 @@ from sqlalchemy.orm import Session
 from ..model_domains.shipments import CJWebhookReceipt, Shipment, TrackingEvent
 from ..model_domains.supplier_integrations import SupplierConnection
 from ..model_domains.supplier_orders import SupplierOrder
+from ..models import Order
+from .shopify_privacy_suppression import evaluate_shopify_local_privacy
 from .shipment_tracking import (
     _upsert_shipment,
     emit_shipment_status_events,
@@ -305,6 +307,26 @@ def process_cj_webhook(
     if supplier_order is None:
         receipt.processing_status = "ignored"
         receipt.error_code = "SUPPLIER_ORDER_NOT_FOUND"
+        receipt.processed_at = now
+        db.commit()
+        return {"ok": True, "ignored": True, "message_id": message_id}
+
+    # A supplier callback can be replayed after an erasure. Do not ingest
+    # tracking/event payloads back into a previously suppressed buyer record.
+    # Receipts retain only provider event metadata for idempotent handling.
+    local_order = db.query(Order).filter(
+        Order.id == supplier_order.order_id,
+        Order.organization_id == supplier_order.organization_id,
+        Order.store_id == supplier_order.store_id,
+    ).first() if supplier_order.order_id is not None else None
+    if evaluate_shopify_local_privacy(
+        db, organization_id=supplier_order.organization_id,
+        store_id=supplier_order.store_id,
+        local_customer_id=local_order.customer_id if local_order else None,
+        shopify_order_id=local_order.shopify_order_id if local_order else None,
+    ):
+        receipt.processing_status = "ignored"
+        receipt.error_code = "PRIVACY_SUPPRESSED"
         receipt.processed_at = now
         db.commit()
         return {"ok": True, "ignored": True, "message_id": message_id}

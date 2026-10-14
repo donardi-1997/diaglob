@@ -18,6 +18,7 @@ from ..integrations.instagram.client import (
     send_message as instagram_send_message,
 )
 from ..models import Conversation, Customer, Message, Store
+from .shopify_privacy_suppression import evaluate_shopify_local_privacy
 
 
 class InstagramConnectionError(Exception):
@@ -214,6 +215,12 @@ def send_message(
     ).first()
     if not customer or not customer.phone.startswith("instagram:"):
         raise InstagramSendError("INSTAGRAM_RECIPIENT_NOT_FOUND")
+
+    if evaluate_shopify_local_privacy(
+        db, organization_id=organization_id, store_id=conversation.store_id,
+        local_customer_id=customer.id,
+    ):
+        raise InstagramSendError("PRIVACY_SUPPRESSED")
 
     clean_text = (text or "").strip()
     if not clean_text:

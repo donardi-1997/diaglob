@@ -18,6 +18,7 @@ from .shopify_client import (
     ShopifyUserError,
 )
 from .shopify_security import decrypt_shopify_secret
+from .services.shopify_privacy_suppression import evaluate_shopify_local_privacy
 
 COD_TAGS = ["DIAGLOB_CHAT", "DIAGLOB_COD"]
 
@@ -80,6 +81,13 @@ def create_shopify_cod_order(
     idempotency_key: str,
 ) -> dict:
     """Create one actual pending-payment Shopify order idempotently."""
+    privacy_block = evaluate_shopify_local_privacy(
+        db, organization_id=store.organization_id, store_id=store.id,
+        local_customer_id=customer_id, customer_email=customer_email,
+        customer_phone=customer_phone,
+    )
+    if privacy_block:
+        raise ValueError("SHOPIFY_PRIVACY_SUPPRESSED")
     if quantity <= 0:
         raise ValueError("Quantity must be greater than zero")
 

@@ -66,4 +66,88 @@ class ShopifyPrivacyAuditEvent(Base):
     )
 
 
-__all__ = ["ShopifyPrivacyRequest", "ShopifyPrivacyAuditEvent"]
+
+class ShopifyPrivacyWorkItem(Base):
+    """PII-free data-source task belonging to one signed Shopify request.
+
+    No foreign key to merchant/store rows: post-uninstall evidence must survive.
+    Tasks never contain selectors, personal data, payloads or plaintext evidence.
+    """
+
+    __tablename__ = "shopify_privacy_work_items"
+    __table_args__ = (
+        UniqueConstraint("request_id", "area", name="uq_shopify_privacy_work_item_area"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    request_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    area: Mapped[str] = mapped_column(String(80), nullable=False)
+    action: Mapped[str] = mapped_column(String(20), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="blocked")
+    blocker_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+
+
+class ShopifyPrivacySuppression(Base):
+    """Durable pseudonymous, shop-bound HMAC tombstone (staged until approved).
+
+    The server must preserve SHOPIFY_PRIVACY_SUPPRESSION_KEY across deploys,
+    restores and encryption-key rotations. No raw email, phone, IDs or addresses
+    are stored; no tenant foreign key means records survive shop unlink.
+    """
+
+    __tablename__ = "shopify_privacy_suppressions"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id", "store_id", "kind", "selector_digest",
+            name="uq_shopify_privacy_suppression_subject",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    organization_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    store_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    request_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    selector_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    key_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    domain_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="staged", index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+    activated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+
+class ShopifyPrivacyControlEvidence(Base):
+    """Unverified artifact reference for an independent privacy control review.
+
+    No raw evidence, legal conclusions, identifiers or personal data stored.
+    """
+
+    __tablename__ = "shopify_privacy_control_evidence"
+    __table_args__ = (
+        UniqueConstraint(
+            "request_id", "control", "artifact_sha256",
+            name="uq_shopify_privacy_control_evidence",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    request_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    control: Mapped[str] = mapped_column(String(80), nullable=False)
+    artifact_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+
+
+__all__ = ["ShopifyPrivacyRequest", "ShopifyPrivacyAuditEvent", "ShopifyPrivacyWorkItem", "ShopifyPrivacySuppression", "ShopifyPrivacyControlEvidence"]

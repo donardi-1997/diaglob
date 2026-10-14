@@ -1,6 +1,6 @@
 # Shopify mandatory compliance webhooks — app-level configuration
 
-Status: **code prepared; not deployed, not verified in the Shopify Dev Dashboard, and not yet compliant.**
+Status (2026-10-14): **HMAC-verified receipt and automatic review-work-item handoff implemented in draft PR #223; not deployed, not verified in Shopify Dev Dashboard, and not yet fully compliant.**
 
 ## Why
 
@@ -30,11 +30,25 @@ uri = "https://api.diaglob.tech/api/webhooks/shopify/compliance"
 
 Existing order webhooks continue to use per-shop GraphQL subscriptions at `/api/webhooks/shopify`; mandatory compliance webhooks use `/api/webhooks/shopify/compliance`.
 
-## Current limitations — NOT READY FOR APP STORE SUBMISSION
+## Runtime contract — PR #223
 
-The backend callback in the draft PR #149 currently **acknowledges and logs an event digest only**. It does not durably enqueue or fulfill export, redaction or store deletion requests. A passing HTTP 200 or CI test does **not** show lawful handling of data-subject requests.
+The signed receiver `POST https://api.diaglob.tech/api/webhooks/shopify/compliance` checks Shopify's base64 HMAC-SHA256 over the exact raw request bytes. A missing or invalid HMAC receives **401**, an unrecognized compliance topic **400**, and an oversized body **413**. A valid payload is stored as a minimal encrypted-selector receipt with a signed audit trail; it is assigned ten durable review work items before the server returns **200**.
 
-Owner approved a provisional retention policy **for development on synthetic data only**, recorded in issue #148; this is not legal sign-off or permission to erase production data. Privacy request persistence, processing, tenant isolation and retention exceptions must be completed and tested. Shopify subscription deployment, production backend deployment, merchant billing and real-data destructive operations each require explicit approval.
+The signed receipt, signed-audit event and ten blocked review tasks now commit in one fast database transaction without customer-data assessment. Transaction failures receive HTTP 500 with no partial receipt; Shopify may retry. Existing authenticated receipts missing tasks are repaired idempotently. The five-second delivery deadline remains a production latency verification requirement (https://shopify.dev/docs/apps/build/webhooks/verify-deliveries). This is not data export or erasure fulfillment.
+
+The receiver does **not** delete customer data on receipt. `customers/data_request` creates a blocked secure-delivery item, while `customers/redact` and `shop/redact` create blocked reimport-suppression items. Legal retention, processor copies, offsite recovery, independent authorized export and real production erasure are still gated. The live production code, GDPR processing policy, Shopify app-version configuration, and live signed-delivery behavior must be independently verified.
+
+### Safe go-live sequence
+
+1. Merge/deploy the tested backend and database migrations; confirm environment variables `SHOPIFY_CLIENT_SECRET` and `SHOPIFY_TOKEN_ENCRYPTION_KEY` are securely available. Do not print them.
+2. Link the **existing** Diaglob Shopify application and add the TOML subscription block above without replacing existing settings.
+3. Use `python -m app.shopify_app_config_audit --path /path/to/shopify.app.toml --expected-app-url https://<existing-app-url> --expected-mode embedded|standalone` with the *actual* existing app settings; passing local TOML does not mean a version was published.
+4. After owner approval, deploy a new existing-app version through Shopify CLI or the Dev Dashboard; confirm its activated version lists all three mandatory compliance topics and the exact callback URL. Trigger synthetic delivery for each topic with the Shopify CLI and verify results.
+5. Inspect only privacy-safe processing status and counts: one durable receipt and ten review items per delivery ID, HMAC failures rejected, replays idempotent, no customer IDs, emails, phones, tokens or signed bodies in logs.
+6. Complete an independently approved customer export, erasure and retention procedure; verify third-party copies, backups and a restoration drill before declaring compliance complete.
+
+Do **not** publish another app, fabricate a full TOML file with guessed client ID/scopes, or assume GitHub CI deploys subscriptions to the active Shopify app.
+
 
 ## Acceptance tests
 

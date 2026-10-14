@@ -411,6 +411,18 @@ def execute_send_whatsapp_message(
             "reason": "Customer or phone not found",
         }
 
+    # Re-check at send time for legacy automations enqueued before a redaction.
+    from .services.shopify_privacy_suppression import evaluate_shopify_local_privacy
+    privacy_block = evaluate_shopify_local_privacy(
+        db, organization_id=organization_id, store_id=conversation.store_id,
+        local_customer_id=customer.id,
+    )
+    if privacy_block:
+        return {
+            "action": "send_whatsapp_message", "status": "skipped",
+            "reason": "PRIVACY_SUPPRESSED",
+        }
+
     connection = (
         db.query(WhatsAppConnection)
         .filter(

@@ -22,6 +22,7 @@ from .shopify_client import (
 from .shopify_security import decrypt_shopify_secret
 from .automations import safe_emit_event
 from .services.catalog_availability import variant_is_purchasable
+from .services.shopify_privacy_suppression import evaluate_shopify_local_privacy
 
 
 def _sanitize_error(msg: str) -> str:
@@ -226,6 +227,14 @@ def create_shopify_draft_order(
       unknown  → return existing, NO Shopify call
       failed   → reuse order, retry Shopify
     """
+
+    # No draft order or existing retry may reinstate an actively suppressed buyer.
+    privacy_block = evaluate_shopify_local_privacy(
+        db, organization_id=store.organization_id, store_id=store.id,
+        customer_email=customer_email,
+    )
+    if privacy_block:
+        raise ValueError("SHOPIFY_PRIVACY_SUPPRESSED")
 
     # ------------------------------------------
     # 1. IDEMPOTENCY CHECK

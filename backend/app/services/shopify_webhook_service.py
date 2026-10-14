@@ -30,6 +30,10 @@ from ..models import (
     Store,
 )
 from ..shopify_oauth import get_shopify_client_secret, normalize_shop_domain
+from .shopify_privacy_suppression import (
+    ShopifySuppressionError,
+    evaluate_shopify_privacy_suppression,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +129,44 @@ def process_shopify_order_webhook(
     if store is None:
         raise ShopifyWebhookError("STORE_NOT_FOUND")
 
+    # Read active tombstones BEFORE touching orders, customers or automations.
+    # Pending/privacy-review-only requests never block a merchant's business.
+    try:
+        suppression, contact_fallback_forbidden = evaluate_shopify_privacy_suppression(
+            db,
+            organization_id=connection.organization_id,
+            store_id=connection.store_id,
+            shop_domain=connection.external_store_url,
+            customer_id=_shopify_customer_id(payload),
+            order_id=external_order_id,
+            customer_email=(
+                (payload.get("customer") or {}).get("email")
+                if isinstance(payload.get("customer"), dict)
+                else None
+            ) or payload.get("email"),
+            customer_phone=(
+                (payload.get("customer") or {}).get("phone")
+                if isinstance(payload.get("customer"), dict)
+                else None
+            ) or (
+                (payload.get("shipping_address") or {}).get("phone")
+                if isinstance(payload.get("shipping_address"), dict)
+                else None
+            ) or (
+                (payload.get("billing_address") or {}).get("phone")
+                if isinstance(payload.get("billing_address"), dict)
+                else None
+            ),
+        )
+    except ShopifySuppressionError as exc:
+        raise ShopifyWebhookError("PRIVACY_SUPPRESSION_CHECK_UNAVAILABLE") from exc
+    if suppression is not None:
+        return {
+            "ok": True,
+            "action": "suppressed_privacy",
+            "topic": topic,
+        }
+
     order = (
         db.query(Order)
         .filter(
@@ -166,6 +208,7 @@ def process_shopify_order_webhook(
         db,
         store=store,
         payload=payload,
+        allow_contact_fallback=not contact_fallback_forbidden,
     )
 
     created = order is None
@@ -416,6 +459,7 @@ def _upsert_customer(
     *,
     store: Store,
     payload: dict[str, Any],
+    allow_contact_fallback: bool = True,
 ) -> Customer | None:
     customer_payload = payload.get("customer")
     customer_data = customer_payload if isinstance(customer_payload, dict) else {}
@@ -479,7 +523,7 @@ def _upsert_customer(
         if profile is not None:
             customer = profile.customer
 
-    if customer is None and phone:
+    if customer is None and phone and allow_contact_fallback:
         customer = (
             db.query(Customer)
             .filter(
@@ -489,7 +533,7 @@ def _upsert_customer(
             .first()
         )
 
-    if customer is None and email:
+    if customer is None and email and allow_contact_fallback:
         customer = (
             db.query(Customer)
             .filter(

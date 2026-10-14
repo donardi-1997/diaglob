@@ -27,6 +27,7 @@ from .shopify_fulfillment import (
 )
 from .supplier_catalog import quote_cj_freight
 from .supplier_mappings import resolve_cj_variant_mapping
+from .shopify_privacy_suppression import evaluate_shopify_local_privacy
 from .supplier_connections import (
     SupplierConnectionError,
     SupplierConnectionNotFound,
@@ -208,6 +209,14 @@ def enqueue_shopify_order(
 ) -> AutoFulfillmentJob | None:
     order = db.query(Order).filter(Order.id == order_id).first()
     if order is None or not _eligible_order(order):
+        return None
+
+    privacy_block = evaluate_shopify_local_privacy(
+        db, organization_id=order.organization_id, store_id=order.store_id,
+        local_customer_id=order.customer_id,
+        shopify_order_id=order.shopify_order_id,
+    )
+    if privacy_block:
         return None
 
     connection = _cj_connection(
@@ -409,6 +418,17 @@ def process_auto_fulfillment_job(
             job,
             status="skipped",
             error="ORDER_NOT_ELIGIBLE",
+        )
+
+    # Recheck at delivery time: this job may have been queued before redaction.
+    privacy_block = evaluate_shopify_local_privacy(
+        db, organization_id=job.organization_id, store_id=job.store_id,
+        local_customer_id=order.customer_id,
+        shopify_order_id=order.shopify_order_id,
+    )
+    if privacy_block:
+        return _mark_failure(
+            db, job, status="skipped", error="PRIVACY_SUPPRESSED",
         )
 
     cj_connection = _cj_connection(

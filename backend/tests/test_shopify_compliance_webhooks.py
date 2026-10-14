@@ -17,7 +17,7 @@ from sqlalchemy.pool import StaticPool
 from app.api.shopify import router
 from app.db import Base, get_db
 from app.main import app
-from app.models import ShopifyPrivacyAuditEvent, ShopifyPrivacyRequest
+from app.models import ShopifyPrivacyAuditEvent, ShopifyPrivacyRequest, ShopifyPrivacyWorkItem
 from app.shopify_security import decrypt_shopify_secret
 from app.services.shopify_compliance_webhooks import (
     process_shopify_compliance_webhook,
@@ -112,6 +112,7 @@ class TestShopifyComplianceWebhooks:
         assert first.json()["request_id"] == second.json()["request_id"]
         assert "customer@example.com" not in first.text
         assert first.json()["redaction_status"] == "data_request_recorded"
+        assert first.json()["processing_tasks_prepared"] is True
 
     def test_redaction_request_is_recorded_not_deleted_pending_policy(self, client):
         body = json.dumps(
@@ -177,12 +178,18 @@ class TestShopifyComplianceWebhooks:
             decoded = json.loads(decrypt_shopify_secret(record.selector_encrypted))
             assert decoded["customer"]["email"] == "private@example.com"
             audits = session.query(ShopifyPrivacyAuditEvent).all()
-            assert len(audits) == 1
-            assert audits[0].request_id == record.request_id
-            assert audits[0].event_type == "received"
-            assert audits[0].to_status == "pending_policy_review"
-            assert audits[0].actor_type == "shopify_hmac_verified"
-            assert "private@example.com" not in str(audits[0].__dict__)
+            assert len(audits) == 2
+            received = next(row for row in audits if row.event_type == "received")
+            prepared = next(row for row in audits if row.event_type == "processing_prepared")
+            assert received.request_id == record.request_id
+            assert received.to_status == "pending_policy_review"
+            assert received.actor_type == "shopify_hmac_verified"
+            assert prepared.actor_type == "internal_privacy_processor"
+            assert "private@example.com" not in str(received.__dict__)
+            work_items = session.query(ShopifyPrivacyWorkItem).all()
+            assert len(work_items) == 10
+            assert all(item.status != "completed" for item in work_items)
+            assert {item.area for item in work_items} >= {"signed_receipt", "merchant_delivery"}
 
     def test_distinct_shopify_webhook_ids_do_not_collapse_requests(self, client):
         body = json.dumps({
@@ -281,3 +288,142 @@ class TestShopifyComplianceWebhooks:
         assert response.status_code == 413
         with TEST_SESSION() as session:
             assert session.query(ShopifyPrivacyRequest).count() == 0
+
+
+    @pytest.mark.parametrize("topic,extra,final_area", [
+        ("customers/data_request", {
+            "customer": {"id": 456, "email": "private@example.com"},
+            "orders_requested": [1000],
+            "data_request": {"id": 2},
+        }, "merchant_delivery"),
+        ("customers/redact", {
+            "customer": {"id": 456, "phone": "+573001234567"},
+            "orders_to_redact": [1000],
+        }, "reimport_suppression"),
+        ("shop/redact", {}, "reimport_suppression"),
+    ])
+    def test_all_three_topics_prepare_ten_safe_tasks_and_one_audit_on_retry(
+        self, client, topic, extra, final_area,
+    ):
+        body = json.dumps({
+            "shop_id": 1234,
+            "shop_domain": "test-store.myshopify.com",
+            **extra,
+        }).encode()
+        secret, headers = _signed_headers(body, topic)
+        headers["X-Shopify-Webhook-Id"] = "realistic-shopify-webhook-id"
+        with patch.dict(os.environ, {"SHOPIFY_CLIENT_SECRET": secret}), patch(
+            "app.services.shopify_compliance_webhooks.resolve_shopify_connection",
+            return_value=None,
+        ):
+            received = client.post(
+                "/api/webhooks/shopify/compliance", content=body, headers=headers,
+            )
+            retry = client.post(
+                "/api/webhooks/shopify/compliance", content=body, headers=headers,
+            )
+        assert received.status_code == retry.status_code == 200
+        assert received.json()["action"] == "recorded"
+        assert retry.json()["action"] == "duplicate"
+        assert received.json()["processing_tasks_prepared"] is True
+        assert retry.json()["processing_tasks_prepared"] is True
+        with TEST_SESSION() as session:
+            assert session.query(ShopifyPrivacyRequest).count() == 1
+            tasks = session.query(ShopifyPrivacyWorkItem).all()
+            assert len(tasks) == 10
+            assert final_area in {task.area for task in tasks}
+            assert all(task.status != "completed" for task in tasks)
+            audits = session.query(ShopifyPrivacyAuditEvent).all()
+            assert sorted(x.event_type for x in audits) == [
+                "processing_prepared", "received",
+            ]
+
+    def test_atomic_queue_failure_returns_500_without_partial_receipt(
+        self, client,
+    ):
+        body = json.dumps({
+            "shop_id": 1234,
+            "shop_domain": "test-store.myshopify.com",
+            "customer": {"id": 456, "email": "private@example.com"},
+        }).encode()
+        secret, headers = _signed_headers(body, "customers/data_request")
+        headers["X-Shopify-Webhook-Id"] = "retry-after-queue-error"
+        with patch.dict(os.environ, {"SHOPIFY_CLIENT_SECRET": secret}), patch(
+            "app.services.shopify_compliance_webhooks.resolve_shopify_connection",
+            return_value=None,
+        ), patch(
+            "app.services.shopify_compliance_webhooks.stage_shopify_privacy_receipt_work_items",
+            side_effect=RuntimeError("synthetic transient transaction failure"),
+        ):
+            first = client.post(
+                "/api/webhooks/shopify/compliance", content=body, headers=headers,
+            )
+        assert first.status_code == 500
+        assert "private@example.com" not in first.text
+        with TEST_SESSION() as session:
+            assert session.query(ShopifyPrivacyRequest).count() == 0
+            assert session.query(ShopifyPrivacyWorkItem).count() == 0
+        with patch.dict(os.environ, {"SHOPIFY_CLIENT_SECRET": secret}), patch(
+            "app.services.shopify_compliance_webhooks.resolve_shopify_connection",
+            return_value=None,
+        ):
+            recovered = client.post(
+                "/api/webhooks/shopify/compliance", content=body, headers=headers,
+            )
+        assert recovered.status_code == 200
+        assert recovered.json()["action"] == "recorded"
+        assert recovered.json()["processing_tasks_prepared"] is True
+        with TEST_SESSION() as session:
+            assert session.query(ShopifyPrivacyRequest).count() == 1
+            assert session.query(ShopifyPrivacyWorkItem).count() == 10
+            assert session.query(ShopifyPrivacyAuditEvent).count() == 2
+
+    def test_retry_repairs_legacy_signed_receipt_without_review_tasks(
+        self, client,
+    ):
+        body = json.dumps({
+            "shop_id": 1234,
+            "shop_domain": "test-store.myshopify.com",
+            "customer": {"id": 456, "phone": "555-0123"},
+        }).encode()
+        secret, headers = _signed_headers(body, "customers/redact")
+        headers["X-Shopify-Webhook-Id"] = "legacy-queue-repair"
+        with patch.dict(os.environ, {"SHOPIFY_CLIENT_SECRET": secret}), patch(
+            "app.services.shopify_compliance_webhooks.resolve_shopify_connection",
+            return_value=None,
+        ):
+            first = client.post(
+                "/api/webhooks/shopify/compliance", content=body, headers=headers,
+            )
+            assert first.status_code == 200
+            # Simulate an older signed receipt that has no processing rows.
+            with TEST_SESSION() as session:
+                session.query(ShopifyPrivacyWorkItem).delete()
+                session.commit()
+            repaired = client.post(
+                "/api/webhooks/shopify/compliance", content=body, headers=headers,
+            )
+        assert repaired.status_code == 200
+        assert repaired.json()["action"] == "duplicate"
+        with TEST_SESSION() as session:
+            assert session.query(ShopifyPrivacyRequest).count() == 1
+            assert session.query(ShopifyPrivacyWorkItem).count() == 10
+
+    def test_bad_hmac_does_not_create_case_or_work_queue(self, client):
+        body = json.dumps({
+            "shop_id": 900,
+            "shop_domain": "test-store.myshopify.com",
+        }).encode()
+        response = client.post(
+            "/api/webhooks/shopify/compliance",
+            content=body,
+            headers={
+                "X-Shopify-Topic": "shop/redact",
+                "X-Shopify-Hmac-Sha256": "not-valid",
+                "Content-Type": "application/json",
+            },
+        )
+        assert response.status_code == 401
+        with TEST_SESSION() as session:
+            assert session.query(ShopifyPrivacyRequest).count() == 0
+            assert session.query(ShopifyPrivacyWorkItem).count() == 0

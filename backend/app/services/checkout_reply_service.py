@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from .. import ai_reply_service
 from ..models import Conversation, Message
 from .conversational_checkout_service import process_conversational_checkout_turn
+from .shopify_privacy_suppression import evaluate_shopify_local_privacy
 
 
 def generate_checkout_or_auto_reply(
@@ -30,6 +31,15 @@ def generate_checkout_or_auto_reply(
             .first()
         )
         if not conversation or conversation.mode != "ai":
+            return
+
+        # A background task may outlive a GDPR redaction. Check again before
+        # agent inference, checkout mutation, or outbound provider calls.
+        if evaluate_shopify_local_privacy(
+            db, organization_id=conversation.organization_id,
+            store_id=conversation.store_id,
+            local_customer_id=conversation.customer_id,
+        ):
             return
 
         last_message = (

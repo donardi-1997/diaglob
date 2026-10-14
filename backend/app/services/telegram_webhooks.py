@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 
 from ..automations import safe_emit_event
 from ..models import Conversation, Customer, Message
+from ..models import Store, CustomerStoreProfile
+from .shopify_privacy_suppression import evaluate_shopify_privacy_suppression, evaluate_shopify_local_privacy
 from ..telegram_models import TelegramConnection
 
 
@@ -30,11 +32,38 @@ def process_webhook_payload(
     if not text or message_id is None or chat_id is None or user_id is None:
         return {"inbound_conversation_ids": [], "new_conversations": [], "new_messages": []}
 
+    # Telegram IDs are not Shopify buyer IDs; require signed exact
+    # shop-wide control or independently linked local buyer identity.
+    store = db.query(Store).filter(
+        Store.id == connection.store_id,
+        Store.organization_id == connection.organization_id,
+    ).first()
+    if store is not None and store.shopify_domain:
+        reason, _ = evaluate_shopify_privacy_suppression(
+            db, organization_id=connection.organization_id,
+            store_id=connection.store_id,
+            shop_domain=store.shopify_domain, customer_id=None,
+            order_id=None, require_customer_id=False,
+            require_order_id=False,
+        )
+        if reason:
+            return {"inbound_conversation_ids": [], "new_conversations": [], "new_messages": []}
     customer_key = f"telegram:{int(chat_id)}"
     customer = db.query(Customer).filter(
         Customer.organization_id == connection.organization_id,
         Customer.phone == customer_key,
     ).first()
+    linked_profile = db.query(CustomerStoreProfile.id).filter(
+        CustomerStoreProfile.organization_id == connection.organization_id,
+        CustomerStoreProfile.store_id == connection.store_id,
+        CustomerStoreProfile.customer_id == customer.id,
+        CustomerStoreProfile.external_customer_id.isnot(None),
+    ).first() if customer else None
+    if linked_profile and evaluate_shopify_local_privacy(
+        db, organization_id=connection.organization_id,
+        store_id=connection.store_id, local_customer_id=customer.id,
+    ):
+        return {"inbound_conversation_ids": [], "new_conversations": [], "new_messages": []}
     if not customer:
         full_name = " ".join(
             part for part in [sender.get("first_name"), sender.get("last_name")] if part

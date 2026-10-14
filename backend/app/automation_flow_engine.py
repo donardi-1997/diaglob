@@ -24,6 +24,7 @@ from .models import (
 from .whatsapp_client import WhatsAppDeliveryError, send_whatsapp_template_message, send_whatsapp_text_message
 from .whatsapp_compliance import evaluate_whatsapp_delivery_eligibility, get_last_whatsapp_inbound_by_customer
 from .whatsapp_security import decrypt_whatsapp_secret
+from .services.shopify_privacy_suppression import evaluate_shopify_local_privacy
 
 logger = logging.getLogger(__name__)
 
@@ -213,6 +214,19 @@ def process_flow_recipient(
         return "not_claimed"
     if recipient.claim_expires_at and recipient.claim_expires_at < now:
         return "claim_expired"
+    # Recheck before executing a leased/previously queued node, including
+    # WhatsApp, voice calls and tools that can send data to providers.
+    run_scope = db.get(AutomationFlowRun, recipient.flow_run_id)
+    if run_scope is not None and run_scope.store_id is not None:
+        privacy_block = evaluate_shopify_local_privacy(
+            db, organization_id=run_scope.organization_id,
+            store_id=run_scope.store_id, local_customer_id=recipient.customer_id,
+        )
+        if privacy_block:
+            _finish_flow_recipient(
+                db, recipient, "failed", now, code="privacy_suppressed",
+            )
+            return "privacy_suppressed"
     version = db.get(AutomationFlowVersion, recipient.flow_version_id)
     if not version:
         _finish_flow_recipient(db, recipient, "failed", now, code="version_missing", message="Flow version not found")

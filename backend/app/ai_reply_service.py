@@ -18,6 +18,7 @@ from .instagram_models import InstagramConnection
 from .instagram_security import decrypt_instagram_secret
 from .rag import retrieve_agent_knowledge
 from .services.ai_usage_service import acquire_ai_capacity, refund_ai_capacity
+from .services.shopify_privacy_suppression import evaluate_shopify_local_privacy
 from .services.order_intelligence import build_customer_order_context
 from .telegram_models import TelegramConnection
 from .telegram_security import decrypt_telegram_secret
@@ -141,6 +142,17 @@ def _deliver_answer(
     ai_message: Message,
     answer: str,
 ) -> None:
+    # Outbound may execute after an earlier read/inference and after a
+    # privacy request was activated. Re-check directly at provider boundary.
+    if evaluate_shopify_local_privacy(
+        db, organization_id=conversation.organization_id,
+        store_id=conversation.store_id,
+        local_customer_id=conversation.customer_id,
+    ):
+        ai_message.delivery_status = "suppressed"
+        db.commit()
+        return
+
     channel = (conversation.channel or "").lower()
 
     if channel == "telegram":
@@ -275,6 +287,13 @@ def generate_auto_reply(
                 "conversation_not_found=",
                 conversation_id,
             )
+            return
+
+        if evaluate_shopify_local_privacy(
+            db, organization_id=conversation.organization_id,
+            store_id=conversation.store_id,
+            local_customer_id=conversation.customer_id,
+        ):
             return
 
         if conversation.mode != "ai":
