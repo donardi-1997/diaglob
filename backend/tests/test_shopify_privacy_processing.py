@@ -290,3 +290,36 @@ def test_fast_stage_then_async_review_promotes_only_verified_scope(sandbox):
     assert db.query(ShopifyPrivacyAuditEvent).filter(
         ShopifyPrivacyAuditEvent.event_type == "processing_prepared",
     ).count() == 1
+
+
+def test_privacy_assessment_explicitly_flags_external_and_uncovered_surfaces(sandbox):
+    from app.services.shopify_privacy_case_assessment import assess_shopify_privacy_case
+
+    db, receipt = sandbox
+    assessment = assess_shopify_privacy_case(db, request_id=REQUEST_ID)
+    assert assessment is not None
+    assert "EXTERNAL_PRIVACY_AREAS_REQUIRE_REVIEW" in assessment.blockers
+    assert assessment.fulfillment_authorized is False
+    assert receipt.completed_at is None
+
+
+def test_privacy_assessment_flags_new_sensitive_and_missing_tables(sandbox, monkeypatch):
+    from types import SimpleNamespace
+    from app.services import shopify_privacy_case_assessment as assessment_module
+
+    db, receipt = sandbox
+    fake_inventory = SimpleNamespace(
+        tables=(SimpleNamespace(coverage="complete"),),
+        unclassified_sensitive_tables=("new_sensitive_table",),
+        missing_declared_tables=("orders",),
+        external_review_areas=("backups",),
+    )
+    monkeypatch.setattr(assessment_module, "inspect_shopify_privacy_coverage",
+                        lambda: fake_inventory)
+    result = assessment_module.assess_shopify_privacy_case(db, request_id=REQUEST_ID)
+    assert "DATA_SURFACE_COVERAGE_INCOMPLETE" in result.blockers
+    assert "UNCLASSIFIED_PII_TABLES_REQUIRE_REVIEW" in result.blockers
+    assert "DECLARED_PRIVACY_TABLES_MISSING" in result.blockers
+    assert "EXTERNAL_PRIVACY_AREAS_REQUIRE_REVIEW" in result.blockers
+    assert result.fulfillment_authorized is False
+    assert receipt.completed_at is None
