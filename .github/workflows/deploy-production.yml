@@ -336,27 +336,49 @@ jobs:
           done
 
 
-      - name: Verify Shopify mandatory privacy webhook rejects invalid HMAC
+      - name: Verify all three Shopify GDPR topics reject invalid HMAC
         shell: bash
         run: |
           set -euo pipefail
-          # This is deliberately an INVALID Shopify signature. Application
-          # code must reject it before parsing or writing any private data.
-          # Do not send a valid signed GDPR webhook from deployment CI.
-          code="$(curl --silent --show-error --max-time 20 \
-            --output /dev/null --write-out '%{http_code}' \
-            -X POST 'https://api.diaglob.tech/api/webhooks/shopify/compliance' \
-            -H 'Content-Type: application/json' \
-            -H 'X-Shopify-Topic: customers/redact' \
-            -H 'X-Shopify-Hmac-Sha256: invalid-hmac-test' \
-            --data-binary '{"shop_id":0,"shop_domain":"never-valid.myshopify.com"}')"
-          if [[ "$code" != "401" ]]; then
-            echo "FAIL: Shopify compliance webhook returned HTTP $code instead of 401"
-            exit 1
-          fi
-          echo 'PASS: Shopify mandatory compliance webhook is deployed and denies bad signatures (401)'
-          # This proves receiver/HMAC rejection only. App-level subscription
-          # and actual export/redaction are still NOT verified.
+          # Signed Shopify data must NEVER be fabricated on production here.
+          # The three negative probes MUST short-circuit before DB writes.
+          for topic in customers/data_request customers/redact shop/redact; do
+            code="$(curl --silent --show-error --max-time 20 \
+              --output /dev/null --write-out '%{http_code}' \
+              -X POST 'https://api.diaglob.tech/api/webhooks/shopify/compliance' \
+              -H 'Content-Type: application/json' \
+              -H "X-Shopify-Topic: $topic" \
+              -H 'X-Shopify-Hmac-Sha256: invalid-hmac-test' \
+              --data-binary '{"shop_id":0,"shop_domain":"never-valid.myshopify.com"}')"
+            if [[ "$code" != "401" ]]; then
+              echo "FAIL: $topic rejected with HTTP $code (expected 401)"
+              exit 1
+            fi
+            echo "PASS: $topic rejects forged HMAC (HTTP 401)"
+          done
+          echo "NOTE: HMAC 401 does not prove app subscriptions or valid deliveries."
+
+      - name: Audit Shopify privacy receipts on production (read only)
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -i "$HOME/.ssh/diaglob_actions_prod" \
+            "$PROD_USER@$PROD_HOST" 'sudo bash -s' <<'REMOTE'
+          set -euo pipefail
+          set +x
+          set -a
+          . /etc/diaglob/diaglob.env
+          set +a
+          cd /opt/diaglob/app/backend
+          .venv/bin/python -m app.shopify_privacy_operational_audit
+          REMOTE
+          # Read-only aggregate report: no PII, signed payloads or secrets.
+          # A missing Shopify Partner token is reported, not interpreted as
+          # evidence that a webhook subscription is absent in Shopify.
 
       - name: Audit Shopify Partner configuration on production (read only)
         env:
