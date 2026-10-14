@@ -275,3 +275,53 @@ def test_store_redaction_manifest_counts_all_store_records_only(sandbox):
     assert counts["conversations"] == 1
     assert counts["messages"] == 1
     assert counts["customer_store_profiles"] == 1
+
+
+def test_synthetic_redaction_honors_requested_order_subset(sandbox, monkeypatch):
+    from app.services.shopify_privacy_synthetic_processor import (
+        execute_synthetic_field_redaction,
+    )
+    db, receipt = sandbox
+    receipt.topic = "customers/redact"
+    receipt.selector_encrypted = encrypt_shopify_secret(json.dumps({
+        "customer": {"id": 700}, "orders_to_redact": [101],
+    }))
+    original_order = db.query(Order).filter(Order.shopify_order_id == "101").one()
+    other_order = Order(
+        organization_id=receipt.organization_id, store_id=receipt.store_id,
+        customer_id=original_order.customer_id, shopify_order_id="103",
+        order_number="ANOTHER_LOCAL_ORDER", total_amount=2, currency="COP",
+        note="UNREQUESTED_ORDER_PRIVATE",
+    )
+    db.add(other_order)
+    db.commit()
+    monkeypatch.setenv("DIAGLOB_SHOPIFY_PRIVACY_SYNTHETIC_TESTS", "1")
+    result = execute_synthetic_field_redaction(db, receipt)
+    assert result.complete is False
+    assert result.redacted_orders == 1
+    db.refresh(original_order)
+    db.refresh(other_order)
+    assert original_order.note is None
+    assert other_order.note == "UNREQUESTED_ORDER_PRIVATE"
+    assert receipt.completed_at is None
+
+
+def test_synthetic_redaction_does_not_mutate_if_requested_order_missing(
+    sandbox, monkeypatch,
+):
+    from app.services.shopify_privacy_synthetic_processor import (
+        ShopifyPrivacySyntheticError,
+        execute_synthetic_field_redaction,
+    )
+    db, receipt = sandbox
+    receipt.topic = "customers/redact"
+    receipt.selector_encrypted = encrypt_shopify_secret(json.dumps({
+        "customer": {"id": 700}, "orders_to_redact": [102],
+    }))
+    db.commit()
+    monkeypatch.setenv("DIAGLOB_SHOPIFY_PRIVACY_SYNTHETIC_TESTS", "1")
+    with pytest.raises(ShopifyPrivacySyntheticError,
+                       match="REQUESTED_ORDER_SCOPE_UNRESOLVED"):
+        execute_synthetic_field_redaction(db, receipt)
+    assert db.query(Order).filter(Order.note == "PRIVATE_NOTE_0").count() == 1
+    assert db.query(Message).filter(Message.text == "PRIVATE_MESSAGE_0").count() == 1
