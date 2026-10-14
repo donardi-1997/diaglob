@@ -7,13 +7,14 @@ from __future__ import annotations
 
 import os
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Header
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from ..services.shopify_embedded_identity import verify_shopify_id_token, ShopifyIdTokenError
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 from ..db import get_db
 from ..services.shopify_embedded_link import installed_shop_status
+from ..services.shopify_embedded_authorization import authorize_embedded_store
 
 router = APIRouter()
 
@@ -89,3 +90,21 @@ def verify_embedded_session(
         "installation_status": installed_shop_status(db, verified["shop"]),
         "tenant_authorized": False,
     }
+
+@router.get("/api/shopify/embedded/authorize")
+def authorize_embedded_session(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_embedded_bearer),
+    diaglob_authorization: str | None = Header(None, alias="X-Diaglob-Authorization"),
+    db: Session = Depends(get_db),
+) -> dict:
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        raise HTTPException(status_code=401, detail="Shopify ID token required")
+    if not diaglob_authorization or not diaglob_authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Diaglob Cognito access token required")
+    try:
+        identity = verify_shopify_id_token(credentials.credentials)
+    except ShopifyIdTokenError:
+        raise HTTPException(status_code=401, detail="Invalid Shopify session")
+    return authorize_embedded_store(
+        db, identity["shop"], diaglob_authorization[len("Bearer "):]
+    )
