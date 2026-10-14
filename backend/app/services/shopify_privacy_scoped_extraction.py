@@ -16,7 +16,9 @@ from sqlalchemy.orm import Session
 from ..models import (
     Conversation,
     CustomerStoreProfile,
+    Message,
     Order,
+    OrderItem,
     ShopifyPrivacyRequest,
 )
 from ..model_domains.conversational_checkout import ConversationalCheckout
@@ -146,6 +148,25 @@ def build_encrypted_shopify_fixture_extraction(
     }
     if source_counts != expected:
         raise ShopifyPrivacyExtractionError("EXPORT_SCOPE_CHANGED_DURING_READ")
+
+    order_ids = [order.id for order in orders]
+    conversation_ids = [conversation.id for conversation in conversations]
+    if order_ids and db.query(OrderItem.id).filter(
+        OrderItem.order_id.in_(order_ids),
+        (OrderItem.organization_id != org) | (OrderItem.store_id != store),
+    ).first() is not None:
+        raise ShopifyPrivacyExtractionError("ORDER_ITEM_TENANCY_MISMATCH")
+    items = _bounded_rows(db.query(OrderItem).filter(
+        OrderItem.order_id.in_(order_ids),
+        OrderItem.organization_id == org,
+        OrderItem.store_id == store,
+    ).order_by(OrderItem.id)) if order_ids else []
+    messages = _bounded_rows(db.query(Message).filter(
+        Message.conversation_id.in_(conversation_ids),
+    ).order_by(Message.id)) if conversation_ids else []
+    source_counts["order_items"] = len(items)
+    source_counts["messages"] = len(messages)
+
     payload = {
         "schema_version": 1,
         "fixture_only": True,
@@ -160,6 +181,17 @@ def build_encrypted_shopify_fixture_extraction(
             ],
             "conversations": [
                 {"channel": c.channel, "preview": c.preview} for c in conversations
+            ],
+            "order_items": [
+                {"order_id": item.order_id, "title": item.title, "sku": item.sku,
+                 "quantity": item.quantity, "unit_price": str(item.unit_price),
+                 "currency": item.currency} for item in items
+            ],
+            "messages": [
+                {"conversation_id": msg.conversation_id,
+                 "sender": msg.sender, "text": msg.text,
+                 "created_at": msg.created_at.isoformat() if msg.created_at else None}
+                for msg in messages
             ],
             "conversational_checkouts": [
                 {"customer_name": c.customer_name, "phone": c.phone,
