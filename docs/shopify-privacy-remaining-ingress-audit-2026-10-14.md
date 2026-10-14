@@ -7,6 +7,8 @@ Fecha: 14 de octubre de 2026. Estado: PR #223, sin activación de borrado en pro
 |---|---|---|---|
 | WhatsApp entrante | `services/whatsapp_webhooks.py::process_webhook_payload` | Comprobación del teléfono HMAC antes de crear Customer, Conversation, Message o lanzar IA; segundo control por identidad local existente | No permite inferir un vínculo con un Shopify ID si Shopify no entregó teléfono y no existe perfil cruzado |
 | Instagram entrante | `services/instagram_webhooks.py::process_webhook_payload` | Bloqueo de `shop/redact` y de clientes ya vinculados mediante CustomerStoreProfile | Un Instagram sender ID sin vínculo Shopify no identifica con seguridad al mismo titular; hay que registrar vínculo con origen verificable |
+| Telegram entrante | `services/telegram_webhooks.py::process_webhook_payload` | Bloquea `shop/redact` y el ID Shopify vinculado mediante perfil local antes de persistir | Un Telegram chat ID no es un Shopify customer ID; los contactos sin vínculo se mantienen independientes |
+| Telegram directo | `services/telegram_service.py::send_message` | Revalida el destinatario antes de envío externo | Otras integraciones necesitan inventario |
 | WhatsApp directo | `services/whatsapp_service.py::send_message` | Bloqueo antes de extraer token y enviar al proveedor | Otros envíos fuera de este servicio requieren inventario |
 | Instagram directo | `services/instagram_service.py::send_message` | Bloqueo antes de contactar Instagram | Debe preservarse el mapa consentido de identidades si se necesita localizar datos de un mismo comprador |
 | IA conversacional | `services/checkout_reply_service.py`, `ai_reply_service.py` | Validación antes de inferencia en segundo plano y antes de enviar una respuesta generada | Los chats históricos, embeddings y registros de inferencia siguen sujetos a eliminación/retención independiente |
@@ -27,10 +29,14 @@ Fecha: 14 de octubre de 2026. Estado: PR #223, sin activación de borrado en pro
 ## Puertas de salida restantes
 
 1. Identidades entre canales: esquema de `CustomerIdentityLink` con consentimiento, prueba de origen, caducidad y enlace a tienda; nunca inventar enlaces por parecido textual.
-2. Inventario de todos los receptores de PII: Telegram, flujos no cubiertos de agentes/herramientas, triggers webhooks de otros proveedores, RAG, logs, sistemas de pagos y exportaciones.
+2. Inventario de todos los receptores de PII: flujos Telegram no cubiertos de agentes/herramientas, triggers webhooks de otros proveedores, RAG, logs, sistemas de pagos y exportaciones.
 3. Legal: tratamiento campo a campo de facturas, pedidos, devoluciones, comunicaciones, registros de riesgo e información de marketing, con responsable, fundamento, retención y hold aprobados.
 4. Externo: confirmaciones por procesador y ámbito de datos; aplicar supresión también a reenvíos/colas de terceros.
 5. Recuperación: almacenar checkpoint en almacén inmutable y externo, verificar antes de permitir tráfico tras restauración, ejecutar simulacro.
 6. Proceso Shopify: entrega segura para `customers/data_request`, registros auditables de finalización y revisión humana independiente.
 
 CI ejecuta pruebas sintéticas, nunca eliminación real. **La aprobación total de cumplimiento y la fusión a producción permanecen pendientes.**
+
+## Resultado de revisión adicional
+
+Los guardas de redacción **no deben bloquear a clientes no vinculados** simplemente porque otro comprador de la misma tienda tenga una solicitud. Los webhooks de Instagram, Telegram y WhatsApp reconocen `shop/redact`, pero para `customers/redact` únicamente usan un identificador verificable de Shopify (enlace explícito `CustomerStoreProfile`) o un contacto que coincida con una huella HMAC de la solicitud firmada. Los mensajes de perfiles no vinculados permanecen operativos, salvo supresión de la tienda completa. Esta es una restricción deliberada y una brecha de conciliación de identidades que se debe resolver con trazabilidad y consentimiento.
