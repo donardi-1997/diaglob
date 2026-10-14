@@ -626,7 +626,7 @@ async def shopify_order_webhook(
     except ShopifyWebhookError as exc:
         db.rollback()
         raise HTTPException(
-            status_code=400,
+            status_code=503 if str(exc) == "PRIVACY_SUPPRESSION_CHECK_UNAVAILABLE" else 400,
             detail={
                 "code": str(exc),
                 "message": str(exc)
