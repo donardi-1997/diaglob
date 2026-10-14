@@ -21,6 +21,7 @@ def upgrade():
         sa.Column("request_id", sa.String(64), nullable=False),
         sa.Column("kind", sa.String(20), nullable=False),
         sa.Column("selector_digest", sa.String(64), nullable=False),
+        sa.Column("key_fingerprint", sa.String(64), nullable=False),
         sa.Column("status", sa.String(20), nullable=False, server_default="staged"),
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("activated_at", sa.DateTime(), nullable=True),
