@@ -62,6 +62,7 @@ from .model_domains.shopify_privacy import (  # noqa: F401
     ShopifyPrivacyRequest,
     ShopifyPrivacyWorkItem,
     ShopifyPrivacySuppression,
+    ShopifyPrivacyControlEvidence,
 )
 from .model_domains.shopify_billing import (  # noqa: F401
     ShopifyBillingVerification,
