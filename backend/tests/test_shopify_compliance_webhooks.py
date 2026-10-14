@@ -23,6 +23,7 @@ from app.services.shopify_compliance_webhooks import (
     process_shopify_compliance_webhook,
 )
 from app.services.shopify_webhook_service import verify_shopify_webhook_hmac
+from app.shopify_privacy_operational_audit import summarize_shopify_privacy_operations
 
 
 TEST_ENGINE = create_engine(
@@ -427,3 +428,110 @@ class TestShopifyComplianceWebhooks:
         with TEST_SESSION() as session:
             assert session.query(ShopifyPrivacyRequest).count() == 0
             assert session.query(ShopifyPrivacyWorkItem).count() == 0
+
+
+    def test_complete_synthetic_signed_three_topic_delivery_and_idempotent_retries(
+        self, client,
+    ):
+        """End-to-end HTTP->HMAC->encrypted receipt->10 review tasks on isolated SQLite.
+
+        THIS IS A SYNTHETIC TEST, not evidence of delivery from Shopify to a
+        released production app. No GDPR real-data fulfillment is performed.
+        """
+        cases = [
+            ("customers/data_request", {
+                "customer": {"id": 456, "email": "sensitive-private@example.invalid"},
+                "orders_requested": [101, 102],
+                "data_request": {"id": 9999},
+            }),
+            ("customers/redact", {
+                "customer": {"id": 456, "phone": "+573000000001"},
+                "orders_to_redact": [101],
+            }),
+            ("shop/redact", {}),
+        ]
+        received_ids = []
+        with patch.dict(os.environ, {"SHOPIFY_CLIENT_SECRET": "test-shopify-secret"}), patch(
+            "app.services.shopify_compliance_webhooks.resolve_shopify_connection",
+            return_value=None,
+        ):
+            for topic, selectors in cases:
+                body = json.dumps({
+                    "shop_id": 123,
+                    "shop_domain": "test-store.myshopify.com",
+                    **selectors,
+                }, separators=(",", ":")).encode("utf-8")
+                secret, headers = _signed_headers(body, topic)
+                assert secret == "test-shopify-secret"
+                headers["X-Shopify-Webhook-Id"] = "synthetic-" + topic.replace("/", "-")
+                headers["X-Shopify-Shop-Domain"] = "test-store.myshopify.com"
+                good = client.post(
+                    "/api/webhooks/shopify/compliance",
+                    content=body, headers=headers,
+                )
+                retry = client.post(
+                    "/api/webhooks/shopify/compliance",
+                    content=body, headers=headers,
+                )
+                assert good.status_code == retry.status_code == 200
+                assert good.json()["action"] == "recorded"
+                assert retry.json()["action"] == "duplicate"
+                assert good.json()["processing_tasks_prepared"] is True
+                assert retry.json()["processing_tasks_prepared"] is True
+                assert good.json()["request_id"] == retry.json()["request_id"]
+                assert topic == good.json()["topic"]
+                assert "sensitive-private@example.invalid" not in good.text
+                assert "+573000000001" not in good.text
+                received_ids.append(good.json()["request_id"])
+
+                forged_headers = dict(headers)
+                forged_headers["X-Shopify-Hmac-Sha256"] = "forged"
+                forged = client.post(
+                    "/api/webhooks/shopify/compliance",
+                    content=body, headers=forged_headers,
+                )
+                assert forged.status_code == 401
+
+        assert len(set(received_ids)) == len(cases)
+        with TEST_SESSION() as session:
+            records = session.query(ShopifyPrivacyRequest).all()
+            assert len(records) == 3
+            assert {r.topic for r in records} == {topic for topic, _ in cases}
+            assert all(r.status == "pending_policy_review" for r in records)
+            assert all("sensitive-private@example.invalid" not in r.selector_encrypted for r in records)
+            assert all("+573000000001" not in r.selector_encrypted for r in records)
+
+            tasks = session.query(ShopifyPrivacyWorkItem).all()
+            assert len(tasks) == 30
+            for request_id in received_ids:
+                selected = [item for item in tasks if item.request_id == request_id]
+                assert len(selected) == 10
+                assert len({item.area for item in selected}) == 10
+                assert any(item.area == "signed_receipt" and item.status == "verified" for item in selected)
+                assert all(item.status not in {"completed", "fulfilled"} for item in selected)
+
+            audits = session.query(ShopifyPrivacyAuditEvent).all()
+            assert len(audits) == 6
+            assert sum(e.event_type == "received" for e in audits) == 3
+            assert sum(e.event_type == "processing_prepared" for e in audits) == 3
+
+            report = summarize_shopify_privacy_operations(
+                session,
+                environment={
+                    "SHOPIFY_CLIENT_SECRET": "test-shopify-secret",
+                    "SHOPIFY_TOKEN_ENCRYPTION_KEY": "present-for-test-only",
+                },
+            )
+            assert report["receipt_total"] == 3
+            assert all(v == 1 for v in report["topic_receipts"].values())
+            assert report["distinct_signed_received_audits"] == 3
+            assert report["distinct_processing_prepared_audits"] == 3
+            assert report["receipts_missing_complete_ten_item_queue"] == 0
+            assert report["active_suppressions"] == 0
+            assert report["review_required"] is False
+            assert report["released_shopify_subscription_verified"] is False
+            assert report["valid_live_shopify_delivery_verified"] is False
+            assert report["data_export_or_erasure_fulfilled"] is False
+            safe_report = json.dumps(report)
+            assert "sensitive-private@example.invalid" not in safe_report
+            assert "test-store.myshopify.com" not in safe_report
