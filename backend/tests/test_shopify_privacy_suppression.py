@@ -933,3 +933,119 @@ def test_instagram_direct_send_blocked_for_linked_shopify_buyer(
                 "PRIVATE_INSTAGRAM_TEXT",
             )
         send.assert_not_called()
+
+
+def test_unlinked_whatsapp_message_not_mistaken_for_shopify_customer(
+    sandbox, monkeypatch,
+):
+    from app.models import WhatsAppConnection, Message
+    from app.services.whatsapp_webhooks import process_webhook_payload
+    db, receipt, stores, _ = sandbox
+    db.add(WhatsAppConnection(
+        organization_id=receipt.organization_id, store_id=stores[0].id,
+        phone_number_id="wa-unlinked-privacy",
+        business_account_id="wa-unlinked-account",
+        access_token_encrypted="synthetic", verify_token="synthetic",
+        status="connected",
+    ))
+    db.commit()
+    prepare_shopify_privacy_suppressions(db, request_id=RECEIPT)
+    monkeypatch.setenv("DIAGLOB_SHOPIFY_PRIVACY_SYNTHETIC_TESTS", "1")
+    activate_synthetic_privacy_suppressions(db, request_id=RECEIPT)
+    result = process_webhook_payload(db, {
+        "entry": [{"changes": [{"field": "messages", "value": {
+            "metadata": {"phone_number_id": "wa-unlinked-privacy"},
+            "messages": [{
+                "from": "573220000111", "id": "unlinked-wa-message",
+                "type": "text", "text": {"body": "independent user"},
+            }],
+        }}]}],
+    })
+    assert len(result["new_messages"]) == 1
+    assert db.query(Message).count() == 1
+    assert db.query(Customer).one().phone == "573220000111"
+
+
+def test_telegram_shop_redaction_blocks_ingest_and_unlinked_stays_safe(
+    sandbox, monkeypatch,
+):
+    from app.telegram_models import TelegramConnection
+    from app.models import Message
+    from app.services.telegram_webhooks import process_webhook_payload
+    db, receipt, stores, _ = sandbox
+    connection = TelegramConnection(
+        organization_id=receipt.organization_id, store_id=stores[0].id,
+        bot_id=123456, bot_username="privacy_test_bot",
+        bot_token_encrypted="synthetic",
+        webhook_secret_encrypted="synthetic", webhook_path_token="privacy-path",
+        status="connected",
+    )
+    db.add(connection)
+    receipt.topic = "shop/redact"
+    db.commit()
+    prepare_shopify_privacy_suppressions(db, request_id=RECEIPT)
+    monkeypatch.setenv("DIAGLOB_SHOPIFY_PRIVACY_SYNTHETIC_TESTS", "1")
+    activate_synthetic_privacy_suppressions(db, request_id=RECEIPT)
+    inbound = {
+        "message": {
+            "message_id": 22, "chat": {"id": 1234, "type": "private"},
+            "from": {"id": 1234, "first_name": "private"},
+            "text": "never persist",
+        },
+    }
+    result = process_webhook_payload(db, connection, inbound)
+    assert result["new_messages"] == []
+    assert db.query(Customer).count() == 0
+    assert db.query(Message).count() == 0
+
+
+def test_telegram_linked_shopify_subject_cannot_ingest_or_send(
+    sandbox, monkeypatch,
+):
+    from app.telegram_models import TelegramConnection
+    from app.models import CustomerStoreProfile, Conversation, Message
+    from app.services.telegram_webhooks import process_webhook_payload
+    from app.services.telegram_service import send_message, TelegramSendError
+    db, receipt, stores, _ = sandbox
+    customer = Customer(
+        organization_id=receipt.organization_id,
+        name="PRIVATE_TELEGRAM_BUYER", phone="telegram:442211",
+    )
+    db.add(customer)
+    db.flush()
+    db.add(CustomerStoreProfile(
+        organization_id=receipt.organization_id, store_id=stores[0].id,
+        customer_id=customer.id, external_customer_id="700", currency="COP",
+    ))
+    connection = TelegramConnection(
+        organization_id=receipt.organization_id, store_id=stores[0].id,
+        bot_id=999001, bot_username="privacy_telegram_bot",
+        bot_token_encrypted="synthetic",
+        webhook_secret_encrypted="synthetic", webhook_path_token="privacy-test",
+        status="connected",
+    )
+    db.add(connection)
+    conversation = Conversation(
+        organization_id=receipt.organization_id, store_id=stores[0].id,
+        customer_id=customer.id, channel="Telegram",
+    )
+    db.add(conversation)
+    db.commit()
+    prepare_shopify_privacy_suppressions(db, request_id=RECEIPT)
+    monkeypatch.setenv("DIAGLOB_SHOPIFY_PRIVACY_SYNTHETIC_TESTS", "1")
+    activate_synthetic_privacy_suppressions(db, request_id=RECEIPT)
+    inbound = {
+        "message": {
+            "message_id": 24, "chat": {"id": 442211, "type": "private"},
+            "from": {"id": 442211}, "text": "private inbound",
+        },
+    }
+    result = process_webhook_payload(db, connection, inbound)
+    assert result["new_messages"] == []
+    assert db.query(Message).count() == 0
+    with patch("app.services.telegram_service.telegram_send_message") as provider:
+        with pytest.raises(TelegramSendError, match="PRIVACY_SUPPRESSED"):
+            send_message(
+                db, receipt.organization_id, conversation.id, "private outbound",
+            )
+        provider.assert_not_called()
