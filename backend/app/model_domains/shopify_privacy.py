@@ -66,4 +66,31 @@ class ShopifyPrivacyAuditEvent(Base):
     )
 
 
-__all__ = ["ShopifyPrivacyRequest", "ShopifyPrivacyAuditEvent"]
+
+class ShopifyPrivacyWorkItem(Base):
+    """PII-free data-source task belonging to one signed Shopify request.
+
+    No foreign key to merchant/store rows: post-uninstall evidence must survive.
+    Tasks never contain selectors, personal data, payloads or plaintext evidence.
+    """
+
+    __tablename__ = "shopify_privacy_work_items"
+    __table_args__ = (
+        UniqueConstraint("request_id", "area", name="uq_shopify_privacy_work_item_area"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    request_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    area: Mapped[str] = mapped_column(String(80), nullable=False)
+    action: Mapped[str] = mapped_column(String(20), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="blocked")
+    blocker_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+
+__all__ = ["ShopifyPrivacyRequest", "ShopifyPrivacyAuditEvent", "ShopifyPrivacyWorkItem"]
