@@ -135,16 +135,20 @@ def prepare_shopify_privacy_processing_case(
     }:
         raise ShopifyPrivacyProcessingError("UNSUPPORTED_PRIVACY_TOPIC")
 
-    existing = db.query(ShopifyPrivacyWorkItem).filter(
-        ShopifyPrivacyWorkItem.request_id == request_id,
-    ).all()
-    if existing:
-        return _serialize(receipt, existing, created=False)
+    if receipt.completed_at is not None or receipt.status == "completed":
+        raise ShopifyPrivacyProcessingError("HISTORICAL_COMPLETION_REQUIRES_REVIEW")
 
     specs = _task_specs(
         receipt.topic, verified_scope=assessment.verified_shop_scope,
         signed=assessment.verified_signed_intake,
     )
+    existing = db.query(ShopifyPrivacyWorkItem).filter(
+        ShopifyPrivacyWorkItem.request_id == request_id,
+    ).all()
+    if existing:
+        if len(existing) != len(specs) or {x.area for x in existing} != set(specs):
+            raise ShopifyPrivacyProcessingError("INCOMPLETE_PRIVACY_WORK_ITEM_SET")
+        return _serialize(receipt, existing, created=False)
     now = datetime.utcnow()
     items = [
         ShopifyPrivacyWorkItem(
