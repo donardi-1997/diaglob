@@ -293,7 +293,7 @@ def test_hmac_is_bound_to_store_and_resource_kind(sandbox):
     rows = db.query(ShopifyPrivacySuppression).all()
     assert rows[0].selector_digest != rows[1].selector_digest
     assert all(len(r.selector_digest) == 64 for r in rows)
-    assert "email" not in str([r.__dict__ for r in rows])
+    assert "private@example.com" not in str([r.__dict__ for r in rows])
 
 
 def test_secret_rotation_must_not_silently_disable_active_tombstones(
