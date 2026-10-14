@@ -95,7 +95,8 @@ def test_manual_outbound_outside_24h_blocked_before_provider():
     )
     customer = SimpleNamespace(id=77, organization_id=11, phone="57310000000")
     db.query.return_value.filter.return_value.first.side_effect = [conv, connection, customer]
-    with patch("app.services.whatsapp_service.get_whatsapp_service_window_status",
+    with patch("app.services.whatsapp_service.evaluate_shopify_local_privacy",
+               return_value=None), patch("app.services.whatsapp_service.get_whatsapp_service_window_status",
                return_value={"inside_window": False}), patch(
                "app.services.whatsapp_service.send_whatsapp_text_message"
                ) as send, patch("app.services.whatsapp_service.decrypt_whatsapp_secret") as decrypt:
