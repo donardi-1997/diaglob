@@ -29,6 +29,7 @@ from app.services.shopify_privacy_processing import (
     get_shopify_privacy_processing_case,
     prepare_shopify_privacy_processing_case,
     prepare_pending_shopify_privacy_processing_cases,
+    stage_shopify_privacy_receipt_work_items,
 )
 from app.shopify_security import encrypt_shopify_secret
 
@@ -265,3 +266,27 @@ def test_bulk_endpoint_requires_internal_authentication(sandbox, monkeypatch):
     )
     assert outcome["created"] == 1
     assert outcome["fulfillment_complete"] is False
+
+
+def test_fast_stage_then_async_review_promotes_only_verified_scope(sandbox):
+    db, receipt = sandbox
+    # Signed receipt exists. The webhook does not perform customer queries.
+    stage_shopify_privacy_receipt_work_items(db, receipt)
+    db.commit()
+    before = {x.area: x for x in db.query(ShopifyPrivacyWorkItem).all()}
+    assert len(before) == 10
+    assert before["signed_receipt"].status == "verified"
+    assert before["shop_identity"].status == "blocked"
+    assert before["subject_linkage"].status == "blocked"
+    result = prepare_shopify_privacy_processing_case(db, request_id=REQUEST_ID)
+    assert result["created"] is False
+    after = {x["area"]: x for x in result["work_items"]}
+    assert after["shop_identity"]["status"] == "verified"
+    assert after["subject_linkage"]["status"] == "review_required"
+    assert after["local_structured_records"]["status"] == "blocked"
+    assert after["retention_and_legal_holds"]["status"] == "blocked"
+    assert after["external_processors"]["status"] == "blocked"
+    assert result["fulfillment_complete"] is False
+    assert db.query(ShopifyPrivacyAuditEvent).filter(
+        ShopifyPrivacyAuditEvent.event_type == "processing_prepared",
+    ).count() == 1
