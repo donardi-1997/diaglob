@@ -139,6 +139,24 @@ def process_shopify_order_webhook(
             shop_domain=connection.external_store_url,
             customer_id=_shopify_customer_id(payload),
             order_id=external_order_id,
+            customer_email=(
+                (payload.get("customer") or {}).get("email")
+                if isinstance(payload.get("customer"), dict)
+                else None
+            ) or payload.get("email"),
+            customer_phone=(
+                (payload.get("customer") or {}).get("phone")
+                if isinstance(payload.get("customer"), dict)
+                else None
+            ) or (
+                (payload.get("shipping_address") or {}).get("phone")
+                if isinstance(payload.get("shipping_address"), dict)
+                else None
+            ) or (
+                (payload.get("billing_address") or {}).get("phone")
+                if isinstance(payload.get("billing_address"), dict)
+                else None
+            ),
         )
     except ShopifySuppressionError as exc:
         raise ShopifyWebhookError("PRIVACY_SUPPRESSION_CHECK_UNAVAILABLE") from exc
