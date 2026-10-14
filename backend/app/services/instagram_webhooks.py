@@ -10,7 +10,7 @@ from ..automations import safe_emit_event
 from ..instagram_models import InstagramConnection
 from ..models import Conversation, Customer, Message
 from .shopify_privacy_suppression import evaluate_shopify_privacy_suppression, evaluate_shopify_local_privacy
-from ..models import Store
+from ..models import Store, CustomerStoreProfile
 
 
 def process_webhook_payload(db: Session, payload: dict) -> dict:
@@ -68,7 +68,13 @@ def process_webhook_payload(db: Session, payload: dict) -> dict:
                 Customer.organization_id == connection.organization_id,
                 Customer.phone == customer_key,
             ).first()
-            if customer and evaluate_shopify_local_privacy(
+            linked_profile = db.query(CustomerStoreProfile.id).filter(
+                CustomerStoreProfile.organization_id == connection.organization_id,
+                CustomerStoreProfile.store_id == connection.store_id,
+                CustomerStoreProfile.customer_id == customer.id,
+                CustomerStoreProfile.external_customer_id.isnot(None),
+            ).first() if customer else None
+            if linked_profile and evaluate_shopify_local_privacy(
                 db, organization_id=connection.organization_id,
                 store_id=connection.store_id, local_customer_id=customer.id,
             ):
