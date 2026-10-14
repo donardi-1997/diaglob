@@ -14,6 +14,11 @@ from ..services.shopify_privacy_case_assessment import (
     ShopifyPrivacyAssessmentError,
     assess_shopify_privacy_case,
 )
+from ..services.shopify_privacy_suppression import (
+    ShopifySuppressionError,
+    prepare_shopify_privacy_suppressions,
+    inspect_shopify_privacy_suppressions,
+)
 from ..services.shopify_privacy_local_processor import (
     ShopifyLocalPrivacyError,
     build_encrypted_local_customer_export,
@@ -180,3 +185,31 @@ def get_shopify_local_redaction_manifest(
         "complete": False,
         "mutation_allowed": False,
     }
+
+
+@router.post("/api/internal/shopify/privacy/cases/{request_id}/suppressions/prepare")
+def prepare_shopify_privacy_suppression_case(
+    request_id: str,
+    x_internal_secret: str | None = Header(None, alias="X-Internal-Secret"),
+    db: Session = Depends(get_db),
+):
+    """Stage keyed Shopify selectors without activating replay suppression."""
+    _require_internal_secret(x_internal_secret)
+    try:
+        return prepare_shopify_privacy_suppressions(db, request_id=request_id)
+    except ShopifySuppressionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/api/internal/shopify/privacy/cases/{request_id}/suppressions")
+def get_shopify_privacy_suppression_case(
+    request_id: str,
+    x_internal_secret: str | None = Header(None, alias="X-Internal-Secret"),
+    db: Session = Depends(get_db),
+):
+    """Return stage/active counts only; never hashed selectors or subject IDs."""
+    _require_internal_secret(x_internal_secret)
+    try:
+        return inspect_shopify_privacy_suppressions(db, request_id=request_id)
+    except ShopifySuppressionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
