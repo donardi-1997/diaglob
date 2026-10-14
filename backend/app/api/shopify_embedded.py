@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import os
 
-from fastapi import APIRouter, HTTPException, Depends, Header, Query
+from fastapi import APIRouter, HTTPException, Depends, Header
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from ..services.shopify_embedded_identity import verify_shopify_id_token, ShopifyIdTokenError
 from fastapi.responses import HTMLResponse
@@ -311,13 +311,15 @@ def embedded_overview(
 @router.get("/api/shopify/embedded/data/{section}")
 def embedded_store_data(
     section: str,
-    page: int = Query(1, ge=1, le=10000),
-    search: str = Query("", max_length=100),
+    page: int = 1,
+    search: str = "",
     credentials: HTTPAuthorizationCredentials | None = Depends(_embedded_bearer),
     diaglob_authorization: str | None = Header(None, alias="X-Diaglob-Authorization"),
     db: Session = Depends(get_db),
 ) -> dict:
     """Bounded, redacted, store-scoped reads; no customer PII or mutations."""
+    if not 1 <= page <= 10000 or len(search) > 100:
+        raise HTTPException(status_code=422, detail="Invalid pagination or search")
     if section not in ("products", "orders"):
         raise HTTPException(status_code=404, detail="Unknown section")
     if credentials is None or credentials.scheme.lower() != "bearer":
