@@ -357,3 +357,32 @@ def embedded_store_data(
          "fulfillment_status": row.fulfillment_status}
         for row in rows
     ], "limit": page_size, "page": page, "total": total}
+
+@router.get("/api/shopify/embedded/metrics")
+def embedded_metrics(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_embedded_bearer),
+    diaglob_authorization: str | None = Header(None, alias="X-Diaglob-Authorization"),
+    db: Session = Depends(get_db),
+) -> dict:
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        raise HTTPException(status_code=401, detail="Shopify ID token required")
+    if not diaglob_authorization or not diaglob_authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Diaglob access token required")
+    try:
+        verified = verify_shopify_id_token(credentials.credentials)
+    except ShopifyIdTokenError:
+        raise HTTPException(status_code=401, detail="Invalid Shopify session")
+    grant = authorize_embedded_store(db, verified["shop"], diaglob_authorization[7:])
+    from ..models import Product, Order, CommerceConnection
+    scope = {"organization_id": grant["organization_id"], "store_id": grant["store_id"]}
+    product_count = db.query(Product).filter_by(**scope).count()
+    order_count = db.query(Order).filter_by(**scope).count()
+    connection = db.query(CommerceConnection).filter_by(
+        **scope, provider="shopify", status="connected"
+    ).first()
+    return {
+        "products": product_count,
+        "orders": order_count,
+        "last_product_sync": connection.last_sync_at.isoformat() if connection and connection.last_sync_at else None,
+        "mode": "read_only",
+    }
