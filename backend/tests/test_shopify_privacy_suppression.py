@@ -87,8 +87,8 @@ def sandbox(monkeypatch):
     engine.dispose()
 
 
-def _payload(order_id=101, customer_id=700, phone="555000"):
-    customer = {"id": customer_id, "email": "private@example.com",
+def _payload(order_id=101, customer_id=700, phone="555000", email="private@example.com"):
+    customer = {"id": customer_id, "email": email,
                 "phone": phone, "first_name": "Secret"}
     return {
         "id": order_id, "customer": customer,
@@ -98,26 +98,26 @@ def _payload(order_id=101, customer_id=700, phone="555000"):
     }
 
 
-def _webhook(db, connection, *, order_id=101, customer_id=700, phone="555000"):
+def _webhook(db, connection, *, order_id=101, customer_id=700, phone="555000", email="private@example.com"):
     with patch("app.services.shopify_webhook_service.safe_emit_event"):
         return process_shopify_order_webhook(
             db, connection=connection, topic="orders/create",
-            payload=_payload(order_id=order_id, customer_id=customer_id, phone=phone),
+            payload=_payload(order_id=order_id, customer_id=customer_id, phone=phone, email=email),
         )
 
 
 def test_staging_is_signed_scoped_encrypted_at_rest_and_idempotent(sandbox):
     db, receipt, stores, _ = sandbox
     result = prepare_shopify_privacy_suppressions(db, request_id=RECEIPT)
-    assert result["expected_selectors"] == 2
-    assert result["newly_staged"] == 2
+    assert result["expected_selectors"] == 3
+    assert result["newly_staged"] == 3
     assert result["activated"] is False
     assert result["fulfillment_complete"] is False
     repeat = prepare_shopify_privacy_suppressions(db, request_id=RECEIPT)
     assert repeat["newly_staged"] == 0
-    assert repeat["already_present"] == 2
+    assert repeat["already_present"] == 3
     rows = db.query(ShopifyPrivacySuppression).all()
-    assert len(rows) == 2
+    assert len(rows) == 3
     assert all(x.status == "staged" and len(x.selector_digest) == 64 for x in rows)
     assert all(x.organization_id == receipt.organization_id for x in rows)
     assert all(x.store_id == receipt.store_id for x in rows)
@@ -142,7 +142,7 @@ def test_synthetic_activation_blocks_replayed_orders_and_customer_data(sandbox, 
     db, receipt, _, connections = sandbox
     prepare_shopify_privacy_suppressions(db, request_id=RECEIPT)
     monkeypatch.setenv("DIAGLOB_SHOPIFY_PRIVACY_SYNTHETIC_TESTS", "1")
-    assert activate_synthetic_privacy_suppressions(db, request_id=RECEIPT) == 2
+    assert activate_synthetic_privacy_suppressions(db, request_id=RECEIPT) == 3
     assert activate_synthetic_privacy_suppressions(db, request_id=RECEIPT) == 0
     first = _webhook(db, connections[0])
     second = _webhook(db, connections[0], order_id=102)
@@ -172,8 +172,17 @@ def test_unrelated_new_shopify_id_cannot_relink_suppressed_contact(sandbox, monk
     prepare_shopify_privacy_suppressions(db, request_id=RECEIPT)
     monkeypatch.setenv("DIAGLOB_SHOPIFY_PRIVACY_SYNTHETIC_TESTS", "1")
     activate_synthetic_privacy_suppressions(db, request_id=RECEIPT)
+    # A new Shopify ID with the same signed email is also suppressed.
     result = _webhook(db, connections[0], order_id=105, customer_id=701)
-    assert result["action"] == "created"
+    assert result["action"] == "suppressed_privacy"
+    assert db.query(CustomerStoreProfile).count() == 1
+    # For a genuinely different email, never reuse an existing customer
+    # by a coincidentally shared phone within a store with active tombstones.
+    allowed = _webhook(
+        db, connections[0], order_id=106, customer_id=701,
+        email="different@example.com",
+    )
+    assert allowed["action"] == "created"
     profiles = db.query(CustomerStoreProfile).order_by(CustomerStoreProfile.id).all()
     assert len(profiles) == 2
     assert profiles[0].customer_id == first.id
@@ -260,12 +269,12 @@ def test_internal_api_authentication_before_write(sandbox, monkeypatch):
         request_id=RECEIPT,
         x_internal_secret="privacy-test-only-internal-secret", db=db,
     )
-    assert result["newly_staged"] == 2
+    assert result["newly_staged"] == 3
     response = get_shopify_privacy_suppression_case(
         request_id=RECEIPT,
         x_internal_secret="privacy-test-only-internal-secret", db=db,
     )
-    assert response["staged"] == 2
+    assert response["staged"] == 3
     assert "selector_digest" not in str(response)
     assert "private@example.com" not in str(response)
 
@@ -285,3 +294,41 @@ def test_hmac_is_bound_to_store_and_resource_kind(sandbox):
     assert rows[0].selector_digest != rows[1].selector_digest
     assert all(len(r.selector_digest) == 64 for r in rows)
     assert "email" not in str([r.__dict__ for r in rows])
+
+
+def test_secret_rotation_must_not_silently_disable_active_tombstones(
+    sandbox, monkeypatch,
+):
+    db, _, _, connections = sandbox
+    prepare_shopify_privacy_suppressions(db, request_id=RECEIPT)
+    monkeypatch.setenv("DIAGLOB_SHOPIFY_PRIVACY_SYNTHETIC_TESTS", "1")
+    activate_synthetic_privacy_suppressions(db, request_id=RECEIPT)
+    monkeypatch.setenv(
+        "SHOPIFY_PRIVACY_SUPPRESSION_KEY",
+        "rotated-key-that-must-not-deactivate-previous-tombstones-9876543210",
+    )
+    with pytest.raises(ShopifyWebhookError, match="PRIVACY_SUPPRESSION_CHECK_UNAVAILABLE"):
+        _webhook(db, connections[0])
+    with pytest.raises(ShopifySuppressionError, match="SUPPRESSION_KEY_MISMATCH"):
+        prepare_shopify_privacy_suppressions(db, request_id=RECEIPT)
+    assert db.query(Order).count() == 0
+
+
+def test_optional_signed_phone_tombstone_prevents_new_id_reingestion(
+    sandbox, monkeypatch,
+):
+    db, receipt, _, connections = sandbox
+    receipt.selector_encrypted = encrypt_shopify_secret(json.dumps({
+        "customer": {"id": 700, "phone": "+57 320 111 2233"},
+        "orders_to_redact": [101],
+    }))
+    db.commit()
+    staged = prepare_shopify_privacy_suppressions(db, request_id=RECEIPT)
+    assert staged["newly_staged"] == 3
+    monkeypatch.setenv("DIAGLOB_SHOPIFY_PRIVACY_SYNTHETIC_TESTS", "1")
+    activate_synthetic_privacy_suppressions(db, request_id=RECEIPT)
+    assert _webhook(
+        db, connections[0], customer_id=999, order_id=999,
+        email="different@example.com", phone="+57 (320) 111-2233",
+    )["action"] == "suppressed_privacy"
+    assert db.query(Customer).count() == 0
