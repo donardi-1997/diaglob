@@ -32,7 +32,27 @@ def shopify_embedded_home() -> HTMLResponse:
 <body>
   <main>
     <h1>DIAGLOB</h1>
-    <p>Conectando con Shopify. La sesión de la tienda se validará antes de abrir información privada.</p>
+    <p id="status" role="status">Validando la sesión de Shopify…</p>
+    <script>
+      (async function () {
+        const status = document.getElementById('status');
+        try {
+          if (!window.shopify || typeof window.shopify.idToken !== 'function') {
+            throw new Error('Shopify App Bridge no disponible');
+          }
+          const token = await window.shopify.idToken();
+          const response = await fetch('/api/shopify/embedded/session', {
+            headers: { Authorization: 'Bearer ' + token },
+            cache: 'no-store'
+          });
+          if (!response.ok) throw new Error('Sesión no válida');
+          const identity = await response.json();
+          status.textContent = 'Tienda verificada: ' + identity.shop + '. La vinculación con Diaglob está pendiente.';
+        } catch (error) {
+          status.textContent = 'No pudimos validar tu sesión. Abre Diaglob desde Shopify Admin.';
+        }
+      })();
+    </script>
   </main>
 </body>
 </html>"""
