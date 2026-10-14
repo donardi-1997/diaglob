@@ -17,6 +17,7 @@ from ..models import (
     WhatsAppConnection,
 )
 from .checkout_reply_service import generate_checkout_or_auto_reply
+from .shopify_privacy_suppression import evaluate_shopify_local_privacy
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +92,14 @@ def process_webhook_payload(db: Session, payload: dict) -> dict:
                 text_body = msg.get("text", {}).get("body") or ""
 
                 if not text_body:
+                    continue
+
+                # Signed suppression guard runs before creating customer,
+                # message, conversation or scheduling an AI reply.
+                if evaluate_shopify_local_privacy(
+                    db, organization_id=connection.organization_id,
+                    store_id=connection.store_id, customer_phone=wa_id,
+                ):
                     continue
 
                 customer = (
