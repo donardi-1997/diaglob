@@ -16,6 +16,7 @@ from ..models import (
     Product,
 )
 from .action_policy import evaluate_action
+from .shopify_privacy_suppression import evaluate_shopify_local_privacy
 from .agent_approvals import (
     AgentApprovalError,
     consume_approval,
@@ -77,7 +78,16 @@ def _orders_list(
                 Order.fulfillment_status == status,
             )
         )
-    orders = query.order_by(Order.created_at.desc()).limit(_limit(arguments)).all()
+    candidates = query.order_by(Order.created_at.desc()).limit(
+        min(500, _limit(arguments) * 5)
+    ).all()
+    orders = [
+        row for row in candidates
+        if not evaluate_shopify_local_privacy(
+            db, organization_id=membership.organization_id, store_id=store_id,
+            local_customer_id=row.customer_id, shopify_order_id=row.shopify_order_id,
+        )
+    ][:_limit(arguments)]
     return {
         "items": [
             {
@@ -119,6 +129,12 @@ def _orders_get(
     )
     if order is None:
         raise AgentToolExecutionError("ORDER_NOT_FOUND")
+    if evaluate_shopify_local_privacy(
+        db, organization_id=membership.organization_id, store_id=store_id,
+        local_customer_id=order.customer_id,
+        shopify_order_id=order.shopify_order_id,
+    ):
+        raise AgentToolExecutionError("PRIVACY_SUPPRESSED")
 
     items = (
         db.query(OrderItem)
@@ -238,7 +254,16 @@ def _customers_search(
                 Customer.phone.ilike(term),
             )
         )
-    rows = query.order_by(Customer.name).limit(_limit(arguments)).all()
+    candidates = query.order_by(Customer.name).limit(
+        min(500, _limit(arguments) * 5)
+    ).all()
+    rows = [
+        (customer, profile) for customer, profile in candidates
+        if not evaluate_shopify_local_privacy(
+            db, organization_id=membership.organization_id, store_id=store_id,
+            local_customer_id=customer.id,
+        )
+    ][:_limit(arguments)]
     return {
         "items": [
             {
