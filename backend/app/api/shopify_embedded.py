@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import os
 
-from fastapi import APIRouter, HTTPException, Depends, Header
+from fastapi import APIRouter, HTTPException, Depends, Header, Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from ..services.shopify_embedded_identity import verify_shopify_id_token, ShopifyIdTokenError
 from fastapi.responses import HTMLResponse
@@ -311,6 +311,8 @@ def embedded_overview(
 @router.get("/api/shopify/embedded/data/{section}")
 def embedded_store_data(
     section: str,
+    page: int = Query(1, ge=1, le=10000),
+    search: str = Query("", max_length=100),
     credentials: HTTPAuthorizationCredentials | None = Depends(_embedded_bearer),
     diaglob_authorization: str | None = Header(None, alias="X-Diaglob-Authorization"),
     db: Session = Depends(get_db),
@@ -330,24 +332,28 @@ def embedded_store_data(
         db, identity["shop"], diaglob_authorization[len("Bearer "):]
     )
     from ..models import Product, Order
+    model = Product if section == "products" else Order
+    field = Product.title if section == "products" else Order.order_number
+    scoped = db.query(model).filter(
+        model.organization_id == authorized["organization_id"],
+        model.store_id == authorized["store_id"],
+    )
+    if search.strip():
+        scoped = scoped.filter(field.ilike("%" + search.strip().replace("%", r"\%").replace("_", r"\_") + "%", escape="\\"))
+    total = scoped.count()
+    page_size = 20
     if section == "products":
-        rows = db.query(Product).filter(
-            Product.organization_id == authorized["organization_id"],
-            Product.store_id == authorized["store_id"],
-        ).order_by(Product.id.desc()).limit(50).all()
+        rows = scoped.order_by(Product.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
         return {"section": section, "items": [
             {"id": row.id, "title": row.title, "vendor": row.vendor,
              "active": row.active, "shopify_product_id": row.shopify_product_id}
             for row in rows
-        ], "limit": 50}
-    rows = db.query(Order).filter(
-        Order.organization_id == authorized["organization_id"],
-        Order.store_id == authorized["store_id"],
-    ).order_by(Order.id.desc()).limit(50).all()
+        ], "limit": page_size, "page": page, "total": total}
+    rows = scoped.order_by(Order.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
     return {"section": section, "items": [
         {"id": row.id, "order_number": row.order_number,
          "total_amount": str(row.total_amount), "currency": row.currency,
          "financial_status": row.financial_status,
          "fulfillment_status": row.fulfillment_status}
         for row in rows
-    ], "limit": 50}
+    ], "limit": page_size, "page": page, "total": total}
