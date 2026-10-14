@@ -293,6 +293,10 @@
   ],
   [
     "GET",
+    "/api/internal/shopify/privacy/cases/{request_id}/local-redaction/manifest"
+  ],
+  [
+    "GET",
     "/api/internal/shopify/privacy/cases/{request_id}/processing"
   ],
   [
@@ -842,6 +846,10 @@
   [
     "POST",
     "/api/internal/billing/process-downgrades"
+  ],
+  [
+    "POST",
+    "/api/internal/shopify/privacy/cases/{request_id}/local-export/inspect"
   ],
   [
     "POST",
