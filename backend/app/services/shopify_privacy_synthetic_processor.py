@@ -26,6 +26,7 @@ from .shopify_privacy_scope_preview import (
     ShopifyPrivacyScopeError,
     preview_shopify_privacy_scope,
 )
+from .shopify_privacy_local_processor import _canonical_order_ids, ShopifyLocalPrivacyError
 
 # Defense in depth: the processor cannot run against the PostgreSQL production
 # database, even if someone accidentally imports the functions into a job.
@@ -407,6 +408,19 @@ def execute_synthetic_field_redaction(
 
     profiles = _limited(profile_query.order_by(CustomerStoreProfile.id), kind="profiles")
     orders = _limited(order_query.order_by(Order.id), kind="orders")
+    if receipt.topic == "customers/redact":
+        # Shopify may specify a subset. Never redact unrelated orders or
+        # interpret customer-entered order numbers as Shopify resource IDs.
+        try:
+            selector = json.loads(decrypt_shopify_secret(receipt.selector_encrypted))
+            requested = _canonical_order_ids(selector.get("orders_to_redact"))
+        except (ValueError, TypeError, RuntimeError, ShopifyLocalPrivacyError) as exc:
+            raise ShopifyPrivacySyntheticError("ORDER_SCOPE_UNAVAILABLE") from exc
+        if requested is not None:
+            selected = [o for o in orders if o.shopify_order_id in requested]
+            if {o.shopify_order_id for o in selected} != requested:
+                raise ShopifyPrivacySyntheticError("REQUESTED_ORDER_SCOPE_UNRESOLVED")
+            orders = selected
     checkouts = _limited(
         checkout_query.order_by(ConversationalCheckout.id), kind="checkouts"
     )
