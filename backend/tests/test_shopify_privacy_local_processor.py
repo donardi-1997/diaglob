@@ -235,3 +235,43 @@ def test_no_redaction_execution_path_and_no_customer_mutation(sandbox):
     assert outcome.mutation_allowed is False
     assert not hasattr(outcome, "execute")
     assert db.query(Order).filter(Order.note == "PRIVATE_NOTE_0").count() == 1
+
+
+def test_customer_redaction_manifest_respects_explicit_order_scope(sandbox):
+    db, receipt = sandbox
+    receipt.topic = "customers/redact"
+    receipt.selector_encrypted = encrypt_shopify_secret(json.dumps({
+        "customer": {"id": 700}, "orders_to_redact": [101],
+    }))
+    db.commit()
+    manifest = build_local_redaction_manifest(db, request_id=RECEIPT_ID)
+    rows = {name: count for name, _, count in manifest.fields_by_table}
+    assert rows["orders"] == 1
+    assert rows["conversations"] == 1
+    assert rows["messages"] == 1
+    assert manifest.mutation_allowed is False
+
+
+def test_customer_redaction_manifest_rejects_other_store_order_id(sandbox):
+    db, receipt = sandbox
+    receipt.topic = "customers/redact"
+    receipt.selector_encrypted = encrypt_shopify_secret(json.dumps({
+        "customer": {"id": 700}, "orders_to_redact": [102],
+    }))
+    db.commit()
+    with pytest.raises(ShopifyLocalPrivacyError,
+                       match="REQUESTED_ORDER_SCOPE_UNRESOLVED"):
+        build_local_redaction_manifest(db, request_id=RECEIPT_ID)
+    assert db.query(Order).filter(Order.note == "PRIVATE_NOTE_0").count() == 1
+
+
+def test_store_redaction_manifest_counts_all_store_records_only(sandbox):
+    db, receipt = sandbox
+    receipt.topic = "shop/redact"
+    db.commit()
+    result = build_local_redaction_manifest(db, request_id=RECEIPT_ID)
+    counts = {name: count for name, _, count in result.fields_by_table}
+    assert counts["orders"] == 1
+    assert counts["conversations"] == 1
+    assert counts["messages"] == 1
+    assert counts["customer_store_profiles"] == 1
