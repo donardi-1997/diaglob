@@ -14,6 +14,11 @@ from ..services.shopify_privacy_case_assessment import (
     ShopifyPrivacyAssessmentError,
     assess_shopify_privacy_case,
 )
+from ..services.shopify_privacy_local_processor import (
+    ShopifyLocalPrivacyError,
+    build_encrypted_local_customer_export,
+    build_local_redaction_manifest,
+)
 from ..services.shopify_privacy_processing import (
     ShopifyPrivacyProcessingError,
     get_shopify_privacy_processing_case,
@@ -120,3 +125,58 @@ def prepare_pending_shopify_privacy_cases(
         return prepare_pending_shopify_privacy_processing_cases(db, limit=limit)
     except ShopifyPrivacyProcessingError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/api/internal/shopify/privacy/cases/{request_id}/local-export/inspect")
+def inspect_shopify_local_customer_export(
+    request_id: str,
+    x_internal_secret: str | None = Header(None, alias="X-Internal-Secret"),
+    db: Session = Depends(get_db),
+):
+    """Process an encrypted IN-MEMORY snapshot and return counts only.
+
+    Ciphertext and content fingerprints are never returned via the API.
+    This is not merchant delivery, archival storage, or request fulfillment.
+    """
+    _require_internal_secret(x_internal_secret)
+    try:
+        result = build_encrypted_local_customer_export(db, request_id=request_id)
+    except ShopifyLocalPrivacyError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "request_id": result.request_id,
+        "profiles": result.profiles,
+        "orders": result.orders,
+        "order_items": result.order_items,
+        "conversations": result.conversations,
+        "messages": result.messages,
+        "checkouts": result.checkouts,
+        "requested_orders_not_resolved": result.requested_orders_not_resolved,
+        "complete": False,
+        "merchant_delivery_allowed": False,
+    }
+
+
+@router.get("/api/internal/shopify/privacy/cases/{request_id}/local-redaction/manifest")
+def get_shopify_local_redaction_manifest(
+    request_id: str,
+    x_internal_secret: str | None = Header(None, alias="X-Internal-Secret"),
+    db: Session = Depends(get_db),
+):
+    """Describe candidate local fields without deleting customer information."""
+    _require_internal_secret(x_internal_secret)
+    try:
+        result = build_local_redaction_manifest(db, request_id=request_id)
+    except ShopifyLocalPrivacyError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "request_id": result.request_id,
+        "topic": result.topic,
+        "fields_by_table": [
+            {"table": name, "fields": list(fields), "candidate_rows": count}
+            for name, fields, count in result.fields_by_table
+        ],
+        "shared_customer_records_protected": result.shared_customer_records_protected,
+        "complete": False,
+        "mutation_allowed": False,
+    }
