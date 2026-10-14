@@ -15,7 +15,16 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
 
         response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
+        if request.url.path == "/api/shopify/embedded" and response.status_code == 200:
+            # Only Shopify App Home is frameable, and only by Shopify admin.
+            response.headers["Content-Security-Policy"] = (
+                "frame-ancestors https://admin.shopify.com https://*.myshopify.com; "
+                "base-uri 'none'; object-src 'none'"
+            )
+            if "X-Frame-Options" in response.headers:
+                del response.headers["X-Frame-Options"]
+        else:
+            response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = (
             "camera=(), microphone=(), geolocation=()"
