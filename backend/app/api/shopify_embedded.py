@@ -49,7 +49,7 @@ def shopify_embedded_home() -> HTMLResponse:
 </head>
 <body>
   <main>
-    <h1>DIAGLOB</h1>
+    <h1>DIAGLOB — Shopify</h1><div class='card' id='welcome'>
     <p id="status" role="status">Validando la sesión de Shopify…</p>
     <section id="diaglob-login" hidden aria-label="Ingreso a Diaglob">
       <p>Inicia sesión con tu cuenta de Diaglob para confirmar tus permisos sobre esta tienda.</p>
@@ -60,7 +60,7 @@ def shopify_embedded_home() -> HTMLResponse:
       </form>
     </section>
     <p><a id="portal-link" hidden href="https://diaglob.tech/login" target="_blank" rel="noopener noreferrer">Abrir panel Diaglob</a></p>
-    <script>
+    </div><section id="overview" class="card" hidden><h2 id="store-title"></h2><p id="store-domain"></p><div class="grid"><div class="card">Conexión: Shopify</div><div class="card">País: <b id="country"></b></div><div class="card">Moneda: <b id="currency"></b></div><div class="card">Acceso: solo lectura</div></div><p class="small">Productos, pedidos, conversaciones y automatizaciones: próximamente.</p><button type="button" id="logout">Cerrar sesión</button></section><script>
       (async function () {
         const status = document.getElementById('status');
         try {
