@@ -85,7 +85,7 @@ def _receipt(db: Session, request_id: str) -> ShopifyPrivacyRequest:
     except (ShopifyPrivacyScopeError, ValueError) as exc:
         raise ShopifyLocalPrivacyError("SHOP_SCOPE_UNVERIFIED") from exc
     if scope.scope_status == "subject_unresolved":
-        raise ShopifyLocalPrivacyError("SHOPIFY_SUBJECT_UNRESOLVED")
+        raise ShopifyLocalPrivacyError("SHOPIFY_SUBJECT_UNRESOLVED_OR_AMBIGUOUS")
     return receipt
 
 
