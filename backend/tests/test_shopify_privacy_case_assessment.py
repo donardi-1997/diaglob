@@ -247,3 +247,34 @@ def test_export_manifest_rejects_redaction_topic(sandbox):
     with pytest.raises(ShopifyPrivacyAssessmentError,
                        match="CUSTOMER_EXPORT_TOPIC_REQUIRED"):
         prepare_shopify_privacy_export_manifest(db, request_id=REQUEST_ID)
+
+
+def test_signed_duplicate_subject_is_not_verified_by_case_assessment(sandbox):
+    """Signed intake is not proof of unambiguous Shopify customer ownership."""
+    db, receipt = sandbox
+    original_profile = db.query(CustomerStoreProfile).filter(
+        CustomerStoreProfile.store_id == receipt.store_id,
+    ).one()
+    second_customer = Customer(
+        organization_id=receipt.organization_id,
+        name="PRIVATE_UNRELATED_BUYER",
+        phone="unique-synthetic-number",
+    )
+    db.add(second_customer)
+    db.flush()
+    db.add(CustomerStoreProfile(
+        organization_id=receipt.organization_id,
+        store_id=receipt.store_id,
+        customer_id=second_customer.id,
+        external_customer_id=original_profile.external_customer_id,
+        currency="COP",
+    ))
+    db.commit()
+    result = assess_shopify_privacy_case(db, request_id=REQUEST_ID)
+    assert result.verified_signed_intake is True
+    assert result.verified_shop_scope is False
+    assert result.scope_status == "subject_unresolved"
+    assert result.matched_store_orders == 0
+    assert "SHOPIFY_SUBJECT_UNRESOLVED" in result.blockers
+    assert result.fulfillment_authorized is False
+    assert "PRIVATE_UNRELATED_BUYER" not in str(result.safe_dict())
