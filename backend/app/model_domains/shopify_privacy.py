@@ -5,7 +5,7 @@ at rest; identifiers, emails and order IDs must not appear in normal app logs.
 """
 from datetime import datetime
 
-from sqlalchemy import DateTime, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..db import Base
@@ -73,6 +73,47 @@ class ShopifyPrivacyShopIdentity(Base):
     uninstalled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
+
+
+class ShopifyPrivacyDeliveryArtifact(Base):
+    """Synthetic, encrypted, recipient-bound one-time delivery ticket.
+
+    No personal data in searchable fields. The sole encrypted ciphertext
+    column is purged on redemption, revocation or expiry. This model does not
+    authorize any live customer export or actual Shopify fulfillment.
+    """
+
+    __tablename__ = "shopify_privacy_delivery_artifacts"
+    __table_args__ = (
+        UniqueConstraint("token_digest", name="uq_shopify_privacy_delivery_token"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    request_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    organization_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    store_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    recipient_user_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    token_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    artifact_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    ciphertext_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    redeemed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    synthetic_only: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True,
+    )
+
+
+class ShopifyPrivacyDeliveryAudit(Base):
+    """PII-free audit of synthetic delivery; no token, body or recipient email."""
+
+    __tablename__ = "shopify_privacy_delivery_audit"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    request_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    event_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    actor_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
 
 class ShopifyPrivacyAuditEvent(Base):
@@ -180,4 +221,4 @@ class ShopifyPrivacyControlEvidence(Base):
     )
 
 
-__all__ = ["ShopifyPrivacyRequest", "ShopifyPrivacyShopIdentity", "ShopifyPrivacyAuditEvent", "ShopifyPrivacyWorkItem", "ShopifyPrivacySuppression", "ShopifyPrivacyControlEvidence"]
+__all__ = ["ShopifyPrivacyRequest", "ShopifyPrivacyShopIdentity", "ShopifyPrivacyDeliveryArtifact", "ShopifyPrivacyDeliveryAudit", "ShopifyPrivacyAuditEvent", "ShopifyPrivacyWorkItem", "ShopifyPrivacySuppression", "ShopifyPrivacyControlEvidence"]
