@@ -1,6 +1,13 @@
 # DIAGLOB — Shopify pricing, plan limits and contribution sensitivity
 Audit: 2026-10-10 · Owner: ChatGPT · **ANALYTICAL SCENARIOS, NOT OBSERVED P&L OR PRICE APPROVAL**
 
+> Store-limit amendment (2026-10-15): Pro is 3 active stores and Scale is 5
+> instead of the earlier 5/10 values. Pricing, customer/member/AI limits and
+> assumptions in this historical analysis are otherwise unchanged.
+> The multiple-store organization limit is for direct DIAGLOB tenancy; it is
+> NOT approval to bundle Shopify merchant installs under one App Pricing
+> subscription.
+
 ## Verified in code
 Source: `backend/app/plan_limits.py` and existing App Store draft `docs/shopify-app-store-readiness.md`.
 
@@ -8,8 +15,8 @@ Source: `backend/app/plan_limits.py` and existing App Store draft `docs/shopify-
 |---|---:|---:|---:|---:|---:|---:|
 | Starter | 19 | 190 | 1 | 1,000 | 2 | 1,000 |
 | Growth | 49 | 490 | 2 | 5,000 | 5 | 5,000 |
-| Pro | 99 | 990 | 5 | 20,000 | 10 | 20,000 |
-| Scale | 199 | 1,990 | 10 | 50,000 | 15 | 50,000 |
+| Pro | 99 | 990 | 3 | 20,000 | 10 | 20,000 |
+| Scale | 199 | 1,990 | 5 | 50,000 | 15 | 50,000 |
 
 Annual price equals 10 monthly payments (approximately **16.7% less than paying monthly for 12 months**) in each tier. Existing software limits are not proof of enforcement of every AI quota or data-processing obligation.
 
@@ -36,7 +43,7 @@ Illustrative assumptions solely to highlight risk:
 - The current Pro/Scale inclusion appears economically sensitive if all included AI responses use high-token tools or expensive inference; choose limits based on **measured tokens and tool costs**, not assumed average “responses.” Dynamic tool use, retrieval, messaging, provider APIs, retries and shipping calls can cost more than one plain text generation.
 - Initial recommendation for release planning: retain prices as *candidates* and implement per-organization, per-provider usage attribution; block runaway model calls and excess quota when no approved overage agreement exists.
 - Evaluate whether AI limits should be reduced, standardized to usage credits, split by model/tool, or metered using Shopify App Pricing usage pricing after reviewing current supported features and approved plan copy. **Do not promise unlimited requests or usage-based overages** until implementation and charge-approval semantics are verified.
-- A single subscription per shop on Shopify does not automatically correspond to DIAGLOB's **2/5/10 active stores per organization**. Current reconciliation rejects multi-shop Shopify billing; public plan marketing must clarify whether these are independent installs, additional directly contracted stores or future functionality. Until solved, don't publish multi-store promises as live Shopify entitlements.
+- A single subscription per shop on Shopify does not automatically correspond to DIAGLOB's **2/3/5 active stores per organization**. Current reconciliation rejects multi-shop Shopify billing; public plan marketing must clarify whether these are independent installs, additional directly contracted stores or future functionality. Until solved, don't publish multi-store promises as live Shopify entitlements.
 - Paddle remains for qualifying **independent direct contracts**; Shopify App Store subscribers must not be routed through Paddle checkout.
 
 ## Measurement acceptance criteria for Codex / business owner

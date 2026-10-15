@@ -3,7 +3,12 @@
 
 **Date:** 2026-09-08
 **Author:** Automated Analysis
-**Status:** ANALYSIS ONLY — NO PRICING CHANGES IMPLEMENTED
+**Status:** HISTORICAL ECONOMIC ANALYSIS — 2026-10-15 store-cap update
+(Starter 1, Growth 2, Pro 3, Scale 5); USD prices remain unchanged.
+The historical modeled AI interaction/overage amounts below are not proof
+of live provider metering or billing support. Shopify App Pricing remains
+merchant-specific and these DIAGLOB organization limits must not be
+advertised as a right to install multiple Shopify shops under one subscription.
 
 ---
 
@@ -214,13 +219,13 @@ BREAK_EVEN_INTERACTIONS =
 |------|-------|--------|-----------------|-----------------|---------|
 | Starter | $19/mo | 1 | 1,000 | 500 included | $5/1,000 |
 | Growth | $49/mo | 2 | 5,000 | 2,000 included | $5/1,000 |
-| Pro | $99/mo | 5 | 20,000 | 10,000 included | $4/1,000 |
-| Scale | $199/mo | 10 | 50,000 | 50,000 included | $3/1,000 |
+| Pro | $99/mo | 3 | 20,000 | 10,000 included | $4/1,000 |
+| Scale | $199/mo | 5 | 50,000 | 50,000 included | $3/1,000 |
 
 ### Rationale
 - **Starter $19:** Acquisition-focused. Low barrier to entry. Limited AI to protect margin.
 - **Growth $49:** Reduced from $59 to improve conversion. Good value for growing merchants.
-- **Pro $99:** Hero plan. 5 stores, generous AI. Differentiator from Growth.
+- **Pro $99:** Hero plan. 3 stores, generous AI. Differentiator from Growth.
 - **Scale $199:** Increased from $179. High-value for large operations. Volume discount on overage.
 
 ### Included AI Interactions (at 80% target margin)

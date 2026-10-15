@@ -56,14 +56,21 @@ Keep the provider-neutral orchestration and existing Paddle adapter. App Store o
 
 Do not create Shopify subscriptions or activate paid plans until the merchant approves the confirmation screen. Shopify App Pricing is the intended path for a new public app; use the current supported API and Partner Dashboard flow. Shopify’s current docs distinguish app pricing from legacy Billing API flows, so confirm feature availability for this app and account before implementation.
 
+As of the store-cap reconciliation of 2026-10-15, the current backend
+limits below describe DIAGLOB **organization** capacity, not approved
+Shopify App Pricing multi-store entitlements. For Shopify App Store listing,
+do not advertise multi-shop allowances: Shopify billing is per installed
+merchant and the current entitlement verifier rejects multiple merchant
+bindings under one DIAGLOB organization.
+
 Current canonical backend limits (`backend/app/plan_limits.py`):
 
 | Plan | Monthly USD | Annual USD | Active stores | Monthly customers | Members | Included AI responses/month |
 |---|---:|---:|---:|---:|---:|---:|
 | Starter | 19 | 190 | 1 | 1,000 | 2 | 1,000 |
 | Growth | 49 | 490 | 2 | 5,000 | 5 | 5,000 |
-| Pro | 99 | 990 | 5 | 20,000 | 10 | 20,000 |
-| Scale | 199 | 1,990 | 10 | 50,000 | 15 | 50,000 |
+| Pro | 99 | 990 | 3 | 20,000 | 10 | 20,000 |
+| Scale | 199 | 1,990 | 5 | 50,000 | 15 | 50,000 |
 
 The supplied historical audit says frontend/backend Pro and Scale store limits differed. Current frontend organization UI reads `active_store_limit` from the API; no duplicate local plan-limit catalog was found in the inspected frontend. This should be rechecked against PR #147/current default branch after integration rather than inventing another limit source.
 
@@ -75,8 +82,8 @@ Shopify supports monthly and annual recurring pricing for App Store plans. Prepa
 |---|---:|---|
 | DIAGLOB Starter | $19/month or $190/year | Connect one store and manage up to 1,000 monthly customers, two team members, and 1,000 included AI responses. |
 | DIAGLOB Growth | $49/month or $490/year | Connect up to two stores and manage up to 5,000 monthly customers, five team members, and 5,000 included AI responses. |
-| DIAGLOB Pro | $99/month or $990/year | Connect up to five stores and manage up to 20,000 monthly customers, ten team members, and 20,000 included AI responses. |
-| DIAGLOB Scale | $199/month or $1,990/year | Connect up to ten stores and manage up to 50,000 monthly customers, fifteen team members, and 50,000 included AI responses. |
+| DIAGLOB Pro | $99/month or $990/year | Connect up to three stores and manage up to 20,000 monthly customers, ten team members, and 20,000 included AI responses. |
+| DIAGLOB Scale | $199/month or $1,990/year | Connect up to five stores and manage up to 50,000 monthly customers, fifteen team members, and 50,000 included AI responses. |
 
 The plan-limit phrasing above reflects repository values, not verified entitlements for features or overages. Do not advertise usage overages or unverified integrations.
 

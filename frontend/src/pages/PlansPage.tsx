@@ -75,7 +75,7 @@ const plans = [
       6: 535,
       12: 990,
     },
-    stores: 5,
+    stores: 3,
     icon: Rocket,
     recommended: true,
     descriptionKey: "proDescription",
@@ -98,7 +98,7 @@ const plans = [
       6: 1075,
       12: 1990,
     },
-    stores: 10,
+    stores: 5,
     icon: Crown,
     descriptionKey: "scaleDescription",
     featureKeys: [
