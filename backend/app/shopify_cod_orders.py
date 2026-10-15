@@ -1,3 +1,4 @@
+from ..shopify_token_lifecycle import connection_access_token
 """Shopify COD order creation for confirmed conversational checkouts.
 
 This is intentionally separate from the historical POC order path. It creates
@@ -195,7 +196,7 @@ def create_shopify_cod_order(
         order_input["email"] = customer_email
 
     try:
-        token = decrypt_shopify_secret(connection.access_token_encrypted or "")
+        token = connection_access_token(connection)
         data = ShopifyGraphQLClient(
             shop_domain=connection.external_store_url,
             access_token=token,
