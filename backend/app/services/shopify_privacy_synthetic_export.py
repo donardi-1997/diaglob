@@ -67,7 +67,7 @@ def build_encrypted_synthetic_export(
         if not isinstance(item, dict):
             raise SyntheticPrivacyExportError("INVALID_EXPORT_MANIFEST")
         name, count = item.get("name"), item.get("matching_records")
-        if (name not in _ALLOWED_SOURCES or name in expected
+        if (type(name) is not str or name not in _ALLOWED_SOURCES or name in expected
                 or type(count) is not int or not 0 <= count <= 1000
                 or item.get("status") != "review_required"):
             raise SyntheticPrivacyExportError("INVALID_EXPORT_MANIFEST")
@@ -82,7 +82,7 @@ def build_encrypted_synthetic_export(
             raise SyntheticPrivacyExportError("INVALID_SYNTHETIC_RECORDS")
         source = row.get("source")
         fields = row.get("fields")
-        if (source not in expected or row.get("record") != "SYNTHETIC"
+        if (type(source) is not str or source not in expected or row.get("record") != "SYNTHETIC"
                 or not isinstance(fields, dict) or not fields
                 or any(not isinstance(k, str) or not k for k in fields)
                 or any(not isinstance(v, (str, int, float, bool, type(None)))
@@ -163,6 +163,7 @@ def verify_encrypted_synthetic_export(
         if (
             not isinstance(row, dict)
             or set(row) != _ALLOWED_FIELDS
+            or type(row["source"]) is not str
             or row["source"] not in _ALLOWED_SOURCES
             or row["record"] != "SYNTHETIC"
             or not isinstance(row["fields"], dict)
