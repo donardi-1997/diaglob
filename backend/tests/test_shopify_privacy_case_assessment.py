@@ -316,7 +316,13 @@ def test_history_conflict_blocks_scoped_personal_data_review(sandbox, drift):
     ))
     db.commit()
     before_orders = db.query(Order).count()
-    assessment = assess_shopify_privacy_case(db, request_id=REQUEST_ID)
+    # A conflicted signed shop must be rejected before any customer selector
+    # decryption, so a historical rebind cannot leak buyer-level counts.
+    with patch(
+        "app.services.shopify_privacy_scope_preview.decrypt_shopify_secret",
+    ) as selector_decrypt:
+        assessment = assess_shopify_privacy_case(db, request_id=REQUEST_ID)
+    selector_decrypt.assert_not_called()
     assert assessment.verified_signed_intake is True
     assert assessment.verified_shop_scope is False
     assert "SHOP_SCOPE_NOT_VERIFIED" in assessment.blockers
