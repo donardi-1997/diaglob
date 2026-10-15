@@ -38,7 +38,10 @@ SYNTHETIC_CONTENT = b"SYNTHETIC_ENCRYPTED_CUSTOMER_DATA_ONLY"
 def sandbox(monkeypatch):
     monkeypatch.setenv("SHOPIFY_PRIVACY_SYNTHETIC_HTTP_ENABLED", "true")
     monkeypatch.setenv("SHOPIFY_PRIVACY_DELIVERY_KEY", Fernet.generate_key().decode())
-    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     Base.metadata.create_all(engine)
     with Session(engine) as db:
         org = Organization(id=101, name="Fixture merchant", slug="merchant-fixture",
