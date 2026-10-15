@@ -1,4 +1,3 @@
-from ...shopify_token_lifecycle import connection_access_token
 """Read-only Shopify App Pricing subscription verification via Partner API.
 
 Shopify App Pricing (2026-10) owns plan creation and merchant charges.
@@ -6,6 +5,7 @@ Never use the legacy Billing API to create charges for App Pricing merchants.
 This module does not activate entitlements or mutate existing Paddle contracts.
 """
 from __future__ import annotations
+from ...shopify_token_lifecycle import connection_access_token
 
 import os
 import re
