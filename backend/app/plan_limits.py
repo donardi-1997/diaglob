@@ -30,13 +30,13 @@ PLAN_LIMITS: dict[str, OrganizationPlanLimits] = {
         included_ai_responses=5_000,
     ),
     "pro": OrganizationPlanLimits(
-        active_stores=5,
+        active_stores=3,
         monthly_customers=20_000,
         members=10,
         included_ai_responses=20_000,
     ),
     "scale": OrganizationPlanLimits(
-        active_stores=10,
+        active_stores=5,
         monthly_customers=50_000,
         members=15,
         included_ai_responses=50_000,
