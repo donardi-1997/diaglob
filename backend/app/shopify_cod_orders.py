@@ -196,7 +196,7 @@ def create_shopify_cod_order(
         order_input["email"] = customer_email
 
     try:
-        token = connection_access_token(connection)
+        token = connection_access_token(connection, decrypt_legacy=decrypt_shopify_secret)
         data = ShopifyGraphQLClient(
             shop_domain=connection.external_store_url,
             access_token=token,
