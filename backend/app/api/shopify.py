@@ -227,6 +227,45 @@ def shopify_pending_install(
     return shopify_public_install.pending_install_status(db, claim_secret)
 
 
+class ShopifyManagedClaimCode(BaseModel):
+    claim_code: str = Field(min_length=40, max_length=100, pattern=r"^[A-Za-z0-9_-]+$")
+
+
+@router.post("/api/shopify/install/managed/pending")
+def managed_install_pending(
+    payload: ShopifyManagedClaimCode,
+    membership: OrganizationMembership = Depends(require_permission("stores.write")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Validate one-use Shopify grant without revealing credentials or tenants."""
+    grant = shopify_public_install._pending_for_cookie(db, payload.claim_code)
+    if grant is None or grant.grant_method != "managed":
+        return {"pending": False, "shop_domain": None}
+    return {"pending": True, "shop_domain": grant.shop_domain}
+
+
+@router.post(
+    "/api/stores/{store_id}/shopify/install/claim-code",
+    dependencies=[Depends(require_authorized_path_store)],
+)
+def managed_install_claim_code(
+    store_id: int,
+    payload: ShopifyManagedClaimCode,
+    membership: OrganizationMembership = Depends(require_permission("stores.write")),
+    db: Session = Depends(get_db),
+    store: Store = Depends(require_authorized_path_store),
+) -> dict:
+    grant = shopify_public_install._pending_for_cookie(db, payload.claim_code)
+    if grant is None or grant.grant_method != "managed":
+        raise HTTPException(status_code=404, detail="Shopify managed grant expired")
+    try:
+        return shopify_public_install.claim_install(
+            db, secret=payload.claim_code, membership=membership, store=store,
+        )
+    except (ShopifyOAuthError, ShopifyConnectionError) as exc:
+        _map_oauth_error(exc)
+
+
 @router.post(
     "/api/stores/{store_id}/shopify/install/claim",
     dependencies=[Depends(require_authorized_path_store)],
