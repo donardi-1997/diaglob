@@ -85,6 +85,11 @@ def audit() -> dict:
                         "product": product.get("name", "").lower() == f"diaglob {plan}",
                         "product_active": product.get("status") == "active",
                         "product_saas": product.get("tax_category") == "saas",
+                        # Only an explicit inclusive mode proves tax inclusion
+                        # from the price object alone. An account-level default
+                        # must be independently checked in the Paddle dashboard.
+                        "tax_included": data.get("tax_mode") == "internal",
+                        "card_required_for_trial": trial.get("requires_payment_method") is True,
                     }
                     row["checks"] = checks
                     row["tax_mode"] = data.get("tax_mode")
@@ -125,7 +130,8 @@ def audit() -> dict:
         and all(row.get("result") == "pass" for row in report["prices"])
         and report["webhook"].get("configured") is True
     )
-    # Tax mode and environment approval must be evaluated separately.
+    # Live account approval and real checkout still require independent proof.
+    # Account-default tax mode is deliberately not assumed to be tax-inclusive.
     return report
 
 
