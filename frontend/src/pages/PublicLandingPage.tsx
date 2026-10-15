@@ -35,10 +35,10 @@ interface PublicLandingPageProps {
 }
 
 const plans = [
-  { id: "starter", name: "Starter", price: 19, annual: 190, stores: 1, ai: "1K" },
-  { id: "growth", name: "Growth", price: 49, annual: 490, stores: 2, ai: "5K" },
-  { id: "pro", name: "Pro", price: 99, annual: 990, stores: 3, ai: "20K", recommended: true },
-  { id: "scale", name: "Scale", price: 199, annual: 1990, stores: 5, ai: "50K" },
+  { id: "starter", name: "Starter", price: 19, stores: 1, ai: "1K" },
+  { id: "growth", name: "Growth", price: 49, stores: 2, ai: "5K" },
+  { id: "pro", name: "Pro", price: 99, stores: 3, ai: "20K", recommended: true },
+  { id: "scale", name: "Scale", price: 199, stores: 5, ai: "50K" },
 ];
 
 const productIcons = [BrainCircuit, ShoppingBag, BarChart3, Workflow, Store, Bot];
@@ -624,7 +624,7 @@ export default function PublicLandingPage({
                   <div className="marketing-price-name"><span>{plan.name}</span>{plan.id === "scale" && <Sparkles size={18} />}</div>
                   <div className="marketing-price"><strong>${plan.price}</strong><span>{copy.pricing.perMonth}</span></div>
                   <div className="marketing-price-divider" />
-                  <div className="marketing-price-feature"><Check size={17} /><span>US${new Intl.NumberFormat(locale).format(plan.annual)} {ui.annualYear} · {ui.annualSaving}</span></div>
+                  <div className="marketing-price-feature"><Check size={17} /><span>US${new Intl.NumberFormat(locale).format(plan.price * 10)} {ui.annualYear} · {ui.annualSaving}</span></div>
                   <div className="marketing-price-feature"><Store size={17} /><span><strong>{plan.stores}</strong> {plan.stores === 1 ? copy.pricing.store : copy.pricing.stores}</span></div>
                   <div className="marketing-price-feature"><Bot size={17} /><span><strong>{plan.ai}</strong> {copy.pricing.includedAi}</span></div>
                   <div className="marketing-price-feature"><Check size={17} /><span>{ui.coreOpsAnalytics}</span></div>
