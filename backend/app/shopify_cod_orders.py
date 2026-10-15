@@ -4,6 +4,7 @@ This is intentionally separate from the historical POC order path. It creates
 an actual Shopify order with pending payment, confirmed shipping data and
 production Diaglob tags.
 """
+from .shopify_token_lifecycle import connection_access_token
 import re
 
 from sqlalchemy.exc import IntegrityError
@@ -195,7 +196,7 @@ def create_shopify_cod_order(
         order_input["email"] = customer_email
 
     try:
-        token = decrypt_shopify_secret(connection.access_token_encrypted or "")
+        token = connection_access_token(connection, decrypt_legacy=decrypt_shopify_secret)
         data = ShopifyGraphQLClient(
             shop_domain=connection.external_store_url,
             access_token=token,

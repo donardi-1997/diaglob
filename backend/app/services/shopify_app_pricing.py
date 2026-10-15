@@ -5,6 +5,7 @@ Never use the legacy Billing API to create charges for App Pricing merchants.
 This module does not activate entitlements or mutate existing Paddle contracts.
 """
 from __future__ import annotations
+from ..shopify_token_lifecycle import connection_access_token
 
 import os
 import re
@@ -165,7 +166,7 @@ def resolve_trusted_shop_gid(connection: Any) -> str:
         raise ShopifyAppPricingError("SHOPIFY_CONNECTION_NOT_VERIFIED")
     try:
         domain = normalize_shop_domain(connection.external_store_url)
-        token = decrypt_shopify_secret(connection.access_token_encrypted)
+        token = connection_access_token(connection, decrypt_legacy=decrypt_shopify_secret)
         response = ShopifyGraphQLClient(
             shop_domain=domain,
             access_token=token,
@@ -209,7 +210,7 @@ def is_trusted_partner_development_shop(
         raise ShopifyAppPricingError("SHOPIFY_CONNECTION_NOT_VERIFIED")
     try:
         domain = normalize_shop_domain(connection.external_store_url)
-        token = decrypt_shopify_secret(connection.access_token_encrypted)
+        token = connection_access_token(connection, decrypt_legacy=decrypt_shopify_secret)
         response = ShopifyGraphQLClient(
             shop_domain=domain,
             access_token=token,

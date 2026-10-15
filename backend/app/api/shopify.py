@@ -64,10 +64,6 @@ from ..services.shopify_uninstall import (
     process_shopify_uninstall,
 )
 from ..services import shopify_public_install
-from ..services.shopify_install_handoff import (
-    ShopifyInstallHandoffError,
-    build_shopify_install_handoff,
-)
 from ..services.shopify_oauth_callback_validation import (
     MAX_CALLBACK_QUERY_BYTES,
     ShopifyCallbackQueryError,
@@ -192,23 +188,32 @@ def shopify_install_handoff(
     shop: str = Query(..., min_length=1, max_length=255),
     db: Session = Depends(get_db),
 ):
-    """For standalone App Store installs, redirect to OAuth before DIAGLOB UI.
+    """Shopify-owned install must perform OAuth before any DIAGLOB UI.
 
-    The legacy DIAGLOB handoff remains available behind a disabled-by-default
-    rollout flag until the original Shopify app configuration is verified.
+    When the independently verified public-install rollout is OFF, fail
+    closed instead of sending merchants to a DIAGLOB-domain handoff page.
+    This endpoint never treats a URL-provided shop as an authorized tenant.
+    Shopify managed installations and token exchange require separate live
+    Partner version verification before enabling this legacy-code grant.
     """
-    if shopify_public_install.enabled():
-        try:
-            url = shopify_public_install.begin_public_install(db, shop)
-        except (ShopifyOAuthError, ValueError) as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        except RuntimeError as exc:
-            raise HTTPException(status_code=503, detail="SHOPIFY_NOT_CONFIGURED") from exc
-        return RedirectResponse(url, status_code=303, headers={"Cache-Control": "no-store"})
+    # Reject malformed shop domains even while public installation is off.
     try:
-        url = build_shopify_install_handoff(shop)
-    except ShopifyInstallHandoffError as exc:
+        shop = shopify_public_install._canonical_public_shop(shop)
+    except (ShopifyOAuthError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="INVALID_SHOPIFY_DOMAIN") from exc
+
+    if not shopify_public_install.enabled():
+        raise HTTPException(
+            status_code=503,
+            detail="SHOPIFY_PUBLIC_INSTALL_NOT_ENABLED",
+            headers={"Cache-Control": "no-store"},
+        )
+    try:
+        url = shopify_public_install.begin_public_install(db, shop)
+    except (ShopifyOAuthError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail="SHOPIFY_NOT_CONFIGURED") from exc
     return RedirectResponse(url, status_code=303, headers={"Cache-Control": "no-store"})
 
 
@@ -220,6 +225,45 @@ def shopify_pending_install(
 ):
     """Reveal only the pending authenticated shop domain to an authorized user."""
     return shopify_public_install.pending_install_status(db, claim_secret)
+
+
+class ShopifyManagedClaimCode(BaseModel):
+    claim_code: str = Field(min_length=40, max_length=100, pattern=r"^[A-Za-z0-9_-]+$")
+
+
+@router.post("/api/shopify/install/managed/pending")
+def managed_install_pending(
+    payload: ShopifyManagedClaimCode,
+    membership: OrganizationMembership = Depends(require_permission("stores.write")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Validate one-use Shopify grant without revealing credentials or tenants."""
+    grant = shopify_public_install._pending_for_cookie(db, payload.claim_code)
+    if grant is None or grant.grant_method != "managed":
+        return {"pending": False, "shop_domain": None}
+    return {"pending": True, "shop_domain": grant.shop_domain}
+
+
+@router.post(
+    "/api/stores/{store_id}/shopify/install/claim-code",
+    dependencies=[Depends(require_authorized_path_store)],
+)
+def managed_install_claim_code(
+    store_id: int,
+    payload: ShopifyManagedClaimCode,
+    membership: OrganizationMembership = Depends(require_permission("stores.write")),
+    db: Session = Depends(get_db),
+    store: Store = Depends(require_authorized_path_store),
+) -> dict:
+    grant = shopify_public_install._pending_for_cookie(db, payload.claim_code)
+    if grant is None or grant.grant_method != "managed":
+        raise HTTPException(status_code=404, detail="Shopify managed grant expired")
+    try:
+        return shopify_public_install.claim_install(
+            db, secret=payload.claim_code, membership=membership, store=store,
+        )
+    except (ShopifyOAuthError, ShopifyConnectionError) as exc:
+        _map_oauth_error(exc)
 
 
 @router.post(

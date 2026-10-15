@@ -21,7 +21,7 @@ Shopify App Store requirement 2.3.2 requires authentication before merchant-faci
 
 ## Controlled rollout
 
-- Default: `SHOPIFY_OAUTH_FIRST_ENABLED=false`. This preserves current production operation until the **existing** Shopify app ID 416524435457, callback URL, embedded-vs-standalone setting and redirect URLs are verified and the migration is deployed. The old handoff remains a review blocker while this switch is OFF.
+- Default: `SHOPIFY_OAUTH_FIRST_ENABLED=false`. The public install endpoint now responds **503 fail-closed**, never redirects to a DIAGLOB portal before OAuth. The App Store install remains **unavailable until a supported Shopify mode is independently verified and activated**, so requirement 2.3.1 is **NEEDS LIVE REVIEW**, not PASS. Keep OFF for the existing embedded/managed installation until the correct ID-token + token-exchange onboarding is confirmed; do not turn on the authorization-code grant simply to silence the audit.
 - Migrate production DB to Alembic head `f9a0b1c2d3e4` before enabling. Roll back the feature flag immediately if migration/verification fail. Do not downgrade a table containing pending merchant tokens without an approved disposal plan.
 - Confirm `SHOPIFY_CLIENT_ID`, `SHOPIFY_CLIENT_SECRET`, `SHOPIFY_REDIRECT_URI=https://api.diaglob.tech/api/shopify/callback`, frontend `FRONTEND_URL=https://diaglob.tech`, encryption key, HTTPS and proper CORS with credentials on the exact frontend origin. **Do not put secrets in GitHub or logs.**
 - If the actual Shopify app is **embedded/managed installation**, the correct long-term implementation is App Bridge ID-token validation and Shopify token exchange. This authorization-code flow must NOT be enabled on an embedded/managed installation without verifying supported architecture. No Shopify app config is invented/committed here.
@@ -29,6 +29,8 @@ Shopify App Store requirement 2.3.2 requires authentication before merchant-faci
 - Create/reuse authorized synthetic DIAGLOB store in the reviewer organization after Shopify OAuth. Never auto-create a tenant based solely on `shop`; never use Bakatá for billing review.
 
 ## Required E2E on diaglob-poc.myshopify.com
+
+**Architecture prerequisite:** Shopify declares DIAGLOB as embedded in `shopify.app.toml`; Shopify-managed installation is the default. First verify active Partner app configuration and implement/confirm ID-token exchange for managed installation. A standalone authorization-code grant is only valid if that distribution mode is supported for the active app. The gate must not be enabled blindly.
 
 - [ ] App initiated on a Shopify-owned surface; OAuth grant screen before any DIAGLOB UI.
 - [ ] Callback verifies signed shop identity and returns DIAGLOB UI even when no DIAGLOB account existed previously.

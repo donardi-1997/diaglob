@@ -1,6 +1,7 @@
 """Shopify shop-scoped webhook subscription management."""
 
 from __future__ import annotations
+from .shopify_token_lifecycle import connection_access_token
 
 from urllib.parse import urljoin
 
@@ -75,9 +76,7 @@ def ensure_shopify_order_webhooks(
     # Mandatory GDPR topics are configured at app level (shopify.app.toml),
     # not with GraphQL's shop-scoped webhookSubscriptionCreate mutation.
 
-    token = decrypt_shopify_secret(
-        connection.access_token_encrypted
-    )
+    token = connection_access_token(connection, decrypt_legacy=decrypt_shopify_secret)
     client = ShopifyGraphQLClient(
         shop_domain=connection.external_store_url,
         access_token=token,

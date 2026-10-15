@@ -200,6 +200,17 @@ def claim_install(
     grant = _pending_for_cookie(db, secret)
     if grant is None:
         raise ShopifyOAuthError("SHOPIFY_INSTALL_GRANT_EXPIRED")
+    if grant.grant_method == "managed":
+        # A managed token must not be installed close to expiry. A refresh
+        # credential is mandatory for background operations.
+        if (
+            not grant.refresh_token_encrypted
+            or not grant.access_token_expires_at
+            or grant.access_token_expires_at <= datetime.utcnow() + timedelta(minutes=2)
+            or not grant.refresh_token_expires_at
+            or grant.refresh_token_expires_at <= datetime.utcnow() + timedelta(minutes=2)
+        ):
+            raise ShopifyOAuthError("SHOPIFY_MANAGED_INSTALL_EXPIRED")
     if (
         store.organization_id != membership.organization_id
         or store.deleted or not store.active
@@ -240,6 +251,9 @@ def claim_install(
     if same_store:
         connection = existing
         connection.access_token_encrypted = grant.token_encrypted
+        connection.refresh_token_encrypted = grant.refresh_token_encrypted
+        connection.access_token_expires_at = grant.access_token_expires_at
+        connection.refresh_token_expires_at = grant.refresh_token_expires_at
         connection.status = "connected"
         connection.last_error = None
         connection.updated_at = now
@@ -250,6 +264,9 @@ def claim_install(
             organization_id=membership.organization_id, store_id=store.id,
             provider="shopify", external_store_url=grant.shop_domain,
             access_token_encrypted=grant.token_encrypted,
+            refresh_token_encrypted=grant.refresh_token_encrypted,
+            access_token_expires_at=grant.access_token_expires_at,
+            refresh_token_expires_at=grant.refresh_token_expires_at,
             scopes=SHOPIFY_SCOPES, status="connected", connected_at=now,
         )
         db.add(connection)
@@ -262,6 +279,7 @@ def claim_install(
         ShopifyPendingInstall.claimed_at: now,
         ShopifyPendingInstall.claim_hash: None,
         ShopifyPendingInstall.token_encrypted: None,
+        ShopifyPendingInstall.refresh_token_encrypted: None,
     }, synchronize_session=False)
     if updated != 1:
         db.rollback()

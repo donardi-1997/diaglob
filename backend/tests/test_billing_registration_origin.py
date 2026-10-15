@@ -183,11 +183,15 @@ def test_foreign_connection_id_cannot_switch_org(sandbox):
 def test_shopify_public_untrusted_url_cannot_claim_a_billing_channel(sandbox):
     org, _, connection = make_connected(sandbox)
     assert org.billing_provider is None
-    # The public handoff does not invoke the privileged channel claim.
+    # A disabled Shopify-owned install must not invoke any billing claim or
+    # redirect to DIAGLOB before the Shopify grant.
+    from fastapi import HTTPException
     from app.api.shopify import shopify_install_handoff
     with patch("app.api.shopify.svc_process_oauth_callback") as process:
-        response = shopify_install_handoff(shop="verified-store.myshopify.com")
-    assert response.status_code == 303
+        with pytest.raises(HTTPException) as exc:
+            shopify_install_handoff(shop="verified-store.myshopify.com")
+    assert exc.value.status_code == 503
+    assert exc.value.detail == "SHOPIFY_PUBLIC_INSTALL_NOT_ENABLED"
     process.assert_not_called()
     sandbox.expire_all()
     assert org.billing_provider is None

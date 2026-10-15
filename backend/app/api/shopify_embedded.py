@@ -15,6 +15,10 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..services.shopify_embedded_link import installed_shop_status
 from ..services.shopify_embedded_membership import authorize_embedded_identity
+from ..services.shopify_managed_installation import (
+    ManagedShopifyInstallationError, verify_managed_installation,
+    stage_managed_installation,
+)
 
 router = APIRouter()
 
@@ -59,6 +63,14 @@ def shopify_embedded_home() -> HTMLResponse:
         <button type="submit">Vincular mi usuario Shopify</button>
       </form>
       <p><a href="https://diaglob.tech/login" target="_blank" rel="noopener noreferrer">Abrir Diaglob para generar código</a></p>
+    </section>
+    <section id="managed-onboarding" hidden aria-label="Nueva instalación Shopify">
+      <p>Shopify confirmó la instalación. Genera un código de 10 minutos para
+        asociarla a una tienda de Diaglob desde tu cuenta autorizada.</p>
+      <button id="managed-stage" type="button">Generar código de instalación</button>
+      <p id="managed-stage-status" role="status"></p>
+      <code id="managed-claim-code" style="overflow-wrap:anywhere"></code>
+      <p><a href="https://diaglob.tech/shopify/install?managed=1" target="_blank" rel="noopener noreferrer">Continuar en Diaglob</a></p>
     </section>
     </div><section id="overview" class="card" hidden><h2 id="store-title"></h2><p id="store-domain"></p><div class="grid"><div class="card">Conexión: Shopify</div><div class="card">País: <b id="country"></b></div><div class="card">Moneda: <b id="currency"></b></div><div class="card">Acceso: solo lectura</div></div><nav class="tabbar" aria-label="Módulos de Diaglob">
 <button type="button" data-panel="home">Resumen</button>
@@ -111,7 +123,20 @@ def shopify_embedded_home() -> HTMLResponse:
           if (!session.ok) throw new Error('Sesión Shopify inválida');
           const info = await session.json();
           if (info.installation_status !== 'connected') {
-            status.textContent = 'Primero debes completar la conexión de la tienda desde el proceso oficial de instalación.';
+            // Shopify-managed installation proof never grants access to
+            // private DIAGLOB tenants and never stores Shopify credentials.
+            const freshToken = await window.shopify.idToken();
+            const verification = await fetch('/api/shopify/embedded/managed-install/verify', {
+              method: 'POST',
+              cache: 'no-store',
+              headers: {Authorization: 'Bearer ' + freshToken}
+            });
+            if (!verification.ok) {
+              status.textContent = 'No pudimos confirmar la instalación gestionada de Shopify. Contacta soporte de Diaglob.';
+              return;
+            }
+            status.textContent = 'Shopify confirmó esta instalación. Completa la vinculación con tu cuenta autorizada de Diaglob.';
+            document.getElementById('managed-onboarding').hidden = false;
             return;
           }
           if (await showAuthorizedOverview()) return;
@@ -121,6 +146,33 @@ def shopify_embedded_home() -> HTMLResponse:
           status.textContent = 'No pudimos validar tu sesión. Abre Diaglob desde Shopify Admin.';
         }
       })();
+      document.getElementById('managed-stage').addEventListener('click', async function () {
+        const button = this;
+        const status = document.getElementById('managed-stage-status');
+        const code = document.getElementById('managed-claim-code');
+        button.disabled = true;
+        code.textContent = '';
+        status.textContent = 'Solicitando autorización temporal…';
+        try {
+          const token = await window.shopify.idToken();
+          const response = await fetch('/api/shopify/embedded/managed-install/stage', {
+            method: 'POST', cache: 'no-store',
+            headers: {'Authorization': 'Bearer ' + token}
+          });
+          if (!response.ok) throw new Error('No fue posible preparar la instalación.');
+          const grant = await response.json();
+          code.textContent = grant.claim_code;
+          status.textContent = 'Copia el código y pégalo en la página de instalación de Diaglob. Caduca en 10 minutos.';
+          const currentCode = grant.claim_code;
+          window.setTimeout(() => {
+            if (code.textContent === currentCode) code.textContent = '';
+          }, Math.min(600, grant.expires_in_seconds) * 1000);
+        } catch (error) {
+          status.textContent = 'La instalación no se pudo preparar. Comprueba que Shopify haya concedido todos los permisos.';
+        } finally {
+          button.disabled = false;
+        }
+      });
       let embeddedAccessToken = null;
       let currentSection = 'home';
       let currentPage = 1;
@@ -278,6 +330,49 @@ def verify_embedded_session(
         "installation_status": installed_shop_status(db, verified["shop"]),
         "tenant_authorized": False
               }
+
+@router.post("/api/shopify/embedded/managed-install/verify")
+def embedded_managed_installation_verify(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_embedded_bearer),
+) -> dict:
+    """No token storage, tenant bootstrap, billing or automatic account linking."""
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        raise HTTPException(status_code=401, detail="Shopify ID token required")
+    try:
+        identity = verify_shopify_id_token(credentials.credentials)
+    except ShopifyIdTokenError as exc:
+        raise HTTPException(status_code=401, detail="Invalid Shopify session") from exc
+    try:
+        return verify_managed_installation(
+            identity=identity, id_token=credentials.credentials,
+        )
+    except ManagedShopifyInstallationError as exc:
+        raise HTTPException(
+            status_code=502, detail="Shopify managed installation not verified",
+        ) from exc
+
+
+@router.post("/api/shopify/embedded/managed-install/stage")
+def embedded_managed_installation_stage(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_embedded_bearer),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Explicit Shopify staff action to stage an encrypted, expiring grant.
+
+    The response is a 10-minute one-use claim code, not an access token.
+    A separately authenticated DIAGLOB store owner must complete the claim.
+    """
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        raise HTTPException(status_code=401, detail="Shopify ID token required")
+    try:
+        identity = verify_shopify_id_token(credentials.credentials)
+    except ShopifyIdTokenError as exc:
+        raise HTTPException(status_code=401, detail="Invalid Shopify session") from exc
+    try:
+        return stage_managed_installation(db, identity=identity, id_token=credentials.credentials)
+    except ManagedShopifyInstallationError as exc:
+        raise HTTPException(status_code=502, detail="Shopify managed installation not verified") from exc
+
 
 @router.get("/api/shopify/embedded/authorize")
 def authorize_embedded_session(
