@@ -12,7 +12,7 @@ import os
 
 import httpx
 
-from ..shopify_client import ShopifyGraphQLClient
+from ..shopify_client import ShopifyAPIError, ShopifyGraphQLClient
 from ..shopify_oauth import normalize_shop_domain
 
 
@@ -34,8 +34,11 @@ def verify_managed_installation(*, identity: dict[str, str], id_token: str) -> d
     The remote response is not treated as a DIAGLOB tenant authorization.
     """
     shop = identity.get("shop")
-    if not isinstance(shop, str) or shop != normalize_shop_domain(shop):
-        raise ManagedShopifyInstallationError("INVALID_SHOPIFY_SHOP")
+    try:
+        if not isinstance(shop, str) or shop != normalize_shop_domain(shop):
+            raise ManagedShopifyInstallationError("INVALID_SHOPIFY_SHOP")
+    except (TypeError, ValueError) as exc:
+        raise ManagedShopifyInstallationError("INVALID_SHOPIFY_SHOP") from exc
     if not isinstance(id_token, str) or not id_token or len(id_token) > 8192:
         raise ManagedShopifyInstallationError("INVALID_SHOPIFY_SESSION")
     client_id = os.environ.get("SHOPIFY_CLIENT_ID", "").strip()
@@ -71,7 +74,7 @@ def verify_managed_installation(*, identity: dict[str, str], id_token: str) -> d
             raise ManagedShopifyInstallationError("SHOPIFY_MANAGED_INSTALL_IDENTITY_MISMATCH")
     except ManagedShopifyInstallationError:
         raise
-    except (httpx.HTTPError, ValueError, TypeError, RuntimeError) as exc:
+    except (ShopifyAPIError, httpx.HTTPError, ValueError, TypeError, RuntimeError) as exc:
         raise ManagedShopifyInstallationError("SHOPIFY_MANAGED_INSTALL_VERIFICATION_FAILED") from exc
 
     return {
