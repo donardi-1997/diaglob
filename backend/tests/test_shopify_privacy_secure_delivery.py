@@ -329,6 +329,7 @@ def test_wrong_request_even_same_store_and_recipient_cannot_redeem_fixture(sandb
     db.add(ShopifyPrivacyAuditEvent(
         request_id=other, event_type="received",
         actor_type="shopify_hmac_verified", reason_code="tenant_bound",
+        from_status=None, to_status="pending_policy_review",
         created_at=datetime.utcnow(),
     ))
     db.commit()
