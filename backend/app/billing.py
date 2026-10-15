@@ -11,6 +11,29 @@ from pathlib import Path
 
 VALID_BILLING_PERIODS = {1, 12}
 
+# Paddle price identifiers are public catalog references, not API secrets.
+# These IDs were supplied from the DIAGLOB vendor dashboard on 2026-10-15.
+# They are deliberately scoped to an explicit production environment: the
+# sandbox must never resolve live price IDs by falling back to this catalog.
+PADDLE_PRODUCTION_PRICE_IDS: dict[str, dict[int, str]] = {
+    "starter": {
+        1: "pri_01m50gxt8wr6cqgndwk271zbs2",
+        12: "pri_01m50gz7anwanpkww0sgp1f9nz",
+    },
+    "growth": {
+        1: "pri_01m50h13qwafmqfqcnsmykzrfz",
+        12: "pri_01m50h2054mvwjynacwrs1g122",
+    },
+    "pro": {
+        1: "pri_01m50h3z0mtsjj4vnzs5c7z164",
+        12: "pri_01m50h4wa2m3tgbdy1q18448v0",
+    },
+    "scale": {
+        1: "pri_01m50h5z54txa8zsepx3nfyr35",
+        12: "pri_01m50h6r57qvj1pr80czvjnev4",
+    },
+}
+
 
 PADDLE_PRICE_CSV = (
     Path(__file__)
@@ -121,11 +144,16 @@ def resolve_paddle_price(
     if value:
         return value
 
-    return (
-        CSV_PADDLE_PRICE_IDS
-        .get(plan, {})
-        .get(months)
-    )
+    csv_price_id = CSV_PADDLE_PRICE_IDS.get(plan, {}).get(months)
+    if csv_price_id:
+        return csv_price_id
+
+    # Only enable the reviewed public DIAGLOB price catalog for explicitly
+    # configured live Paddle environments. Tests and sandbox remain isolated.
+    environment = (os.getenv("PADDLE_ENVIRONMENT") or "sandbox").strip().lower()
+    if environment == "production":
+        return PADDLE_PRODUCTION_PRICE_IDS.get(plan, {}).get(months)
+    return None
 
 
 PADDLE_PRICE_IDS = {
