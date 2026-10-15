@@ -542,3 +542,86 @@ def test_delivery_readiness_does_not_trust_mismatched_shop(sandbox):
     assert "SHOPIFY_SUBJECT_OR_SHOP_NOT_VERIFIED" in readiness["blockers"]
     assert readiness["delivery_authorized"] is False
     assert readiness["fulfillment_complete"] is False
+
+
+@pytest.mark.parametrize("topic", ["customers/redact", "shop/redact"])
+def test_redaction_manifest_refuses_cross_store_order_items(sandbox, topic):
+    """An incorrectly scoped child row must be investigated, never ignored."""
+    from app.models import OrderItem
+
+    db, receipt = sandbox
+    receipt.topic = topic
+    target_order = db.query(Order).filter(
+        Order.store_id == receipt.store_id,
+    ).one()
+    foreign_order = db.query(Order).filter(
+        Order.store_id != receipt.store_id,
+    ).one()
+    db.add(OrderItem(
+        organization_id=receipt.organization_id,
+        store_id=foreign_order.store_id,
+        order_id=target_order.id,
+        title="SYNTHETIC_CROSS_STORE_ITEM",
+        quantity=1,
+        unit_price=1,
+        currency="COP",
+    ))
+    db.commit()
+    with pytest.raises(ShopifyLocalPrivacyError, match="ORDER_ITEM_TENANCY_MISMATCH"):
+        build_local_redaction_manifest(db, request_id=RECEIPT_ID)
+    assert receipt.completed_at is None
+    assert db.query(OrderItem).count() == 1
+    assert db.query(Order).count() == 2
+    assert db.query(Customer).one().name == "SHARED_PRIVATE_NAME"
+
+
+def test_operator_inspection_does_not_build_or_encrypt_export(sandbox, monkeypatch):
+    """Readiness counts must not create even an in-memory customer artifact."""
+    from unittest.mock import patch
+
+    db, _ = sandbox
+    monkeypatch.setenv("DIAGLOB_INTERNAL_SECRET", "privacy-test-internal-secret")
+    with patch(
+        "app.services.shopify_privacy_local_processor.encrypt_shopify_secret",
+        side_effect=AssertionError("Operator inspection must not export PII"),
+    ) as export:
+        result = inspect_shopify_local_customer_export(
+            request_id=RECEIPT_ID,
+            x_internal_secret="privacy-test-internal-secret",
+            db=db,
+        )
+    export.assert_not_called()
+    assert result == {
+        "request_id": RECEIPT_ID,
+        "profiles": 1,
+        "orders": 1,
+        "order_items": 0,
+        "conversations": 1,
+        "messages": 1,
+        "checkouts": 0,
+        "requested_orders_not_resolved": 0,
+        "complete": False,
+        "merchant_delivery_allowed": False,
+    }
+    assert "PRIVATE" not in str(result)
+
+
+def test_operator_inspection_reconciles_unresolved_requested_order_without_pii(
+    sandbox, monkeypatch,
+):
+    db, receipt = sandbox
+    receipt.selector_encrypted = encrypt_shopify_secret(json.dumps({
+        "customer": {"id": 700}, "orders_requested": [102],
+    }))
+    db.commit()
+    monkeypatch.setenv("DIAGLOB_INTERNAL_SECRET", "privacy-test-internal-secret")
+    result = inspect_shopify_local_customer_export(
+        request_id=RECEIPT_ID,
+        x_internal_secret="privacy-test-internal-secret",
+        db=db,
+    )
+    assert result["orders"] == 0
+    assert result["requested_orders_not_resolved"] == 1
+    assert result["messages"] == 1
+    assert result["complete"] is False
+    assert "PRIVATE_ORDER" not in str(result)

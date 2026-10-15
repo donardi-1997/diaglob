@@ -405,8 +405,10 @@ def test_extraction_rejects_duplicate_shopify_customer_links(sandbox):
         customer_id=another.id, external_customer_id="700", currency="COP",
     ))
     db.commit()
+    # The stricter signed-case assessment now detects duplicate mappings
+    # before the fixture extractor reads any subject-related records.
     with pytest.raises(
-        ShopifyPrivacyExtractionError, match="AMBIGUOUS_OR_MISSING_CUSTOMER_LINK",
+        ShopifyPrivacyExtractionError, match="UNVERIFIED_CUSTOMER_EXPORT_SCOPE",
     ):
         build_encrypted_shopify_fixture_extraction(
             db, request_id=REQUEST_ID, encryption_key=Fernet.generate_key(),

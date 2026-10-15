@@ -30,7 +30,7 @@ from ..services.shopify_privacy_suppression import (
 )
 from ..services.shopify_privacy_local_processor import (
     ShopifyLocalPrivacyError,
-    build_encrypted_local_customer_export,
+    inspect_local_customer_export_counts,
     build_local_redaction_manifest,
 )
 from ..services.shopify_privacy_processing import (
@@ -147,14 +147,14 @@ def inspect_shopify_local_customer_export(
     x_internal_secret: str | None = Header(None, alias="X-Internal-Secret"),
     db: Session = Depends(get_db),
 ):
-    """Process an encrypted IN-MEMORY snapshot and return counts only.
+    """Read only scoped record counts without constructing a PII snapshot.
 
-    Ciphertext and content fingerprints are never returned via the API.
-    This is not merchant delivery, archival storage, or request fulfillment.
+    No message bodies, addresses or customer contact fields are selected.
+    This is not merchant delivery or Shopify request fulfillment.
     """
     _require_internal_secret(x_internal_secret)
     try:
-        result = build_encrypted_local_customer_export(db, request_id=request_id)
+        result = inspect_local_customer_export_counts(db, request_id=request_id)
     except ShopifyLocalPrivacyError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {

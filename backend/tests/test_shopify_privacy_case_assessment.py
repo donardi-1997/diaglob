@@ -247,3 +247,127 @@ def test_export_manifest_rejects_redaction_topic(sandbox):
     with pytest.raises(ShopifyPrivacyAssessmentError,
                        match="CUSTOMER_EXPORT_TOPIC_REQUIRED"):
         prepare_shopify_privacy_export_manifest(db, request_id=REQUEST_ID)
+
+
+def test_signed_duplicate_subject_is_not_verified_by_case_assessment(sandbox):
+    """Signed intake is not proof of unambiguous Shopify customer ownership."""
+    db, receipt = sandbox
+    original_profile = db.query(CustomerStoreProfile).filter(
+        CustomerStoreProfile.store_id == receipt.store_id,
+    ).one()
+    second_customer = Customer(
+        organization_id=receipt.organization_id,
+        name="PRIVATE_UNRELATED_BUYER",
+        phone="unique-synthetic-number",
+    )
+    db.add(second_customer)
+    db.flush()
+    db.add(CustomerStoreProfile(
+        organization_id=receipt.organization_id,
+        store_id=receipt.store_id,
+        customer_id=second_customer.id,
+        external_customer_id=original_profile.external_customer_id,
+        currency="COP",
+    ))
+    db.commit()
+    result = assess_shopify_privacy_case(db, request_id=REQUEST_ID)
+    assert result.verified_signed_intake is True
+    assert result.verified_shop_scope is False
+    assert result.scope_status == "subject_unresolved"
+    assert result.matched_store_orders == 0
+    assert "SHOPIFY_SUBJECT_UNRESOLVED" in result.blockers
+    assert result.fulfillment_authorized is False
+    assert "PRIVATE_UNRELATED_BUYER" not in str(result.safe_dict())
+
+
+@pytest.mark.parametrize("drift", [
+    "same_domain_other_shop_id",
+    "same_shop_id_other_domain",
+    "same_shop_id_other_store",
+])
+def test_history_conflict_blocks_scoped_personal_data_review(sandbox, drift):
+    """A previously signed conflicting identity must block this shop's scope."""
+    db, receipt = sandbox
+    other_store = db.query(Store).filter(Store.id != receipt.store_id).first()
+    older_shop_id = receipt.shop_id
+    older_shop_domain = receipt.shop_domain
+    older_store_id = receipt.store_id
+    if drift == "same_domain_other_shop_id":
+        older_shop_id = "another-signed-shop-id"
+    elif drift == "same_shop_id_other_domain":
+        older_shop_domain = "an-earlier-shop.myshopify.com"
+    elif drift == "same_shop_id_other_store":
+        older_store_id = other_store.id
+
+    historical = ShopifyPrivacyRequest(
+        request_id="c" * 64, topic="shop/redact",
+        shop_id=older_shop_id, shop_domain=older_shop_domain,
+        organization_id=receipt.organization_id, store_id=older_store_id,
+        selector_encrypted=receipt.selector_encrypted,
+        status="pending_policy_review", created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
+    db.add(historical)
+    db.add(ShopifyPrivacyAuditEvent(
+        request_id=historical.request_id, event_type="received",
+        from_status=None, to_status="pending_policy_review",
+        reason_code="tenant_bound", actor_type="shopify_hmac_verified",
+        created_at=datetime.utcnow(),
+    ))
+    db.commit()
+    before_orders = db.query(Order).count()
+    # A conflicted signed shop must be rejected before any customer selector
+    # decryption, so a historical rebind cannot leak buyer-level counts.
+    with patch(
+        "app.services.shopify_privacy_scope_preview.decrypt_shopify_secret",
+    ) as selector_decrypt:
+        assessment = assess_shopify_privacy_case(db, request_id=REQUEST_ID)
+    selector_decrypt.assert_not_called()
+    assert assessment.verified_signed_intake is True
+    assert assessment.verified_shop_scope is False
+    assert "SHOP_SCOPE_NOT_VERIFIED" in assessment.blockers
+    assert "SHOPIFY_SIGNED_SHOP_HISTORY_CONFLICT" in assessment.blockers
+    assert assessment.matched_store_orders == 0
+    assert assessment.fulfillment_authorized is False
+    assert db.query(Order).count() == before_orders
+
+
+def test_same_signed_shop_identity_different_receipts_is_not_conflict(sandbox):
+    db, receipt = sandbox
+    duplicate_delivery = ShopifyPrivacyRequest(
+        request_id="c" * 64, topic="shop/redact",
+        shop_id=receipt.shop_id, shop_domain=receipt.shop_domain,
+        organization_id=receipt.organization_id, store_id=receipt.store_id,
+        selector_encrypted=receipt.selector_encrypted,
+        status="pending_policy_review", created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
+    db.add(duplicate_delivery)
+    db.add(ShopifyPrivacyAuditEvent(
+        request_id=duplicate_delivery.request_id, event_type="received",
+        from_status=None, to_status="pending_policy_review",
+        reason_code="tenant_bound", actor_type="shopify_hmac_verified",
+        created_at=datetime.utcnow(),
+    ))
+    db.commit()
+    assessment = assess_shopify_privacy_case(db, request_id=REQUEST_ID)
+    assert assessment.verified_shop_scope is True
+    assert "SHOP_SCOPE_NOT_VERIFIED" not in assessment.blockers
+    assert assessment.fulfillment_authorized is False
+
+
+def test_unsigned_historical_record_does_not_prove_identity_drift(sandbox):
+    db, receipt = sandbox
+    untrusted = ShopifyPrivacyRequest(
+        request_id="c" * 64, topic="shop/redact",
+        shop_id="unverified-other-shop", shop_domain=receipt.shop_domain,
+        organization_id=receipt.organization_id, store_id=receipt.store_id,
+        selector_encrypted=receipt.selector_encrypted,
+        status="pending_policy_review", created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
+    db.add(untrusted)
+    db.commit()
+    assessment = assess_shopify_privacy_case(db, request_id=REQUEST_ID)
+    assert assessment.verified_shop_scope is True
+    assert assessment.fulfillment_authorized is False
