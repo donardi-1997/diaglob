@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from ..models import ShopifyPrivacyAuditEvent, ShopifyPrivacyRequest
 from ..shopify_oauth import normalize_shop_domain
-from ..shopify_security import encrypt_shopify_secret
+from ..shopify_security import decrypt_shopify_secret, encrypt_shopify_secret
 from .shopify_webhook_service import resolve_shopify_connection
 from .shopify_privacy_processing import (
     ensure_shopify_privacy_receipt_work_items,
@@ -93,6 +93,34 @@ def _minimal_selectors(payload: dict[str, Any]) -> dict[str, Any]:
     return selectors
 
 
+def _verify_duplicate_delivery(
+    existing: ShopifyPrivacyRequest, *,
+    topic: str, shop_id: str, shop_domain: str, selectors: dict[str, Any],
+) -> None:
+    """A transport retry must refer to the same persisted privacy obligation.
+
+    A Shopify delivery ID is an idempotency key, not evidence that a second
+    payload is interchangeable with the first. Reject mismatched subjects or
+    requested orders before treating a delivery as a harmless duplicate.
+    """
+    if (
+        existing.topic != topic
+        or existing.shop_id != shop_id
+        or existing.shop_domain != shop_domain
+    ):
+        raise ValueError("PRIVACY_WEBHOOK_DELIVERY_CONFLICT")
+    try:
+        saved_selectors = json.loads(
+            decrypt_shopify_secret(existing.selector_encrypted)
+        )
+    except (ValueError, TypeError, RuntimeError, json.JSONDecodeError) as exc:
+        # A corrupt/unreadable persisted selector is a server integrity
+        # failure. Return 5xx so Shopify may retry, never silently discard it.
+        raise RuntimeError("STORED_PRIVACY_SELECTOR_UNAVAILABLE") from exc
+    if saved_selectors != selectors:
+        raise ValueError("PRIVACY_WEBHOOK_DELIVERY_CONFLICT")
+
+
 def process_shopify_compliance_webhook(
     db: Session,
     *,
@@ -129,6 +157,10 @@ def process_shopify_compliance_webhook(
         ShopifyPrivacyRequest.request_id == receipt_id,
     ).first()
     if existing is not None:
+        _verify_duplicate_delivery(
+            existing, topic=topic, shop_id=shop_id,
+            shop_domain=shop_domain, selectors=selectors,
+        )
         # Recover a previously committed receipt whose processing handoff
         # failed: never acknowledge an unprepared duplicate with HTTP 200.
         ensure_shopify_privacy_receipt_work_items(db, existing)
@@ -200,6 +232,10 @@ def process_shopify_compliance_webhook(
         ).first()
         if already_recorded is None:
             raise
+        _verify_duplicate_delivery(
+            already_recorded, topic=topic, shop_id=shop_id,
+            shop_domain=shop_domain, selectors=selectors,
+        )
         ensure_shopify_privacy_receipt_work_items(db, already_recorded)
         return _receipt(already_recorded, duplicate=True, connected=bool(
             resolve_shopify_connection(db, already_recorded.shop_domain)
