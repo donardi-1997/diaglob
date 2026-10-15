@@ -88,7 +88,8 @@ def test_signed_uninstall_first_creates_mapping_for_later_gdpr_request(database)
     assert ledger.provenance == "hmac_uninstall"
     assert ledger.uninstalled_at is not None
     result = _privacy(db, delivery="after-uninstall", topic="shop/redact")
-    assert result["store_connected"] is True
+    assert result["store_connected"] is False
+    assert result["store_identity_resolved"] is True
     receipt = db.query(ShopifyPrivacyRequest).one()
     assert (receipt.organization_id, receipt.store_id) == (org_id, store_id)
     assert receipt.completed_at is None
@@ -104,7 +105,8 @@ def test_compliance_while_connected_remains_bound_after_uninstall(database):
     assert db.query(ShopifyPrivacyShopIdentity).one().provenance == "hmac_compliance"
     assert _uninstall(db)["action"] == "revoked"
     second = _privacy(db, delivery="after-uninstall")
-    assert second["store_connected"] is True
+    assert second["store_connected"] is False
+    assert second["store_identity_resolved"] is True
     receipts = db.query(ShopifyPrivacyRequest).order_by(
         ShopifyPrivacyRequest.id,
     ).all()
