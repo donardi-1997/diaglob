@@ -22,7 +22,7 @@ def sample(monkeypatch):
     with Session(engine) as db:
         org = Organization(id=101, name="Refresh Test", slug="refresh-test")
         store = Store(id=102, organization_id=101, name="Test", slug="refresh-test-store",
-                      country_code="CO", active=True, deleted=False)
+                      country_code="CO", currency="COP", timezone="America/Bogota", active=True, deleted=False)
         connection = CommerceConnection(
             id=103, organization_id=101, store_id=102, provider="shopify",
             external_store_url="diaglob-poc.myshopify.com",
