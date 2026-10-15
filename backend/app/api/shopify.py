@@ -196,6 +196,12 @@ def shopify_install_handoff(
     Shopify managed installations and token exchange require separate live
     Partner version verification before enabling this legacy-code grant.
     """
+    # Reject malformed shop domains even while public installation is off.
+    try:
+        shop = shopify_public_install._canonical_public_shop(shop)
+    except (ShopifyOAuthError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="INVALID_SHOPIFY_DOMAIN") from exc
+
     if not shopify_public_install.enabled():
         raise HTTPException(
             status_code=503,
