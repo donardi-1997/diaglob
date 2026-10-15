@@ -105,13 +105,20 @@ def preview_shopify_privacy_scope(
         external_id = str(customer["id"]).strip()
         if not external_id:
             raise ShopifyPrivacyScopeError("SHOPIFY_PRIVACY_CUSTOMER_ID_REQUIRED")
+        # Never treat duplicate Shopify -> Diaglob customer mappings as
+        # proof of identity, even if all duplicates point at the same buyer.
+        # Two rows are sufficient to detect ambiguity without scanning PII.
         profiles = db.query(CustomerStoreProfile.customer_id).filter(
             CustomerStoreProfile.organization_id == receipt.organization_id,
             CustomerStoreProfile.store_id == receipt.store_id,
             CustomerStoreProfile.external_customer_id == external_id,
-        ).all()
-        customer_ids = sorted({row[0] for row in profiles})
-        scope = "customer_scope_preview_only" if customer_ids else "subject_unresolved"
+        ).limit(2).all()
+        if len(profiles) == 1 and profiles[0][0] is not None:
+            customer_ids = [profiles[0][0]]
+            scope = "customer_scope_preview_only"
+        else:
+            customer_ids = []
+            scope = "subject_unresolved"
 
     profile_count = len(customer_ids)
     if customer_ids:
