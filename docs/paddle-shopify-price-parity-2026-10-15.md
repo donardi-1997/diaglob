@@ -16,22 +16,43 @@
 - **Scale remains direct-only**. Shopify App Store public plan verification intentionally supports Starter, Growth and Pro.
 - A DIAGLOB organization's multi-store allowance is NOT a Shopify multi-store subscription grant. Each Shopify shop is billed by Shopify; existing single-shop verification fails closed for unsupported multi-shop cases.
 
-## Paddle configuration (must be filled with actual `pri_...` IDs)
+## Paddle price ID integration (received from vendor screenshots)
 
-Set these eight environment variables in the active backend deployment:
+The eight `pri_...` identifiers are **public catalog identifiers, not API keys**.
+They are now version-controlled in `backend/app/billing.py` as
+`PADDLE_PRODUCTION_PRICE_IDS`, with the following plan/interval mapping:
 
-| Plan/cadence | Variable | Expected USD |
-|---|---|---:|
-| Starter monthly | `PADDLE_PRICE_STARTER_1M` | 19 |
-| Starter annual | `PADDLE_PRICE_STARTER_12M` | 190 |
-| Growth monthly | `PADDLE_PRICE_GROWTH_1M` | 49 |
-| Growth annual | `PADDLE_PRICE_GROWTH_12M` | 490 |
-| Pro monthly | `PADDLE_PRICE_PRO_1M` | 99 |
-| Pro annual | `PADDLE_PRICE_PRO_12M` | 990 |
-| Scale monthly | `PADDLE_PRICE_SCALE_1M` | 199 |
-| Scale annual | `PADDLE_PRICE_SCALE_12M` | 1990 |
+| Plan / frequency | Expected USD | Live catalog Price ID | Optional deployment override |
+|---|---:|---|---|
+| Starter monthly | 19 | `pri_01m50gxt8wr6cqgndwk271zbs2` | `PADDLE_PRICE_STARTER_1M` |
+| Starter annual | 190 | `pri_01m50gz7anwanpkww0sgp1f9nz` | `PADDLE_PRICE_STARTER_12M` |
+| Growth monthly | 49 | `pri_01m50h13qwafmqfqcnsmykzrfz` | `PADDLE_PRICE_GROWTH_1M` |
+| Growth annual | 490 | `pri_01m50h2054mvwjynacwrs1g122` | `PADDLE_PRICE_GROWTH_12M` |
+| Pro monthly | 99 | `pri_01m50h3z0mtsjj4vnzs5c7z164` | `PADDLE_PRICE_PRO_1M` |
+| Pro annual | 990 | `pri_01m50h4wa2m3tgbdy1q18448v0` | `PADDLE_PRICE_PRO_12M` |
+| Scale monthly | 199 | `pri_01m50h5z54txa8zsepx3nfyr35` | `PADDLE_PRICE_SCALE_1M` |
+| Scale annual | 1990 | `pri_01m50h6r57qvj1pr80czvjnev4` | `PADDLE_PRICE_SCALE_12M` |
 
-The repository DOES NOT contain these new IDs. **Do not insert fabricated IDs.** Match each actual ID with its exact plan, frequency, USD amount, free-trial duration and live/sandbox environment. Do not mix new live IDs with old sandbox credentials. No subscriptions exist yet: the direct plan catalog, price lookup, proration and new checkout support **only 1M / 12M**. Any leftover 3M/6M environment variables should be retired, not copied into the new deployment.
+**Resolution order:** explicit `PADDLE_PRICE_{PLAN}_{PERIOD}M` environment
+value (or existing monthly legacy override), local CSV override if present,
+then the reviewed catalog **only when `PADDLE_ENVIRONMENT=production`**.
+If the environment is `sandbox` (the backend default), there is **no live-ID
+fallback**. The ignored local `backend/paddle-period-prices.csv` is not committed
+and existing local overrides may take precedence; clear stale values before
+deploying. Do not copy these IDs into a sandbox account.
+
+The screenshots identify Price IDs and their labels, but **do not verify Paddle
+API environment, USD amounts, trial duration, tax handling or active status**.
+All eight price objects still need to be checked against the actual vendor API
+using the matching workspace and a secure API key (not committed to Git). Do not
+activate checkout on unverified objects. `PADDLE_API_KEY`,
+`PADDLE_WEBHOOK_SECRET` and `VITE_PADDLE_CLIENT_TOKEN` remain managed secrets
+or deployment config. Price ID mapping alone does not configure the payment
+provider, webhook endpoint or live checkout.
+
+No subscriptions exist yet: the direct catalog, price lookup, proration and
+checkout support **only 1M / 12M**. Any leftover 3M/6M environment variables
+should be retired.
 
 ## Shopify App Pricing (different billing provider)
 
@@ -46,11 +67,11 @@ Verify current Partner pricing BEFORE modifying `SHOPIFY_APP_PRICING_HANDLES_JSO
 ## Validation / deployment
 
 1. Apply/merge the existing **store-cap** branch before this stacked change (or retarget appropriately).
-2. Run `cd backend && pytest -q tests/test_trial_service.py tests/test_billing_checkout_periods.py tests/test_shopify_app_pricing.py tests/test_plan_store_caps.py`.
+2. Run `cd backend && pytest -q tests/test_trial_service.py tests/test_billing.py tests/test_billing_checkout_periods.py tests/test_paddle_price_catalog.py tests/test_shopify_app_pricing.py tests/test_plan_store_caps.py`.
 3. Run the frontend TypeScript build and verify that period selector offers only 1 month / 1 year.
 4. Confirm new direct trial=3 days and confirm the store-activated trial and Paddle price trial cannot accidentally grant two sequential free periods.
-5. Configure the eight real Paddle price IDs in deployment secret storage. Test monthly and annual checkout for each direct plan and simulate signed Paddle webhooks.
+5. Verify the eight catalog Price IDs in the actual Paddle production account, remove any stale environment/CSV price overrides, and test monthly/annual checkout for each direct plan plus signed Paddle webhooks. Confirm credentials and Paddle.js client token point to the same environment.
 6. Align the annual amounts and trial settings in Shopify Partner, set verified `SHOPIFY_APP_PRICING_HANDLES_JSON`, and test Shopify plan approval/refusal/retry and developer store subscription lifecycle.
 7. Verify tax-included behavior in BOTH channels independently. Do not assume Shopify and Paddle tax display semantics are the same.
 
-**Deployment is not complete** until the real Paddle IDs, Partner settings, environment configuration and end-to-end checkout evidence are verified. Do not enable live checkout on placeholders.
+**Deployment is not complete** until Paddle objects are checked against the provider API, Partner settings, environment credentials and end-to-end checkout evidence are verified. Price IDs have been recorded but no actual payment has been tested.
