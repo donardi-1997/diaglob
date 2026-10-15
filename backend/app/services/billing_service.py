@@ -142,6 +142,13 @@ def validate_plan_upgrade(organization: Organization, target_plan: str):
             "Este endpoint solo permite escalar hacia un plan superior."
         )
 
+    current_period = int(organization.billing_period_months or 1)
+    if current_period not in {1, 12}:
+        raise UpgradeNotAllowedError(
+            "El período actual de facturación ya no está disponible. "
+            "Contacta con soporte para migrar la suscripción antes de cambiar de plan."
+        )
+
     return current_plan, target_plan
 
 
@@ -166,7 +173,7 @@ def validate_plan_downgrade(
     current_period = int(organization.billing_period_months or 1)
     target_period = int(target_billing_period_months or current_period)
 
-    if target_period not in {1, 3, 6, 12}:
+    if target_period not in {1, 12}:
         raise InvalidBillingPlanError("Período de facturación inválido")
 
     plan_changes = target_plan != current_plan
@@ -321,7 +328,7 @@ def process_pending_downgrades(db: Session, now: datetime | None = None):
             or organization.billing_period_months
             or 1
         )
-        if target_period not in {1, 3, 6, 12}:
+        if target_period not in {1, 12}:
             results.append({
                 "organization_id": organization.id,
                 "status": "invalid_pending_period",
@@ -866,6 +873,9 @@ def create_checkout(
     plan_key: str,
     billing_period_months: int,
 ) -> dict:
+    # The public catalog offers only monthly or annual subscriptions.
+    if billing_period_months not in (1, 12):
+        raise InvalidBillingPlanError("Only monthly and annual checkouts are offered")
     provider = _provider_for(organization)
     if not provider.is_configured():
         raise BillingProviderConfigurationError(

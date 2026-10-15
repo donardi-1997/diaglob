@@ -603,27 +603,29 @@ class TestPreviewResponseSchema:
 class TestPreviewEdgeCases:
     """Test edge cases and billing period variations."""
 
-    def test_3_month_billing_period(
-        self, client_factory, db
+    @pytest.mark.parametrize("months", [3, 6])
+    @pytest.mark.parametrize(
+        "endpoint",
+        ["/api/billing/upgrade/preview", "/api/billing/upgrade"],
+    )
+    def test_legacy_billing_period_returns_conflict(
+        self, client_factory, db, months, endpoint
     ):
         org = _make_org(
             db,
             plan="starter",
-            billing_period_months=3,
+            billing_period_months=months,
         )
         client = client_factory(org)
 
         resp = client.post(
-            "/api/billing/upgrade/preview",
+            endpoint,
             json={"plan": "growth"},
         )
 
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["_source"] == "local"
+        assert resp.status_code == 409
+        assert "período actual de facturación" in resp.json()["detail"]
 
-        amount = int(data["amount_due"])
-        assert amount > 0
 
     def test_12_month_billing_period(
         self, client_factory, db

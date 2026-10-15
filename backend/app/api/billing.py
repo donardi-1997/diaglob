@@ -1091,6 +1091,11 @@ def create_billing_checkout(
     plan_key = payload.plan.strip().lower()
     if plan_key not in {"starter", "growth", "pro", "scale"}:
         raise HTTPException(status_code=400, detail="Plan inválido")
+    if payload.billing_period_months not in (1, 12):
+        raise HTTPException(
+            status_code=400,
+            detail="Solo se ofrecen suscripciones mensuales y anuales",
+        )
 
     try:
         get_billing_price_id(

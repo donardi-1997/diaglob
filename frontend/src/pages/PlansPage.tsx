@@ -27,8 +27,6 @@ const plans = [
     name: "Starter",
     prices: {
       1: 19,
-      3: 54,
-      6: 103,
       12: 190,
     },
     stores: 1,
@@ -49,8 +47,6 @@ const plans = [
     name: "Growth",
     prices: {
       1: 49,
-      3: 140,
-      6: 265,
       12: 490,
     },
     stores: 2,
@@ -71,8 +67,6 @@ const plans = [
     name: "Pro",
     prices: {
       1: 99,
-      3: 282,
-      6: 535,
       12: 990,
     },
     stores: 3,
@@ -94,8 +88,6 @@ const plans = [
     name: "Scale",
     prices: {
       1: 199,
-      3: 570,
-      6: 1075,
       12: 1990,
     },
     stores: 5,
@@ -112,7 +104,7 @@ const plans = [
   },
 ];
 
-type BillingPeriod = 1 | 3 | 6 | 12;
+type BillingPeriod = 1 | 12;
 
 
 const billingPeriods: Array<{
@@ -123,16 +115,6 @@ const billingPeriods: Array<{
   {
     months: 1,
     labelKey: "billing1Month",
-  },
-  {
-    months: 3,
-    labelKey: "billing3Months",
-    badgeKey: "billingSave5",
-  },
-  {
-    months: 6,
-    labelKey: "billing6Months",
-    badgeKey: "billingSave10",
   },
   {
     months: 12,
@@ -149,11 +131,7 @@ function getPeriodLabelKey(
     return "billingI18nUnitMonth";
   }
 
-  if (months === 12) {
-    return "billingI18nUnitYear";
-  }
-
-  return "billingI18nUnitMonths";
+  return "billingI18nUnitYear";
 }
 
 
@@ -342,14 +320,6 @@ export default function PlansPage() {
   ) => {
     if (period === 1) {
       return t("billing1Month");
-    }
-
-    if (period === 3) {
-      return t("billing3Months");
-    }
-
-    if (period === 6) {
-      return t("billing6Months");
     }
 
     return t("billing12Months");
@@ -908,7 +878,7 @@ export default function PlansPage() {
 
           const organizationPeriod =
             (
-              [1, 3, 6, 12].includes(
+              [1, 12].includes(
                 Number(
                   organization.billing_period_months
                 ),
@@ -1013,7 +983,7 @@ export default function PlansPage() {
           <span>
             {t("plansTrialPendingHelp", {
               defaultValue:
-                "Conecta tu primera tienda Shopify o Nuvemshop para iniciar tus 7 días gratis.",
+                "Conecta tu primera tienda Shopify o Nuvemshop para iniciar tus 3 días gratis.",
             })}
           </span>
         </div>
@@ -1369,18 +1339,6 @@ export default function PlansPage() {
                       ).toFixed(2)}
                       {" "}al mes
                     </small>
-                  )}
-
-                  {selectedBillingPeriod === 3 && (
-                    <span className="plan-period-saving">
-                      {t("billingSave5")}
-                    </span>
-                  )}
-
-                  {selectedBillingPeriod === 6 && (
-                    <span className="plan-period-saving">
-                      {t("billingSave10")}
-                    </span>
                   )}
 
                   {selectedBillingPeriod === 12 && (

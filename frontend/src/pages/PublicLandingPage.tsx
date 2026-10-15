@@ -91,6 +91,8 @@ const landingUi = {
     knowledge: "Tus documentos",
     growthPayments: "Publicidad y pagos",
     localPayments: "Pagos locales",
+    annualYear: "al año",
+    annualSaving: "Ahorra 2 meses",
     operationsOs: "Tu centro de control",
     coreOpsAnalytics: "Pedidos, clientes y reportes",
     primaryNav: "Navegación principal",
@@ -124,6 +126,8 @@ const landingUi = {
     knowledge: "Your documents",
     growthPayments: "Ads & payments",
     localPayments: "Local payments",
+    annualYear: "per year",
+    annualSaving: "Save 2 months",
     operationsOs: "Your control center",
     coreOpsAnalytics: "Orders, customers & reports",
     primaryNav: "Primary navigation",
@@ -157,6 +161,8 @@ const landingUi = {
     knowledge: "Seus documentos",
     growthPayments: "Publicidade e pagamentos",
     localPayments: "Pagamentos locais",
+    annualYear: "por ano",
+    annualSaving: "Economize 2 meses",
     operationsOs: "Seu centro de controle",
     coreOpsAnalytics: "Pedidos, clientes e relatórios",
     primaryNav: "Navegação principal",
@@ -618,6 +624,7 @@ export default function PublicLandingPage({
                   <div className="marketing-price-name"><span>{plan.name}</span>{plan.id === "scale" && <Sparkles size={18} />}</div>
                   <div className="marketing-price"><strong>${plan.price}</strong><span>{copy.pricing.perMonth}</span></div>
                   <div className="marketing-price-divider" />
+                  <div className="marketing-price-feature"><Check size={17} /><span>US${new Intl.NumberFormat(locale).format(plan.price * 10)} {ui.annualYear} · {ui.annualSaving}</span></div>
                   <div className="marketing-price-feature"><Store size={17} /><span><strong>{plan.stores}</strong> {plan.stores === 1 ? copy.pricing.store : copy.pricing.stores}</span></div>
                   <div className="marketing-price-feature"><Bot size={17} /><span><strong>{plan.ai}</strong> {copy.pricing.includedAi}</span></div>
                   <div className="marketing-price-feature"><Check size={17} /><span>{ui.coreOpsAnalytics}</span></div>

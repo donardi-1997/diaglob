@@ -80,7 +80,7 @@ def test_pending_trial_does_not_start_clock_until_verified_store(db):
     assert entitlement.ends_at is None
 
 
-def test_verified_shopify_store_activates_exactly_seven_day_trial(db):
+def test_verified_shopify_store_activates_exactly_three_day_trial(db):
     now = datetime(2026, 9, 10, 12, 0, 0)
     organization, entitlement = make_pending_trial(db, "activate", now)
 
@@ -96,6 +96,7 @@ def test_verified_shopify_store_activates_exactly_seven_day_trial(db):
     db.refresh(organization)
     db.refresh(entitlement)
 
+    assert TRIAL_DAYS == 3
     assert result["trial_activated"] is True
     assert entitlement.status == "active"
     assert entitlement.started_at == now
@@ -257,7 +258,7 @@ def test_trial_status_reports_remaining_days(db):
     )
 
     assert status["status"] == "active"
-    assert status["days_remaining"] == 5
+    assert status["days_remaining"] == 1
     assert status["ai_response_limit"] == TRIAL_AI_RESPONSES
 
 
