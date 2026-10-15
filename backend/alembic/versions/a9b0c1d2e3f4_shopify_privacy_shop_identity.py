@@ -1,13 +1,13 @@
 """Retain signed Shopify shop identity after uninstall (no buyer PII).
 
 Revision ID: a9b0c1d2e3f4
-Revises: f9a0b1c2d3e4
+Revises: d0e1f2a3b4c5
 """
 from alembic import op
 import sqlalchemy as sa
 
 revision = "a9b0c1d2e3f4"
-down_revision = "f9a0b1c2d3e4"
+down_revision = "d0e1f2a3b4c5"
 branch_labels = None
 depends_on = None
 
