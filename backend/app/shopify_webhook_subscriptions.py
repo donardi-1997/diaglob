@@ -1,7 +1,7 @@
-from ..shopify_token_lifecycle import connection_access_token
 """Shopify shop-scoped webhook subscription management."""
 
 from __future__ import annotations
+from ..shopify_token_lifecycle import connection_access_token
 
 from urllib.parse import urljoin
 
