@@ -153,7 +153,7 @@ def _extract_gid_id(
 def test_shopify_connection(
     connection: CommerceConnection,
 ) -> dict:
-    token = connection_access_token(connection)
+    token = connection_access_token(connection, decrypt_legacy=decrypt_shopify_secret)
 
     client = ShopifyGraphQLClient(
         shop_domain=connection.external_store_url,
@@ -305,7 +305,7 @@ def sync_shopify_products(
     db: Session,
     connection: CommerceConnection,
 ) -> dict:
-    token = connection_access_token(connection)
+    token = connection_access_token(connection, decrypt_legacy=decrypt_shopify_secret)
 
     client = ShopifyGraphQLClient(
         shop_domain=connection.external_store_url,
