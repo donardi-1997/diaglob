@@ -1,3 +1,4 @@
+from ..shopify_token_lifecycle import connection_access_token
 import re
 from sqlalchemy.orm import Session
 
@@ -146,9 +147,7 @@ def create_poc_order(
     }
 
     try:
-        token = decrypt_shopify_secret(
-            connection.access_token_encrypted or ""
-        )
+        token = connection_access_token(connection)
         data = ShopifyGraphQLClient(
             shop_domain=connection.external_store_url,
             access_token=token,
