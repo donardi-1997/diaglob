@@ -320,6 +320,7 @@ def test_history_conflict_blocks_scoped_personal_data_review(sandbox, drift):
     assert assessment.verified_signed_intake is True
     assert assessment.verified_shop_scope is False
     assert "SHOP_SCOPE_NOT_VERIFIED" in assessment.blockers
+    assert "SHOPIFY_SIGNED_SHOP_HISTORY_CONFLICT" in assessment.blockers
     assert assessment.matched_store_orders == 0
     assert assessment.fulfillment_authorized is False
     assert db.query(Order).count() == before_orders
