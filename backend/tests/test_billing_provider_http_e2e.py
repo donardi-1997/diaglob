@@ -142,10 +142,9 @@ def test_pending_shopify_signup_blocks_paddle_before_and_after_oauth(scenario):
     assert org.plan == "trial"
 
     handoff = client.get("/api/shopify/install", params={"shop": SHOP})
-    assert handoff.status_code == 303
-    assert handoff.headers["location"] == (
-        f"https://diaglob.tech/shopify/install?shop={SHOP}"
-    )
+    assert handoff.status_code == 503
+    assert handoff.json()["detail"] == "SHOPIFY_PUBLIC_INSTALL_NOT_ENABLED"
+    assert "location" not in handoff.headers
     assert db.query(ShopifyOAuthState).count() == 0
 
     with patch("app.api.billing.get_billing_price_id") as price, patch(
