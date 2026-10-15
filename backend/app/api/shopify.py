@@ -64,10 +64,6 @@ from ..services.shopify_uninstall import (
     process_shopify_uninstall,
 )
 from ..services import shopify_public_install
-from ..services.shopify_install_handoff import (
-    ShopifyInstallHandoffError,
-    build_shopify_install_handoff,
-)
 from ..services.shopify_oauth_callback_validation import (
     MAX_CALLBACK_QUERY_BYTES,
     ShopifyCallbackQueryError,
