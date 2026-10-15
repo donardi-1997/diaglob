@@ -1,4 +1,4 @@
-from ..shopify_token_lifecycle import connection_access_token
+from .shopify_token_lifecycle import connection_access_token
 from datetime import datetime
 
 from sqlalchemy.orm import Session
