@@ -352,3 +352,182 @@ def test_export_inspection_automation_subject_cannot_be_guessed_by_email(
     db.commit()
     with pytest.raises(ShopifyLocalPrivacyError):
         inspect_local_customer_export_counts(db, request_id=receipt.request_id)
+
+
+def _authorize_synthetic_export(db, receipt):
+    from datetime import datetime
+
+    receipt.request_id = "a" * 64
+    receipt.status = "pending_policy_review"
+    db.add(ShopifyPrivacyAuditEvent(
+        request_id=receipt.request_id,
+        event_type="received", actor_type="shopify_hmac_verified",
+        from_status=None, to_status="pending_policy_review",
+        reason_code="tenant_bound", created_at=datetime.utcnow(),
+    ))
+    db.commit()
+
+
+def test_encrypted_automation_fixture_exports_only_signed_customer_store_rows(
+    scenario,
+):
+    from app.services.shopify_privacy_automation_fixture_export import (
+        build_encrypted_shopify_automation_fixture,
+    )
+
+    db, receipt = scenario
+    _authorize_synthetic_export(db, receipt)
+    key = Fernet.generate_key()
+    artifact = build_encrypted_shopify_automation_fixture(
+        db, request_id=receipt.request_id, encryption_key=key,
+        fixture_authorized=True,
+    )
+    assert artifact.fixture_only is True
+    assert artifact.delivery_authorized is False
+    assert artifact.fulfillment_complete is False
+    assert artifact.request_id == receipt.request_id
+    assert artifact.source_counts == {
+        "audience_members": 1,
+        "campaign_recipients": 1,
+        "delivery_attempts": 1,
+        "flow_recipients": 1,
+        "flow_node_executions": 1,
+    }
+    encrypted = artifact.ciphertext
+    assert b"PRIVATE_MESSAGE_store-a" not in encrypted
+    assert b"PRIVATE_PROVIDER_store-a" not in encrypted
+    document = json.loads(Fernet(key).decrypt(encrypted))
+    assert document["request_id"] == receipt.request_id
+    assert document["complete"] is False
+    assert document["coverage"] == "explicitly_linked_rows_only"
+    sources = document["sources"]
+    assert sources["campaign_recipients"][0]["rendered_message"] == (
+        "PRIVATE_MESSAGE_store-a"
+    )
+    assert sources["campaign_recipients"][0]["template_data"] == {
+        "customer_address": "store-a",
+    }
+    assert sources["delivery_attempts"][0]["provider_message_id"] == (
+        "PRIVATE_PROVIDER_store-a"
+    )
+    assert sources["flow_node_executions"][0]["extra_data"] == {
+        "private_contact": "store-a",
+    }
+    # Customer exists in another shop; neither its campaign messages nor
+    # merchant-wide campaign templates and flow trigger context may leak.
+    assert "PRIVATE_MESSAGE_store-b" not in str(document)
+    assert "PRIVATE_PROVIDER_store-c" not in str(document)
+    assert "private checkout message" not in str(document)
+    assert "trigger_context" not in str(document)
+    assert db.query(AutomationDeliveryAttempt).count() == 3
+    assert db.query(CustomerStoreProfile).count() == 3
+    assert not db.dirty and not db.new and not db.deleted
+
+
+def test_automation_fixture_requires_signed_request_and_exact_subject(scenario):
+    from app.services.shopify_privacy_automation_fixture_export import (
+        build_encrypted_shopify_automation_fixture,
+    )
+    from app.services.shopify_privacy_scoped_extraction import (
+        ShopifyPrivacyExtractionError,
+    )
+
+    db, receipt = scenario
+    receipt.request_id = "a" * 64
+    db.commit()
+    with pytest.raises(ShopifyPrivacyExtractionError, match="SCOPE_UNVERIFIED"):
+        build_encrypted_shopify_automation_fixture(
+            db, request_id=receipt.request_id,
+            encryption_key=Fernet.generate_key(), fixture_authorized=True,
+        )
+    _authorize_synthetic_export(db, receipt)
+    receipt.selector_encrypted = encrypt_shopify_secret(
+        json.dumps({"customer": {"email": "not-proof@example.com"}})
+    )
+    db.commit()
+    with pytest.raises(ShopifyPrivacyExtractionError):
+        build_encrypted_shopify_automation_fixture(
+            db, request_id=receipt.request_id,
+            encryption_key=Fernet.generate_key(), fixture_authorized=True,
+        )
+
+
+def test_automation_fixture_production_and_feature_gate_fail_before_queries(scenario):
+    from app.services.shopify_privacy_automation_fixture_export import (
+        build_encrypted_shopify_automation_fixture,
+    )
+    from app.services.shopify_privacy_scoped_extraction import (
+        ShopifyPrivacyExtractionError,
+    )
+
+    db, receipt = scenario
+    with pytest.raises(ShopifyPrivacyExtractionError, match="DISABLED"):
+        build_encrypted_shopify_automation_fixture(
+            db, request_id=receipt.request_id,
+            encryption_key=Fernet.generate_key(),
+        )
+    # SQLite without a purely in-memory DB URL is not an eligible fixture.
+    with Session(create_engine("sqlite://")) as non_fixture:
+        with pytest.raises(ShopifyPrivacyExtractionError, match="DISABLED"):
+            build_encrypted_shopify_automation_fixture(
+                non_fixture, request_id="a" * 64,
+                encryption_key=Fernet.generate_key(), fixture_authorized=True,
+            )
+
+
+def test_automation_fixture_rejects_duplicate_external_subject_link(scenario):
+    from app.services.shopify_privacy_automation_fixture_export import (
+        build_encrypted_shopify_automation_fixture,
+    )
+    from app.services.shopify_privacy_scoped_extraction import (
+        ShopifyPrivacyExtractionError,
+    )
+
+    db, receipt = scenario
+    _authorize_synthetic_export(db, receipt)
+    other = Customer(
+        organization_id=receipt.organization_id,
+        name="SYNTHETIC_OTHER_CUSTOMER", phone="888",
+    )
+    db.add(other)
+    db.flush()
+    db.add(CustomerStoreProfile(
+        organization_id=receipt.organization_id,
+        store_id=receipt.store_id, customer_id=other.id,
+        external_customer_id="700", currency="COP",
+    ))
+    db.commit()
+    with pytest.raises(ShopifyPrivacyExtractionError, match="SCOPE_UNVERIFIED"):
+        build_encrypted_shopify_automation_fixture(
+            db, request_id=receipt.request_id,
+            encryption_key=Fernet.generate_key(), fixture_authorized=True,
+        )
+
+
+def test_automation_fixture_denies_when_persisted_impact_disagrees(scenario):
+    from dataclasses import replace
+    from unittest.mock import patch
+    from app.services.shopify_privacy_automation_provenance import (
+        inspect_shopify_automation_privacy_impact,
+    )
+    from app.services.shopify_privacy_automation_fixture_export import (
+        build_encrypted_shopify_automation_fixture,
+    )
+    from app.services.shopify_privacy_scoped_extraction import (
+        ShopifyPrivacyExtractionError,
+    )
+
+    db, receipt = scenario
+    _authorize_synthetic_export(db, receipt)
+    real = inspect_shopify_automation_privacy_impact(db, receipt)
+    corrupted = replace(real, campaign_recipients=999)
+    with patch(
+        "app.services.shopify_privacy_automation_fixture_export."
+        "inspect_shopify_automation_privacy_impact",
+        return_value=corrupted,
+    ):
+        with pytest.raises(ShopifyPrivacyExtractionError, match="SCOPE_CHANGED"):
+            build_encrypted_shopify_automation_fixture(
+                db, request_id=receipt.request_id,
+                encryption_key=Fernet.generate_key(), fixture_authorized=True,
+            )
