@@ -7,7 +7,7 @@ This audit neither creates a Shopify application nor deploys app configuration,
 issues Admin API queries, invokes private Partner APIs, processes customer data,
 charges merchants, or modifies AWS.
 
-## Findings checked against current GitHub `main`
+## Findings checked against the current Shopify release PR branch (not `main`)
 
 1. **OAuth source scope mismatch corrected (repository only):** the tracked
    `shopify.app.toml` now declares the same eight scopes requested by
