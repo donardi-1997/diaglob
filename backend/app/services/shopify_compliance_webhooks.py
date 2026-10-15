@@ -16,7 +16,7 @@ from typing import Any
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from ..models import CommerceConnection, ShopifyPrivacyAuditEvent, ShopifyPrivacyRequest
+from ..models import ShopifyPrivacyAuditEvent, ShopifyPrivacyRequest
 from ..shopify_oauth import normalize_shop_domain
 from ..shopify_security import encrypt_shopify_secret
 from .shopify_webhook_service import resolve_shopify_connection
@@ -148,15 +148,12 @@ def process_shopify_compliance_webhook(
     try:
         binding = bind_signed_shopify_privacy_identity(
             db, shop_id=shop_id, shop_domain=shop_domain,
-            connection=connection if isinstance(connection, CommerceConnection) else None,
+            connection=connection,
         )
     except ShopifyPrivacyShopIdentityError as exc:
+        # Do not drop a real GDPR request because the shop mapping conflicts.
+        # Persist an unresolved case for independent operator investigation.
         identity_blocker = str(exc)
-    # A few legacy unit tests stub the resolver with simple objects rather
-    # than ORM connections. Only a real CommerceConnection writes the ledger;
-    # preserve their old mapped receipt behavior for test compatibility.
-    if connection is not None and not isinstance(connection, CommerceConnection):
-        binding = connection
     request = ShopifyPrivacyRequest(
         request_id=receipt_id,
         topic=topic,
