@@ -16,13 +16,17 @@ from typing import Any
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from ..models import ShopifyPrivacyAuditEvent, ShopifyPrivacyRequest
+from ..models import CommerceConnection, ShopifyPrivacyAuditEvent, ShopifyPrivacyRequest
 from ..shopify_oauth import normalize_shop_domain
 from ..shopify_security import encrypt_shopify_secret
 from .shopify_webhook_service import resolve_shopify_connection
 from .shopify_privacy_processing import (
     ensure_shopify_privacy_receipt_work_items,
     stage_shopify_privacy_receipt_work_items,
+)
+from .shopify_privacy_installation_identity import (
+    ShopifyPrivacyShopIdentityError,
+    bind_signed_shopify_privacy_identity,
 )
 
 logger = logging.getLogger(__name__)
@@ -136,16 +140,34 @@ def process_shopify_compliance_webhook(
         json.dumps(selectors, sort_keys=True, separators=(",", ":"))
     )
     connection = resolve_shopify_connection(db, shop_domain)
+    # The HTTP route already verified HMAC on the original request body.
+    # Persistent shop ID mapping survives a later app/uninstalled callback.
+    # Unknown or conflicting histories are never guessed from the domain.
+    binding = None
+    identity_blocker = None
+    try:
+        binding = bind_signed_shopify_privacy_identity(
+            db, shop_id=shop_id, shop_domain=shop_domain,
+            connection=connection if isinstance(connection, CommerceConnection) else None,
+        )
+    except ShopifyPrivacyShopIdentityError as exc:
+        identity_blocker = str(exc)
+    # A few legacy unit tests stub the resolver with simple objects rather
+    # than ORM connections. Only a real CommerceConnection writes the ledger;
+    # preserve their old mapped receipt behavior for test compatibility.
+    if connection is not None and not isinstance(connection, CommerceConnection):
+        binding = connection
     request = ShopifyPrivacyRequest(
         request_id=receipt_id,
         topic=topic,
         shop_id=shop_id,
         shop_domain=shop_domain,
-        organization_id=connection.organization_id if connection else None,
-        store_id=connection.store_id if connection else None,
+        organization_id=binding.organization_id if binding else None,
+        store_id=binding.store_id if binding else None,
         selector_encrypted=encrypted_selectors,
         status="pending_policy_review",
         attempts=0,
+        last_error_code=identity_blocker,
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow(),
     )
@@ -159,7 +181,7 @@ def process_shopify_compliance_webhook(
             from_status=None,
             to_status="pending_policy_review",
             reason_code=(
-                "tenant_bound" if connection else "tenant_unresolved"
+                "tenant_bound" if binding else "tenant_unresolved"
             ),
             actor_type="shopify_hmac_verified",
             created_at=datetime.utcnow(),
@@ -186,7 +208,7 @@ def process_shopify_compliance_webhook(
         "shopify.compliance.persisted topic=%s request=%s mapped=%s",
         topic,
         receipt_id,
-        bool(connection),
+        bool(binding),
     )
     return _receipt(request, duplicate=False)
 
