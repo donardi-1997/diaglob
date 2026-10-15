@@ -11,7 +11,7 @@
 
 - All direct subscriptions (catalog, public checkout and upgrades/downgrades) support **1 or 12 months only**. Quarterly and semiannual plans have been removed before the first sale.
 - All new merchant trials use **3 days**; existing already-started trial end timestamps must NOT be retroactively shortened.
-- Each Paddle recurring price has a 3-day **free trial**. Confirm that all eight are actually configured in the correct Paddle account/environment.
+- The Paddle product-page screenshots supplied on 2026-10-15 **visually confirm** that all eight price entries are active, display the listed USD amounts, and specify a **3-day trial**. Product tax category is **SaaS** and each product displays **Active**. The screenshots do **not** establish whether the account is live or sandbox, whether tax is included in checkout totals, or whether the transactions/webhooks work.
 - Price tax inclusivity is controlled in each Paddle price/account; confirm it separately. App list prices alone do not prove tax treatment.
 - **Scale remains direct-only**. Shopify App Store public plan verification intentionally supports Starter, Growth and Pro.
 - A DIAGLOB organization's multi-store allowance is NOT a Shopify multi-store subscription grant. Each Shopify shop is billed by Shopify; existing single-shop verification fails closed for unsupported multi-shop cases.
@@ -41,11 +41,15 @@ fallback**. The ignored local `backend/paddle-period-prices.csv` is not committe
 and existing local overrides may take precedence; clear stale values before
 deploying. Do not copy these IDs into a sandbox account.
 
-The screenshots identify Price IDs and their labels, but **do not verify Paddle
-API environment, USD amounts, trial duration, tax handling or active status**.
-All eight price objects still need to be checked against the actual vendor API
-using the matching workspace and a secure API key (not committed to Git). Do not
-activate checkout on unverified objects. `PADDLE_API_KEY`,
+The screenshots identify the Price IDs and visually substantiate the **active
+state, exact displayed USD amounts, monthly/yearly cadence and three-day trials**
+for all eight prices. This is **UI evidence only**, not independent API
+verification; the screenshots cannot establish live/sandbox environment,
+whether the tax is included, the configured renewal/payment behavior, or
+whether the Paddle checkout/webhook integration succeeds.
+Check all eight objects against the actual vendor API using matching workspace
+credentials (not committed to Git). Do not activate live checkout on untested
+or mismatched objects. `PADDLE_API_KEY`,
 `PADDLE_WEBHOOK_SECRET` and `VITE_PADDLE_CLIENT_TOKEN` remain managed secrets
 or deployment config. Price ID mapping alone does not configure the payment
 provider, webhook endpoint or live checkout.
@@ -53,6 +57,22 @@ provider, webhook endpoint or live checkout.
 No subscriptions exist yet: the direct catalog, price lookup, proration and
 checkout support **only 1M / 12M**. Any leftover 3M/6M environment variables
 should be retired.
+
+## Paddle dashboard verification evidence — October 15, 2026
+
+Four user-provided screenshots of active Paddle product detail pages show:
+
+| Paddle product | Monthly recurring price | Annual recurring price | Free trial | Product/price status | Tax category |
+|---|---:|---:|---|---|---|
+| Diaglob Starter | $19.00 | $190.00 | 3 days on both | Active | SaaS |
+| Diaglob Growth | $49.00 | $490.00 | 3 days on both | Active | SaaS |
+| Diaglob Pro | $99.00 | $990.00 | 3 days on both | Active | SaaS |
+| Diaglob Scale | $199.00 | $1,990.00 | 3 days on both | Active | SaaS |
+
+- All eight visible `pri_...` values match the IDs already recorded in the production-only fallback catalog above.
+- These are **recurring prices**, not customer subscription records. No customer subscription was created by publishing them.
+- **Unresolved:** Paddle live/sandbox workspace, whether the tax mode is tax-inclusive, the three-day free trial's payment-details collection/capture behavior, webhook endpoint and E2E payment status.
+- **Unresolved and separate:** verify Shopify Partner monthly/annual price settings and merchant-approved trial periods. Paddle screenshots do not prove Shopify settings.
 
 ## Shopify App Pricing (different billing provider)
 
