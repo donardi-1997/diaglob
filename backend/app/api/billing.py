@@ -109,15 +109,12 @@ def _reject_shopify_managed_billing(organization: Organization) -> None:
             },
         )
 
-    # Registration via Shopify remains untrusted until signed OAuth. Legacy
-    # organizations with NULL billing_provider are handled separately, but
-    # this explicit App Store origin must never fall back to Paddle through
-    # a direct API request while awaiting shop-owner authorization.
-    if (
-        (organization.billing_provider or "").strip().lower() != "paddle"
-        and getattr(organization, "billing_onboarding_channel", None)
-        == "shopify_install"
-    ):
+    # Shopify install provenance must block external checkout even if an
+    # inconsistent/migrated record says billing_provider="paddle". The origin
+    # is an independent guard; otherwise stale provider data would bypass
+    # App Store billing enforcement. Direct signup + Shopify store connector
+    # still legitimately uses Paddle (origin="direct").
+    if getattr(organization, "billing_onboarding_channel", None) == "shopify_install":
         raise HTTPException(
             status_code=409,
             detail={"code": "SHOPIFY_INSTALL_BILLING_PENDING"},
@@ -708,8 +705,13 @@ async def paddle_billing_webhook(
             "event_type": event_type,
         }
 
-    if (organization.billing_provider or "").strip().lower() == "shopify":
-        # Authenticated Paddle events must not change Shopify-managed access.
+    if (
+        (organization.billing_provider or "").strip().lower() == "shopify"
+        or getattr(organization, "billing_onboarding_channel", None)
+        == "shopify_install"
+    ):
+        # Authenticated Paddle events must not mutate App Store-origin access,
+        # even if inconsistent legacy state names Paddle as its provider.
         return {
             "ok": True,
             "ignored": True,
