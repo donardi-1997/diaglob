@@ -132,7 +132,9 @@ def process_shopify_compliance_webhook(
         # Recover a previously committed receipt whose processing handoff
         # failed: never acknowledge an unprepared duplicate with HTTP 200.
         ensure_shopify_privacy_receipt_work_items(db, existing)
-        return _receipt(existing, duplicate=True)
+        return _receipt(existing, duplicate=True, connected=bool(
+            resolve_shopify_connection(db, existing.shop_domain)
+        ))
 
     # Encryption is mandatory: if key is unavailable fail/retry, never persist
     # customer selectors or email addresses in plaintext.
@@ -199,7 +201,9 @@ def process_shopify_compliance_webhook(
         if already_recorded is None:
             raise
         ensure_shopify_privacy_receipt_work_items(db, already_recorded)
-        return _receipt(already_recorded, duplicate=True)
+        return _receipt(already_recorded, duplicate=True, connected=bool(
+            resolve_shopify_connection(db, already_recorded.shop_domain)
+        ))
 
     logger.info(
         "shopify.compliance.persisted topic=%s request=%s mapped=%s",
@@ -207,16 +211,22 @@ def process_shopify_compliance_webhook(
         receipt_id,
         bool(binding),
     )
-    return _receipt(request, duplicate=False)
+    return _receipt(request, duplicate=False, connected=connection is not None)
 
 
-def _receipt(request: ShopifyPrivacyRequest, *, duplicate: bool) -> dict[str, Any]:
+def _receipt(
+    request: ShopifyPrivacyRequest, *, duplicate: bool, connected: bool = False,
+) -> dict[str, Any]:
     return {
         "ok": True,
         "action": "duplicate" if duplicate else "recorded",
         "topic": request.topic,
         "request_id": request.request_id,
-        "store_connected": request.organization_id is not None,
+        # Recovery of signed identity after uninstall does NOT restore OAuth.
+        "store_connected": connected,
+        "store_identity_resolved": (
+            request.organization_id is not None and request.store_id is not None
+        ),
         "processing_tasks_prepared": True,
         "redaction_status": (
             "pending_policy_review"
