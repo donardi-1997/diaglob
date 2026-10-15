@@ -166,7 +166,7 @@ def validate_plan_downgrade(
     current_period = int(organization.billing_period_months or 1)
     target_period = int(target_billing_period_months or current_period)
 
-    if target_period not in {1, 3, 6, 12}:
+    if target_period not in {1, 12}:
         raise InvalidBillingPlanError("Período de facturación inválido")
 
     plan_changes = target_plan != current_plan
@@ -321,7 +321,7 @@ def process_pending_downgrades(db: Session, now: datetime | None = None):
             or organization.billing_period_months
             or 1
         )
-        if target_period not in {1, 3, 6, 12}:
+        if target_period not in {1, 12}:
             results.append({
                 "organization_id": organization.id,
                 "status": "invalid_pending_period",
@@ -866,8 +866,7 @@ def create_checkout(
     plan_key: str,
     billing_period_months: int,
 ) -> dict:
-    # Legacy 3/6-month subscriptions remain readable and manageable, but
-    # new direct contracts only offer monthly or annual prices.
+    # The public catalog offers only monthly or annual subscriptions.
     if billing_period_months not in (1, 12):
         raise InvalidBillingPlanError("Only monthly and annual checkouts are offered")
     provider = _provider_for(organization)
