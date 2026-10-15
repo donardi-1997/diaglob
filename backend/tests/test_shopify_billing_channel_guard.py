@@ -92,6 +92,47 @@ def test_signed_paddle_event_cannot_overwrite_shopify_entitlements():
     mutate.assert_not_called()
 
 
+@pytest.mark.parametrize("provider_name", [None, "paddle"])
+def test_signed_paddle_event_ignored_for_shopify_origin_even_if_provider_stale(
+    provider_name,
+):
+    payload = {
+        "event_id": "evt_stale_shopify_origin",
+        "event_type": "subscription.created",
+        "data": {"id": "sub_other", "customer_id": "ctm_other"},
+    }
+    body = json.dumps(payload).encode()
+
+    async def receive():
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    request = Request(
+        {
+            "type": "http", "method": "POST", "path": "/api/billing/webhook",
+            "headers": [(b"paddle-signature", b"synthetic-signature")],
+        },
+        receive=receive,
+    )
+    fake_provider = SimpleNamespace(
+        webhook_signature_header="Paddle-Signature",
+        verify_webhook=lambda raw, signature: None,
+    )
+    organization = SimpleNamespace(
+        billing_provider=provider_name,
+        billing_onboarding_channel="shopify_install",
+    )
+    with patch("app.api.billing.get_billing_provider", return_value=fake_provider), patch(
+        "app.api.billing.resolve_organization", return_value=organization
+    ), patch("app.api.billing.process_subscription_event") as mutate, patch(
+        "app.api.billing.update_billing_fields"
+    ) as update:
+        result = asyncio.run(paddle_billing_webhook(request=request, db=None))
+    assert result["ignored"] is True
+    assert result["reason"] == "shopify_managed_billing"
+    mutate.assert_not_called()
+    update.assert_not_called()
+
+
 def test_internal_downgrade_worker_skips_shopify_organizations():
     from app.services.billing_service import process_pending_downgrades
 
