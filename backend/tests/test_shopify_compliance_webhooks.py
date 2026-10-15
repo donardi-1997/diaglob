@@ -3,7 +3,6 @@ import hashlib
 import hmac
 import json
 import os
-from types import SimpleNamespace
 
 from cryptography.fernet import Fernet
 from unittest.mock import patch
@@ -17,7 +16,7 @@ from sqlalchemy.pool import StaticPool
 from app.api.shopify import router
 from app.db import Base, get_db
 from app.main import app
-from app.models import ShopifyPrivacyAuditEvent, ShopifyPrivacyRequest, ShopifyPrivacyWorkItem
+from app.models import CommerceConnection, ShopifyPrivacyAuditEvent, ShopifyPrivacyRequest, ShopifyPrivacyWorkItem
 from app.shopify_security import decrypt_shopify_secret
 from app.services.shopify_compliance_webhooks import (
     process_shopify_compliance_webhook,
@@ -236,7 +235,10 @@ class TestShopifyComplianceWebhooks:
         secret, headers = _signed_headers(body, "customers/redact")
         with patch.dict(os.environ, {"SHOPIFY_CLIENT_SECRET": secret}), patch(
             "app.services.shopify_compliance_webhooks.resolve_shopify_connection",
-            return_value=SimpleNamespace(organization_id=19, store_id=47),
+            return_value=CommerceConnection(
+                organization_id=19, store_id=47, provider="shopify",
+                status="connected", external_store_url="known.myshopify.com",
+            ),
         ):
             response = client.post("/api/webhooks/shopify/compliance", content=body, headers=headers)
         assert response.status_code == 200
