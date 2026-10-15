@@ -1,3 +1,4 @@
+from ..shopify_token_lifecycle import connection_access_token
 from datetime import datetime
 
 from sqlalchemy.orm import Session
@@ -152,9 +153,7 @@ def _extract_gid_id(
 def test_shopify_connection(
     connection: CommerceConnection,
 ) -> dict:
-    token = decrypt_shopify_secret(
-        connection.access_token_encrypted
-    )
+    token = connection_access_token(connection)
 
     client = ShopifyGraphQLClient(
         shop_domain=connection.external_store_url,
@@ -306,9 +305,7 @@ def sync_shopify_products(
     db: Session,
     connection: CommerceConnection,
 ) -> dict:
-    token = decrypt_shopify_secret(
-        connection.access_token_encrypted
-    )
+    token = connection_access_token(connection)
 
     client = ShopifyGraphQLClient(
         shop_domain=connection.external_store_url,
