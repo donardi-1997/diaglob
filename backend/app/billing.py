@@ -9,12 +9,7 @@ from pathlib import Path
 # PADDLE PRICE MATRIX
 # ============================================================
 
-VALID_BILLING_PERIODS = {
-    1,
-    3,
-    6,
-    12,
-}
+VALID_BILLING_PERIODS = {1, 12}
 
 
 PADDLE_PRICE_CSV = (
@@ -140,14 +135,6 @@ PADDLE_PRICE_IDS = {
             1,
             "PADDLE_PRICE_STARTER",
         ),
-        3: resolve_paddle_price(
-            "starter",
-            3,
-        ),
-        6: resolve_paddle_price(
-            "starter",
-            6,
-        ),
         12: resolve_paddle_price(
             "starter",
             12,
@@ -159,14 +146,6 @@ PADDLE_PRICE_IDS = {
             "growth",
             1,
             "PADDLE_PRICE_GROWTH",
-        ),
-        3: resolve_paddle_price(
-            "growth",
-            3,
-        ),
-        6: resolve_paddle_price(
-            "growth",
-            6,
         ),
         12: resolve_paddle_price(
             "growth",
@@ -180,14 +159,6 @@ PADDLE_PRICE_IDS = {
             1,
             "PADDLE_PRICE_PRO",
         ),
-        3: resolve_paddle_price(
-            "pro",
-            3,
-        ),
-        6: resolve_paddle_price(
-            "pro",
-            6,
-        ),
         12: resolve_paddle_price(
             "pro",
             12,
@@ -199,14 +170,6 @@ PADDLE_PRICE_IDS = {
             "scale",
             1,
             "PADDLE_PRICE_SCALE",
-        ),
-        3: resolve_paddle_price(
-            "scale",
-            3,
-        ),
-        6: resolve_paddle_price(
-            "scale",
-            6,
         ),
         12: resolve_paddle_price(
             "scale",
@@ -257,7 +220,7 @@ def get_paddle_price_id(
     if normalized_period not in VALID_BILLING_PERIODS:
         raise ValueError(
             "Billing period must be "
-            "1, 3, 6 or 12 months"
+            "1 or 12 months"
         )
 
     plan_prices = PADDLE_PRICE_IDS.get(
@@ -417,26 +380,18 @@ def get_subscription_price_id(
 PLAN_PERIOD_PRICES: dict[str, dict[int, Decimal]] = {
     "starter": {
         1: Decimal("19.00"),
-        3: Decimal("54.00"),
-        6: Decimal("103.00"),
         12: Decimal("190.00"),
     },
     "growth": {
         1: Decimal("49.00"),
-        3: Decimal("140.00"),
-        6: Decimal("265.00"),
         12: Decimal("490.00"),
     },
     "pro": {
         1: Decimal("99.00"),
-        3: Decimal("282.00"),
-        6: Decimal("535.00"),
         12: Decimal("990.00"),
     },
     "scale": {
         1: Decimal("199.00"),
-        3: Decimal("570.00"),
-        6: Decimal("1075.00"),
         12: Decimal("1990.00"),
     },
 }
@@ -510,6 +465,8 @@ def calculate_local_proration(
         now = datetime.utcnow()
 
     billing_period_months = int(billing_period_months or 1)
+    if billing_period_months not in VALID_BILLING_PERIODS:
+        raise ValueError("Billing period must be 1 or 12 months")
 
     total_seconds = max(
         (current_period_end - current_period_start).total_seconds(),
