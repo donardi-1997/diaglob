@@ -19,6 +19,7 @@ from ..services.shopify_privacy_delivery_readiness import (
     inspect_shopify_privacy_delivery_readiness,
 )
 from ..services.shopify_privacy_case_queue import list_shopify_privacy_cases
+from ..services.shopify_privacy_escalations import list_shopify_privacy_escalations
 from ..services.shopify_privacy_case_assessment import (
     ShopifyPrivacyAssessmentError,
     assess_shopify_privacy_case,
@@ -74,6 +75,18 @@ def get_shopify_privacy_cases(
     """Bounded operational queue; never decrypt or export customer data."""
     _require_internal_secret(x_internal_secret)
     return list_shopify_privacy_cases(db, limit=limit, offset=offset)
+
+
+@router.get("/api/internal/shopify/privacy/escalations")
+def get_shopify_privacy_escalations(
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0, le=100_000),
+    x_internal_secret: str | None = Header(None, alias="X-Internal-Secret"),
+    db: Session = Depends(get_db),
+):
+    """Alert operators to privacy obligations; metadata only, no fulfillment."""
+    _require_internal_secret(x_internal_secret)
+    return list_shopify_privacy_escalations(db, limit=limit, offset=offset)
 
 
 @router.get("/api/internal/shopify/privacy/cases/{request_id}/assessment")
