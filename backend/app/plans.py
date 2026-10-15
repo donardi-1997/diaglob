@@ -4,7 +4,7 @@ PLAN_LIMITS = {
         "active_stores": 0,
     },
     "trial": {
-        "name": "Prueba gratis · 7 días",
+        "name": "Prueba gratis · 3 días",
         "active_stores": 1,
     },
     "starter": {
