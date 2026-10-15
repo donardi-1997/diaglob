@@ -16,7 +16,7 @@ from app.models import (
 from app.shopify_security import decrypt_shopify_secret, encrypt_shopify_secret
 from app.services.shopify_privacy_local_processor import (
     ShopifyLocalPrivacyError, build_encrypted_local_customer_export,
-    build_local_redaction_manifest,
+    build_local_redaction_manifest, inspect_local_customer_export_counts,
 )
 from app.api.shopify_privacy_backlog import (
     get_shopify_local_redaction_manifest,
@@ -600,6 +600,16 @@ def test_operator_inspection_does_not_build_or_encrypt_export(sandbox, monkeypat
         "messages": 1,
         "checkouts": 0,
         "requested_orders_not_resolved": 0,
+        "automation": {
+            "audience_members": 0,
+            "campaign_recipients": 0,
+            "delivery_attempts": 0,
+            "flow_recipients": 0,
+            "flow_node_executions": 0,
+            "attribution": "verified_external_customer_id",
+            "export_included": False,
+            "coverage": "linked_records_only",
+        },
         "complete": False,
         "merchant_delivery_allowed": False,
     }
@@ -625,3 +635,25 @@ def test_operator_inspection_reconciles_unresolved_requested_order_without_pii(
     assert result["messages"] == 1
     assert result["complete"] is False
     assert "PRIVATE_ORDER" not in str(result)
+
+
+def test_export_inspection_fails_closed_if_automation_provenance_unavailable(
+    sandbox, monkeypatch,
+):
+    from unittest.mock import patch
+    from app.services.shopify_privacy_scope_preview import ShopifyPrivacyScopeError
+
+    db, receipt = sandbox
+    with patch(
+        "app.services.shopify_privacy_local_processor."
+        "inspect_shopify_automation_privacy_impact",
+        side_effect=ShopifyPrivacyScopeError("INCONSISTENT_STORE_PROVENANCE"),
+    ):
+        with pytest.raises(
+            ShopifyLocalPrivacyError, match="AUTOMATION_PROVENANCE_UNVERIFIED"
+        ):
+            inspect_local_customer_export_counts(
+                db, request_id=RECEIPT_ID,
+            )
+    assert receipt.completed_at is None
+    assert db.query(Order).count() == 2

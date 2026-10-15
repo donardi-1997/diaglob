@@ -23,6 +23,9 @@ from ..shopify_security import decrypt_shopify_secret, encrypt_shopify_secret
 from .shopify_privacy_scope_preview import (
     ShopifyPrivacyScopeError, preview_shopify_privacy_scope,
 )
+from .shopify_privacy_automation_provenance import (
+    inspect_shopify_automation_privacy_impact,
+)
 
 _REQUEST_ID = re.compile(r"^[0-9a-f]{64}$")
 _MAX_ROWS = 250
@@ -141,6 +144,12 @@ class LocalCustomerExportCounts:
     messages: int
     checkouts: int
     requested_orders_not_resolved: int
+    automation_audience_members: int
+    automation_campaign_recipients: int
+    automation_delivery_attempts: int
+    automation_flow_recipients: int
+    automation_flow_node_executions: int
+    automation_attribution: str
     complete: bool = False
     merchant_delivery_allowed: bool = False
 
@@ -223,6 +232,16 @@ def inspect_local_customer_export_counts(
     ):
         if count > _MAX_ROWS:
             raise ShopifyLocalPrivacyError(f"{area.upper()}_ROW_LIMIT")
+    # Separately count Shopify-linked automation records using store-scoped
+    # campaign/flow joins. The underlying helper selects COUNT(*) only: it
+    # never reads message templates, provider IDs, recipient payloads or PII.
+    # These sources remain OUTSIDE the partial encrypted local export.
+    try:
+        impact = inspect_shopify_automation_privacy_impact(db, receipt)
+    except (ShopifyPrivacyScopeError, ValueError, TypeError) as exc:
+        raise ShopifyLocalPrivacyError("AUTOMATION_PROVENANCE_UNVERIFIED") from exc
+    if impact.attribution != "verified_external_customer_id":
+        raise ShopifyLocalPrivacyError("AUTOMATION_SUBJECT_UNRESOLVED")
     return LocalCustomerExportCounts(
         request_id=request_id,
         profiles=1,
@@ -232,6 +251,12 @@ def inspect_local_customer_export_counts(
         messages=messages,
         checkouts=checkouts,
         requested_orders_not_resolved=missing_orders,
+        automation_audience_members=impact.audience_members,
+        automation_campaign_recipients=impact.campaign_recipients,
+        automation_delivery_attempts=impact.delivery_attempts,
+        automation_flow_recipients=impact.flow_recipients,
+        automation_flow_node_executions=impact.flow_node_executions,
+        automation_attribution=impact.attribution,
     )
 
 
