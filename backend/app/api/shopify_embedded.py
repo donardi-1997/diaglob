@@ -17,6 +17,7 @@ from ..services.shopify_embedded_link import installed_shop_status
 from ..services.shopify_embedded_membership import authorize_embedded_identity
 from ..services.shopify_managed_installation import (
     ManagedShopifyInstallationError, verify_managed_installation,
+    stage_managed_installation,
 )
 
 router = APIRouter()
@@ -313,6 +314,28 @@ def embedded_managed_installation_verify(
         raise HTTPException(
             status_code=502, detail="Shopify managed installation not verified",
         ) from exc
+
+
+@router.post("/api/shopify/embedded/managed-install/stage")
+def embedded_managed_installation_stage(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_embedded_bearer),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Explicit Shopify staff action to stage an encrypted, expiring grant.
+
+    The response is a 10-minute one-use claim code, not an access token.
+    A separately authenticated DIAGLOB store owner must complete the claim.
+    """
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        raise HTTPException(status_code=401, detail="Shopify ID token required")
+    try:
+        identity = verify_shopify_id_token(credentials.credentials)
+    except ShopifyIdTokenError as exc:
+        raise HTTPException(status_code=401, detail="Invalid Shopify session") from exc
+    try:
+        return stage_managed_installation(db, identity=identity, id_token=credentials.credentials)
+    except ManagedShopifyInstallationError as exc:
+        raise HTTPException(status_code=502, detail="Shopify managed installation not verified") from exc
 
 
 @router.get("/api/shopify/embedded/authorize")
