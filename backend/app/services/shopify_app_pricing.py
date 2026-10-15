@@ -5,7 +5,7 @@ Never use the legacy Billing API to create charges for App Pricing merchants.
 This module does not activate entitlements or mutate existing Paddle contracts.
 """
 from __future__ import annotations
-from ...shopify_token_lifecycle import connection_access_token
+from ..shopify_token_lifecycle import connection_access_token
 
 import os
 import re
