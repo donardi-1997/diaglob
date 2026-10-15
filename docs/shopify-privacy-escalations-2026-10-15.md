@@ -25,6 +25,29 @@ pytest -q tests/test_shopify_privacy_escalations.py tests/test_shopify_privacy_c
 
 Cases cover: priority before paging, exact 23/30-day boundaries, malformed/unknown topic, future timestamp, unresolved tenant, status spoofing, invalid pagination, authorization before DB access and absence of PII.
 
+## Local field-level coverage refinement
+
+The prior audit declared only four table-level sets of candidate fields. It
+now enumerates seven data surfaces and separates **candidate export fields**,
+**candidate redaction fields**, and **lineage/join fields**:
+
+| Local surface | Provenance | Safety decision |
+|---|---|---|
+| `customers` | Organization-shared | Cannot redact a shared customer row based only on one Shopify shop's request |
+| `customer_store_profiles` | Per store | Exact external customer identity must be validated |
+| `orders` and `order_items` | Per store/order | Shopify order selector, financial retention and child-record tenancy must be reconciled |
+| `conversations` and `messages` | Per store/conversation | Free text and external message identifiers require independent processor coverage |
+| `conversational_checkouts` | Per store | Personal delivery fields and checkout linkage need approved handling |
+
+The source audit uses **SQLAlchemy metadata only**. New/unknown columns remain
+`unmapped_columns`, missing expected fields remain blockers, and
+`SHARED_CUSTOMER_FIELD_OWNERSHIP_UNRESOLVED` is explicit even if the ORM
+schema matches. These labels are design candidates, **not proof** that export
+or deletion is legally authorized or complete.
+
+Run `pytest -q tests/test_shopify_privacy_field_coverage.py` alongside the
+escalation suite before merging.
+
 ## Operational handoff
 
 - Use `/api/internal/shopify/privacy/backlog` for totals and `/api/internal/shopify/privacy/escalations` for cases needing immediate manual investigation.
