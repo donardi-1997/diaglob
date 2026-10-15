@@ -142,6 +142,13 @@ def validate_plan_upgrade(organization: Organization, target_plan: str):
             "Este endpoint solo permite escalar hacia un plan superior."
         )
 
+    current_period = int(organization.billing_period_months or 1)
+    if current_period not in {1, 12}:
+        raise UpgradeNotAllowedError(
+            "El período actual de facturación ya no está disponible. "
+            "Contacta con soporte para migrar la suscripción antes de cambiar de plan."
+        )
+
     return current_plan, target_plan
 
 
