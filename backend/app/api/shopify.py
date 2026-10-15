@@ -192,23 +192,26 @@ def shopify_install_handoff(
     shop: str = Query(..., min_length=1, max_length=255),
     db: Session = Depends(get_db),
 ):
-    """For standalone App Store installs, redirect to OAuth before DIAGLOB UI.
+    """Shopify-owned install must perform OAuth before any DIAGLOB UI.
 
-    The legacy DIAGLOB handoff remains available behind a disabled-by-default
-    rollout flag until the original Shopify app configuration is verified.
+    When the independently verified public-install rollout is OFF, fail
+    closed instead of sending merchants to a DIAGLOB-domain handoff page.
+    This endpoint never treats a URL-provided shop as an authorized tenant.
+    Shopify managed installations and token exchange require separate live
+    Partner version verification before enabling this legacy-code grant.
     """
-    if shopify_public_install.enabled():
-        try:
-            url = shopify_public_install.begin_public_install(db, shop)
-        except (ShopifyOAuthError, ValueError) as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        except RuntimeError as exc:
-            raise HTTPException(status_code=503, detail="SHOPIFY_NOT_CONFIGURED") from exc
-        return RedirectResponse(url, status_code=303, headers={"Cache-Control": "no-store"})
+    if not shopify_public_install.enabled():
+        raise HTTPException(
+            status_code=503,
+            detail="SHOPIFY_PUBLIC_INSTALL_NOT_ENABLED",
+            headers={"Cache-Control": "no-store"},
+        )
     try:
-        url = build_shopify_install_handoff(shop)
-    except ShopifyInstallHandoffError as exc:
+        url = shopify_public_install.begin_public_install(db, shop)
+    except (ShopifyOAuthError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail="SHOPIFY_NOT_CONFIGURED") from exc
     return RedirectResponse(url, status_code=303, headers={"Cache-Control": "no-store"})
 
 
