@@ -167,7 +167,9 @@ def test_rebinding_same_signed_shop_to_other_tenant_is_not_allowed(database):
     connection.store_id = other_store.id
     db.commit()
     result = _privacy(db, delivery="attempt-rebind")
-    assert result["store_connected"] is False
+    # OAuth may still be active, but this specific shop identity is untrusted.
+    assert result["store_connected"] is True
+    assert result["store_identity_resolved"] is False
     receipts = db.query(ShopifyPrivacyRequest).order_by(
         ShopifyPrivacyRequest.id,
     ).all()
