@@ -435,7 +435,7 @@ def test_automation_fixture_requires_signed_request_and_exact_subject(scenario):
     db, receipt = scenario
     receipt.request_id = "a" * 64
     db.commit()
-    with pytest.raises(ShopifyPrivacyExtractionError, match="SIGNED_INTAKE_REQUIRED"):
+    with pytest.raises(ShopifyPrivacyExtractionError, match="SCOPE_UNVERIFIED"):
         build_encrypted_shopify_automation_fixture(
             db, request_id=receipt.request_id,
             encryption_key=Fernet.generate_key(), fixture_authorized=True,
