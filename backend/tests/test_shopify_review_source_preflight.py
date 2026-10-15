@@ -46,20 +46,34 @@ def test_synthetic_source_parity_is_not_shopify_approval():
     assert review.as_dict()["mode"] == "repository_source_only"
 
 
-def test_current_tracked_config_exposes_real_source_scope_drift():
+def test_current_tracked_config_matches_implemented_oauth_scopes_only():
     raw = (Path(__file__).resolve().parents[2] / "shopify.app.toml").read_text(
         encoding="utf-8"
     )
     review = inspect_review_source(raw, backend_scopes=SHOPIFY_SCOPES)
-    assert not review.source_consistent
-    assert "SHOPIFY_OAUTH_SCOPE_DRIFT" in review.blockers
-    assert set(review.scopes_requested_but_not_declared) == {
-        "write_draft_orders",
-        "read_merchant_managed_fulfillment_orders",
-        "write_merchant_managed_fulfillment_orders",
-    }
-    assert review.scopes_declared_but_not_requested == ("write_products",)
+    assert review.source_consistent
+    assert review.blockers == ()
+    assert review.scopes_requested_but_not_declared == ()
+    assert review.scopes_declared_but_not_requested == ()
+    # Static source consistency is not evidence of active Shopify version,
+    # shop installation, merchant authorization or App Store approval.
     assert review.release_authorized is False
+    assert review.shopify_approval_verified is False
+    assert "PARTNER_ACTIVE_APP_VERSION_AND_DISTRIBUTION" in review.independent_evidence_required
+
+
+def test_tracked_config_rejects_unneeded_product_write_scope():
+    raw = (Path(__file__).resolve().parents[2] / "shopify.app.toml").read_text(
+        encoding="utf-8"
+    )
+    changed = raw.replace(
+        "write_merchant_managed_fulfillment_orders",
+        "write_merchant_managed_fulfillment_orders,write_products",
+    )
+    report = inspect_review_source(changed, backend_scopes=SHOPIFY_SCOPES)
+    assert report.source_consistent is False
+    assert report.scopes_declared_but_not_requested == ("write_products",)
+    assert "SHOPIFY_OAUTH_SCOPE_DRIFT" in report.blockers
 
 
 def test_denies_missing_or_duplicate_compliance_topics():
