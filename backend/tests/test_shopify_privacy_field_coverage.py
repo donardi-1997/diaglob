@@ -65,5 +65,45 @@ def test_export_schema_gate_never_authorizes_even_if_only_declared_columns():
     for source, fields in SOURCE_FIELDS.items():
         Table(source, metadata, *(Column(field, String) for field in fields))
     result = summarize_shopify_privacy_export_schema_readiness(metadata)
-    assert result["blockers"] == ["FIELD_LEVEL_PROVENANCE_REQUIRES_REVIEW"]
+    assert result["blockers"] == [
+        "FIELD_LEVEL_PROVENANCE_REQUIRES_REVIEW",
+        "SHARED_CUSTOMER_FIELD_OWNERSHIP_UNRESOLVED",
+    ]
     assert result["real_export_authorized"] is False
+
+
+def test_field_audit_explicitly_includes_all_seven_local_data_surfaces():
+    from app.services.shopify_privacy_field_coverage import (
+        EXPORT_FIELD_CANDIDATES, REDACTION_FIELD_CANDIDATES,
+        LINEAGE_FIELD_CANDIDATES,
+        summarize_shopify_privacy_export_schema_readiness,
+    )
+
+    assert set(SOURCE_FIELDS) == {
+        "customers", "customer_store_profiles", "orders", "order_items",
+        "conversations", "messages", "conversational_checkouts",
+    }
+    audited = {row.source: row for row in audit_shopify_privacy_field_coverage()}
+    assert all(row.missing_fields == () for row in audited.values())
+    assert audited["customers"].ownership == "organization_shared"
+    assert audited["messages"].ownership == "store_via_conversation"
+    report = summarize_shopify_privacy_export_schema_readiness()
+    sources = {row["source"]: row for row in report["sources"]}
+    assert sources["customers"]["candidate_export_fields"] == []
+    assert {"name", "phone", "email"} <= set(
+        sources["customers"]["candidate_redaction_fields"]
+    )
+    assert sources["customers"]["ownership"] == "organization_shared"
+    assert "text" in sources["messages"]["candidate_export_fields"]
+    assert "text" in sources["messages"]["candidate_redaction_fields"]
+    assert "order_id" in sources["order_items"]["candidate_lineage_fields"]
+    assert "customer_id" in sources["conversational_checkouts"]["candidate_lineage_fields"]
+    for source in SOURCE_FIELDS:
+        assert set(SOURCE_FIELDS[source]) == (
+            set(EXPORT_FIELD_CANDIDATES.get(source, ()))
+            | set(REDACTION_FIELD_CANDIDATES.get(source, ()))
+            | set(LINEAGE_FIELD_CANDIDATES.get(source, ()))
+        )
+    assert "SHARED_CUSTOMER_FIELD_OWNERSHIP_UNRESOLVED" in report["blockers"]
+    assert report["real_export_authorized"] is False
+    assert report["fulfillment_complete"] is False
