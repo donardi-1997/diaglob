@@ -345,6 +345,15 @@ def build_local_redaction_manifest(
             ConversationalCheckout.store_id == receipt.store_id,
             ConversationalCheckout.customer_id == customer_id,
         )
+    # Reject a child that refers to a scoped order but claims another
+    # organization/store. A filtered count alone would silently conceal
+    # corrupted provenance, giving an unsafe redaction-impact manifest.
+    if db.query(OrderItem.id).filter(
+        OrderItem.order_id.in_(order_query.with_entities(Order.id)),
+        (OrderItem.organization_id != receipt.organization_id)
+        | (OrderItem.store_id != receipt.store_id),
+    ).first() is not None:
+        raise ShopifyLocalPrivacyError("ORDER_ITEM_TENANCY_MISMATCH")
     # Compute child coverage by the exact scoped parent subqueries.
     # Product titles, SKUs and line item IDs form part of the order history.
     order_items_count = db.query(OrderItem.id).filter(
