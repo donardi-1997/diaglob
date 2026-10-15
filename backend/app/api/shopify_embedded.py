@@ -114,7 +114,19 @@ def shopify_embedded_home() -> HTMLResponse:
           if (!session.ok) throw new Error('Sesión Shopify inválida');
           const info = await session.json();
           if (info.installation_status !== 'connected') {
-            status.textContent = 'Primero debes completar la conexión de la tienda desde el proceso oficial de instalación.';
+            // Shopify-managed installation proof never grants access to
+            // private DIAGLOB tenants and never stores Shopify credentials.
+            const freshToken = await window.shopify.idToken();
+            const verification = await fetch('/api/shopify/embedded/managed-install/verify', {
+              method: 'POST',
+              cache: 'no-store',
+              headers: {Authorization: 'Bearer ' + freshToken}
+            });
+            if (!verification.ok) {
+              status.textContent = 'No pudimos confirmar la instalación gestionada de Shopify. Contacta soporte de Diaglob.';
+              return;
+            }
+            status.textContent = 'Shopify confirmó esta instalación. Aún falta vincularla a una tienda autorizada de Diaglob para usar sus funciones.';
             return;
           }
           if (await showAuthorizedOverview()) return;
