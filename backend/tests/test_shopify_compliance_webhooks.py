@@ -16,7 +16,7 @@ from sqlalchemy.pool import StaticPool
 from app.api.shopify import router
 from app.db import Base, get_db
 from app.main import app
-from app.models import CommerceConnection, ShopifyPrivacyAuditEvent, ShopifyPrivacyRequest, ShopifyPrivacyWorkItem
+from app.models import CommerceConnection, ShopifyPrivacyAuditEvent, ShopifyPrivacyRequest, ShopifyPrivacyShopIdentity, ShopifyPrivacyWorkItem
 from app.shopify_security import decrypt_shopify_secret
 from app.services.shopify_compliance_webhooks import (
     process_shopify_compliance_webhook,
@@ -246,6 +246,12 @@ class TestShopifyComplianceWebhooks:
             item = session.query(ShopifyPrivacyRequest).one()
             assert (item.organization_id, item.store_id) == (19, 47)
             assert item.topic == "customers/redact"
+            assert session.query(ShopifyPrivacyShopIdentity).count() == 1
+            identity = session.query(ShopifyPrivacyShopIdentity).one()
+            assert (identity.shop_id, identity.shop_domain) == (
+                "321", "known.myshopify.com",
+            )
+            assert (identity.organization_id, identity.store_id) == (19, 47)
 
     def test_reject_invalid_signature_without_persisting_anything(self, client):
         body = b'{"shop_id":123,"shop_domain":"known.myshopify.com"}'
@@ -257,6 +263,7 @@ class TestShopifyComplianceWebhooks:
         assert response.status_code == 401
         with TEST_SESSION() as session:
             assert session.query(ShopifyPrivacyRequest).count() == 0
+            assert session.query(ShopifyPrivacyShopIdentity).count() == 0
 
 
     def test_oversized_signed_compliance_payload_is_rejected_without_receipt(self, client):
