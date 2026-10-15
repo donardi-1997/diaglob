@@ -1,6 +1,6 @@
 """Public direct-checkout cadence is monthly or annual only.
 
-Legacy subscription IDs and 3/6-month reconciliation are intentionally not removed.
+The backend price matrix does not contain quarterly or semiannual periods.
 """
 from types import SimpleNamespace
 
