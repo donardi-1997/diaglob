@@ -21,7 +21,7 @@ that erasure/delivery or downstream vendor work succeeded.
 |---|---|---|
 | Signed webhook intake | Raw-body HMAC route, encrypted selectors, durable receipt, queue and idempotent retry | Active app-level subscriptions or fulfillment |
 | Per-case assessment | Signed receipt, org/store mapping, opaque IDs, counts, coverage blockers | Exact ownership for unlinked/free-text records |
-| Local access | Scoped partial in-memory ciphertext | Complete export or authenticated merchant delivery |
+| Local access | Scoped partial in-memory ciphertext; separate counts-only operator inspection that never builds an export | Complete export or authenticated merchant delivery |
 | Local erasure | Scoped field manifest; synthetic-only field suppression | Lawful production erasure or exceptions |
 | Reimport prevention | Staged HMAC tombstones and selected ingress checks | Enabled suppression on every entrypoint and after restore |
 | Processor evidence | Unverified opaque SHA-256 artifact references | Vendor deletion or export verified independently |
