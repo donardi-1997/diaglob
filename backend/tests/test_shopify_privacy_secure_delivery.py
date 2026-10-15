@@ -4,6 +4,8 @@ All test data is fabricated. Even an environment flag cannot activate this
 transport against a production database or authorize real Shopify fulfillment.
 """
 import hashlib
+import json
+import os
 from datetime import datetime, timedelta
 from dataclasses import replace
 from unittest.mock import patch
@@ -20,14 +22,18 @@ from app.main import app
 from app.models import (
     MembershipStore, Organization, OrganizationMembership, ShopifyPrivacyAuditEvent,
     ShopifyPrivacyDeliveryArtifact, ShopifyPrivacyDeliveryAudit,
-    ShopifyPrivacyRequest, Store, User,
+    ShopifyPrivacyRequest, Store, User, Customer, CustomerStoreProfile, Order,
 )
 from app.services.shopify_privacy_secure_delivery import (
     ShopifyPrivacySecureDeliveryError, issue_synthetic_secure_delivery,
     purge_expired_synthetic_deliveries, redeem_synthetic_secure_delivery,
     revoke_synthetic_secure_delivery,
 )
-from app.services.shopify_privacy_synthetic_export import EncryptedSyntheticExport
+from app.services.shopify_privacy_synthetic_export import (
+    EncryptedSyntheticExport, build_encrypted_synthetic_export,
+)
+from app.services.shopify_privacy_case_assessment import prepare_shopify_privacy_export_manifest
+from app.shopify_security import encrypt_shopify_secret
 
 REQUEST = "b" * 64
 SHOP = "synthetic-only.myshopify.com"
@@ -81,10 +87,26 @@ def sandbox(monkeypatch):
 
 
 def artifact():
-    payload = Fernet(Fernet.generate_key()).encrypt(SYNTHETIC_CONTENT)
-    return EncryptedSyntheticExport(
-        ciphertext=payload, sha256=hashlib.sha256(payload).hexdigest(),
-        record_count=1,
+    """Create only a request-bound fabricated fixture, never a live export."""
+    return build_encrypted_synthetic_export(
+        manifest={
+            "request_id": REQUEST, "topic": "customers/data_request",
+            "scope_status": "scope_preview_only", "export_generated": False,
+            "delivery_authorized": False, "fulfillment_complete": False,
+            "sources": [
+                {"name": name, "matching_records": int(name == "orders"),
+                 "status": "review_required"}
+                for name in (
+                    "customer_store_profiles", "orders", "conversations",
+                    "conversational_checkouts",
+                )
+            ],
+        },
+        records=[{
+            "source": "orders", "record": "SYNTHETIC",
+            "fields": {"order_number": SYNTHETIC_CONTENT.decode()},
+        }],
+        encryption_key=os.environ["SHOPIFY_PRIVACY_DELIVERY_KEY"].encode("ascii"),
     )
 
 
@@ -220,6 +242,7 @@ def test_missing_signed_intake_or_wrong_topic_cannot_issue(sandbox):
     {"delivery_authorized": True},
     {"fulfillment_complete": True},
     {"sha256": "f" * 64},
+    {"request_id": "c" * 64},
 ])
 def test_non_synthetic_or_tampered_artifacts_rejected(sandbox, change):
     db, org, store, user, _ = sandbox
@@ -291,3 +314,122 @@ def test_http_requires_cognito_bearer_and_exact_ticket_and_no_cache(sandbox):
     finally:
         app.dependency_overrides.clear()
         app.dependency_overrides.update(original)
+
+
+def test_wrong_request_even_same_store_and_recipient_cannot_redeem_fixture(sandbox):
+    db, org, store, user, _ = sandbox
+    other = "c" * 64
+    db.add(ShopifyPrivacyRequest(
+        request_id=other, shop_id="321", shop_domain=SHOP,
+        organization_id=org.id, store_id=store.id,
+        topic="customers/data_request", selector_encrypted="SYNTHETIC_ONLY",
+        status="pending_policy_review", created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    ))
+    db.add(ShopifyPrivacyAuditEvent(
+        request_id=other, event_type="received",
+        actor_type="shopify_hmac_verified", reason_code="tenant_bound",
+        from_status=None, to_status="pending_policy_review",
+        created_at=datetime.utcnow(),
+    ))
+    db.commit()
+    with pytest.raises(ShopifyPrivacySecureDeliveryError, match="UNTRUSTED"):
+        issue_synthetic_secure_delivery(
+            artifact=artifact(), fixture_authorized=True,
+            **{**context(db, org, store, user), "request_id": other},
+        )
+    # No ticket, no stored fixture and no misleading delivery audit.
+    assert db.query(ShopifyPrivacyDeliveryArtifact).count() == 0
+    assert db.query(ShopifyPrivacyDeliveryAudit).count() == 0
+
+
+def test_forged_ciphertext_with_real_data_is_rejected_by_delivery(sandbox):
+    db, org, store, user, _ = sandbox
+    key = os.environ["SHOPIFY_PRIVACY_DELIVERY_KEY"].encode("ascii")
+    valid = artifact()
+    plaintext = json.loads(Fernet(key).decrypt(valid.ciphertext))
+    plaintext["records"][0]["fields"]["order_number"] = "buyer@example.com"
+    ciphertext = Fernet(key).encrypt(json.dumps(plaintext).encode("utf-8"))
+    forged = replace(
+        valid, ciphertext=ciphertext,
+        sha256=hashlib.sha256(ciphertext).hexdigest(),
+    )
+    with pytest.raises(ShopifyPrivacySecureDeliveryError, match="UNTRUSTED"):
+        issue_synthetic_secure_delivery(
+            artifact=forged, fixture_authorized=True,
+            **context(db, org, store, user),
+        )
+    assert db.query(ShopifyPrivacyDeliveryArtifact).count() == 0
+
+
+def test_signed_scope_to_encrypted_fixture_to_single_use_delivery_e2e(
+    sandbox, monkeypatch,
+):
+    """An isolated, entirely synthetic E2E — NEVER live Shopify fulfillment."""
+    db, org, store, user, _ = sandbox
+    monkeypatch.setenv(
+        "SHOPIFY_TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("ascii"),
+    )
+    customer = Customer(
+        organization_id=org.id, name="SYNTHETIC_TEST_BUYER",
+        phone="SYNTHETIC_555555",
+    )
+    db.add(customer)
+    db.flush()
+    db.add(CustomerStoreProfile(
+        organization_id=org.id, store_id=store.id,
+        customer_id=customer.id, external_customer_id="700",
+        currency="COP",
+    ))
+    db.add(Order(
+        organization_id=org.id, store_id=store.id,
+        customer_id=customer.id, order_number="SYNTHETIC_1001",
+        total_amount=100, currency="COP",
+    ))
+    db.query(ShopifyPrivacyRequest).filter(
+        ShopifyPrivacyRequest.request_id == REQUEST,
+    ).update({
+        ShopifyPrivacyRequest.selector_encrypted: encrypt_shopify_secret(
+            json.dumps({"customer": {"id": 700}})
+        ),
+    })
+    db.commit()
+    manifest = prepare_shopify_privacy_export_manifest(db, request_id=REQUEST)
+    assert manifest["scope_status"] == "scope_preview_only"
+    assert manifest["export_generated"] is False
+    assert manifest["delivery_authorized"] is False
+    assert manifest["fulfillment_complete"] is False
+    by_source = {x["name"]: x["matching_records"] for x in manifest["sources"]}
+    assert by_source == {
+        "customer_store_profiles": 1, "orders": 1,
+        "conversations": 0, "conversational_checkouts": 0,
+    }
+    records = [
+        {"source": "customer_store_profiles", "record": "SYNTHETIC",
+         "fields": {"external_customer_id": "SYNTHETIC_700"}},
+        {"source": "orders", "record": "SYNTHETIC",
+         "fields": {"order_number": "SYNTHETIC_1001"}},
+    ]
+    key = os.environ["SHOPIFY_PRIVACY_DELIVERY_KEY"].encode("ascii")
+    exported = build_encrypted_synthetic_export(
+        manifest=manifest, records=records, encryption_key=key,
+    )
+    ticket = issue_synthetic_secure_delivery(
+        artifact=exported, fixture_authorized=True,
+        **context(db, org, store, user),
+    )
+    assert ticket.synthetic_only and ticket.fulfillment_complete is False
+    delivery = redeem_synthetic_secure_delivery(
+        token=ticket.token, **context(db, org, store, user),
+    )
+    payload = json.loads(Fernet(key).decrypt(delivery.ciphertext))
+    assert payload["request_id"] == REQUEST
+    assert payload["records"] == records
+    assert payload["synthetic_only"] is True
+    assert delivery.fulfillment_complete is False
+    with pytest.raises(ShopifyPrivacySecureDeliveryError):
+        redeem_synthetic_secure_delivery(
+            token=ticket.token, **context(db, org, store, user),
+        )
+    assert db.query(ShopifyPrivacyRequest).one().status == "pending_policy_review"
+    assert db.query(Customer).one().name == "SYNTHETIC_TEST_BUYER"

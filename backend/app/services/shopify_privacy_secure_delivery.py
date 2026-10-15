@@ -25,7 +25,10 @@ from ..models import (
     ShopifyPrivacyDeliveryArtifact, ShopifyPrivacyDeliveryAudit,
     ShopifyPrivacyRequest, Store,
 )
-from .shopify_privacy_synthetic_export import EncryptedSyntheticExport
+from .shopify_privacy_synthetic_export import (
+    EncryptedSyntheticExport, SyntheticPrivacyExportError,
+    verify_encrypted_synthetic_export,
+)
 
 _REQUEST = re.compile(r"^[0-9a-f]{64}$")
 _MAX_ARTIFACT = 1024 * 1024
@@ -64,10 +67,10 @@ def _fixture_only(db: Session) -> None:
 
 
 def _cipher() -> Fernet:
-    key = os.getenv("SHOPIFY_PRIVACY_DELIVERY_KEY", "").encode("ascii")
     try:
+        key = os.getenv("SHOPIFY_PRIVACY_DELIVERY_KEY", "").encode("ascii")
         return Fernet(key)
-    except (ValueError, TypeError) as exc:
+    except (ValueError, TypeError, UnicodeEncodeError) as exc:
         raise ShopifyPrivacySecureDeliveryError("PRIVACY_DELIVERY_KEY_UNAVAILABLE") from exc
 
 
@@ -150,18 +153,18 @@ def issue_synthetic_secure_delivery(
     )
     if type(ttl_seconds) is not int or not 60 <= ttl_seconds <= 900:
         raise ShopifyPrivacySecureDeliveryError("DELIVERY_TTL_INVALID")
-    if (
-        type(artifact) is not EncryptedSyntheticExport
-        or artifact.synthetic_only is not True
-        or artifact.delivery_authorized is not False
-        or artifact.fulfillment_complete is not False
-        or not isinstance(artifact.ciphertext, bytes)
-        or not 1 <= len(artifact.ciphertext) <= _MAX_ARTIFACT
-        or not hmac.compare_digest(
-            hashlib.sha256(artifact.ciphertext).hexdigest(), artifact.sha256,
+    # Never trust metadata alone: decrypt the fixture with the delivery key
+    # and verify the embedded request ID and EVERY synthetic-only row. This
+    # prevents cross-case export swapping and disguised real PII, even when
+    # an otherwise valid ciphertext/hash pair is supplied.
+    try:
+        verify_encrypted_synthetic_export(
+            artifact=artifact,
+            encryption_key=os.getenv("SHOPIFY_PRIVACY_DELIVERY_KEY", "").encode("ascii"),
+            expected_request_id=request_id,
         )
-    ):
-        raise ShopifyPrivacySecureDeliveryError("UNTRUSTED_PRIVACY_ARTIFACT")
+    except (SyntheticPrivacyExportError, UnicodeEncodeError) as exc:
+        raise ShopifyPrivacySecureDeliveryError("UNTRUSTED_PRIVACY_ARTIFACT") from exc
 
     token = secrets.token_urlsafe(32)
     now = datetime.utcnow()

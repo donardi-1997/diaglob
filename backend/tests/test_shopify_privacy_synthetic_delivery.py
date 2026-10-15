@@ -28,6 +28,7 @@ CONTEXT = {
 def fixture_export():
     key = Fernet.generate_key()
     manifest = {
+        "request_id": REQUEST,
         "topic": "customers/data_request",
         "scope_status": "scope_preview_only",
         "export_generated": False,
@@ -74,6 +75,8 @@ def test_one_time_delivery_returns_only_ciphertext_and_cannot_replay(fixture_exp
     assert received.sha256 == hashlib.sha256(received.ciphertext).hexdigest()
     assert received.ciphertext not in repr(received).encode()
     decoded = json.loads(Fernet(key).decrypt(received.ciphertext))
+    assert artifact.request_id == REQUEST
+    assert decoded["request_id"] == REQUEST
     assert decoded["records"][0]["fields"]["order_number"] == (
         "SYNTHETIC_DELIVERY_101"
     )
