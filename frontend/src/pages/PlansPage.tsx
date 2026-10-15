@@ -125,16 +125,6 @@ const billingPeriods: Array<{
     labelKey: "billing1Month",
   },
   {
-    months: 3,
-    labelKey: "billing3Months",
-    badgeKey: "billingSave5",
-  },
-  {
-    months: 6,
-    labelKey: "billing6Months",
-    badgeKey: "billingSave10",
-  },
-  {
     months: 12,
     labelKey: "billing12Months",
     badgeKey: "billingSave2Months",
@@ -1013,7 +1003,7 @@ export default function PlansPage() {
           <span>
             {t("plansTrialPendingHelp", {
               defaultValue:
-                "Conecta tu primera tienda Shopify o Nuvemshop para iniciar tus 7 días gratis.",
+                "Conecta tu primera tienda Shopify o Nuvemshop para iniciar tus 3 días gratis.",
             })}
           </span>
         </div>
