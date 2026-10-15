@@ -424,7 +424,7 @@ def create_shopify_draft_order(
     # ------------------------------------------
 
     try:
-        token = connection_access_token(connection)
+        token = connection_access_token(connection, decrypt_legacy=decrypt_shopify_secret)
 
         client = ShopifyGraphQLClient(
             shop_domain=(
