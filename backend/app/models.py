@@ -67,6 +67,10 @@ from .model_domains.shopify_privacy import (  # noqa: F401
     ShopifyPrivacySuppression,
     ShopifyPrivacyControlEvidence,
 )
+from .model_domains.shopify_embedded_auth import (  # noqa: F401
+    ShopifyEmbeddedLinkTicket,
+    ShopifyEmbeddedIdentityBinding,
+)
 from .model_domains.shopify_billing import (  # noqa: F401
     ShopifyBillingVerification,
     ShopifyPlanTransitionReview,
