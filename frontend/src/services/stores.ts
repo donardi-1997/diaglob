@@ -122,3 +122,22 @@ export async function deleteStore(
 
   return response.data;
 }
+
+
+/** Short-lived, member-scoped Shopify App Bridge pairing. Never persist this code. */
+export async function issueShopifyEmbeddedLinkCode(storeId: number) {
+  const response = await api.post<{ link_code: string; expires_in_seconds: number }>(
+    `/api/stores/${storeId}/shopify/embedded/link-code`,
+    {},
+    { headers: globalHeaders },
+  );
+  return response.data;
+}
+
+export async function revokeShopifyEmbeddedLinks(storeId: number) {
+  const response = await api.delete<{ revoked: number }>(
+    `/api/stores/${storeId}/shopify/embedded/link`,
+    { headers: globalHeaders },
+  );
+  return response.data;
+}
