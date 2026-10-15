@@ -28,6 +28,7 @@ BILLING_PLAN_ORDER = {
 
 SUBSCRIPTION_EVENTS = {
     "subscription.created",
+    "subscription.trialing",
     "subscription.activated",
     "subscription.updated",
     "subscription.past_due",
