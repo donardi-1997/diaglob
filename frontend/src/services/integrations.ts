@@ -1008,6 +1008,24 @@ export async function claimPendingShopifyInstall(storeId: number) {
 }
 
 
+
+/** Shopify managed-install proof: the claim code never goes into the URL. */
+export async function verifyManagedShopifyClaimCode(claimCode: string) {
+  const response = await api.post<{pending: boolean; shop_domain: string | null}>(
+    "/api/shopify/install/managed/pending",
+    { claim_code: claimCode },
+  );
+  return response.data;
+}
+
+export async function claimManagedShopifyInstall(storeId: number, claimCode: string) {
+  const response = await api.post<{connected: boolean; store_id: number; shop_domain: string}>(
+    `/api/stores/${storeId}/shopify/install/claim-code`,
+    { claim_code: claimCode },
+  );
+  return response.data;
+}
+
 /** Merchant measurement configuration only; no Pixel/CAPI deployment. */
 export interface MetaPixelSettingsStatus {
   store_id: number;
