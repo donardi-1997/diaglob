@@ -23,7 +23,7 @@ class ShopifyTokenRefreshError(RuntimeError):
 
 def connection_access_token(connection: CommerceConnection, *, decrypt_legacy=None) -> str:
     """Return a valid Shopify token, preserving legacy non-expiring callers."""
-    if getattr(connection, "provider", None) != "shopify" or getattr(connection, "status", None) != "connected":
+    if getattr(connection, "provider", "shopify") != "shopify" or getattr(connection, "status", "connected") != "connected":
         raise ShopifyTokenRefreshError("SHOPIFY_CONNECTION_NOT_ACTIVE")
 
     expiration = getattr(connection, "access_token_expires_at", None)
