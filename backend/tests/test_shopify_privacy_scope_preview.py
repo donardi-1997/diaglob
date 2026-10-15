@@ -516,3 +516,34 @@ def test_unknown_external_customer_does_not_redact_checkouts(
     assert result.complete is False
     assert source.phone == "PHONE_PRIVATE_STORE_0"
     assert other.phone == "PHONE_PRIVATE_STORE_1"
+
+
+@pytest.mark.parametrize("second_profile_same_customer", [True, False])
+def test_duplicate_shopify_subject_mapping_never_verifies_scope(
+    setup, second_profile_same_customer,
+):
+    """Even identical duplicate mappings must not authorize customer processing."""
+    db, receipt = setup
+    customer = db.query(Customer).one()
+    if not second_profile_same_customer:
+        customer = Customer(
+            organization_id=receipt.organization_id,
+            name="UNRELATED_PRIVATE_CUSTOMER",
+            phone="test-unique",
+        )
+        db.add(customer)
+        db.flush()
+    db.add(CustomerStoreProfile(
+        organization_id=receipt.organization_id,
+        store_id=receipt.store_id,
+        customer_id=customer.id,
+        external_customer_id="700",
+        currency="COP",
+    ))
+    db.commit()
+    result = preview_shopify_privacy_scope(db, receipt)
+    assert result.scope_status == "subject_unresolved"
+    assert result.matched_customer_profiles == 0
+    assert result.matched_store_orders == 0
+    assert result.matched_store_conversations == 0
+    assert db.query(CustomerStoreProfile).count() == 3
