@@ -1,23 +1,24 @@
 # DIAGLOB — Shopify App Store review preflight (14 Oct 2026)
 
 **Scope: committed source, not live Shopify Partner verification. Submission: NO-GO.**
+Update 15 Oct 2026: tracked TOML now matches backend OAuth scopes in PR #251. This
+is a repository-only correction, not a deployed Shopify app version or merchant reauthorization.
 This audit neither creates a Shopify application nor deploys app configuration,
 issues Admin API queries, invokes private Partner APIs, processes customer data,
 charges merchants, or modifies AWS.
 
 ## Findings checked against current GitHub `main`
 
-1. **OAuth scope drift, blocking:** `shopify.app.toml` declares
-   `read_customers,read_inventory,read_orders,write_orders,read_products,write_products`.
-   The authorization URL generated from `backend/app/shopify_oauth.py`
-   instead requests three permissions not declared in that TOML:
-   `write_draft_orders`, `read_merchant_managed_fulfillment_orders`,
-   `write_merchant_managed_fulfillment_orders`. Conversely,
-   `write_products` is declared in the TOML but not requested by the backend.
-   Do not silently grant more permissions or delete functionality: review each
-   actual GraphQL call against the minimum API scopes, confirm the **active**
-   version in Partner, then reconcile OAuth and the linked app configuration
-   with authorized reauthorization tests if required.
+1. **OAuth source scope mismatch corrected (repository only):** the tracked
+   `shopify.app.toml` now declares the same eight scopes requested by
+   `backend/app/shopify_oauth.py`. `write_draft_orders` is needed for
+   `draftOrderCreate`; merchant-managed fulfillment access is used in
+   `shopify_fulfillment.py` for `fulfillmentOrders` and `fulfillmentCreate`.
+   The unused `write_products` scope was removed from the tracked TOML.
+   **The active Shopify version was not updated:** confirm the exact Client ID,
+   version and grants in the Partner Dashboard/CLI before deploying app
+   configuration. New authorization and merchant consent may be required.
+   Do not mark live OAuth as PASS based on the source change.
 2. **Embedded App Home now exists in source:** contrary to the earlier
    `docs/shopify-embedded-auth-audit.md` gap, the repository includes
    `backend/app/api/shopify_embedded.py`, App Bridge CDN, Shopify ID-token
@@ -51,14 +52,16 @@ python -m tools.shopify_review_source_preflight --config ../shopify.app.toml
 python -m pytest -q tests/test_shopify_review_source_preflight.py
 ```
 
-The first command intentionally exits non-zero while scope drift remains.
+The first command should exit zero for source parity on this branch; it must
+still report that external evidence and Shopify approval are not verified.
 Only predefined diagnostic codes and **permission names** are emitted; no
 app secrets, access tokens, shop domains or PII. Even after a clean report,
 `shopify_approval_verified` and `release_authorized` remain false.
 
 ## Priorities before Shopify submission
 
-**P0 technical:** reconcile actual minimum scopes and active Partner version;
+**P0 technical:** verify active Partner version and actual OAuth grants after
+reconciling the tracked source scopes;
 verify embedded login/OAuth install+reinstall in `diaglob-poc.myshopify.com`;
 confirm webhook subscriptions and properly signed test delivery in an
 isolated environment; prove store-scoped, legally reviewed privacy requests;
@@ -69,9 +72,9 @@ assets and support inbox, provide functional reviewer account **only in the
 private Partner review form**, check authentic English-subtitled screencast
 and testing instructions. Do not publish or charge based on repository CI.
 
-**Development policy:** PRs remain open, without merge or production deploy,
-while direct Lightsail recovery is unavailable. Keep the PR #246 CI fix and
-PR #247 blue/green preflight separate from Shopify review work.
+**Development policy:** PR #251 remains a draft; no production deployment is
+triggered by source correction. A Lightsail recovery snapshot exists, but a
+reviewed deployment/rollback and live end-to-end Shopify tests are still required.
 
 Official requirements:
 - https://shopify.dev/docs/apps/launch/app-store-review/pass-app-review
