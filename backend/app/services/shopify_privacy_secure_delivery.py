@@ -219,10 +219,12 @@ def redeem_synthetic_secure_delivery(
     if not hmac.compare_digest(hashlib.sha256(content).hexdigest(), row.artifact_sha256):
         db.rollback()
         raise ShopifyPrivacySecureDeliveryError("PRIVACY_DELIVERY_ARTIFACT_INVALID")
+    checksum = row.artifact_sha256
     row.ciphertext_encrypted = None
     _audit(db, request_id, "redeemed", "authenticated_merchant")
     db.commit()
-    return SecureDeliveryDownload(ciphertext=content, sha256=row.artifact_sha256)
+    # Do not read expired ORM state after committing the one-time claim.
+    return SecureDeliveryDownload(ciphertext=content, sha256=checksum)
 
 
 def revoke_synthetic_secure_delivery(
