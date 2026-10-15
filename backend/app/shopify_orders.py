@@ -1,3 +1,4 @@
+from ..shopify_token_lifecycle import connection_access_token
 import uuid
 import re
 
@@ -423,9 +424,7 @@ def create_shopify_draft_order(
     # ------------------------------------------
 
     try:
-        token = decrypt_shopify_secret(
-            connection.access_token_encrypted
-        )
+        token = connection_access_token(connection)
 
         client = ShopifyGraphQLClient(
             shop_domain=(
