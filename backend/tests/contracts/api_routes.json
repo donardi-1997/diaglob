@@ -77,6 +77,10 @@
   ],
   [
     "DELETE",
+    "/api/stores/{store_id}/shopify/embedded/link"
+  ],
+  [
+    "DELETE",
     "/api/stores/{store_id}/suppliers/cj/disconnect"
   ],
   [
@@ -97,11 +101,11 @@
   ],
   [
     "DELETE",
-    "/api/team/invitations/{invitation_id}"
+    "/api/team/{membership_id}"
   ],
   [
     "DELETE",
-    "/api/team/{membership_id}"
+    "/api/team/invitations/{invitation_id}"
   ],
   [
     "GET",
@@ -233,10 +237,6 @@
   ],
   [
     "GET",
-    "/api/customers/summary"
-  ],
-  [
-    "GET",
     "/api/customers/{customer_id}"
   ],
   [
@@ -246,6 +246,10 @@
   [
     "GET",
     "/api/customers/{customer_id}/risk/disputes/mine"
+  ],
+  [
+    "GET",
+    "/api/customers/summary"
   ],
   [
     "GET",
@@ -457,10 +461,6 @@
   ],
   [
     "GET",
-    "/api/stores/{store_id}/automation-campaigns/audience/customers"
-  ],
-  [
-    "GET",
     "/api/stores/{store_id}/automation-campaigns/{campaign_id}"
   ],
   [
@@ -478,6 +478,10 @@
   [
     "GET",
     "/api/stores/{store_id}/automation-campaigns/{campaign_id}/runs/{run_id}/recipients/{recipient_id}"
+  ],
+  [
+    "GET",
+    "/api/stores/{store_id}/automation-campaigns/audience/customers"
   ],
   [
     "GET",
@@ -613,15 +617,15 @@
   ],
   [
     "GET",
-    "/api/stores/{store_id}/payments/providers"
-  ],
-  [
-    "GET",
     "/api/stores/{store_id}/payments/{payment_id}"
   ],
   [
     "GET",
     "/api/stores/{store_id}/payments/{provider}/status"
+  ],
+  [
+    "GET",
+    "/api/stores/{store_id}/payments/providers"
   ],
   [
     "GET",
@@ -945,6 +949,18 @@
   ],
   [
     "POST",
+    "/api/knowledge-bases/{knowledge_base_id}/sources/{source_id}/sync"
+  ],
+  [
+    "POST",
+    "/api/knowledge-bases/{knowledge_base_id}/sources/{source_id}/sync-drive-file"
+  ],
+  [
+    "POST",
+    "/api/knowledge-bases/{knowledge_base_id}/sources/{source_id}/sync-folder"
+  ],
+  [
+    "POST",
     "/api/knowledge-bases/{knowledge_base_id}/sources/google-doc"
   ],
   [
@@ -961,19 +977,11 @@
   ],
   [
     "POST",
-    "/api/knowledge-bases/{knowledge_base_id}/sources/{source_id}/sync"
-  ],
-  [
-    "POST",
-    "/api/knowledge-bases/{knowledge_base_id}/sources/{source_id}/sync-drive-file"
-  ],
-  [
-    "POST",
-    "/api/knowledge-bases/{knowledge_base_id}/sources/{source_id}/sync-folder"
-  ],
-  [
-    "POST",
     "/api/register/provision"
+  ],
+  [
+    "POST",
+    "/api/shopify/embedded/link"
   ],
   [
     "POST",
@@ -982,10 +990,6 @@
   [
     "POST",
     "/api/stores/{store_id}/automation-campaigns"
-  ],
-  [
-    "POST",
-    "/api/stores/{store_id}/automation-campaigns/audience/preview"
   ],
   [
     "POST",
@@ -1001,15 +1005,15 @@
   ],
   [
     "POST",
+    "/api/stores/{store_id}/automation-campaigns/audience/preview"
+  ],
+  [
+    "POST",
     "/api/stores/{store_id}/automation-flow-templates/{template_id}"
   ],
   [
     "POST",
     "/api/stores/{store_id}/automation-flows"
-  ],
-  [
-    "POST",
-    "/api/stores/{store_id}/automation-flows/simulate"
   ],
   [
     "POST",
@@ -1038,6 +1042,10 @@
   [
     "POST",
     "/api/stores/{store_id}/automation-flows/{flow_id}/versions/{version_id}/publish"
+  ],
+  [
+    "POST",
+    "/api/stores/{store_id}/automation-flows/simulate"
   ],
   [
     "POST",
@@ -1130,6 +1138,10 @@
   [
     "POST",
     "/api/stores/{store_id}/shopify/connect"
+  ],
+  [
+    "POST",
+    "/api/stores/{store_id}/shopify/embedded/link-code"
   ],
   [
     "POST",
