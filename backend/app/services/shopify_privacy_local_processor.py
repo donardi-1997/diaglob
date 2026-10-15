@@ -130,6 +130,111 @@ def _canonical_stored_order_id(value) -> str | None:
     return str(int(match.group(1))) if match else None
 
 
+@dataclass(frozen=True)
+class LocalCustomerExportCounts:
+    """Counts-only, no sensitive customer/order/message payloads."""
+    request_id: str
+    profiles: int
+    orders: int
+    order_items: int
+    conversations: int
+    messages: int
+    checkouts: int
+    requested_orders_not_resolved: int
+    complete: bool = False
+    merchant_delivery_allowed: bool = False
+
+
+def inspect_local_customer_export_counts(
+    db: Session, *, request_id: str,
+) -> LocalCustomerExportCounts:
+    """Count exact customer/store-linked records without creating an export.
+
+    The operator-facing inspection must not SELECT order addresses, notes,
+    message text, checkout contacts or export/encrypt their raw content.
+    Only the signed request selector is decrypted to resolve the remote ID.
+    """
+    receipt = _receipt(db, request_id)
+    if receipt.topic != "customers/data_request":
+        raise ShopifyLocalPrivacyError("DATA_REQUEST_TOPIC_REQUIRED")
+    selector = _selectors(receipt)
+    subject = selector.get("customer")
+    if not isinstance(subject, dict) or subject.get("id") is None:
+        raise ShopifyLocalPrivacyError("EXACT_CUSTOMER_ID_REQUIRED")
+    external_id = str(subject["id"]).strip()
+    if not external_id:
+        raise ShopifyLocalPrivacyError("EXACT_CUSTOMER_ID_REQUIRED")
+    profiles = db.query(CustomerStoreProfile.customer_id).filter(
+        CustomerStoreProfile.organization_id == receipt.organization_id,
+        CustomerStoreProfile.store_id == receipt.store_id,
+        CustomerStoreProfile.external_customer_id == external_id,
+    ).limit(2).all()
+    if len(profiles) != 1:
+        raise ShopifyLocalPrivacyError("SHOPIFY_SUBJECT_UNRESOLVED_OR_AMBIGUOUS")
+    customer_id = profiles[0][0]
+    requested = _canonical_order_ids(selector.get("orders_requested"))
+
+    # Order IDs are required only to reconcile Shopify's explicit requested
+    # order selector and count dependent records; no personal columns loaded.
+    rows = _limited(db.query(Order.id, Order.shopify_order_id).filter(
+        Order.organization_id == receipt.organization_id,
+        Order.store_id == receipt.store_id,
+        Order.customer_id == customer_id,
+    ).order_by(Order.id), "orders")
+    if requested is not None:
+        rows = [row for row in rows
+                if _canonical_stored_order_id(row[1]) in requested]
+        canonical = [_canonical_stored_order_id(row[1]) for row in rows]
+        if len(set(canonical)) != len(canonical):
+            raise ShopifyLocalPrivacyError("DUPLICATE_SHOPIFY_ORDER_ID")
+        missing_orders = len(requested - set(canonical))
+    else:
+        missing_orders = 0
+    order_ids = [row[0] for row in rows]
+    if order_ids and db.query(OrderItem.id).filter(
+        OrderItem.order_id.in_(order_ids),
+        (OrderItem.organization_id != receipt.organization_id)
+        | (OrderItem.store_id != receipt.store_id),
+    ).first() is not None:
+        raise ShopifyLocalPrivacyError("ORDER_ITEM_TENANCY_MISMATCH")
+    order_items = db.query(OrderItem.id).filter(
+        OrderItem.organization_id == receipt.organization_id,
+        OrderItem.store_id == receipt.store_id,
+        OrderItem.order_id.in_(order_ids),
+    ).count() if order_ids else 0
+
+    conversations = _limited(db.query(Conversation.id).filter(
+        Conversation.organization_id == receipt.organization_id,
+        Conversation.store_id == receipt.store_id,
+        Conversation.customer_id == customer_id,
+    ).order_by(Conversation.id), "conversations")
+    conversation_ids = [row[0] for row in conversations]
+    messages = db.query(Message.id).filter(
+        Message.conversation_id.in_(conversation_ids),
+    ).count() if conversation_ids else 0
+    checkouts = db.query(ConversationalCheckout.id).filter(
+        ConversationalCheckout.organization_id == receipt.organization_id,
+        ConversationalCheckout.store_id == receipt.store_id,
+        ConversationalCheckout.customer_id == customer_id,
+    ).count()
+    for area, count in (
+        ("order_items", order_items), ("messages", messages),
+        ("checkouts", checkouts),
+    ):
+        if count > _MAX_ROWS:
+            raise ShopifyLocalPrivacyError(f"{area.upper()}_ROW_LIMIT")
+    return LocalCustomerExportCounts(
+        request_id=request_id,
+        profiles=1,
+        orders=len(rows),
+        order_items=order_items,
+        conversations=len(conversations),
+        messages=messages,
+        checkouts=checkouts,
+        requested_orders_not_resolved=missing_orders,
+    )
+
+
 def build_encrypted_local_customer_export(
     db: Session, *, request_id: str,
 ) -> LocalCustomerExport:
