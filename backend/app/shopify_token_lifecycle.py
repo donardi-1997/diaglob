@@ -21,15 +21,18 @@ class ShopifyTokenRefreshError(RuntimeError):
     pass
 
 
-def connection_access_token(connection: CommerceConnection) -> str:
-    """Return a valid Shopify token or fail closed; never use expired tokens."""
-    if connection.provider != "shopify" or connection.status != "connected":
+def connection_access_token(connection: CommerceConnection, *, decrypt_legacy=None) -> str:
+    """Return a valid Shopify token, preserving legacy non-expiring callers."""
+    if getattr(connection, "provider", None) != "shopify" or getattr(connection, "status", None) != "connected":
         raise ShopifyTokenRefreshError("SHOPIFY_CONNECTION_NOT_ACTIVE")
 
-    expiration = connection.access_token_expires_at
+    expiration = getattr(connection, "access_token_expires_at", None)
     if expiration is None:
-        # Previously issued legacy non-expiring tokens remain supported.
-        return decrypt_shopify_secret(connection.access_token_encrypted or "")
+        # Existing non-expiring connections and mock-injected legacy decryptors.
+        decrypt = decrypt_legacy or decrypt_shopify_secret
+        return decrypt(connection.access_token_encrypted or "")
+    if not isinstance(expiration, datetime):
+        raise ShopifyTokenRefreshError("SHOPIFY_EXPIRY_INVALID")
     if expiration > datetime.utcnow() + timedelta(minutes=2):
         return decrypt_shopify_secret(connection.access_token_encrypted or "")
 
