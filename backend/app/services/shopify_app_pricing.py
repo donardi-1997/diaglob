@@ -1,3 +1,4 @@
+from ...shopify_token_lifecycle import connection_access_token
 """Read-only Shopify App Pricing subscription verification via Partner API.
 
 Shopify App Pricing (2026-10) owns plan creation and merchant charges.
@@ -165,7 +166,7 @@ def resolve_trusted_shop_gid(connection: Any) -> str:
         raise ShopifyAppPricingError("SHOPIFY_CONNECTION_NOT_VERIFIED")
     try:
         domain = normalize_shop_domain(connection.external_store_url)
-        token = decrypt_shopify_secret(connection.access_token_encrypted)
+        token = connection_access_token(connection)
         response = ShopifyGraphQLClient(
             shop_domain=domain,
             access_token=token,
@@ -209,7 +210,7 @@ def is_trusted_partner_development_shop(
         raise ShopifyAppPricingError("SHOPIFY_CONNECTION_NOT_VERIFIED")
     try:
         domain = normalize_shop_domain(connection.external_store_url)
-        token = decrypt_shopify_secret(connection.access_token_encrypted)
+        token = connection_access_token(connection)
         response = ShopifyGraphQLClient(
             shop_domain=domain,
             access_token=token,
