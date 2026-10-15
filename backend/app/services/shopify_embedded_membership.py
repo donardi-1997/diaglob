@@ -214,5 +214,12 @@ def revoke_member_links(db: Session, *, membership_id: int, store_id: int) -> in
         ShopifyEmbeddedIdentityBinding.revoked_at.is_(None),
     ).update({ShopifyEmbeddedIdentityBinding.revoked_at: datetime.utcnow()},
              synchronize_session=False)
+    # Revocation also invalidates outstanding pairing codes for this member.
+    db.query(ShopifyEmbeddedLinkTicket).filter(
+        ShopifyEmbeddedLinkTicket.membership_id == membership_id,
+        ShopifyEmbeddedLinkTicket.store_id == store_id,
+        ShopifyEmbeddedLinkTicket.consumed_at.is_(None),
+    ).update({ShopifyEmbeddedLinkTicket.consumed_at: datetime.utcnow()},
+             synchronize_session=False)
     db.commit()
     return count
