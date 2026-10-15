@@ -5,13 +5,14 @@ from cryptography.fernet import Fernet
 
 from app.services.shopify_privacy_synthetic_export import (
     SyntheticPrivacyExportError,
-    build_encrypted_synthetic_export,
+    build_encrypted_synthetic_export, verify_encrypted_synthetic_export,
 )
 
 
 @pytest.fixture
 def manifest():
     return {
+        "request_id": "b" * 64,
         "topic": "customers/data_request",
         "scope_status": "scope_preview_only",
         "export_generated": False,
@@ -43,7 +44,12 @@ def test_encrypted_fixture_is_not_plaintext_or_delivery(manifest):
     assert b"SYNTHETIC_1001" not in result.ciphertext
     decoded = json.loads(Fernet(key).decrypt(result.ciphertext))
     assert decoded["synthetic_only"] is True
+    assert decoded["request_id"] == "b" * 64
+    assert result.request_id == "b" * 64
     assert decoded["records"] == fixture
+    verify_encrypted_synthetic_export(
+        artifact=result, encryption_key=key, expected_request_id="b" * 64,
+    )
 
 
 @pytest.mark.parametrize("override", [
@@ -52,6 +58,8 @@ def test_encrypted_fixture_is_not_plaintext_or_delivery(manifest):
     {"delivery_authorized": True},
     {"fulfillment_complete": True},
     {"export_generated": True},
+    {"request_id": "invalid"},
+    {"request_id": "B" * 64},
 ])
 def test_reject_invalid_manifest(manifest, override):
     manifest.update(override)
@@ -100,4 +108,53 @@ def test_reject_incomplete_manifest_and_invalid_key(manifest):
             records=[{"source": "orders", "record": "SYNTHETIC",
                       "fields": {"id": "SYNTHETIC_1"}}],
             encryption_key=b"invalid",
+        )
+
+
+def test_encrypted_export_is_bound_to_one_request(manifest):
+    from dataclasses import replace
+
+    key = Fernet.generate_key()
+    fixture = [{"source": "orders", "record": "SYNTHETIC",
+                "fields": {"id": "SYNTHETIC_123"}}]
+    result = build_encrypted_synthetic_export(
+        manifest=manifest, records=fixture, encryption_key=key,
+    )
+    with pytest.raises(SyntheticPrivacyExportError, match="UNTRUSTED"):
+        verify_encrypted_synthetic_export(
+            artifact=result, encryption_key=key, expected_request_id="c" * 64,
+        )
+    with pytest.raises(SyntheticPrivacyExportError, match="UNTRUSTED"):
+        verify_encrypted_synthetic_export(
+            artifact=replace(result, request_id="c" * 64),
+            encryption_key=key, expected_request_id="c" * 64,
+        )
+    with pytest.raises(SyntheticPrivacyExportError, match="UNTRUSTED"):
+        verify_encrypted_synthetic_export(
+            artifact=result, encryption_key=Fernet.generate_key(),
+            expected_request_id="b" * 64,
+        )
+
+
+def test_signed_ciphertext_cannot_hide_real_customer_values(manifest):
+    import hashlib
+    from dataclasses import replace
+
+    key = Fernet.generate_key()
+    item = [{"source": "orders", "record": "SYNTHETIC",
+             "fields": {"order_number": "SYNTHETIC_1001"}}]
+    result = build_encrypted_synthetic_export(
+        manifest=manifest, records=item, encryption_key=key,
+    )
+    document = json.loads(Fernet(key).decrypt(result.ciphertext))
+    document["records"][0]["fields"]["order_number"] = "actual-buyer@example.com"
+    forged = Fernet(key).encrypt(json.dumps(document).encode())
+    altered = replace(
+        result, ciphertext=forged,
+        sha256=hashlib.sha256(forged).hexdigest(),
+    )
+    with pytest.raises(SyntheticPrivacyExportError, match="UNTRUSTED"):
+        verify_encrypted_synthetic_export(
+            artifact=altered, encryption_key=key,
+            expected_request_id="b" * 64,
         )
