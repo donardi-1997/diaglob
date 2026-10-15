@@ -542,3 +542,34 @@ def test_delivery_readiness_does_not_trust_mismatched_shop(sandbox):
     assert "SHOPIFY_SUBJECT_OR_SHOP_NOT_VERIFIED" in readiness["blockers"]
     assert readiness["delivery_authorized"] is False
     assert readiness["fulfillment_complete"] is False
+
+
+@pytest.mark.parametrize("topic", ["customers/redact", "shop/redact"])
+def test_redaction_manifest_refuses_cross_store_order_items(sandbox, topic):
+    """An incorrectly scoped child row must be investigated, never ignored."""
+    from app.models import OrderItem
+
+    db, receipt = sandbox
+    receipt.topic = topic
+    target_order = db.query(Order).filter(
+        Order.store_id == receipt.store_id,
+    ).one()
+    foreign_order = db.query(Order).filter(
+        Order.store_id != receipt.store_id,
+    ).one()
+    db.add(OrderItem(
+        organization_id=receipt.organization_id,
+        store_id=foreign_order.store_id,
+        order_id=target_order.id,
+        title="SYNTHETIC_CROSS_STORE_ITEM",
+        quantity=1,
+        unit_price=1,
+        currency="COP",
+    ))
+    db.commit()
+    with pytest.raises(ShopifyLocalPrivacyError, match="ORDER_ITEM_TENANCY_MISMATCH"):
+        build_local_redaction_manifest(db, request_id=RECEIPT_ID)
+    assert receipt.completed_at is None
+    assert db.query(OrderItem).count() == 1
+    assert db.query(Order).count() == 2
+    assert db.query(Customer).one().name == "SHARED_PRIVATE_NAME"
