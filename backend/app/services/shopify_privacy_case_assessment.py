@@ -92,7 +92,9 @@ def assess_shopify_privacy_case(
     else:
         try:
             scope = preview_shopify_privacy_scope(db, receipt)
-        except (ShopifyPrivacyScopeError, ValueError):
+        except (ShopifyPrivacyScopeError, ValueError) as exc:
+            if str(exc) == "SHOPIFY_PRIVACY_SIGNED_SHOP_HISTORY_CONFLICT":
+                blockers.append("SHOPIFY_SIGNED_SHOP_HISTORY_CONFLICT")
             blockers.append("SHOP_SCOPE_NOT_VERIFIED")
         else:
             scope_status = (
