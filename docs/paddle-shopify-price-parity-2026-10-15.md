@@ -9,7 +9,7 @@
 | Pro | 99 | 990 | 3 |
 | Scale | 199 | 1990 | 5 |
 
-- Public **direct** checkouts only offer **1** or **12** months.
+- All direct subscriptions (catalog, public checkout and upgrades/downgrades) support **1 or 12 months only**. Quarterly and semiannual plans have been removed before the first sale.
 - All new merchant trials use **3 days**; existing already-started trial end timestamps must NOT be retroactively shortened.
 - Each Paddle recurring price has a 3-day **free trial**. Confirm that all eight are actually configured in the correct Paddle account/environment.
 - Price tax inclusivity is controlled in each Paddle price/account; confirm it separately. App list prices alone do not prove tax treatment.
@@ -31,7 +31,7 @@ Set these eight environment variables in the active backend deployment:
 | Scale monthly | `PADDLE_PRICE_SCALE_1M` | 199 |
 | Scale annual | `PADDLE_PRICE_SCALE_12M` | 1990 |
 
-The repository DOES NOT contain these new IDs. **Do not insert fabricated IDs.** Match each actual ID with its exact plan, frequency, USD amount, free-trial duration and live/sandbox environment. Do not mix new live IDs with old sandbox credentials. Legacy 3- and 6-month IDs are still recognized internally for existing subscriptions/webhooks, but new checkout of those intervals is rejected.
+The repository DOES NOT contain these new IDs. **Do not insert fabricated IDs.** Match each actual ID with its exact plan, frequency, USD amount, free-trial duration and live/sandbox environment. Do not mix new live IDs with old sandbox credentials. No subscriptions exist yet: the direct plan catalog, price lookup, proration and new checkout support **only 1M / 12M**. Any leftover 3M/6M environment variables should be retired, not copied into the new deployment.
 
 ## Shopify App Pricing (different billing provider)
 
@@ -48,7 +48,7 @@ Verify current Partner pricing BEFORE modifying `SHOPIFY_APP_PRICING_HANDLES_JSO
 1. Apply/merge the existing **store-cap** branch before this stacked change (or retarget appropriately).
 2. Run `cd backend && pytest -q tests/test_trial_service.py tests/test_billing_checkout_periods.py tests/test_shopify_app_pricing.py tests/test_plan_store_caps.py`.
 3. Run the frontend TypeScript build and verify that period selector offers only 1 month / 1 year.
-4. Confirm new direct trial=3 days; verify existing trial expiration timestamps are unchanged. Check that Diaglob's store-activated trial and Paddle's price trial cannot accidentally grant two sequential free periods.
+4. Confirm new direct trial=3 days and confirm the store-activated trial and Paddle price trial cannot accidentally grant two sequential free periods.
 5. Configure the eight real Paddle price IDs in deployment secret storage. Test monthly and annual checkout for each direct plan and simulate signed Paddle webhooks.
 6. Align the annual amounts and trial settings in Shopify Partner, set verified `SHOPIFY_APP_PRICING_HANDLES_JSON`, and test Shopify plan approval/refusal/retry and developer store subscription lifecycle.
 7. Verify tax-included behavior in BOTH channels independently. Do not assume Shopify and Paddle tax display semantics are the same.
