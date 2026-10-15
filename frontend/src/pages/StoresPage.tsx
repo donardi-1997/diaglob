@@ -21,6 +21,8 @@ import {
   deleteStore,
   getStoresForManagement,
   updateStore,
+  issueShopifyEmbeddedLinkCode,
+  revokeShopifyEmbeddedLinks,
   type Store,
 } from "../services/stores";
 import { getMarkets, type Market } from "../services/markets";
@@ -341,6 +343,41 @@ export default function StoresPage({
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
   const [form, setForm] = useState<StoreForm>(EMPTY_FORM);
+  const [embeddedLink, setEmbeddedLink] = useState<{storeId: number; code: string} | null>(null);
+  const [embeddedLinkPending, setEmbeddedLinkPending] = useState<number | null>(null);
+  const [embeddedLinkError, setEmbeddedLinkError] = useState("");
+
+  async function issueEmbeddedCode(storeId: number) {
+    setEmbeddedLink(null);
+    setEmbeddedLinkError("");
+    setEmbeddedLinkPending(storeId);
+    try {
+      const result = await issueShopifyEmbeddedLinkCode(storeId);
+      setEmbeddedLink({ storeId, code: result.link_code });
+      // Do not store this code in localStorage, URL, telemetry or logs.
+      window.setTimeout(() => setEmbeddedLink((current) =>
+        current?.storeId === storeId && current.code === result.link_code ? null : current
+      ), result.expires_in_seconds * 1000);
+    } catch {
+      setEmbeddedLinkError("No fue posible generar el código. Verifica que la conexión Shopify esté activa.");
+    } finally {
+      setEmbeddedLinkPending(null);
+    }
+  }
+
+  async function revokeEmbeddedCode(storeId: number) {
+    setEmbeddedLink(null);
+    setEmbeddedLinkError("");
+    setEmbeddedLinkPending(storeId);
+    try {
+      await revokeShopifyEmbeddedLinks(storeId);
+      setSuccess("Los accesos de Shopify vinculados a tu usuario fueron revocados.");
+    } catch {
+      setEmbeddedLinkError("No fue posible revocar el acceso embebido.");
+    } finally {
+      setEmbeddedLinkPending(null);
+    }
+  }
 
   async function loadData() {
     try {
@@ -730,6 +767,29 @@ export default function StoresPage({
                 <strong>{store.shopify_domain || copy.noCommerceDomain}</strong>
               </div>
 
+              {canWrite && store.active && store.shopify_domain?.endsWith(".myshopify.com") && (
+                <section aria-label="Acceso desde Shopify Admin" className="stores-v2-embedded-link" style={{padding: 12}}>
+                  <strong>Acceso desde Shopify Admin</strong>
+                  <p>Genera un código temporal para vincular tu usuario Shopify a esta tienda. Solo dura cinco minutos.</p>
+                  <button type="button" className="stores-v2-card-action"
+                    disabled={embeddedLinkPending !== null}
+                    onClick={() => { void issueEmbeddedCode(store.id); }}>
+                    {embeddedLinkPending === store.id ? "Generando…" : "Generar código de vinculación"}
+                  </button>
+                  <button type="button" className="stores-v2-card-action"
+                    disabled={embeddedLinkPending !== null}
+                    onClick={() => { void revokeEmbeddedCode(store.id); }}>
+                    Revocar mis accesos Shopify
+                  </button>
+                  {embeddedLink?.storeId === store.id && (
+                    <div role="status">
+                      <p>Introduce este código en la aplicación DIAGLOB dentro de Shopify Admin:</p>
+                      <code style={{overflowWrap: "anywhere"}}>{embeddedLink.code}</code>
+                    </div>
+                  )}
+                  {embeddedLinkError && <p role="alert" className="shopify-install-error">{embeddedLinkError}</p>}
+                </section>
+              )}
               {canWrite && (
                 <div className="stores-v2-card-actions">
                   <button type="button" className="stores-v2-card-action" onClick={() => openEdit(store)}>
