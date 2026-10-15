@@ -321,6 +321,10 @@
   ],
   [
     "GET",
+    "/api/internal/shopify/privacy/escalations"
+  ],
+  [
+    "GET",
     "/api/knowledge-bases"
   ],
   [
