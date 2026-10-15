@@ -13,12 +13,16 @@ from app.models import (
     AutomationFlow, AutomationFlowRecipientExecution, AutomationFlowRun,
     AutomationFlowVersion, AutomationNodeExecution, AutomationRecipientExecution,
     AutomationRun, Customer, CustomerStoreProfile, Organization,
-    ShopifyPrivacyRequest, Store,
+    ShopifyPrivacyRequest, ShopifyPrivacyAuditEvent, Store,
 )
 from app.services.shopify_privacy_automation_provenance import (
     inspect_shopify_automation_privacy_impact,
 )
 from app.services.shopify_privacy_scope_preview import ShopifyPrivacyScopeError
+from app.services.shopify_privacy_local_processor import (
+    inspect_local_customer_export_counts,
+)
+from app.api.shopify_privacy_backlog import inspect_shopify_local_customer_export
 from app.shopify_security import encrypt_shopify_secret
 
 
@@ -272,3 +276,79 @@ def test_same_store_different_customer_is_excluded_but_shop_scope_counts_both(
         shop_scope.flow_node_executions,
     ) == (2, 2, 2, 2, 2)
     assert shop_scope.complete is False
+
+
+def test_signed_export_inspection_includes_store_scoped_automation_counts(
+    scenario, monkeypatch,
+):
+    """Compare actual automation impact to the real read-only export endpoint."""
+    from datetime import datetime
+    from unittest.mock import patch
+
+    db, receipt = scenario
+    # Existing automation-only fixtures are intentionally not real signed
+    # receipts. Complete exactly one synthetic receipt for this integration.
+    receipt.request_id = "a" * 64
+    db.add(ShopifyPrivacyAuditEvent(
+        request_id=receipt.request_id,
+        event_type="received", actor_type="shopify_hmac_verified",
+        from_status=None, to_status="pending_policy_review",
+        reason_code="tenant_bound", created_at=datetime.utcnow(),
+    ))
+    db.commit()
+    monkeypatch.setenv("DIAGLOB_INTERNAL_SECRET", "synthetic-test-internal-secret")
+
+    with patch(
+        "app.services.shopify_privacy_local_processor.encrypt_shopify_secret",
+        side_effect=AssertionError("never encrypt or build a personal export"),
+    ) as encrypt:
+        inspected = inspect_shopify_local_customer_export(
+            request_id=receipt.request_id,
+            x_internal_secret="synthetic-test-internal-secret", db=db,
+        )
+    encrypt.assert_not_called()
+    assert inspected["automation"] == {
+        "audience_members": 1,
+        "campaign_recipients": 1,
+        "delivery_attempts": 1,
+        "flow_recipients": 1,
+        "flow_node_executions": 1,
+        "attribution": "verified_external_customer_id",
+        "export_included": False,
+        "coverage": "linked_records_only",
+    }
+    assert inspected["profiles"] == 1
+    assert inspected["orders"] == 0
+    assert inspected["complete"] is False
+    assert inspected["merchant_delivery_allowed"] is False
+    response = str(inspected)
+    for secret in (
+        "PRIVATE_MESSAGE", "PRIVATE_PROVIDER", "private checkout",
+        "customer_address", "other.myshopify.com",
+    ):
+        assert secret not in response
+    # Other-shop automations belong to a shared Customer but are never merged.
+    assert db.query(AutomationAudienceMember).count() == 3
+
+
+def test_export_inspection_automation_subject_cannot_be_guessed_by_email(
+    scenario,
+):
+    """An email address is not enough to authorize an automation data scope."""
+    from datetime import datetime
+    from app.services.shopify_privacy_local_processor import ShopifyLocalPrivacyError
+
+    db, receipt = scenario
+    receipt.request_id = "b" * 64
+    receipt.selector_encrypted = encrypt_shopify_secret(
+        json.dumps({"customer": {"email": "not-a-shopify-id@example.com"}})
+    )
+    db.add(ShopifyPrivacyAuditEvent(
+        request_id=receipt.request_id,
+        event_type="received", actor_type="shopify_hmac_verified",
+        from_status=None, to_status="pending_policy_review",
+        reason_code="tenant_bound", created_at=datetime.utcnow(),
+    ))
+    db.commit()
+    with pytest.raises(ShopifyLocalPrivacyError):
+        inspect_local_customer_export_counts(db, request_id=receipt.request_id)
