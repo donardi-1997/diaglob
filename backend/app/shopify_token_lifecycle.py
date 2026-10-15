@@ -44,7 +44,7 @@ def connection_access_token(connection: CommerceConnection, *, decrypt_legacy=No
         CommerceConnection.id == connection.id,
         CommerceConnection.provider == "shopify",
         CommerceConnection.status == "connected",
-    ).with_for_update().first()
+    ).populate_existing().with_for_update().first()
     if locked is None:
         raise ShopifyTokenRefreshError("SHOPIFY_CONNECTION_REVOKED")
 
