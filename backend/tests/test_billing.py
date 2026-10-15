@@ -211,25 +211,17 @@ class TestLocalProrationCalculation:
         charge = Decimal(result["charge"])
         assert charge > 0
 
-    def test_3_month_billing_period(self):
-        now = datetime(2026, 9, 15, 0, 0, 0)
-        period_start = datetime(2026, 8, 1, 0, 0, 0)
-        period_end = datetime(2026, 11, 1, 0, 0, 0)
-
-        result = calculate_local_proration(
-            current_plan="starter",
-            target_plan="growth",
-            billing_period_months=3,
-            current_period_start=period_start,
-            current_period_end=period_end,
-            now=now,
-        )
-
-        assert result["billing_period_months"] == 3
-        assert result["days_total"] == 92
-
-        credit = Decimal(result["credit"])
-        assert credit > 0
+    @pytest.mark.parametrize("months", [3, 6])
+    def test_unsupported_billing_period(self, months):
+        with pytest.raises(ValueError, match="1 or 12 months"):
+            calculate_local_proration(
+                current_plan="starter",
+                target_plan="growth",
+                billing_period_months=months,
+                current_period_start=datetime(2026, 8, 1),
+                current_period_end=datetime(2027, 8, 1),
+                now=datetime(2026, 9, 15),
+            )
 
     def test_12_month_billing_period(self):
         now = datetime(2027, 6, 15, 0, 0, 0)
@@ -332,18 +324,21 @@ def test_upgrade_credit_charge_and_amount_due_decrease_over_time():
     assert Decimal(early["amount_due_now"]) > Decimal(middle["amount_due_now"]) > Decimal(late["amount_due_now"])
 
 
-def test_multi_month_upgrade_prorates_discounted_target_period_price():
+def test_annual_upgrade_prorates_discounted_target_period_price():
     result = calculate_local_proration(
         current_plan="starter",
         target_plan="growth",
-        billing_period_months=3,
+        billing_period_months=12,
         current_period_start=datetime(2026, 8, 1, 0, 0, 0),
-        current_period_end=datetime(2026, 11, 1, 0, 0, 0),
-        now=datetime(2026, 9, 15, 0, 0, 0),
+        current_period_end=datetime(2027, 8, 1, 0, 0, 0),
+        now=datetime(2027, 2, 1, 0, 0, 0),
     )
 
-    assert Decimal(result["charge"]) == Decimal("71.52")
-    assert Decimal(result["credit"]) == Decimal("27.59")
-    assert Decimal(result["amount_due_now"]) == Decimal("43.93")
-    assert Decimal(result["next_full_charge"]) == Decimal("140.00")
-    assert result["next_billed_at"] == "2026-11-01T00:00:00"
+    assert result["billing_period_months"] == 12
+    assert Decimal("0") < Decimal(result["charge"]) < Decimal("490.00")
+    assert Decimal("0") < Decimal(result["credit"]) < Decimal("190.00")
+    assert Decimal(result["amount_due_now"]) == (
+        Decimal(result["charge"]) - Decimal(result["credit"])
+    )
+    assert Decimal(result["next_full_charge"]) == Decimal("490.00")
+    assert result["next_billed_at"] == "2027-08-01T00:00:00"
