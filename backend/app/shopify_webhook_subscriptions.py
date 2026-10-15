@@ -76,7 +76,7 @@ def ensure_shopify_order_webhooks(
     # Mandatory GDPR topics are configured at app level (shopify.app.toml),
     # not with GraphQL's shop-scoped webhookSubscriptionCreate mutation.
 
-    token = connection_access_token(connection)
+    token = connection_access_token(connection, decrypt_legacy=decrypt_shopify_secret)
     client = ShopifyGraphQLClient(
         shop_domain=connection.external_store_url,
         access_token=token,
