@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
-from sqlalchemy import func
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
 from ..models import (
@@ -17,6 +17,7 @@ from ..models import (
     Conversation,
     CustomerStoreProfile,
     Order,
+    ShopifyPrivacyAuditEvent,
     ShopifyPrivacyRequest,
     Store,
 )
@@ -40,6 +41,51 @@ class ShopifyPrivacyScopePreview:
     shared_customers_protected: int
     scope_status: str
     # Deliberately excludes customer names, emails, phone, address and row IDs.
+
+
+def _reject_conflicting_signed_shop_history(
+    db: Session, receipt: ShopifyPrivacyRequest, canonical_domain: str,
+) -> None:
+    """Deny historical Shopify shop-ID/tenant drift without touching buyer data.
+
+    Past receipts are only considered evidence when accompanied by a verified
+    intake event. Shopify's signed shop ID must not silently move to another
+    domain or tenant, nor may one domain silently move to another Shopify ID.
+    This is a negative integrity check, *not* independent Shopify Admin shop-ID
+    attestation or permission for customer disclosure and deletion.
+    """
+    if not isinstance(receipt.shop_id, str) or not receipt.shop_id.strip():
+        raise ShopifyPrivacyScopeError("SHOPIFY_PRIVACY_SHOP_ID_MISSING")
+    conflict = db.query(ShopifyPrivacyRequest.id).join(
+        ShopifyPrivacyAuditEvent,
+        ShopifyPrivacyAuditEvent.request_id == ShopifyPrivacyRequest.request_id,
+    ).filter(
+        ShopifyPrivacyRequest.request_id != receipt.request_id,
+        ShopifyPrivacyAuditEvent.event_type == "received",
+        ShopifyPrivacyAuditEvent.actor_type == "shopify_hmac_verified",
+        or_(
+            and_(
+                ShopifyPrivacyRequest.shop_domain == canonical_domain,
+                ShopifyPrivacyRequest.shop_id != receipt.shop_id,
+            ),
+            and_(
+                ShopifyPrivacyRequest.shop_id == receipt.shop_id,
+                ShopifyPrivacyRequest.shop_domain != canonical_domain,
+            ),
+            and_(
+                ShopifyPrivacyRequest.shop_id == receipt.shop_id,
+                ShopifyPrivacyRequest.shop_domain == canonical_domain,
+                ShopifyPrivacyRequest.organization_id.is_not(None),
+                ShopifyPrivacyRequest.store_id.is_not(None),
+                or_(
+                    ShopifyPrivacyRequest.organization_id != receipt.organization_id,
+                    ShopifyPrivacyRequest.store_id != receipt.store_id,
+                ),
+            ),
+        ),
+    ).first()
+    if conflict is not None:
+        raise ShopifyPrivacyScopeError("SHOPIFY_PRIVACY_SIGNED_SHOP_HISTORY_CONFLICT")
 
 
 def preview_shopify_privacy_scope(
@@ -76,6 +122,7 @@ def preview_shopify_privacy_scope(
         raise ShopifyPrivacyScopeError("SHOPIFY_PRIVACY_STORE_UNVERIFIED") from exc
     if stored_domain and stored_domain != expected_domain:
         raise ShopifyPrivacyScopeError("SHOPIFY_PRIVACY_STORE_MISMATCH")
+    _reject_conflicting_signed_shop_history(db, receipt, expected_domain)
     trusted_connection = db.query(CommerceConnection).filter(
         CommerceConnection.organization_id == receipt.organization_id,
         CommerceConnection.store_id == receipt.store_id,
