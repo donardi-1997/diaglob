@@ -274,26 +274,36 @@ jobs:
             --dump-header "$headers" --output /dev/null \
             --write-out '%{http_code}' \
             'https://api.diaglob.tech/api/shopify/install?shop=diaglob-poc.myshopify.com')"
-          [[ "$status" == "303" ]] || { echo "Install handoff HTTP $status (wanted 303)"; exit 1; }
-
-          destination="$(grep -i '^location:' "$headers" | \
-            tr -d '\r' | sed -E 's/^[^:]+:[[:space:]]*//')"
-          if [[ "$destination" == 'https://diaglob.tech/shopify/install?shop=diaglob-poc.myshopify.com' ]]; then
-            echo 'PASS: legacy install handoff (OAuth-first feature remains OFF)'
-          elif [[ "$destination" == "https://diaglob-poc.myshopify.com/admin/oauth/authorize?"* &&
+          # Public Shopify install is either explicitly unavailable (feature
+          # not approved for this distribution), or starts OAuth at Shopify.
+          # Never accept a pre-OAuth redirect into DIAGLOB login/store UI.
+          if [[ "$status" == "503" ]]; then
+            if grep -qi '^location:' "$headers"; then
+              echo 'FAIL: disabled Shopify install unexpectedly redirected'
+              exit 1
+            fi
+            echo 'PASS: public install disabled without pre-auth redirect'
+          elif [[ "$status" == "303" ]]; then
+            destination="$(grep -i '^location:' "$headers" | \
+              tr -d '\r' | sed -E 's/^[^:]+:[[:space:]]*//')"
+            if [[ "$destination" == "https://diaglob-poc.myshopify.com/admin/oauth/authorize?"* &&
                   "$destination" == *"state="* &&
                   "$destination" == *"client_id="* &&
                   "$destination" == *"redirect_uri="* ]]; then
-            echo 'PASS: OAuth-first Shopify authorization redirect'
+              echo 'PASS: OAuth-first Shopify authorization redirect'
+            else
+              echo 'FAIL: public install did not redirect to Shopify OAuth'
+              exit 1
+            fi
           else
-            echo 'FAIL: install handoff destination was not an approved HTTPS route'
+            echo "FAIL: unexpected Shopify install response HTTP $status"
             exit 1
           fi
           grep -qi '^cache-control: no-store' "$headers" || {
-            echo 'Install handoff missing no-store'
+            echo 'Install response missing no-store'
             exit 1
           }
-          echo 'PASS: safe Shopify install 303 handoff'
+          echo 'PASS: safe Shopify install entry'
 
           assert_code 400 "https://api.diaglob.tech/api/shopify/install?shop=https%3A%2F%2Fevil.example.test"
           # These HTTP resources must NOT disclose tenant billing details
