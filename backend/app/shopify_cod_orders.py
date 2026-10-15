@@ -4,7 +4,7 @@ This is intentionally separate from the historical POC order path. It creates
 an actual Shopify order with pending payment, confirmed shipping data and
 production Diaglob tags.
 """
-from ..shopify_token_lifecycle import connection_access_token
+from .shopify_token_lifecycle import connection_access_token
 import re
 
 from sqlalchemy.exc import IntegrityError
