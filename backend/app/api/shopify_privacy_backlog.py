@@ -179,6 +179,16 @@ def inspect_shopify_local_customer_export(
         "messages": result.messages,
         "checkouts": result.checkouts,
         "requested_orders_not_resolved": result.requested_orders_not_resolved,
+        "automation": {
+            "audience_members": result.automation_audience_members,
+            "campaign_recipients": result.automation_campaign_recipients,
+            "delivery_attempts": result.automation_delivery_attempts,
+            "flow_recipients": result.automation_flow_recipients,
+            "flow_node_executions": result.automation_flow_node_executions,
+            "attribution": result.automation_attribution,
+            "export_included": False,
+            "coverage": "linked_records_only",
+        },
         "complete": False,
         "merchant_delivery_allowed": False,
     }
