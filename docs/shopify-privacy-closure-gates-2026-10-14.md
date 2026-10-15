@@ -28,7 +28,14 @@ that erasure/delivery or downstream vendor work succeeded.
 | Secure delivery | Short-lived single-use synthetic vault | Real recipient authentication, hosted artifact or merchant receipt |
 | Deployment | Production endpoint and prior invalid-HMAC probes | Live subscribed Shopify deliveries and disaster recovery |
 
-PR #249 strengthens identity mapping and cross-store order-item integrity.
+PR #249 strengthens identity mapping and cross-store order-item integrity,
+and compares every requested shop ID/domain/tenant/store with prior
+**HMAC-audited** requests. Any signed history conflict blocks scope preview
+before customer selectors or records are read; a PII-free
+`SHOPIFY_SIGNED_SHOP_HISTORY_CONFLICT` blocker appears in case assessment.
+A history-consistent request is **not** proof of an independently verified
+Shopify Admin shop ID. Post-uninstall requests with missing store mapping
+remain blocked for an authorized manual resolution.
 
 ## Release gates — ALL must be checked independently
 
