@@ -191,6 +191,80 @@ class TestShopifyComplianceWebhooks:
             assert all(item.status != "completed" for item in work_items)
             assert {item.area for item in work_items} >= {"signed_receipt", "merchant_delivery"}
 
+    def test_replayed_webhook_id_cannot_hide_changed_customer_or_orders(self, client):
+        original = {
+            "shop_id": 123,
+            "shop_domain": "test-store.myshopify.com",
+            "customer": {"id": 456},
+            "orders_to_redact": [789],
+        }
+        modified = {
+            **original,
+            "customer": {"id": 999},
+            "orders_to_redact": [900],
+        }
+        first_body = json.dumps(original).encode()
+        changed_body = json.dumps(modified).encode()
+        secret, headers = _signed_headers(first_body, "customers/redact")
+        headers["X-Shopify-Webhook-Id"] = "same-delivery-id"
+        _, changed_headers = _signed_headers(changed_body, "customers/redact")
+        changed_headers["X-Shopify-Webhook-Id"] = "same-delivery-id"
+
+        with patch.dict(os.environ, {"SHOPIFY_CLIENT_SECRET": secret}), patch(
+            "app.services.shopify_compliance_webhooks.resolve_shopify_connection",
+            return_value=None,
+        ):
+            first = client.post(
+                "/api/webhooks/shopify/compliance",
+                content=first_body, headers=headers,
+            )
+            duplicate = client.post(
+                "/api/webhooks/shopify/compliance",
+                content=first_body, headers=headers,
+            )
+            conflict = client.post(
+                "/api/webhooks/shopify/compliance",
+                content=changed_body, headers=changed_headers,
+            )
+
+        assert first.status_code == duplicate.status_code == 200
+        assert duplicate.json()["action"] == "duplicate"
+        assert conflict.status_code == 400
+        assert conflict.json()["detail"] == "PRIVACY_WEBHOOK_DELIVERY_CONFLICT"
+        assert "999" not in conflict.text
+        with TEST_SESSION() as session:
+            assert session.query(ShopifyPrivacyRequest).count() == 1
+            record = session.query(ShopifyPrivacyRequest).one()
+            assert json.loads(decrypt_shopify_secret(
+                record.selector_encrypted
+            ))["customer"]["id"] == 456
+            assert session.query(ShopifyPrivacyWorkItem).count() == 10
+
+    def test_replayed_delivery_refuses_corrupt_existing_identity(self, client):
+        body = json.dumps({
+            "shop_id": 123, "shop_domain": "test-store.myshopify.com",
+            "customer": {"id": 456},
+        }).encode()
+        secret, headers = _signed_headers(body, "customers/data_request")
+        headers["X-Shopify-Webhook-Id"] = "identity-check"
+        with patch.dict(os.environ, {"SHOPIFY_CLIENT_SECRET": secret}), patch(
+            "app.services.shopify_compliance_webhooks.resolve_shopify_connection",
+            return_value=None,
+        ):
+            first = client.post(
+                "/api/webhooks/shopify/compliance", content=body, headers=headers
+            )
+            assert first.status_code == 200
+            with TEST_SESSION() as session:
+                receipt = session.query(ShopifyPrivacyRequest).one()
+                receipt.shop_id = "different-signed-shop"
+                session.commit()
+            replay = client.post(
+                "/api/webhooks/shopify/compliance", content=body, headers=headers
+            )
+        assert replay.status_code == 400
+        assert replay.json()["detail"] == "PRIVACY_WEBHOOK_DELIVERY_CONFLICT"
+
     def test_distinct_shopify_webhook_ids_do_not_collapse_requests(self, client):
         body = json.dumps({
             "shop_id": 123,
