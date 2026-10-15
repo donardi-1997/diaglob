@@ -61,6 +61,8 @@ from .model_domains.shopify_privacy import (  # noqa: F401
     ShopifyPrivacyAuditEvent,
     ShopifyPrivacyRequest,
     ShopifyPrivacyShopIdentity,
+    ShopifyPrivacyDeliveryArtifact,
+    ShopifyPrivacyDeliveryAudit,
     ShopifyPrivacyWorkItem,
     ShopifyPrivacySuppression,
     ShopifyPrivacyControlEvidence,
