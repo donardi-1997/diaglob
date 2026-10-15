@@ -37,8 +37,8 @@ interface PublicLandingPageProps {
 const plans = [
   { id: "starter", name: "Starter", price: 19, stores: 1, ai: "1K" },
   { id: "growth", name: "Growth", price: 49, stores: 2, ai: "5K" },
-  { id: "pro", name: "Pro", price: 99, stores: 5, ai: "20K", recommended: true },
-  { id: "scale", name: "Scale", price: 199, stores: 10, ai: "50K" },
+  { id: "pro", name: "Pro", price: 99, stores: 3, ai: "20K", recommended: true },
+  { id: "scale", name: "Scale", price: 199, stores: 5, ai: "50K" },
 ];
 
 const productIcons = [BrainCircuit, ShoppingBag, BarChart3, Workflow, Store, Bot];
