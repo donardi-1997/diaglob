@@ -34,8 +34,19 @@ and compares every requested shop ID/domain/tenant/store with prior
 before customer selectors or records are read; a PII-free
 `SHOPIFY_SIGNED_SHOP_HISTORY_CONFLICT` blocker appears in case assessment.
 A history-consistent request is **not** proof of an independently verified
-Shopify Admin shop ID. Post-uninstall requests with missing store mapping
-remain blocked for an authorized manual resolution.
+Shopify Admin shop ID. After an authenticated app/uninstalled webhook, a new
+`shopify_privacy_shop_identities` ledger persists the signed Shopify shop ID,
+domain, organization and store without a foreign key to the now-disconnected
+store. Subsequent signed compliance requests recover the original tenant/store
+ONLY when both Shopify identifiers match exactly and historical ownership has
+not changed. The ledger is populated atomically with the GDPR receipt or
+uninstall revocation, and stores no buyer selectors, merchant tokens or PII.
+`store_connected=false` remains accurate after recovery, while
+`store_identity_resolved=true` denotes an auditable historical link.
+Missing mappings, store deletion, drift or unresolved subjects still block
+data export, redaction and case completion. The bridge cannot recover a shop
+disconnected before the first signed event without external historical evidence;
+it never invents a link from email, phone or a matching domain alone.
 
 ## Release gates — ALL must be checked independently
 
