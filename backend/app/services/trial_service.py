@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from ..model_domains.trials import TrialEntitlement, TrialIdentity
 from ..models import Organization
 
-TRIAL_DAYS = 7
+TRIAL_DAYS = 3
 TRIAL_AI_RESPONSES = 1000
 PAID_PLANS = {"starter", "growth", "pro", "scale", "agency", "enterprise"}
 ACTIVE_PAID_STATUSES = {"active", "trialing"}
@@ -87,7 +87,7 @@ def create_pending_trial(
     )
     db.add(entitlement)
 
-    # A pending trial can only bootstrap a commerce store. The 7-day clock does
+    # A pending trial can only bootstrap a commerce store. The 3-day clock does
     # not start until a real provider identity is verified through OAuth.
     organization.plan = "trial"
     organization.subscription_status = "trial_pending"
@@ -161,7 +161,7 @@ def activate_trial_for_verified_store(
     external_identity: str,
     now: datetime | None = None,
 ) -> dict:
-    """Claim a verified commerce identity and activate a pending 7-day trial.
+    """Claim a verified commerce identity and activate a pending 3-day trial.
 
     Paid organizations may connect a store that previously consumed a trial; they do
     not receive another trial. Trial organizations are rejected if the same provider
