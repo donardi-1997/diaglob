@@ -985,7 +985,15 @@
   ],
   [
     "POST",
+    "/api/shopify/embedded/managed-install/stage"
+  ],
+  [
+    "POST",
     "/api/shopify/embedded/managed-install/verify"
+  ],
+  [
+    "POST",
+    "/api/shopify/install/managed/pending"
   ],
   [
     "POST",
@@ -1150,6 +1158,10 @@
   [
     "POST",
     "/api/stores/{store_id}/shopify/install/claim"
+  ],
+  [
+    "POST",
+    "/api/stores/{store_id}/shopify/install/claim-code"
   ],
   [
     "POST",
