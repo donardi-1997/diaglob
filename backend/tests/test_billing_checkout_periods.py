@@ -75,7 +75,7 @@ def test_public_checkout_allows_configured_monthly_annual(monkeypatch, months):
 
 
 @pytest.mark.parametrize("months", [3, 6])
-def test_service_cannot_create_legacy_cadence_checkout(months):
+def test_service_cannot_create_discontinued_cadence_checkout(months):
     with pytest.raises(billing_service.InvalidBillingPlanError):
         billing_service.create_checkout(
             SimpleNamespace(), "starter", months,
