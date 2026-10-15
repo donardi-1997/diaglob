@@ -45,6 +45,36 @@ class ShopifyPrivacyRequest(Base):
 
 
 
+class ShopifyPrivacyShopIdentity(Base):
+    """Minimal signed Shopify shop-to-tenant history, survives uninstall.
+
+    No store FK by design: Shopify GDPR receipts can arrive after merchant
+    uninstalls or deletes the local store. This record is not customer data
+    processing authorization. The shop ID and domain are pseudonymous shop
+    identifiers whose disposal remains subject to reviewed retention policy.
+    """
+
+    __tablename__ = "shopify_privacy_shop_identities"
+    __table_args__ = (
+        UniqueConstraint(
+            "shop_id", "shop_domain",
+            name="uq_shopify_privacy_shop_identity",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    shop_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    shop_domain: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    organization_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    store_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    provenance: Mapped[str] = mapped_column(String(40), nullable=False)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    uninstalled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+
+
 class ShopifyPrivacyAuditEvent(Base):
     """PII-free append-only evidence for authenticated privacy requests.
 
@@ -150,4 +180,4 @@ class ShopifyPrivacyControlEvidence(Base):
     )
 
 
-__all__ = ["ShopifyPrivacyRequest", "ShopifyPrivacyAuditEvent", "ShopifyPrivacyWorkItem", "ShopifyPrivacySuppression", "ShopifyPrivacyControlEvidence"]
+__all__ = ["ShopifyPrivacyRequest", "ShopifyPrivacyShopIdentity", "ShopifyPrivacyAuditEvent", "ShopifyPrivacyWorkItem", "ShopifyPrivacySuppression", "ShopifyPrivacyControlEvidence"]
