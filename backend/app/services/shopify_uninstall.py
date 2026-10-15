@@ -10,7 +10,10 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 
 from ..model_domains.fulfillment_automation import AutoFulfillmentJob
-from ..models import CommerceConnection, Organization, ShopifyOAuthState
+from ..models import (
+    CommerceConnection, Organization, ShopifyOAuthState,
+    ShopifyEmbeddedIdentityBinding, ShopifyEmbeddedLinkTicket,
+)
 from ..shopify_oauth import normalize_shop_domain
 from .shopify_privacy_installation_identity import (
     ShopifyPrivacyShopIdentityError,
@@ -113,6 +116,18 @@ def process_shopify_uninstall(
 
     # All mutations remain in a single DB transaction. Do not touch Shopify
     # privacy receipts, order history, global customers, invoices or billing.
+    # Invalidate Shopify staff links and outstanding codes on signed uninstall.
+    # Reinstall must require a fresh explicit pairing, even if a connection
+    # record happens to be reused without changing its connected_at value.
+    db.query(ShopifyEmbeddedIdentityBinding).filter(
+        ShopifyEmbeddedIdentityBinding.connection_id == connection.id,
+        ShopifyEmbeddedIdentityBinding.revoked_at.is_(None),
+    ).update({ShopifyEmbeddedIdentityBinding.revoked_at: now}, synchronize_session=False)
+    db.query(ShopifyEmbeddedLinkTicket).filter(
+        ShopifyEmbeddedLinkTicket.connection_id == connection.id,
+        ShopifyEmbeddedLinkTicket.consumed_at.is_(None),
+    ).update({ShopifyEmbeddedLinkTicket.consumed_at: now}, synchronize_session=False)
+
     connection.status = "revoked"
     connection.access_token_encrypted = None
     connection.refresh_token_encrypted = None

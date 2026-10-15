@@ -7,15 +7,14 @@ from __future__ import annotations
 
 import os
 
-from fastapi import APIRouter, HTTPException, Depends, Header
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from ..services.shopify_embedded_identity import verify_shopify_id_token, ShopifyIdTokenError
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 from ..db import get_db
 from ..services.shopify_embedded_link import installed_shop_status
-from ..services.shopify_embedded_authorization import authorize_embedded_store
-from ..auth import AWS_REGION, COGNITO_CLIENT_ID
+from ..services.shopify_embedded_membership import authorize_embedded_identity
 
 router = APIRouter()
 
@@ -51,15 +50,16 @@ def shopify_embedded_home() -> HTMLResponse:
   <main>
     <h1>DIAGLOB — Shopify</h1><div class='card' id='welcome'>
     <p id="status" role="status">Validando la sesión de Shopify…</p>
-    <section id="diaglob-login" hidden aria-label="Ingreso a Diaglob">
-      <p>Inicia sesión con tu cuenta de Diaglob para confirmar tus permisos sobre esta tienda.</p>
-      <form id="login-form">
-        <label>Correo <input name="email" type="email" autocomplete="username" required></label>
-        <label>Contraseña <input name="password" type="password" autocomplete="current-password" required></label>
-        <button type="submit">Validar acceso</button>
+    <section id="shopify-link" hidden aria-label="Vincular usuario Shopify">
+      <p>Para autorizar tu usuario de Shopify, entra a Diaglob desde otra pestaña,
+      selecciona la tienda conectada y genera un código de vinculación de un solo uso.
+      No escribas contraseñas ni tokens de acceso en este formulario.</p>
+      <form id="link-form">
+        <label>Código de vinculación <input name="code" type="text" autocomplete="off" minlength="40" maxlength="100" required></label>
+        <button type="submit">Vincular mi usuario Shopify</button>
       </form>
+      <p><a href="https://diaglob.tech/login" target="_blank" rel="noopener noreferrer">Abrir Diaglob para generar código</a></p>
     </section>
-    <p><a id="portal-link" hidden href="https://diaglob.tech/login" target="_blank" rel="noopener noreferrer">Abrir panel Diaglob</a></p>
     </div><section id="overview" class="card" hidden><h2 id="store-title"></h2><p id="store-domain"></p><div class="grid"><div class="card">Conexión: Shopify</div><div class="card">País: <b id="country"></b></div><div class="card">Moneda: <b id="currency"></b></div><div class="card">Acceso: solo lectura</div></div><nav class="tabbar" aria-label="Módulos de Diaglob">
 <button type="button" data-panel="home">Resumen</button>
 <button type="button" data-panel="products">Productos</button>
@@ -73,29 +73,50 @@ def shopify_embedded_home() -> HTMLResponse:
 <form id="search-form" class="searchbar" hidden><label for="filter-text">Buscar</label><input id="filter-text" name="search" maxlength="100" placeholder="Buscar en esta tienda"><button type="submit">Buscar</button></form>
 <div id="section-output" role="status" aria-live="polite"></div>
 <div id="pager" class="pager" hidden><button type="button" id="previous-page">Anterior</button><span id="page-status"></span><button type="button" id="next-page">Siguiente</button></div><button type="button" id="logout">Cerrar sesión</button></section><script>
+      async function showAuthorizedOverview() {
+        const token = await window.shopify.idToken();
+        const permission = await fetch('/api/shopify/embedded/authorize', {
+          headers: {Authorization: 'Bearer ' + token}, cache: 'no-store'
+        });
+        if (!permission.ok) return false;
+        const result = await permission.json();
+        if (!result.authorized) return false;
+        const fresh = await window.shopify.idToken();
+        const response = await fetch('/api/shopify/embedded/overview', {
+          cache: 'no-store', headers: {Authorization: 'Bearer ' + fresh}
+        });
+        if (!response.ok) return false;
+        const data = await response.json();
+        document.getElementById('store-title').textContent = data.store_name;
+        document.getElementById('store-domain').textContent = data.shop;
+        document.getElementById('country').textContent = data.country_code;
+        document.getElementById('currency').textContent = data.currency;
+        embeddedAccessToken = 'linked-in-memory';
+        document.getElementById('welcome').hidden = true;
+        document.getElementById('shopify-link').hidden = true;
+        document.getElementById('overview').hidden = false;
+        await showSection('home');
+        return true;
+      }
       (async function () {
         const status = document.getElementById('status');
         try {
           if (!window.shopify || typeof window.shopify.idToken !== 'function') {
             throw new Error('Shopify App Bridge no disponible');
           }
-          const token = await window.shopify.idToken();
-          const response = await fetch('/api/shopify/embedded/session', {
-            headers: { Authorization: 'Bearer ' + token },
-            cache: 'no-store'
+          const jwt = await window.shopify.idToken();
+          const session = await fetch('/api/shopify/embedded/session', {
+            cache: 'no-store', headers: {Authorization: 'Bearer ' + jwt}
           });
-          if (!response.ok) throw new Error('Sesión no válida');
-          const identity = await response.json();
-          if (identity.installation_status === 'connected') {
-            status.textContent = 'Shopify verificado y tienda conectada a Diaglob. Para acceder al panel, inicia sesión con tu cuenta Diaglob.';
-          } else {
-            status.textContent = 'Shopify verificado. Falta vincular esta tienda desde tu cuenta de Diaglob.';
+          if (!session.ok) throw new Error('Sesión Shopify inválida');
+          const info = await session.json();
+          if (info.installation_status !== 'connected') {
+            status.textContent = 'Primero debes completar la conexión de la tienda desde el proceso oficial de instalación.';
+            return;
           }
-          const link = document.getElementById('portal-link');
-          if (link) link.hidden = false;
-          if (identity.installation_status === 'connected') {
-            document.getElementById('diaglob-login').hidden = false;
-          }
+          if (await showAuthorizedOverview()) return;
+          status.textContent = 'Vincula este usuario de Shopify con una cuenta autorizada de Diaglob.';
+          document.getElementById('shopify-link').hidden = false;
         } catch (error) {
           status.textContent = 'No pudimos validar tu sesión. Abre Diaglob desde Shopify Admin.';
         }
@@ -125,8 +146,7 @@ def shopify_embedded_home() -> HTMLResponse:
             const token = await window.shopify.idToken();
             const metrics = await fetch('/api/shopify/embedded/metrics', {
               cache: 'no-store', headers: {
-                Authorization: 'Bearer ' + token,
-                'X-Diaglob-Authorization': 'Bearer ' + embeddedAccessToken
+                Authorization: 'Bearer ' + token
               }
             });
             if (!metrics.ok) throw new Error('No se pudieron cargar las métricas.');
@@ -151,13 +171,12 @@ def shopify_embedded_home() -> HTMLResponse:
           const response = await fetch('/api/shopify/embedded/data/' + section + '?page=' + currentPage + '&search=' + encodeURIComponent(document.getElementById('filter-text').value.trim()), {
             cache: 'no-store',
             headers: {
-              Authorization: 'Bearer ' + token,
-              'X-Diaglob-Authorization': 'Bearer ' + embeddedAccessToken
-            }
+              Authorization: 'Bearer ' + token
+              }
           });
           if (response.status === 401 || response.status === 403) {
             embeddedAccessToken = null;
-            throw new Error('Tu sesión expiró o ya no tienes permisos. Vuelve a iniciar sesión.');
+            throw new Error('El acceso a la tienda caducó o fue revocado. Vuelve a vincular tu usuario.');
           }
           if (!response.ok) throw new Error('No se pudieron consultar los registros.');
           const result = await response.json();
@@ -206,68 +225,29 @@ def shopify_embedded_home() -> HTMLResponse:
         output.replaceChildren();
         document.getElementById('overview').hidden = true;
         document.getElementById('welcome').hidden = false;
-        document.getElementById('diaglob-login').hidden = false;
+        document.getElementById('shopify-link').hidden = false;
       });
-      document.getElementById('login-form').addEventListener('submit', async function (event) {
+      document.getElementById('link-form').addEventListener('submit', async function (event) {
         event.preventDefault();
         const form = event.currentTarget;
         const status = document.getElementById('status');
         const submit = form.querySelector('button');
+        const field = form.elements.namedItem('code');
         submit.disabled = true;
-        const email = form.elements.namedItem('email').value;
-        const passwordInput = form.elements.namedItem('password');
-        const password = passwordInput.value;
         try {
-          const cognito = await fetch('https://cognito-idp.__AWS_REGION__.amazonaws.com/', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/x-amz-json-1.1',
-              'X-Amz-Target': 'AWSCognitoIdentityProviderService.InitiateAuth'
-            },
-            body: JSON.stringify({
-              AuthFlow: 'USER_PASSWORD_AUTH',
-              ClientId: '__COGNITO_CLIENT_ID__',
-              AuthParameters: { USERNAME: email, PASSWORD: password }
-            })
+          const token = await window.shopify.idToken();
+          const response = await fetch('/api/shopify/embedded/link', {
+            method: 'POST', cache: 'no-store',
+            headers: {'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'},
+            body: JSON.stringify({code: field.value.trim()})
           });
-          const login = await cognito.json();
-          if (!cognito.ok || !login.AuthenticationResult?.AccessToken) {
-            throw new Error('No fue posible iniciar sesión. Usa el portal Diaglob si tu cuenta requiere pasos adicionales.');
-          }
-          const shopifyToken = await window.shopify.idToken();
-          const authorization = await fetch('/api/shopify/embedded/authorize', {
-            headers: {
-              Authorization: 'Bearer ' + shopifyToken,
-              'X-Diaglob-Authorization': 'Bearer ' + login.AuthenticationResult.AccessToken
-            },
-            cache: 'no-store'
-          });
-          if (!authorization.ok) throw new Error('Tu cuenta Diaglob no tiene acceso autorizado a esta tienda.');
-          const result = await authorization.json();
-          if (!result.authorized) throw new Error('No se pudo comprobar el acceso.');
-          const overviewToken = await window.shopify.idToken();
-          const summary = await fetch('/api/shopify/embedded/overview', {
-            cache: 'no-store',
-            headers: {
-              Authorization: 'Bearer ' + overviewToken,
-              'X-Diaglob-Authorization': 'Bearer ' + login.AuthenticationResult.AccessToken
-            }
-          });
-          if (!summary.ok) throw new Error('No se pudo cargar el resumen.');
-          const data = await summary.json();
-          document.getElementById('store-title').textContent = data.store_name;
-          document.getElementById('store-domain').textContent = data.shop;
-          document.getElementById('country').textContent = data.country_code;
-          document.getElementById('currency').textContent = data.currency;
-          document.getElementById('welcome').hidden = true;
-          embeddedAccessToken = login.AuthenticationResult.AccessToken;
-          document.getElementById('overview').hidden = false;
-          await showSection('home');
-          document.getElementById('diaglob-login').hidden = true;
+          if (!response.ok) throw new Error('El código es inválido, expiró o no corresponde a esta tienda.');
+          field.value = '';
+          if (!await showAuthorizedOverview()) throw new Error('No pudimos verificar la vinculación.');
         } catch (error) {
-          status.textContent = error.message || 'No fue posible comprobar la autorización.';
+          status.textContent = error.message || 'No fue posible completar la vinculación.';
         } finally {
-          passwordInput.value = '';
+          field.value = '';
           submit.disabled = false;
         }
       });
@@ -275,7 +255,6 @@ def shopify_embedded_home() -> HTMLResponse:
   </main>
 </body>
 </html>"""
-    html = html.replace("__AWS_REGION__", AWS_REGION).replace("__COGNITO_CLIENT_ID__", COGNITO_CLIENT_ID)
     return HTMLResponse(html, headers={"Cache-Control": "no-store"})
 
 # An ID token proves Shopify identity only; it is NOT a Diaglob tenant grant.
@@ -297,45 +276,36 @@ def verify_embedded_session(
         "authenticated": True,
         "shop": verified["shop"],
         "installation_status": installed_shop_status(db, verified["shop"]),
-        "tenant_authorized": False,
-    }
+        "tenant_authorized": False
+              }
 
 @router.get("/api/shopify/embedded/authorize")
 def authorize_embedded_session(
     credentials: HTTPAuthorizationCredentials | None = Depends(_embedded_bearer),
-    diaglob_authorization: str | None = Header(None, alias="X-Diaglob-Authorization"),
     db: Session = Depends(get_db),
 ) -> dict:
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise HTTPException(status_code=401, detail="Shopify ID token required")
-    if not diaglob_authorization or not diaglob_authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Diaglob Cognito access token required")
     try:
         identity = verify_shopify_id_token(credentials.credentials)
     except ShopifyIdTokenError:
         raise HTTPException(status_code=401, detail="Invalid Shopify session")
-    return authorize_embedded_store(
-        db, identity["shop"], diaglob_authorization[len("Bearer "):]
-    )
+    return authorize_embedded_identity(db, identity)
+
 
 @router.get("/api/shopify/embedded/overview")
 def embedded_overview(
     credentials: HTTPAuthorizationCredentials | None = Depends(_embedded_bearer),
-    diaglob_authorization: str | None = Header(None, alias="X-Diaglob-Authorization"),
     db: Session = Depends(get_db),
 ) -> dict:
     """Read-only store metadata; fresh dual-token authorization on every request."""
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise HTTPException(status_code=401, detail="Shopify ID token required")
-    if not diaglob_authorization or not diaglob_authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Diaglob access token required")
     try:
         identity = verify_shopify_id_token(credentials.credentials)
     except ShopifyIdTokenError:
         raise HTTPException(status_code=401, detail="Invalid Shopify session")
-    granted = authorize_embedded_store(
-        db, identity["shop"], diaglob_authorization[len("Bearer "):]
-    )
+    granted = authorize_embedded_identity(db, identity)
     from ..models import Store
     store = db.query(Store).filter(
         Store.id == granted["store_id"],
@@ -351,8 +321,8 @@ def embedded_overview(
         "country_code": store.country_code,
         "currency": store.currency,
         "status": "connected",
-        "mode": "read_only",
-    }
+        "mode": "read_only"
+              }
 
 @router.get("/api/shopify/embedded/data/{section}")
 def embedded_store_data(
@@ -360,7 +330,6 @@ def embedded_store_data(
     page: int = 1,
     search: str = "",
     credentials: HTTPAuthorizationCredentials | None = Depends(_embedded_bearer),
-    diaglob_authorization: str | None = Header(None, alias="X-Diaglob-Authorization"),
     db: Session = Depends(get_db),
 ) -> dict:
     """Bounded, redacted, store-scoped reads; no customer PII or mutations."""
@@ -370,15 +339,11 @@ def embedded_store_data(
         raise HTTPException(status_code=404, detail="Unknown section")
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise HTTPException(status_code=401, detail="Shopify ID token required")
-    if not diaglob_authorization or not diaglob_authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Diaglob access token required")
     try:
         identity = verify_shopify_id_token(credentials.credentials)
     except ShopifyIdTokenError:
         raise HTTPException(status_code=401, detail="Invalid Shopify session")
-    authorized = authorize_embedded_store(
-        db, identity["shop"], diaglob_authorization[len("Bearer "):]
-    )
+    authorized = authorize_embedded_identity(db, identity)
     from ..models import Product, Order
     model = Product if section == "products" else Order
     field = Product.title if section == "products" else Order.order_number
@@ -409,18 +374,15 @@ def embedded_store_data(
 @router.get("/api/shopify/embedded/metrics")
 def embedded_metrics(
     credentials: HTTPAuthorizationCredentials | None = Depends(_embedded_bearer),
-    diaglob_authorization: str | None = Header(None, alias="X-Diaglob-Authorization"),
     db: Session = Depends(get_db),
 ) -> dict:
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise HTTPException(status_code=401, detail="Shopify ID token required")
-    if not diaglob_authorization or not diaglob_authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Diaglob access token required")
     try:
         verified = verify_shopify_id_token(credentials.credentials)
     except ShopifyIdTokenError:
         raise HTTPException(status_code=401, detail="Invalid Shopify session")
-    grant = authorize_embedded_store(db, verified["shop"], diaglob_authorization[7:])
+    grant = authorize_embedded_identity(db, verified)
     from ..models import Product, Order, CommerceConnection
     scope = {"organization_id": grant["organization_id"], "store_id": grant["store_id"]}
     product_count = db.query(Product).filter_by(**scope).count()
@@ -432,5 +394,5 @@ def embedded_metrics(
         "products": product_count,
         "orders": order_count,
         "last_product_sync": connection.last_sync_at.isoformat() if connection and connection.last_sync_at else None,
-        "mode": "read_only",
-    }
+        "mode": "read_only"
+              }
