@@ -84,10 +84,63 @@ Shopify merchant subscriptions are charged ONLY through Shopify App Pricing and 
 
 Verify current Partner pricing BEFORE modifying `SHOPIFY_APP_PRICING_HANDLES_JSON`; never claim parity or grant access if Partner shows other amounts. Earlier Partner screenshots showed annual amounts different from the approved direct prices, so operator confirmation and update in Partner Dashboard are required. Shopify trial setting should be **3 days** and must be confirmed in Partner. Do not add Scale to the App Store contract. Never redirect Shopify App Store installations to Paddle.
 
+## Read-only Paddle technical verification
+
+The repository includes `backend/scripts/audit_paddle_setup.py`, which makes
+**only GET** requests to Paddle's price and notification-setting APIs.
+From `backend/` on a trusted machine with deployment secrets already injected,
+run:
+
+```bash
+PADDLE_ENVIRONMENT=production python -m scripts.audit_paddle_setup
+```
+
+Do **not** place `PADDLE_API_KEY` on a command line or in a public chat. The
+script reads the existing environment variable, checks its environment-specific
+prefix, validates each product, tax mode, amount, trial, billing cycle and
+whether the intended production webhook destination is active with the
+required event subscriptions. It returns a summary without printing any API
+key or webhook signing secret, and exits nonzero if the setup is incomplete.
+It requires Paddle `price.read` and `notification_setting.read` permissions.
+A passing result does **not** prove Paddle account approval, HTTPS reachability
+from Paddle, an accepted test webhook, correct taxes or an actual subscription.
+
+The Paddle webhook handler now recognizes `subscription.trialing` as well as
+`subscription.created`, `subscription.activated`, `subscription.updated`,
+`subscription.past_due`, `subscription.paused`, `subscription.resumed`,
+`subscription.canceled` and `transaction.completed`. Test correct signature,
+duplicate/replayed event handling and idempotent state transitions with Paddle
+simulations before enabling real charges.
+
+## E2E staging checklist (no production charges)
+
+1. Create/use a **separate Paddle sandbox account**; live product IDs cannot
+   be used there. Create equivalent 1M and 12M sandbox prices with 3-day
+   trials and assign their sandbox `PADDLE_PRICE_*` IDs through staging
+   environment variables; use sandbox API key, sandbox webhook secret, and
+   `test_` Paddle.js client token.
+2. Configure a **separate HTTPS webhook** for staging to avoid delivering
+   simulated production events to a real organization.
+3. Initiate checkout on a disposable direct-origin organization in staging;
+   confirm transaction ID, secure checkout, a free 3-day subscription trial,
+   entitlement activation, and no duplicate trial extensions.
+4. Run Paddle **Events → Simulations** subscription creation and renewal
+   scenarios against the simulation destination; verify signed callback,
+   `trialing → active`, first charge, recurring renewal,
+   `past_due`, cancellation and duplicate/reordered delivery.
+5. Test rejected payment, abandoned checkout, invalid signature, replay,
+   and nonexistent price IDs. Confirm subscription changes do **not**
+   mutate a Shopify-origin organization.
+6. In Shopify Partner, set Starter/Growth/Pro **monthly plus yearly option**,
+   three-day trials, match amounts, test a development shop using Shopify's
+   **no-charge** App Pricing plans; verify Partner subscription with the
+   authenticated Shop GID, including reject/approve/reinstall scenarios.
+7. Capture results of each test and only then schedule deployment approval.
+
 ## Validation / deployment
 
 1. Apply/merge the existing **store-cap** branch before this stacked change (or retarget appropriately).
-2. Run `cd backend && pytest -q tests/test_trial_service.py tests/test_billing.py tests/test_billing_checkout_periods.py tests/test_paddle_price_catalog.py tests/test_shopify_app_pricing.py tests/test_plan_store_caps.py`.
+2. Run `cd backend && pytest -q tests/test_trial_service.py tests/test_billing.py tests/test_billing_checkout_periods.py tests/test_paddle_price_catalog.py tests/test_paddle_trialing_event.py tests/test_shopify_app_pricing.py tests/test_plan_store_caps.py`.
 3. Run the frontend TypeScript build and verify that period selector offers only 1 month / 1 year.
 4. Confirm new direct trial=3 days and confirm the store-activated trial and Paddle price trial cannot accidentally grant two sequential free periods.
 5. Verify the eight catalog Price IDs in the actual Paddle production account, remove any stale environment/CSV price overrides, and test monthly/annual checkout for each direct plan plus signed Paddle webhooks. Confirm credentials and Paddle.js client token point to the same environment.
