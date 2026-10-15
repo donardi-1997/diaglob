@@ -705,8 +705,13 @@ async def paddle_billing_webhook(
             "event_type": event_type,
         }
 
-    if (organization.billing_provider or "").strip().lower() == "shopify":
-        # Authenticated Paddle events must not change Shopify-managed access.
+    if (
+        (organization.billing_provider or "").strip().lower() == "shopify"
+        or getattr(organization, "billing_onboarding_channel", None)
+        == "shopify_install"
+    ):
+        # Authenticated Paddle events must not mutate App Store-origin access,
+        # even if inconsistent legacy state names Paddle as its provider.
         return {
             "ok": True,
             "ignored": True,
