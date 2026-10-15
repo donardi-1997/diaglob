@@ -147,7 +147,7 @@ def create_poc_order(
     }
 
     try:
-        token = connection_access_token(connection)
+        token = connection_access_token(connection, decrypt_legacy=decrypt_shopify_secret)
         data = ShopifyGraphQLClient(
             shop_domain=connection.external_store_url,
             access_token=token,
