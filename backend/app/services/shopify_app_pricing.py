@@ -166,7 +166,7 @@ def resolve_trusted_shop_gid(connection: Any) -> str:
         raise ShopifyAppPricingError("SHOPIFY_CONNECTION_NOT_VERIFIED")
     try:
         domain = normalize_shop_domain(connection.external_store_url)
-        token = connection_access_token(connection)
+        token = connection_access_token(connection, decrypt_legacy=decrypt_shopify_secret)
         response = ShopifyGraphQLClient(
             shop_domain=domain,
             access_token=token,
@@ -210,7 +210,7 @@ def is_trusted_partner_development_shop(
         raise ShopifyAppPricingError("SHOPIFY_CONNECTION_NOT_VERIFIED")
     try:
         domain = normalize_shop_domain(connection.external_store_url)
-        token = connection_access_token(connection)
+        token = connection_access_token(connection, decrypt_legacy=decrypt_shopify_secret)
         response = ShopifyGraphQLClient(
             shop_domain=domain,
             access_token=token,
