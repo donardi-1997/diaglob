@@ -73,7 +73,8 @@ def test_every_shopify_store_path_requires_store_membership_guard():
             dependency.dependency is require_authorized_path_store
             for dependency in route.dependencies
         ), f"Missing path authorization: {route.path}"
-    assert len(paths) == 11
+    assert len(paths) == 12
     assert "/api/stores/{store_id}/shopify/orders/{order_id}" in paths
     assert "/api/stores/{store_id}/shopify/connect" in paths
     assert "/api/stores/{store_id}/shopify/install/claim" in paths
+    assert "/api/stores/{store_id}/shopify/install/claim-code" in paths
