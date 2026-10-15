@@ -516,3 +516,74 @@ def test_unknown_external_customer_does_not_redact_checkouts(
     assert result.complete is False
     assert source.phone == "PHONE_PRIVATE_STORE_0"
     assert other.phone == "PHONE_PRIVATE_STORE_1"
+
+
+def test_duplicate_shopify_subject_mapping_never_verifies_scope(setup):
+    """Two different buyers sharing one Shopify ID cannot be processed."""
+    db, receipt = setup
+    customer = Customer(
+        organization_id=receipt.organization_id,
+        name="UNRELATED_PRIVATE_CUSTOMER",
+        phone="test-unique",
+    )
+    db.add(customer)
+    db.flush()
+    db.add(CustomerStoreProfile(
+        organization_id=receipt.organization_id,
+        store_id=receipt.store_id,
+        customer_id=customer.id,
+        external_customer_id="700",
+        currency="COP",
+    ))
+    db.commit()
+    result = preview_shopify_privacy_scope(db, receipt)
+    assert result.scope_status == "subject_unresolved"
+    assert result.matched_customer_profiles == 0
+    assert result.matched_store_orders == 0
+    assert result.matched_store_conversations == 0
+    assert db.query(CustomerStoreProfile).count() == 3
+
+
+def test_synthetic_redaction_and_export_refuse_ambiguous_subject_without_mutation(
+    setup, monkeypatch,
+):
+    """Simulated field suppression must never touch an ambiguous customer."""
+    from app.services.shopify_privacy_synthetic_processor import (
+        ShopifyPrivacySyntheticError,
+        build_synthetic_customer_export,
+        execute_synthetic_field_redaction,
+    )
+
+    db, receipt = setup
+    monkeypatch.setenv("DIAGLOB_SHOPIFY_PRIVACY_SYNTHETIC_TESTS", "1")
+    new_buyer = Customer(
+        organization_id=receipt.organization_id,
+        name="PRIVATE_DIFFERENT_BUYER",
+        phone="synthetic-other",
+    )
+    db.add(new_buyer)
+    db.flush()
+    db.add(CustomerStoreProfile(
+        organization_id=receipt.organization_id,
+        store_id=receipt.store_id,
+        customer_id=new_buyer.id,
+        external_customer_id="700",
+        currency="COP",
+    ))
+    db.commit()
+    source_order = db.query(Order).filter(Order.store_id == receipt.store_id).one()
+    original_number = source_order.order_number
+
+    receipt.topic = "customers/data_request"
+    with pytest.raises(ShopifyPrivacySyntheticError, match="SHOPIFY_SUBJECT_AMBIGUOUS"):
+        build_synthetic_customer_export(db, receipt)
+    receipt.topic = "customers/redact"
+    with pytest.raises(ShopifyPrivacySyntheticError, match="SHOPIFY_SUBJECT_AMBIGUOUS"):
+        execute_synthetic_field_redaction(db, receipt)
+
+    assert db.query(CustomerStoreProfile).filter(
+        CustomerStoreProfile.store_id == receipt.store_id,
+        CustomerStoreProfile.external_customer_id == "700",
+    ).count() == 2
+    assert source_order.order_number == original_number
+    assert receipt.completed_at is None

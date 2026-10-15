@@ -5,7 +5,7 @@ at rest; identifiers, emails and order IDs must not appear in normal app logs.
 """
 from datetime import datetime
 
-from sqlalchemy import DateTime, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..db import Base
@@ -43,6 +43,77 @@ class ShopifyPrivacyRequest(Base):
     )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
+
+
+class ShopifyPrivacyShopIdentity(Base):
+    """Minimal signed Shopify shop-to-tenant history, survives uninstall.
+
+    No store FK by design: Shopify GDPR receipts can arrive after merchant
+    uninstalls or deletes the local store. This record is not customer data
+    processing authorization. The shop ID and domain are pseudonymous shop
+    identifiers whose disposal remains subject to reviewed retention policy.
+    """
+
+    __tablename__ = "shopify_privacy_shop_identities"
+    __table_args__ = (
+        UniqueConstraint(
+            "shop_id", "shop_domain",
+            name="uq_shopify_privacy_shop_identity",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    shop_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    shop_domain: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    organization_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    store_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    provenance: Mapped[str] = mapped_column(String(40), nullable=False)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    uninstalled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+
+
+class ShopifyPrivacyDeliveryArtifact(Base):
+    """Synthetic, encrypted, recipient-bound one-time delivery ticket.
+
+    No personal data in searchable fields. The sole encrypted ciphertext
+    column is purged on redemption, revocation or expiry. This model does not
+    authorize any live customer export or actual Shopify fulfillment.
+    """
+
+    __tablename__ = "shopify_privacy_delivery_artifacts"
+    __table_args__ = (
+        UniqueConstraint("token_digest", name="uq_shopify_privacy_delivery_token"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    request_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    organization_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    store_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    recipient_user_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    token_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    artifact_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    ciphertext_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    redeemed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    synthetic_only: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True,
+    )
+
+
+class ShopifyPrivacyDeliveryAudit(Base):
+    """PII-free audit of synthetic delivery; no token, body or recipient email."""
+
+    __tablename__ = "shopify_privacy_delivery_audit"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    request_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    event_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    actor_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
 
 class ShopifyPrivacyAuditEvent(Base):
@@ -150,4 +221,4 @@ class ShopifyPrivacyControlEvidence(Base):
     )
 
 
-__all__ = ["ShopifyPrivacyRequest", "ShopifyPrivacyAuditEvent", "ShopifyPrivacyWorkItem", "ShopifyPrivacySuppression", "ShopifyPrivacyControlEvidence"]
+__all__ = ["ShopifyPrivacyRequest", "ShopifyPrivacyShopIdentity", "ShopifyPrivacyDeliveryArtifact", "ShopifyPrivacyDeliveryAudit", "ShopifyPrivacyAuditEvent", "ShopifyPrivacyWorkItem", "ShopifyPrivacySuppression", "ShopifyPrivacyControlEvidence"]

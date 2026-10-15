@@ -122,15 +122,17 @@ def _subject_customer_ids(db: Session, receipt: ShopifyPrivacyRequest) -> list[i
     external_id = selectors["customer"].get("id")
     if external_id is None or not str(external_id).strip():
         raise ShopifyPrivacySyntheticError("EXTERNAL_CUSTOMER_ID_REQUIRED")
-    profiles = _limited(
-        db.query(CustomerStoreProfile.customer_id).filter(
-            CustomerStoreProfile.organization_id == receipt.organization_id,
-            CustomerStoreProfile.store_id == receipt.store_id,
-            CustomerStoreProfile.external_customer_id == str(external_id).strip(),
-        ),
-        kind="customer",
-    )
-    return sorted({row[0] for row in profiles})
+    # Never coalesce duplicate Shopify subject mappings, even when they
+    # reference the same Diaglob Customer. A many-to-one/one-to-many mapping
+    # must be independently reconciled before export or redaction.
+    profiles = db.query(CustomerStoreProfile.customer_id).filter(
+        CustomerStoreProfile.organization_id == receipt.organization_id,
+        CustomerStoreProfile.store_id == receipt.store_id,
+        CustomerStoreProfile.external_customer_id == str(external_id).strip(),
+    ).limit(2).all()
+    if len(profiles) > 1 or (profiles and profiles[0][0] is None):
+        raise ShopifyPrivacySyntheticError("SHOPIFY_SUBJECT_AMBIGUOUS")
+    return [profiles[0][0]] if profiles else []
 
 
 def build_synthetic_customer_export(

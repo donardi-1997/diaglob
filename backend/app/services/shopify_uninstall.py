@@ -12,6 +12,10 @@ from sqlalchemy.orm import Session
 from ..model_domains.fulfillment_automation import AutoFulfillmentJob
 from ..models import CommerceConnection, Organization, ShopifyOAuthState
 from ..shopify_oauth import normalize_shop_domain
+from .shopify_privacy_installation_identity import (
+    ShopifyPrivacyShopIdentityError,
+    record_signed_shopify_uninstall_identity,
+)
 
 
 class ShopifyUninstallError(ValueError):
@@ -94,6 +98,18 @@ def process_shopify_uninstall(
         return {"ok": True, "action": "not_connected"}
     if trigger < connection.connected_at:
         return {"ok": True, "action": "stale_uninstall"}
+
+    # Preserve the authenticated shop ID -> tenant/store relationship BEFORE
+    # revoking tokens. This ledger has no store FK, so future Shopify GDPR
+    # callbacks can be matched to an original shop after uninstall.
+    try:
+        record_signed_shopify_uninstall_identity(
+            db, shop_id=str(shop_id), shop_domain=domain,
+            connection=connection, observed_at=now,
+        )
+    except ShopifyPrivacyShopIdentityError as exc:
+        db.rollback()
+        raise ShopifyUninstallError(str(exc)) from exc
 
     # All mutations remain in a single DB transaction. Do not touch Shopify
     # privacy receipts, order history, global customers, invoices or billing.
