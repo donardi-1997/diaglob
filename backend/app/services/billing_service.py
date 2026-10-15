@@ -866,6 +866,10 @@ def create_checkout(
     plan_key: str,
     billing_period_months: int,
 ) -> dict:
+    # Legacy 3/6-month subscriptions remain readable and manageable, but
+    # new direct contracts only offer monthly or annual prices.
+    if billing_period_months not in (1, 12):
+        raise InvalidBillingPlanError("Only monthly and annual checkouts are offered")
     provider = _provider_for(organization)
     if not provider.is_configured():
         raise BillingProviderConfigurationError(
