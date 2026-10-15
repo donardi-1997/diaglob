@@ -21,7 +21,7 @@ def test_shop_identity_migration_upgrade_integrity_and_downgrade():
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    assert module.down_revision == "f9a0b1c2d3e4"
+    assert module.down_revision == "d0e1f2a3b4c5"
 
     engine = create_engine("sqlite:///:memory:")
     with engine.begin() as connection:
