@@ -961,15 +961,11 @@ const resources = {
         "No tienes un plan activo",
 
       billing1Month: "1 mes",
-      billing3Months: "3 meses",
-      billing6Months: "6 meses",
       billing12Months: "12 meses",
 
       billingPerMonth: "mes",
       billingPerYear: "año",
 
-      billingSave5: "Ahorra 5%",
-      billingSave10: "Ahorra 10%",
       billingSave2Months: "Ahorra 2 meses",
 
       starterDescription:
@@ -3184,15 +3180,11 @@ const resources = {
         "You don't have an active plan",
 
       billing1Month: "1 month",
-      billing3Months: "3 months",
-      billing6Months: "6 months",
       billing12Months: "12 months",
 
       billingPerMonth: "month",
       billingPerYear: "year",
 
-      billingSave5: "Save 5%",
-      billingSave10: "Save 10%",
       billingSave2Months: "Save 2 months",
 
       starterDescription:
