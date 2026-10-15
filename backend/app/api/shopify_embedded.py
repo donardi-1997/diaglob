@@ -64,6 +64,14 @@ def shopify_embedded_home() -> HTMLResponse:
       </form>
       <p><a href="https://diaglob.tech/login" target="_blank" rel="noopener noreferrer">Abrir Diaglob para generar código</a></p>
     </section>
+    <section id="managed-onboarding" hidden aria-label="Nueva instalación Shopify">
+      <p>Shopify confirmó la instalación. Genera un código de 10 minutos para
+        asociarla a una tienda de Diaglob desde tu cuenta autorizada.</p>
+      <button id="managed-stage" type="button">Generar código de instalación</button>
+      <p id="managed-stage-status" role="status"></p>
+      <code id="managed-claim-code" style="overflow-wrap:anywhere"></code>
+      <p><a href="https://diaglob.tech/shopify/install?managed=1" target="_blank" rel="noopener noreferrer">Continuar en Diaglob</a></p>
+    </section>
     </div><section id="overview" class="card" hidden><h2 id="store-title"></h2><p id="store-domain"></p><div class="grid"><div class="card">Conexión: Shopify</div><div class="card">País: <b id="country"></b></div><div class="card">Moneda: <b id="currency"></b></div><div class="card">Acceso: solo lectura</div></div><nav class="tabbar" aria-label="Módulos de Diaglob">
 <button type="button" data-panel="home">Resumen</button>
 <button type="button" data-panel="products">Productos</button>
@@ -127,7 +135,8 @@ def shopify_embedded_home() -> HTMLResponse:
               status.textContent = 'No pudimos confirmar la instalación gestionada de Shopify. Contacta soporte de Diaglob.';
               return;
             }
-            status.textContent = 'Shopify confirmó esta instalación. Aún falta vincularla a una tienda autorizada de Diaglob para usar sus funciones.';
+            status.textContent = 'Shopify confirmó esta instalación. Completa la vinculación con tu cuenta autorizada de Diaglob.';
+            document.getElementById('managed-onboarding').hidden = false;
             return;
           }
           if (await showAuthorizedOverview()) return;
@@ -137,6 +146,33 @@ def shopify_embedded_home() -> HTMLResponse:
           status.textContent = 'No pudimos validar tu sesión. Abre Diaglob desde Shopify Admin.';
         }
       })();
+      document.getElementById('managed-stage').addEventListener('click', async function () {
+        const button = this;
+        const status = document.getElementById('managed-stage-status');
+        const code = document.getElementById('managed-claim-code');
+        button.disabled = true;
+        code.textContent = '';
+        status.textContent = 'Solicitando autorización temporal…';
+        try {
+          const token = await window.shopify.idToken();
+          const response = await fetch('/api/shopify/embedded/managed-install/stage', {
+            method: 'POST', cache: 'no-store',
+            headers: {'Authorization': 'Bearer ' + token}
+          });
+          if (!response.ok) throw new Error('No fue posible preparar la instalación.');
+          const grant = await response.json();
+          code.textContent = grant.claim_code;
+          status.textContent = 'Copia el código y pégalo en la página de instalación de Diaglob. Caduca en 10 minutos.';
+          const currentCode = grant.claim_code;
+          window.setTimeout(() => {
+            if (code.textContent === currentCode) code.textContent = '';
+          }, Math.min(600, grant.expires_in_seconds) * 1000);
+        } catch (error) {
+          status.textContent = 'La instalación no se pudo preparar. Comprueba que Shopify haya concedido todos los permisos.';
+        } finally {
+          button.disabled = false;
+        }
+      });
       let embeddedAccessToken = null;
       let currentSection = 'home';
       let currentPage = 1;
