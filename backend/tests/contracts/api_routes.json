@@ -985,6 +985,10 @@
   ],
   [
     "POST",
+    "/api/shopify/embedded/managed-install/verify"
+  ],
+  [
+    "POST",
     "/api/stores"
   ],
   [
