@@ -15,6 +15,9 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..services.shopify_embedded_link import installed_shop_status
 from ..services.shopify_embedded_membership import authorize_embedded_identity
+from ..services.shopify_managed_installation import (
+    ManagedShopifyInstallationError, verify_managed_installation,
+)
 
 router = APIRouter()
 
@@ -278,6 +281,27 @@ def verify_embedded_session(
         "installation_status": installed_shop_status(db, verified["shop"]),
         "tenant_authorized": False
               }
+
+@router.post("/api/shopify/embedded/managed-install/verify")
+def embedded_managed_installation_verify(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_embedded_bearer),
+) -> dict:
+    """No token storage, tenant bootstrap, billing or automatic account linking."""
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        raise HTTPException(status_code=401, detail="Shopify ID token required")
+    try:
+        identity = verify_shopify_id_token(credentials.credentials)
+    except ShopifyIdTokenError as exc:
+        raise HTTPException(status_code=401, detail="Invalid Shopify session") from exc
+    try:
+        return verify_managed_installation(
+            identity=identity, id_token=credentials.credentials,
+        )
+    except ManagedShopifyInstallationError as exc:
+        raise HTTPException(
+            status_code=502, detail="Shopify managed installation not verified",
+        ) from exc
+
 
 @router.get("/api/shopify/embedded/authorize")
 def authorize_embedded_session(
