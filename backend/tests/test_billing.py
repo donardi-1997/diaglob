@@ -20,8 +20,27 @@ import pytest
 
 from app.billing import (
     PLAN_MONTHLY_PRICES,
+    PLAN_PERIOD_PRICES,
+    PADDLE_PRICE_IDS,
+    VALID_BILLING_PERIODS,
+    get_paddle_price_id,
     calculate_local_proration,
 )
+
+
+def test_billing_catalog_contains_only_monthly_and_annual_periods():
+    assert VALID_BILLING_PERIODS == {1, 12}
+    for plan, prices in PLAN_PERIOD_PRICES.items():
+        assert set(prices) == {1, 12}, plan
+        assert prices[12] == prices[1] * 10
+    for plan, ids in PADDLE_PRICE_IDS.items():
+        assert set(ids) == {1, 12}, plan
+
+
+@pytest.mark.parametrize("months", [3, 6])
+def test_discontinued_period_price_lookup_rejected(months):
+    with pytest.raises(ValueError, match="1 or 12 months"):
+        get_paddle_price_id("starter", months)
 
 
 class TestLocalProrationCalculation:
