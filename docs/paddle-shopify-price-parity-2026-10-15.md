@@ -48,7 +48,7 @@ Verify current Partner pricing BEFORE modifying `SHOPIFY_APP_PRICING_HANDLES_JSO
 1. Apply/merge the existing **store-cap** branch before this stacked change (or retarget appropriately).
 2. Run `cd backend && pytest -q tests/test_trial_service.py tests/test_billing_checkout_periods.py tests/test_shopify_app_pricing.py tests/test_plan_store_caps.py`.
 3. Run the frontend TypeScript build and verify that period selector offers only 1 month / 1 year.
-4. Confirm new direct trial=3 days; verify existing trial expiration timestamps are unchanged.
+4. Confirm new direct trial=3 days; verify existing trial expiration timestamps are unchanged. Check that Diaglob's store-activated trial and Paddle's price trial cannot accidentally grant two sequential free periods.
 5. Configure the eight real Paddle price IDs in deployment secret storage. Test monthly and annual checkout for each direct plan and simulate signed Paddle webhooks.
 6. Align the annual amounts and trial settings in Shopify Partner, set verified `SHOPIFY_APP_PRICING_HANDLES_JSON`, and test Shopify plan approval/refusal/retry and developer store subscription lifecycle.
 7. Verify tax-included behavior in BOTH channels independently. Do not assume Shopify and Paddle tax display semantics are the same.
