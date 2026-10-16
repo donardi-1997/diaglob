@@ -46,3 +46,22 @@ class PaddleWebhookEvent(Base):
     event_type: Mapped[str] = mapped_column(String(100), nullable=False)
     occurred_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     processed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+
+class PaddleAiReconciliation(Base):
+    """Permanent audit queue for paid packages requiring verified ownership."""
+    __tablename__ = "paddle_ai_reconciliations"
+
+    transaction_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    event_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    customer_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    claimed_organization_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    package_key: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    price_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    reason: Mapped[str] = mapped_column(String(80), nullable=False)
+    status: Mapped[str] = mapped_column(String(30), default="pending", nullable=False)
+    occurred_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

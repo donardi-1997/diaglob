@@ -47,6 +47,24 @@ def upgrade():
         sa.Column("processed_at", sa.DateTime(), nullable=False),
     )
 
+    op.create_table(
+        "paddle_ai_reconciliations",
+        sa.Column("transaction_id", sa.String(100), primary_key=True),
+        sa.Column("event_id", sa.String(100), nullable=False),
+        sa.Column("customer_id", sa.String(100), nullable=True),
+        sa.Column("claimed_organization_id", sa.String(100), nullable=True),
+        sa.Column("package_key", sa.String(40), nullable=True),
+        sa.Column("price_id", sa.String(100), nullable=True),
+        sa.Column("reason", sa.String(80), nullable=False),
+        sa.Column("status", sa.String(30), nullable=False),
+        sa.Column("occurred_at", sa.DateTime(), nullable=True),
+        sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.Column("updated_at", sa.DateTime(), nullable=False),
+        sa.Column("resolved_at", sa.DateTime(), nullable=True),
+    )
+    op.create_index("ix_paddle_ai_reconciliations_customer_id",
+                    "paddle_ai_reconciliations", ["customer_id"])
+
 
 def downgrade():
     # Paddle state and notification history are permanent operational data.

@@ -13,6 +13,7 @@ from app.db import Base
 from app import models  # noqa: F401 - register all mapped entities
 from app.model_domains.paddle_billing import (
     PaddleBillingCustomer, PaddleBillingSubscription, PaddleWebhookEvent,
+    PaddleAiReconciliation,
 )
 from app.services.paddle_fulfillment import (
     dispatch_verified_notification, subscription_grants_access,
@@ -160,3 +161,131 @@ def test_other_event_types_are_ignored_without_creating_receipts(db):
     )
     assert result["ignored"] is True
     assert db.query(PaddleWebhookEvent).count() == 0
+
+
+def _legacy_ai_event(event_id="evt_legacy", customer="ctm_legacy", transaction="txn_ai_legacy"):
+    return _event(event_id, "transaction.completed", {
+        "id": transaction, "customer_id": customer,
+        "status": "completed",
+        "custom_data": {
+            "purchase_type": "ai_usage_package",
+            "organization_id": "999999",  # untrusted, must never be used
+            "package_key": "ai_1000", "responses": 1000,
+        },
+        "items": [{"quantity": 1, "price": {"id": "pri_ai_1000"}}],
+    }, "2026-10-15T10:00:00Z")
+
+
+def _known_ai_owner(db, customer="ctm_legacy"):
+    from app.models import Organization
+    organization = Organization(
+        name="Paddle AI tenant", slug="paddle-ai-test",
+        plan="pro", billing_provider="paddle",
+        billing_onboarding_channel="direct",
+        billing_customer_id=customer,
+        billing_last_event_at=__import__("datetime").datetime(2026, 10, 16, 12),
+    )
+    db.add(organization)
+    db.commit()
+    return organization
+
+
+def test_legacy_ai_credit_is_fulfilled_despite_newer_subscription_event(db, monkeypatch):
+    from unittest.mock import patch
+    monkeypatch.setenv("PADDLE_PRICE_AI_1000", "pri_ai_1000")
+    org = _known_ai_owner(db)
+    with patch(
+        "app.services.paddle_fulfillment.fulfill_ai_usage_package_transaction",
+        return_value={"ok": True, "credited": True},
+    ) as fulfill, patch(
+        "app.services.paddle_fulfillment.is_out_of_order_event",
+        side_effect=AssertionError("AI credits must bypass subscription timestamps"),
+    ):
+        outcome = dispatch_verified_notification(_legacy_ai_event(), db)
+
+    assert outcome["credited"] is True
+    assert fulfill.call_args.kwargs["organization_id"] == org.id
+    assert db.get(PaddleWebhookEvent, "evt_legacy") is not None
+    assert db.query(PaddleAiReconciliation).count() == 0
+    assert dispatch_verified_notification(_legacy_ai_event(), db)["duplicate"] is True
+
+
+def test_unsigned_legacy_purchase_with_unbound_customer_is_retained(db, monkeypatch):
+    from unittest.mock import patch
+    monkeypatch.setenv("PADDLE_PRICE_AI_1000", "pri_ai_1000")
+    with patch("app.services.paddle_fulfillment.fulfill_ai_usage_package_transaction") as fulfill:
+        result = dispatch_verified_notification(_legacy_ai_event(), db)
+        assert result["pending_reconciliation"] is True
+        assert db.get(PaddleAiReconciliation, "txn_ai_legacy").status == "pending"
+        assert db.get(PaddleAiReconciliation, "txn_ai_legacy").claimed_organization_id == "999999"
+        assert db.get(PaddleWebhookEvent, "evt_legacy") is not None
+        assert dispatch_verified_notification(_legacy_ai_event(), db)["duplicate"] is True
+        # A different notification for the same paid transaction does not
+        # create duplicate pending rows or claim untrusted organization 999999.
+        second = dispatch_verified_notification(
+            _legacy_ai_event(event_id="evt_legacy_again"), db,
+        )
+        assert second["pending_reconciliation"] is True
+        assert db.query(PaddleAiReconciliation).count() == 1
+        fulfill.assert_not_called()
+
+
+def test_invalid_signed_ai_metadata_never_falls_back_to_legacy_matching(db, monkeypatch):
+    monkeypatch.setenv("PADDLE_PRICE_AI_1000", "pri_ai_1000")
+    _known_ai_owner(db)
+    event = _legacy_ai_event()
+    event["data"]["custom_data"]["package_signature"] = "invalid"
+    result = dispatch_verified_notification(event, db)
+    assert result["pending_reconciliation"] is True
+    assert db.get(PaddleAiReconciliation, "txn_ai_legacy").status == "pending"
+
+
+def test_legacy_ambiguous_customer_cannot_claim_either_tenant(db, monkeypatch):
+    from app.models import Organization
+    from unittest.mock import patch
+    monkeypatch.setenv("PADDLE_PRICE_AI_1000", "pri_ai_1000")
+    _known_ai_owner(db)
+    db.add(Organization(
+        name="Other tenant", slug="paddle-ai-other",
+        plan="pro", billing_provider="paddle",
+        billing_customer_id="ctm_legacy",
+    ))
+    db.commit()
+    with patch("app.services.paddle_fulfillment.fulfill_ai_usage_package_transaction") as fulfill:
+        outcome = dispatch_verified_notification(_legacy_ai_event(), db)
+        assert outcome["pending_reconciliation"] is True
+        fulfill.assert_not_called()
+
+
+def test_pending_purchase_can_be_reconciled_only_from_verified_paddle_lookup(db, monkeypatch):
+    from unittest.mock import patch
+    from app.services.paddle_fulfillment import reconcile_pending_ai_transaction
+    monkeypatch.setenv("PADDLE_PRICE_AI_1000", "pri_ai_1000")
+    dispatch_verified_notification(_legacy_ai_event(), db)
+    with patch(
+        "app.paddle_client.get_transaction",
+        return_value=_legacy_ai_event()["data"],
+    ), patch("app.services.paddle_fulfillment.fulfill_ai_usage_package_transaction") as fulfill:
+        # No independently bound Paddle customer yet.
+        assert reconcile_pending_ai_transaction(db, "txn_ai_legacy")["pending_reconciliation"] is True
+        fulfill.assert_not_called()
+        org = _known_ai_owner(db)
+        fulfill.return_value = {"ok": True, "credited": True}
+        res = reconcile_pending_ai_transaction(db, "txn_ai_legacy")
+    assert res["credited"] is True
+    assert db.get(PaddleAiReconciliation, "txn_ai_legacy").status == "credited"
+    assert db.get(PaddleAiReconciliation, "txn_ai_legacy").resolved_at is not None
+    assert org.billing_customer_id == "ctm_legacy"
+
+
+def test_paddle_reconciliation_rejects_uncompleted_transaction(db, monkeypatch):
+    from unittest.mock import patch
+    from app.services.paddle_fulfillment import reconcile_pending_ai_transaction
+    monkeypatch.setenv("PADDLE_PRICE_AI_1000", "pri_ai_1000")
+    dispatch_verified_notification(_legacy_ai_event(), db)
+    payload = _legacy_ai_event()["data"]
+    payload["status"] = "billed"
+    with patch("app.paddle_client.get_transaction", return_value=payload):
+        with pytest.raises(ValueError, match="not confirmed completed"):
+            reconcile_pending_ai_transaction(db, "txn_ai_legacy")
+    assert db.get(PaddleAiReconciliation, "txn_ai_legacy").status == "pending"

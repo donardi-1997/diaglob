@@ -75,6 +75,7 @@ from .model_domains.paddle_billing import (  # noqa: F401
     PaddleBillingCustomer,
     PaddleBillingSubscription,
     PaddleWebhookEvent,
+    PaddleAiReconciliation,
 )
 from .model_domains.shopify_billing import (  # noqa: F401
     ShopifyBillingVerification,

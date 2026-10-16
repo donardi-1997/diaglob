@@ -17,8 +17,12 @@ from ..billing import get_subscription_price_id
 from ..models import Organization
 from ..model_domains.paddle_billing import (
     PaddleBillingCustomer, PaddleBillingSubscription, PaddleWebhookEvent,
+    PaddleAiReconciliation,
 )
-from .ai_usage_packages import fulfill_ai_usage_package_transaction
+from .ai_usage_packages import (
+    fulfill_ai_usage_package_transaction, get_ai_usage_package,
+    _transaction_matches_package_price, InvalidAiUsagePackageError,
+)
 from .billing_service import InvalidBillingPlanError, get_billing_price_id
 from .paddle_checkout import (
     verify_signed_checkout_custom_data, verify_ai_package_custom_data,
@@ -182,13 +186,43 @@ def _signed_organization(db: Session, data: dict) -> Organization | None:
 def _organization(db: Session, event_type: str, data: dict):
     custom = data.get("custom_data") or {}
     if event_type == "transaction.completed" and custom.get("purchase_type") == "ai_usage_package":
-        if verify_ai_package_custom_data(
-            custom, actual_price_id=get_subscription_price_id(data),
-            secret=(os.getenv("PADDLE_WEBHOOK_SECRET") or "").strip(),
-        ):
+        customer_id = str(data.get("customer_id") or "")
+        if custom.get("package_signature"):
+            if not verify_ai_package_custom_data(
+                custom, actual_price_id=get_subscription_price_id(data),
+                secret=(os.getenv("PADDLE_WEBHOOK_SECRET") or "").strip(),
+            ):
+                return None
             org = db.get(Organization, int(custom["organization_id"]))
-            return org if _is_direct(org) else None
-        return None
+            if not _is_direct(org):
+                return None
+            # An existing customer association must never move to another tenant.
+            if org.billing_customer_id and customer_id and org.billing_customer_id != customer_id:
+                return None
+            return org
+
+        # Legacy server-created transactions predate metadata signatures.
+        # Never trust custom_data.organization_id for attribution. A known,
+        # UNIQUE Paddle customer association plus the exact catalog price
+        # and response count are required; otherwise queue for reconciliation.
+        if not customer_id:
+            return None
+        try:
+            package = get_ai_usage_package(str(custom.get("package_key") or ""))
+            responses = int(custom.get("responses") or 0)
+        except (ValueError, TypeError, InvalidAiUsagePackageError):
+            return None
+        expected_price = (os.getenv(package["price_env"]) or "").strip()
+        if (
+            not expected_price
+            or responses != package["responses"]
+            or not _transaction_matches_package_price(data, expected_price)
+        ):
+            return None
+        owners = db.query(Organization).filter(
+            Organization.billing_customer_id == customer_id
+        ).all()
+        return owners[0] if len(owners) == 1 and _is_direct(owners[0]) else None
 
     sub_id = (data.get("id") if event_type in SUBSCRIPTION_HANDLERS
               else data.get("subscription_id"))
@@ -221,6 +255,64 @@ def _record(db: Session, event_id: str, event_type: str, when: datetime | None):
         event_id=event_id, event_type=event_type, occurred_at=when,
     ))
 
+
+
+def _pending_ai_purchase(db: Session, event_id: str, data: dict,
+                         occurred: datetime | None, reason: str) -> dict:
+    """Retain completed payments without inventing a tenant or granting credits."""
+    transaction_id = str(data.get("id") or "").strip()
+    if not transaction_id:
+        raise ValueError("Completed Paddle AI purchase has no transaction ID")
+    custom = data.get("custom_data") or {}
+    record = db.get(PaddleAiReconciliation, transaction_id)
+    if record is None:
+        record = PaddleAiReconciliation(
+            transaction_id=transaction_id,
+            event_id=event_id,
+            customer_id=str(data.get("customer_id") or "") or None,
+            claimed_organization_id=str(custom.get("organization_id") or "") or None,
+            package_key=str(custom.get("package_key") or "") or None,
+            price_id=get_subscription_price_id(data),
+            reason=reason,
+            status="pending",
+            occurred_at=occurred,
+        )
+        db.add(record)
+    # Do not mark the payment as fulfilled and do not delete or discard it.
+    db.commit()
+    return {
+        "ok": True, "pending_reconciliation": True,
+        "event_type": "transaction.completed",
+        "transaction_id": transaction_id, "reason": reason,
+    }
+
+
+def reconcile_pending_ai_transaction(db: Session, transaction_id: str) -> dict:
+    """Operator-invoked recovery using live Paddle API, never user-supplied IDs.
+
+    Pending records are permanent. A customer without a unique verified
+    organization remains pending until an authorized association exists.
+    """
+    pending = db.get(PaddleAiReconciliation, transaction_id)
+    if not pending:
+        raise LookupError("No pending Paddle AI payment for that transaction")
+    from ..paddle_client import get_transaction
+    transaction = get_transaction(transaction_id)
+    if str(transaction.get("id") or "") != transaction_id or transaction.get("status") != "completed":
+        raise ValueError("Paddle transaction not confirmed completed")
+    if (transaction.get("custom_data") or {}).get("purchase_type") != "ai_usage_package":
+        raise ValueError("Paddle transaction is not an AI package")
+    org = _organization(db, "transaction.completed", transaction)
+    if not org:
+        return {"ok": True, "pending_reconciliation": True, "transaction_id": transaction_id}
+    result = fulfill_ai_usage_package_transaction(
+        db=db, organization_id=org.id, data=transaction, occurred_at=pending.occurred_at,
+    )
+    if result.get("credited") or result.get("duplicate"):
+        pending.status = "credited"
+        pending.resolved_at = datetime.utcnow()
+        db.commit()
+    return {**result, "transaction_id": transaction_id}
 
 def _sync_customer_event(db: Session, data: dict, when: datetime | None):
     customer_id = str(data.get("id") or "")
@@ -278,10 +370,23 @@ def dispatch_verified_notification(event: dict, db: Session) -> dict:
 
     org = _organization(db, kind, data)
     custom = data.get("custom_data") or {}
-    if kind == "transaction.completed" and custom.get("purchase_type") == "ai_usage_package" and not org:
+    if kind == "transaction.completed" and custom.get("purchase_type") == "ai_usage_package":
+        # Paid AI packages are one-time purchases, independent of the latest
+        # subscription event timestamp and canonical subscription ID.
         _record(db, event_id, kind, occurred)
+        if not org:
+            return _pending_ai_purchase(
+                db, event_id, data, occurred, "unverified_or_ambiguous_owner",
+            )
+        result = fulfill_ai_usage_package_transaction(
+            db=db, organization_id=org.id, data=data, occurred_at=occurred,
+        )
+        if result.get("ignored"):
+            return _pending_ai_purchase(
+                db, event_id, data, occurred, str(result.get("reason") or "invalid_package"),
+            )
         db.commit()
-        return {"ok": True, "ignored": True, "reason": "invalid_or_unbound_ai_package", "event_type": kind}
+        return {**result, "event_type": kind, "transaction_id": data.get("id")}
     if kind in SUBSCRIPTION_HANDLERS:
         mirror, current = _sync_subscription_event(db, data, occurred, org, kind)
         _record(db, event_id, kind, occurred)
@@ -321,12 +426,6 @@ def dispatch_verified_notification(event: dict, db: Session) -> dict:
     if is_out_of_order_event(org, occurred):
         db.commit()
         return {"ok": True, "ignored": True, "reason": "out_of_order_event", "event_type": kind}
-    if (data.get("custom_data") or {}).get("purchase_type") == "ai_usage_package":
-        result = fulfill_ai_usage_package_transaction(
-            db=db, organization_id=org.id, data=data, occurred_at=occurred,
-        )
-        db.commit()
-        return {**result, "event_type": kind, "transaction_id": data.get("id")}
     price_id = get_subscription_price_id(data)
     from ..billing import get_plan_from_price_id, get_billing_period_from_price_id
     plan = get_plan_from_price_id(price_id) if price_id else None
