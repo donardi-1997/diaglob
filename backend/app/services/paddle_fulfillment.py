@@ -193,12 +193,27 @@ def _organization(db: Session, event_type: str, data: dict):
     sub_id = (data.get("id") if event_type in SUBSCRIPTION_HANDLERS
               else data.get("subscription_id"))
     customer_id = data.get("customer_id")
-    # Existing verified Paddle IDs take precedence over metadata that a
-    # browser might edit. An unbound tenant requires server-signed metadata.
-    bound = resolve_organization(db, event_type, sub_id, customer_id, None)
+    # An existing subscription binding is authoritative. A Paddle customer
+    # may have multiple subscriptions; it cannot claim a new subscription.
+    bound = None
+    if sub_id:
+        bound = db.query(Organization).filter(
+            Organization.billing_subscription_id == sub_id
+        ).first()
+    signed = _signed_organization(db, data)
+    if signed:
+        if bound and bound.id != signed.id:
+            raise ValueError("Signed Paddle tenant conflicts with subscription binding")
+        return signed
     if _is_direct(bound):
         return bound
-    return _signed_organization(db, data) if bound is None else None
+    if sub_id:
+        return None
+    # Only customer-scoped events without a subscription may use this fallback.
+    by_customer = db.query(Organization).filter(
+        Organization.billing_customer_id == customer_id
+    ).all() if customer_id else []
+    return by_customer[0] if len(by_customer) == 1 and _is_direct(by_customer[0]) else None
 
 
 def _record(db: Session, event_id: str, event_type: str, when: datetime | None):
