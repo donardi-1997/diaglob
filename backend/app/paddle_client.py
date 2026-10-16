@@ -221,15 +221,18 @@ def create_ai_package_transaction(
     package_key: str,
     responses: int,
 ) -> dict:
+    from .services.paddle_checkout import sign_ai_package_custom_data
+    secret = (os.getenv("PADDLE_WEBHOOK_SECRET") or "").strip()
+    if not secret:
+        raise PaddleConfigError("Paddle AI package signing secret is not configured")
+    custom_data = sign_ai_package_custom_data(
+        organization_id=organization_id, package_key=package_key,
+        responses=responses, price_id=price_id, secret=secret,
+    )
     body = {
         "items": [{"price_id": price_id, "quantity": 1}],
         "collection_mode": "automatic",
-        "custom_data": {
-            "purchase_type": "ai_usage_package",
-            "organization_id": str(organization_id),
-            "package_key": package_key,
-            "responses": int(responses),
-        },
+        "custom_data": custom_data,
     }
 
     try:

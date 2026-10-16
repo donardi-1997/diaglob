@@ -7,6 +7,7 @@ import {
   type Organization,
 } from "../services/organizations";
 import { billingChannel } from "../services/billingChannel";
+import { createPaddlePortalSession } from "../services/billing";
 import "../shopify-billing-workspace.css";
 
 /** Prevents accidentally presenting Paddle checkout to Shopify-managed shops. */
@@ -18,6 +19,8 @@ export default function BillingChannelPage({
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [error, setError] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [portalLoading, setPortalLoading] = useState(false);
+  const [portalError, setPortalError] = useState("");
 
   const load = useCallback(async (isCurrent: () => boolean = () => true) => {
     setLoading(true);
@@ -52,11 +55,40 @@ export default function BillingChannelPage({
     );
   }
 
+  async function openPortal() {
+    if (portalLoading) return;
+    setPortalError("");
+    setPortalLoading(true);
+    try {
+      // The authenticated server resolves the Paddle customer for this tenant.
+      const { url } = await createPaddlePortalSession();
+      window.location.assign(url);
+    } catch {
+      setPortalError("No fue posible abrir el portal de Paddle. Inténtalo de nuevo.");
+    } finally {
+      setPortalLoading(false);
+    }
+  }
+
   switch (billingChannel(organization.billing_provider)) {
     case "shopify":
       return <ShopifyBillingWorkspace organization={organization} />;
     case "paddle":
-      return <PlansPage userEmail={userEmail} />;
+      return (
+        <>
+          {organization.subscription_status && (
+            <section className="billing-channel-state">
+              <h2>Facturación de tu cuenta</h2>
+              <p>Consulta facturas, medios de pago y renovaciones en el portal seguro de Paddle.</p>
+              <button type="button" disabled={portalLoading} onClick={() => { void openPortal(); }}>
+                {portalLoading ? "Abriendo portal…" : "Administrar facturación en Paddle"}
+              </button>
+              {portalError && <p role="alert">{portalError}</p>}
+            </section>
+          )}
+          <PlansPage userEmail={userEmail} />
+        </>
+      );
     default:
       if (organization.billing_onboarding_channel === "shopify_install") {
         return (

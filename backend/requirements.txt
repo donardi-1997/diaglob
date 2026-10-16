@@ -22,6 +22,7 @@ MarkupSafe==3.0.3
 posthog==7.47.3
 psycopg[binary]==3.2.10
 pycparser==3.0
+paddle-python-sdk==1.15.0
 pydantic==2.13.4
 pydantic-settings==2.15.0
 pydantic_core==2.46.4

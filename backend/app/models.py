@@ -71,6 +71,11 @@ from .model_domains.shopify_embedded_auth import (  # noqa: F401
     ShopifyEmbeddedLinkTicket,
     ShopifyEmbeddedIdentityBinding,
 )
+from .model_domains.paddle_billing import (  # noqa: F401
+    PaddleBillingCustomer,
+    PaddleBillingSubscription,
+    PaddleWebhookEvent,
+)
 from .model_domains.shopify_billing import (  # noqa: F401
     ShopifyBillingVerification,
     ShopifyPlanTransitionReview,
