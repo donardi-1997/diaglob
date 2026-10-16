@@ -10,7 +10,11 @@ import { billingChannel } from "../services/billingChannel";
 import "../shopify-billing-workspace.css";
 
 /** Prevents accidentally presenting Paddle checkout to Shopify-managed shops. */
-export default function BillingChannelPage() {
+export default function BillingChannelPage({
+  userEmail,
+}: {
+  userEmail?: string | null;
+}) {
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [error, setError] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -52,7 +56,7 @@ export default function BillingChannelPage() {
     case "shopify":
       return <ShopifyBillingWorkspace organization={organization} />;
     case "paddle":
-      return <PlansPage />;
+      return <PlansPage userEmail={userEmail} />;
     default:
       if (organization.billing_onboarding_channel === "shopify_install") {
         return (

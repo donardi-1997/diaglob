@@ -6,9 +6,9 @@ import { resolvePaddleJsEnvironment } from "../src/services/paddleEnvironment.ts
 const sandboxToken = `test_${"a".repeat(27)}`;
 const liveToken = `live_${"b".repeat(27)}`;
 
-test("Paddle.js defaults to sandbox only for valid sandbox tokens", () => {
-  assert.equal(resolvePaddleJsEnvironment(sandboxToken, undefined), "sandbox");
-  assert.equal(resolvePaddleJsEnvironment(sandboxToken, ""), "sandbox");
+test("Paddle.js requires an explicit environment for every token", () => {
+  assert.equal(resolvePaddleJsEnvironment(sandboxToken, undefined), null);
+  assert.equal(resolvePaddleJsEnvironment(sandboxToken, ""), null);
   assert.equal(resolvePaddleJsEnvironment(sandboxToken, "sandbox"), "sandbox");
   assert.equal(resolvePaddleJsEnvironment(liveToken, undefined), null);
   assert.equal(resolvePaddleJsEnvironment(liveToken, "sandbox"), null);

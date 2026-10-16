@@ -63,6 +63,7 @@ const BillingChannelPage = lazy(() => import("./pages/BillingChannelPage"));
 const PublicLandingPage = lazy(() => import("./pages/PublicLandingPage"));
 const LegalPage = lazy(() => import("./pages/LegalPage"));
 const RefundPolicyPage = lazy(() => import("./pages/RefundPolicyPage"));
+const CheckoutWelcomePage = lazy(() => import("./pages/CheckoutWelcomePage"));
 const SupportPage = lazy(() => import("./pages/SupportPage"));
 const CommercePage = lazy(() => import("./pages/CommercePage"));
 const AutomationsPage = lazy(() => import("./pages/AutomationsPage"));
@@ -415,7 +416,9 @@ function App() {
           onNavigateToAutomations={() => handleNavigate("automations")}
         />
       )}
-      {appRouteAllowed && activePage === "plans" && <BillingChannelPage />}
+      {appRouteAllowed && activePage === "plans" && (
+        <BillingChannelPage userEmail={currentUser?.email} />
+      )}
       {appRouteAllowed && activePage === "conversations" && (
         <ConversationsPage
           key={organizationId}
@@ -608,6 +611,14 @@ function App() {
               )}
             />
           )
+        }
+      />
+      <Route
+        path="/welcome"
+        element={
+          <Suspense fallback={<LoadingScreen />}>
+            <CheckoutWelcomePage />
+          </Suspense>
         }
       />
       <Route

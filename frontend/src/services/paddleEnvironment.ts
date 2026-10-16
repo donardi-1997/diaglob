@@ -5,7 +5,9 @@
  * in production. Never infer commercial go-live solely from a token:
  * production mode requires an explicit build-time opt-in as well.
  *
- * No keys, tokens or checkout payloads are logged.
+ * No keys, tokens or checkout payloads are logged. Environment selection is
+ * always explicit so a missing production setting cannot silently select
+ * Paddle sandbox.
  */
 export type PaddleJsEnvironment = "sandbox" | "production";
 
@@ -18,10 +20,7 @@ export function resolvePaddleJsEnvironment(
   if (typeof clientToken !== "string" || !TOKEN_FORMAT.test(clientToken.trim())) {
     return null;
   }
-  const environment =
-    configuredEnvironment == null || configuredEnvironment === ""
-      ? "sandbox"
-      : configuredEnvironment;
+  const environment = configuredEnvironment;
   if (environment !== "sandbox" && environment !== "production") {
     return null;
   }

@@ -20,6 +20,37 @@ export interface BillingCheckoutResponse {
   checkout_url: string;
 }
 
+export type PaddleBillingPlan = "starter" | "growth" | "pro" | "scale";
+
+export interface PaddlePricingCatalog {
+  price_ids: Record<PaddleBillingPlan, { month: string; year: string }>;
+  country_code: string | null;
+  trial_days: number;
+}
+
+export interface PaddleCheckoutIntent {
+  price_id: string;
+  custom_data: Record<string, string | number>;
+}
+
+export async function getPaddlePricingCatalog(): Promise<PaddlePricingCatalog> {
+  const response = await api.get<PaddlePricingCatalog>(
+    "/api/billing/paddle/catalog",
+  );
+  return response.data;
+}
+
+export async function createPaddleCheckoutIntent(
+  plan: PaddleBillingPlan,
+  billingPeriodMonths: 1 | 12,
+): Promise<PaddleCheckoutIntent> {
+  const response = await api.post<PaddleCheckoutIntent>(
+    "/api/billing/paddle/checkout-intent",
+    { plan, billing_period_months: billingPeriodMonths },
+  );
+  return response.data;
+}
+
 
 export interface BillingUpgradePreview {
   current_plan: string;
