@@ -260,18 +260,14 @@ def create_ai_package_transaction(
 
 def create_transaction(
     price_id: str,
-    organization_id: int,
-    plan_key: str,
-    billing_period_months: int,
+    custom_data: dict | None = None,
 ) -> dict:
+    if custom_data is None:
+        raise PaddleConfigError("Signed Paddle checkout metadata is required")
     body = {
         "items": [{"price_id": price_id, "quantity": 1}],
         "collection_mode": "automatic",
-        "custom_data": {
-            "organization_id": str(organization_id),
-            "plan": plan_key,
-            "billing_period_months": billing_period_months,
-        },
+        "custom_data": custom_data,
     }
 
     try:

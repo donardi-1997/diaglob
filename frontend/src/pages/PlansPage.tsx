@@ -10,25 +10,38 @@ import {
   applyBillingDowngrade,
   applyBillingUpgrade,
   cancelBillingDowngrade,
-  createBillingCheckout,
+  createPaddleCheckoutIntent,
+  getPaddlePricingCatalog,
   previewBillingDowngrade,
   previewBillingUpgrade,
   type BillingDowngradePreview,
   type BillingUpgradePreview,
+  type PaddleBillingPlan,
+  type PaddlePricingCatalog,
 } from "../services/billing";
+import {
+  buildPaddleCheckoutOptions,
+  buildPaddlePricePreviewRequest,
+  mapPaddleFormattedTotals,
+  type PaddlePreviewLineItem,
+} from "../services/paddlePricing";
 
 import AiUsagePackagesSection from "../components/AiUsagePackagesSection";
 
 import { Check, Crown, Rocket, Sparkles, Store, Zap } from "lucide-react";
 
-const plans = [
+const plans: Array<{
+  id: PaddleBillingPlan;
+  name: string;
+  stores: number;
+  icon: typeof Sparkles;
+  descriptionKey: string;
+  featureKeys: string[];
+  recommended?: boolean;
+}> = [
   {
     id: "starter",
     name: "Starter",
-    prices: {
-      1: 19,
-      12: 190,
-    },
     stores: 1,
     icon: Sparkles,
     descriptionKey: "starterDescription",
@@ -45,10 +58,6 @@ const plans = [
   {
     id: "growth",
     name: "Growth",
-    prices: {
-      1: 49,
-      12: 490,
-    },
     stores: 2,
     icon: Zap,
     descriptionKey: "growthDescription",
@@ -65,10 +74,6 @@ const plans = [
   {
     id: "pro",
     name: "Pro",
-    prices: {
-      1: 99,
-      12: 990,
-    },
     stores: 3,
     icon: Rocket,
     recommended: true,
@@ -86,10 +91,6 @@ const plans = [
   {
     id: "scale",
     name: "Scale",
-    prices: {
-      1: 199,
-      12: 1990,
-    },
     stores: 5,
     icon: Crown,
     descriptionKey: "scaleDescription",
@@ -135,13 +136,14 @@ function getPeriodLabelKey(
 }
 
 
-const planOrder: Record<string, number> = {
-  none: 0,
-  starter: 1,
-  growth: 2,
-  pro: 3,
-  scale: 4,
-};
+function priceIdForPlan(
+  catalog: PaddlePricingCatalog | null,
+  plan: PaddleBillingPlan,
+  period: BillingPeriod,
+) {
+  if (!catalog) return undefined;
+  return catalog.price_ids[plan][period === 1 ? "month" : "year"];
+}
 
 
 function moneyFromMinorUnits(
@@ -149,13 +151,21 @@ function moneyFromMinorUnits(
   currency = "USD",
 ) {
   const value = Number(amount || 0) / 100;
-
   return new Intl.NumberFormat("es-CO", {
     style: "currency",
     currency,
     minimumFractionDigits: 2,
   }).format(value);
 }
+
+
+const planOrder: Record<string, number> = {
+  none: 0,
+  starter: 1,
+  growth: 2,
+  pro: 3,
+  scale: 4,
+};
 
 
 function formatBillingDate(
@@ -205,7 +215,11 @@ function getDaysUntilBilling(
 }
 
 
-export default function PlansPage() {
+export default function PlansPage({
+  userEmail,
+}: {
+  userEmail?: string | null;
+}) {
   const { t, i18n } = useTranslation();
   const [currentPlan, setCurrentPlan] = useState<string | null>(null);
 
@@ -268,6 +282,13 @@ export default function PlansPage() {
   const [checkoutError, setCheckoutError] = useState("");
 
   const [paddle, setPaddle] = useState<Paddle | undefined>(undefined);
+  const [paddleConfigurationError, setPaddleConfigurationError] = useState(false);
+  const [paddleCatalog, setPaddleCatalog] = useState<PaddlePricingCatalog | null>(null);
+  const [paddleCatalogError, setPaddleCatalogError] = useState(false);
+  const [paddlePriceTotals, setPaddlePriceTotals] = useState<Record<string, string>>({});
+  const [paddlePricePreviewStatus, setPaddlePricePreviewStatus] = useState<
+    "idle" | "loading" | "ready" | "error"
+  >("idle");
 
   const [upgradePreview, setUpgradePreview] =
     useState<BillingUpgradePreview | null>(
@@ -477,29 +498,23 @@ export default function PlansPage() {
       // ======================================================
 
       setCheckoutPlan(plan);
-
-      const checkout =
-        await createBillingCheckout(
-          plan,
-          selectedBillingPeriod,
-        );
-
-      if (!checkout.checkout_url) {
-        throw new Error(
-          t("plansMissingCheckoutUrl"),
-        );
+      if (!paddle || !paddleCatalog) {
+        throw new Error(t("plansPaddleNotReady"));
       }
 
-      if (!paddle) {
-        throw new Error(
-          t("plansPaddleNotReady"),
-        );
-      }
-
-      paddle.Checkout.open({
-        transactionId:
-          checkout.transaction_id,
+      const intent = await createPaddleCheckoutIntent(
+        plan as PaddleBillingPlan,
+        selectedBillingPeriod,
+      );
+      const checkoutOptions = buildPaddleCheckoutOptions({
+        priceId: intent.price_id,
+        customerEmail: userEmail,
+        countryCode: paddleCatalog.country_code,
+        customData: intent.custom_data,
+        origin: window.location.origin,
       });
+      paddle.Checkout.open(checkoutOptions);
+      setCheckoutPlan(null);
 
     } catch (error: any) {
       const detail =
@@ -846,9 +861,8 @@ export default function PlansPage() {
     );
 
     if (!environment) {
-      // Do not initialize Paddle with unknown credentials or with a
-      // sandbox/live mismatch. No tokens should appear in logs.
-      console.warn("Configuración del checkout Paddle no disponible o incompatible");
+      // Never silently default an unset environment to sandbox or live.
+      setPaddleConfigurationError(true);
       return;
     }
 
@@ -857,12 +871,70 @@ export default function PlansPage() {
       token: token.trim(),
     })
       .then((instance) => {
-        setPaddle(instance);
+        if (instance) {
+          setPaddle(instance);
+        } else {
+          setPaddleConfigurationError(true);
+        }
       })
       .catch(() => {
-        console.error("No fue posible iniciar Paddle Checkout");
+        setPaddleConfigurationError(true);
       });
   }, []);
+
+  useEffect(() => {
+    if (!paddle) return;
+    let mounted = true;
+    setPaddleCatalogError(false);
+    setPaddlePricePreviewStatus("loading");
+
+    getPaddlePricingCatalog()
+      .then((catalog) => {
+        if (mounted) setPaddleCatalog(catalog);
+      })
+      .catch(() => {
+        if (mounted) {
+          setPaddleCatalogError(true);
+          setPaddlePricePreviewStatus("error");
+        }
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [paddle]);
+
+  useEffect(() => {
+    if (!paddle || !paddleCatalog) return;
+    let mounted = true;
+    const periodKey = selectedBillingPeriod === 1 ? "month" : "year";
+    const items = plans.map((plan) => ({
+      priceId: paddleCatalog.price_ids[plan.id][periodKey],
+      quantity: 1,
+    }));
+    setPaddlePriceTotals({});
+    setPaddlePricePreviewStatus("loading");
+
+    paddle.PricePreview(
+      buildPaddlePricePreviewRequest(items, paddleCatalog.country_code),
+    )
+      .then((preview) => {
+        if (!mounted) return;
+        setPaddlePriceTotals(
+          mapPaddleFormattedTotals(
+            preview.data.details.lineItems as PaddlePreviewLineItem[],
+          ),
+        );
+        setPaddlePricePreviewStatus("ready");
+      })
+      .catch(() => {
+        if (mounted) setPaddlePricePreviewStatus("error");
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [paddle, paddleCatalog, selectedBillingPeriod]);
 
   useEffect(() => {
     let mounted = true;
@@ -1112,6 +1184,22 @@ export default function PlansPage() {
       {checkoutError && (
         <div className="plans-checkout-error">{checkoutError}</div>
       )}
+      {paddleConfigurationError && (
+        <div className="plans-checkout-error" role="alert">
+          {t("plansPaddleConfigurationError", {
+            defaultValue:
+              "El checkout no está configurado. Verifica VITE_PADDLE_CLIENT_TOKEN y VITE_PADDLE_ENVIRONMENT.",
+          })}
+        </div>
+      )}
+      {paddleCatalogError && (
+        <div className="plans-checkout-error" role="alert">
+          {t("plansPaddleCatalogUnavailable", {
+            defaultValue:
+              "No pudimos cargar el catálogo de precios para Paddle.",
+          })}
+        </div>
+      )}
 
       <section className="billing-period-section">
         <div className="billing-period-heading">
@@ -1266,6 +1354,20 @@ export default function PlansPage() {
           const isDowngrade =
             currentRank > 0 &&
             targetRank < currentRank;
+          const selectedPriceId = priceIdForPlan(
+            paddleCatalog,
+            plan.id,
+            selectedBillingPeriod,
+          );
+          const formattedPrice = selectedPriceId
+            ? paddlePriceTotals[selectedPriceId]
+            : undefined;
+          const initialCheckoutUnavailable =
+            currentRank === 0 &&
+            (!paddle ||
+              !paddleCatalog ||
+              paddlePricePreviewStatus !== "ready" ||
+              !formattedPrice);
 
           return (
             <article
@@ -1309,11 +1411,9 @@ export default function PlansPage() {
                   </span>
 
                   <span className="plan-normal-value">
-                    ${
-                      plan.prices[
-                        selectedBillingPeriod
-                      ]
-                    }
+                    {paddlePricePreviewStatus === "loading"
+                      ? t("plansCalculating")
+                      : formattedPrice || t("plansPriceUnavailable")}
                     <small>
                       /
                       {t(
@@ -1327,19 +1427,6 @@ export default function PlansPage() {
                       )}
                     </small>
                   </span>
-
-                  {selectedBillingPeriod > 1 && (
-                    <small className="plan-period-equivalent">
-                      US$
-                      {(
-                        plan.prices[
-                          selectedBillingPeriod
-                        ] /
-                        selectedBillingPeriod
-                      ).toFixed(2)}
-                      {" "}al mes
-                    </small>
-                  )}
 
                   {selectedBillingPeriod === 12 && (
                     <span className="plan-period-saving best">
@@ -1441,7 +1528,8 @@ export default function PlansPage() {
                 disabled={
                   isCurrent ||
                   loadingPlan ||
-                  checkoutPlan !== null
+                  checkoutPlan !== null ||
+                  initialCheckoutUnavailable
                 }
                 onClick={() => handleChoosePlan(plan.id)}
               >
@@ -1667,20 +1755,15 @@ export default function PlansPage() {
 
                 <strong>
                   {
-                    moneyFromMinorUnits(
-                      String(
-                        (
-                          plans.find(
-                            (item) =>
-                              item.id ===
-                              upgradePlan,
-                          )?.prices[
-                              currentBillingPeriod
-                            ] || 0
-                        ) * 100,
-                      ),
-                      "USD",
-                    )
+                    (() => {
+                      const priceId = priceIdForPlan(
+                        paddleCatalog,
+                        upgradePlan as PaddleBillingPlan,
+                        currentBillingPeriod,
+                      );
+                      return (priceId && paddlePriceTotals[priceId])
+                        || t("plansPriceUnavailable");
+                    })()
                   }
                 </strong>
               </div>

@@ -15,6 +15,7 @@ from ..billing_providers import (
     BillingProviderError,
     get_billing_provider,
 )
+from ..billing import get_subscription_price_id
 from ..db import get_db
 from ..models import CommerceConnection, Organization, OrganizationMembership, Store
 from .deps import get_current_membership
@@ -89,6 +90,12 @@ from ..services.paddle_webhooks import (
     resolve_organization,
     update_billing_fields,
 )
+from ..services.paddle_checkout import (
+    create_signed_checkout_custom_data,
+    paddle_country_code,
+    verify_signed_checkout_custom_data,
+)
+from ..services.trial_service import TRIAL_DAYS
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -636,6 +643,11 @@ class BillingCheckoutRequest(BaseModel):
     billing_period_months: int = 1
 
 
+class PaddleCheckoutIntentRequest(BaseModel):
+    plan: str
+    billing_period_months: int = 1
+
+
 class BillingUpgradeRequest(BaseModel):
     plan: str
 
@@ -689,6 +701,43 @@ async def paddle_billing_webhook(
     customer_id = data.get("customer_id")
     custom_data = data.get("custom_data") or {}
     organization_id_raw = custom_data.get("organization_id")
+
+    # Paddle.js direct checkouts carry server-signed metadata. Never let a
+    # browser-submitted organization ID provision a different tenant, plan,
+    # or cadence if the checkout payload is edited client-side.
+    if custom_data.get("checkout_signature"):
+        signed_plan = str(custom_data.get("plan") or "").strip().lower()
+        try:
+            signed_period = int(custom_data.get("billing_period_months") or 0)
+            expected_price_id = get_billing_price_id(
+                signed_plan, signed_period, "paddle",
+            )
+        except (InvalidBillingPlanError, TypeError, ValueError):
+            return {
+                "ok": True,
+                "ignored": True,
+                "reason": "invalid_checkout_intent",
+                "event_type": event_type,
+            }
+        checkout_secret = (os.getenv("PADDLE_WEBHOOK_SECRET") or "").strip()
+        if not verify_signed_checkout_custom_data(
+            custom_data,
+            actual_price_id=get_subscription_price_id(data),
+            expected_price_id=expected_price_id,
+            secret=checkout_secret,
+        ):
+            return {
+                "ok": True,
+                "ignored": True,
+                "reason": "invalid_checkout_intent",
+                "event_type": event_type,
+            }
+        organization_id_raw = custom_data.get("organization_id")
+    else:
+        # Do not resolve an organization from browser-controlled Paddle
+        # custom data. Existing subscriptions still resolve through their
+        # already-bound Paddle subscription/customer identifiers.
+        organization_id_raw = None
 
     organization = resolve_organization(
         db,
@@ -1063,6 +1112,104 @@ def process_downgrades_internal(
 
     results = process_pending_downgrades(db)
     return {"ok": True, "processed": len(results), "results": results}
+
+
+@router.get("/api/billing/paddle/catalog")
+def get_paddle_checkout_catalog(
+    request: Request,
+    membership: OrganizationMembership = Depends(get_current_membership),
+):
+    """Expose public Paddle price IDs and edge-detected location to its UI."""
+    if membership.role not in {"owner", "manager"}:
+        raise HTTPException(status_code=403, detail="Billing access denied")
+
+    organization = membership.organization
+    _reject_shopify_managed_billing(organization)
+    provider_name = (organization.billing_provider or "paddle").strip().lower()
+    if provider_name != "paddle":
+        raise HTTPException(status_code=409, detail="Paddle checkout is unavailable")
+
+    try:
+        price_ids = {
+            plan: {
+                "month": get_billing_price_id(plan, 1, "paddle"),
+                "year": get_billing_price_id(plan, 12, "paddle"),
+            }
+            for plan in ("starter", "growth", "pro", "scale")
+        }
+    except (InvalidBillingPlanError, ValueError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Paddle price catalog is not configured for this environment",
+        ) from exc
+
+    return {
+        "price_ids": price_ids,
+        "country_code": paddle_country_code(
+            request.headers,
+            trusted_header=os.getenv("PADDLE_TRUSTED_COUNTRY_HEADER"),
+        ),
+        "trial_days": TRIAL_DAYS,
+    }
+
+
+@router.post("/api/billing/paddle/checkout-intent")
+def create_paddle_checkout_intent(
+    payload: PaddleCheckoutIntentRequest,
+    membership: OrganizationMembership = Depends(get_current_membership),
+):
+    """Sign tenant and plan metadata before a Paddle.js price-ID checkout."""
+    if membership.role not in {"owner", "manager"}:
+        raise HTTPException(status_code=403, detail="Billing access denied")
+
+    organization = membership.organization
+    _reject_shopify_managed_billing(organization)
+    provider_name = (organization.billing_provider or "paddle").strip().lower()
+    if provider_name != "paddle":
+        raise HTTPException(status_code=409, detail="Paddle checkout is unavailable")
+    if (
+        organization.billing_subscription_id
+        and organization.subscription_status in {"active", "trialing", "past_due"}
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="Usa las opciones de cambio de plan para tu suscripción actual.",
+        )
+
+    plan_key = payload.plan.strip().lower()
+    if plan_key not in {"starter", "growth", "pro", "scale"}:
+        raise HTTPException(status_code=400, detail="Plan inválido")
+    if payload.billing_period_months not in (1, 12):
+        raise HTTPException(
+            status_code=400,
+            detail="Solo se ofrecen suscripciones mensuales y anuales",
+        )
+
+    try:
+        price_id = get_billing_price_id(
+            plan_key, payload.billing_period_months, "paddle",
+        )
+    except InvalidBillingPlanError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Paddle price catalog is not configured for this environment",
+        ) from exc
+
+    signing_secret = (os.getenv("PADDLE_WEBHOOK_SECRET") or "").strip()
+    if not signing_secret:
+        raise HTTPException(
+            status_code=503,
+            detail="Paddle checkout is not configured",
+        )
+
+    custom_data = create_signed_checkout_custom_data(
+        organization_id=organization.id,
+        plan=plan_key,
+        billing_period_months=payload.billing_period_months,
+        price_id=price_id,
+        secret=signing_secret,
+    )
+    return {"price_id": price_id, "custom_data": custom_data}
 
 
 @router.post("/api/billing/checkout")

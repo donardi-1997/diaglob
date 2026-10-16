@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 
 from .. import billing, paddle_client
+from ..services.paddle_checkout import create_signed_checkout_custom_data
 from .base import (
     BillingProvider,
     BillingProviderConfigurationError,
@@ -38,12 +39,18 @@ class PaddleBillingProvider(BillingProvider):
         plan_key: str,
         billing_period_months: int,
     ) -> dict:
+        signing_secret = (os.getenv("PADDLE_WEBHOOK_SECRET") or "").strip()
+        custom_data = create_signed_checkout_custom_data(
+            organization_id=organization_id,
+            plan=plan_key,
+            billing_period_months=billing_period_months,
+            price_id=price_id,
+            secret=signing_secret,
+        )
         return self._call(
             paddle_client.create_transaction,
             price_id=price_id,
-            organization_id=organization_id,
-            plan_key=plan_key,
-            billing_period_months=billing_period_months,
+            custom_data=custom_data,
         )
 
     def get_subscription(self, subscription_id: str) -> dict:
