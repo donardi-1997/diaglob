@@ -24,7 +24,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: "3.11"
 
       - name: Install dependencies
         run: |
@@ -108,6 +108,7 @@ jobs:
           git reset --hard origin/main
 
           cd backend
+          .venv/bin/python -c 'import sys; assert sys.version_info >= (3, 11), "Paddle SDK requires Python 3.11+ in the production virtualenv"'
           .venv/bin/pip install -r requirements.txt
           REMOTE
 

@@ -122,3 +122,51 @@ def verify_signed_checkout_custom_data(
         return hmac.compare_digest(signature, expected_signature)
     except (TypeError, ValueError):
         return False
+
+
+def _ai_package_signature_payload(
+    organization_id: int, package_key: str, responses: int, price_id: str,
+) -> bytes:
+    return (
+        f"diaglob-paddle-ai-package-v1\\n{organization_id}\\n{package_key}\\n"
+        f"{responses}\\n{price_id}"
+    ).encode("utf-8")
+
+
+def sign_ai_package_custom_data(*, organization_id: int, package_key: str,
+                                responses: int, price_id: str, secret: str) -> dict:
+    if organization_id < 1 or responses < 1 or not package_key or not price_id or not secret:
+        raise ValueError("Invalid AI package signing inputs")
+    signature = hmac.new(
+        secret.encode("utf-8"),
+        _ai_package_signature_payload(organization_id, package_key, responses, price_id),
+        hashlib.sha256,
+    ).hexdigest()
+    return {
+        "purchase_type": "ai_usage_package",
+        "organization_id": str(organization_id),
+        "package_key": package_key,
+        "responses": responses,
+        "price_id": price_id,
+        "package_signature": signature,
+    }
+
+
+def verify_ai_package_custom_data(custom_data: Mapping[str, object],
+                                  *, actual_price_id: str | None, secret: str) -> bool:
+    try:
+        organization_id = int(custom_data.get("organization_id") or 0)
+        package_key = str(custom_data.get("package_key") or "")
+        responses = int(custom_data.get("responses") or 0)
+        price_id = str(custom_data.get("price_id") or "")
+        signature = str(custom_data.get("package_signature") or "")
+        if (custom_data.get("purchase_type") != "ai_usage_package"
+                or not signature or not actual_price_id or price_id != actual_price_id):
+            return False
+        expected = sign_ai_package_custom_data(
+            organization_id=organization_id, package_key=package_key,
+            responses=responses, price_id=price_id, secret=secret,
+        )["package_signature"]
+        return hmac.compare_digest(signature, expected)
+    except (ValueError, TypeError):
+        return False

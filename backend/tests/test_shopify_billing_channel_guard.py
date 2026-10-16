@@ -1,18 +1,15 @@
 """Regression tests: Shopify App Store organizations never use Paddle billing."""
-import asyncio
-import json
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
-from starlette.requests import Request
 
+from app.services.paddle_fulfillment import dispatch_verified_notification
 from app.api.billing import (
     BillingCheckoutRequest,
     _reject_shopify_managed_billing,
     create_billing_checkout,
-    paddle_billing_webhook,
 )
 
 
@@ -60,77 +57,58 @@ def test_direct_signup_with_shopify_store_connection_keeps_paddle_channel():
     ))
 
 
+def _dispatch_for_shopify_org(organization, event):
+    """Verified events may be mirrored but must never mutate Shopify entitlements."""
+    db = MagicMock()
+    db.get.return_value = None
+    db.query.return_value.filter.return_value.first.return_value = organization
+    with patch(
+        "app.services.paddle_fulfillment._sync_subscription_event",
+        return_value=(SimpleNamespace(subscription_id=event["data"]["id"]), True),
+    ), patch(
+        "app.services.paddle_fulfillment.process_subscription_event"
+    ) as mutate, patch(
+        "app.services.paddle_fulfillment.update_billing_fields"
+    ) as update:
+        result = dispatch_verified_notification(event, db)
+    mutate.assert_not_called()
+    update.assert_not_called()
+    db.commit.assert_called_once()
+    return result
+
+
 def test_signed_paddle_event_cannot_overwrite_shopify_entitlements():
-    payload = {
+    event = {
         "event_id": "evt_shopify_guard",
         "event_type": "subscription.created",
         "data": {"id": "sub_123", "customer_id": "ctm_123"},
     }
-    body = json.dumps(payload).encode()
-
-    async def receive():
-        return {"type": "http.request", "body": body, "more_body": False}
-
-    request = Request(
-        {
-            "type": "http", "method": "POST", "path": "/api/billing/webhook",
-            "headers": [(b"paddle-signature", b"synthetic-signature")],
-        },
-        receive=receive,
+    result = _dispatch_for_shopify_org(
+        SimpleNamespace(billing_provider="shopify", billing_onboarding_channel=None),
+        event,
     )
-    provider = SimpleNamespace(
-        webhook_signature_header="Paddle-Signature",
-        verify_webhook=lambda raw, signature: None,
-    )
-    organization = SimpleNamespace(billing_provider="shopify")
-    with patch("app.api.billing.get_billing_provider", return_value=provider), patch(
-        "app.api.billing.resolve_organization", return_value=organization
-    ), patch("app.api.billing.process_subscription_event") as mutate:
-        response = asyncio.run(paddle_billing_webhook(request=request, db=None))
-    assert response["ignored"] is True
-    assert response["reason"] == "shopify_managed_billing"
-    mutate.assert_not_called()
+    assert result["ignored"] is True
+    assert result["reason"] == "unbound_or_stale_subscription"
 
 
 @pytest.mark.parametrize("provider_name", [None, "paddle"])
 def test_signed_paddle_event_ignored_for_shopify_origin_even_if_provider_stale(
     provider_name,
 ):
-    payload = {
+    event = {
         "event_id": "evt_stale_shopify_origin",
         "event_type": "subscription.created",
         "data": {"id": "sub_other", "customer_id": "ctm_other"},
     }
-    body = json.dumps(payload).encode()
-
-    async def receive():
-        return {"type": "http.request", "body": body, "more_body": False}
-
-    request = Request(
-        {
-            "type": "http", "method": "POST", "path": "/api/billing/webhook",
-            "headers": [(b"paddle-signature", b"synthetic-signature")],
-        },
-        receive=receive,
+    result = _dispatch_for_shopify_org(
+        SimpleNamespace(
+            billing_provider=provider_name,
+            billing_onboarding_channel="shopify_install",
+        ),
+        event,
     )
-    fake_provider = SimpleNamespace(
-        webhook_signature_header="Paddle-Signature",
-        verify_webhook=lambda raw, signature: None,
-    )
-    organization = SimpleNamespace(
-        billing_provider=provider_name,
-        billing_onboarding_channel="shopify_install",
-    )
-    with patch("app.api.billing.get_billing_provider", return_value=fake_provider), patch(
-        "app.api.billing.resolve_organization", return_value=organization
-    ), patch("app.api.billing.process_subscription_event") as mutate, patch(
-        "app.api.billing.update_billing_fields"
-    ) as update:
-        result = asyncio.run(paddle_billing_webhook(request=request, db=None))
     assert result["ignored"] is True
-    assert result["reason"] == "shopify_managed_billing"
-    mutate.assert_not_called()
-    update.assert_not_called()
+    assert result["reason"] == "unbound_or_stale_subscription"
 
 
 def test_internal_downgrade_worker_skips_shopify_organizations():

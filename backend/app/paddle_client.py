@@ -46,6 +46,27 @@ def get_paddle_headers() -> dict:
     }
 
 
+def get_transaction(transaction_id: str) -> dict:
+    """Retrieve a completed payment from Paddle for guarded reconciliation."""
+    if not transaction_id or not transaction_id.startswith("txn_"):
+        raise ValueError("Paddle transaction ID is invalid")
+    try:
+        response = httpx.get(
+            f"{get_paddle_base_url()}/transactions/{transaction_id}",
+            headers=get_paddle_headers(),
+            timeout=30,
+        )
+    except httpx.HTTPError as exc:
+        raise PaddleProviderError(
+            status_code=502, detail={"message": "Paddle transaction lookup failed"}
+        ) from exc
+    if response.status_code >= 400:
+        raise PaddleProviderError(
+            status_code=502, detail={"message": "Paddle could not confirm transaction"}
+        )
+    return response.json().get("data") or {}
+
+
 def get_subscription(subscription_id: str) -> dict:
     url = f"{get_paddle_base_url()}/subscriptions/{subscription_id}"
 
@@ -221,15 +242,18 @@ def create_ai_package_transaction(
     package_key: str,
     responses: int,
 ) -> dict:
+    from .services.paddle_checkout import sign_ai_package_custom_data
+    secret = (os.getenv("PADDLE_WEBHOOK_SECRET") or "").strip()
+    if not secret:
+        raise PaddleConfigError("Paddle AI package signing secret is not configured")
+    custom_data = sign_ai_package_custom_data(
+        organization_id=organization_id, package_key=package_key,
+        responses=responses, price_id=price_id, secret=secret,
+    )
     body = {
         "items": [{"price_id": price_id, "quantity": 1}],
         "collection_mode": "automatic",
-        "custom_data": {
-            "purchase_type": "ai_usage_package",
-            "organization_id": str(organization_id),
-            "package_key": package_key,
-            "responses": int(responses),
-        },
+        "custom_data": custom_data,
     }
 
     try:

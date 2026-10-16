@@ -14,6 +14,11 @@ export type {
 export { getBillingUpgradePayableAmount };
 
 
+export async function createPaddlePortalSession(): Promise<{ url: string }> {
+  const response = await api.post<{ url: string }>("/api/billing/paddle/portal-session");
+  return response.data;
+}
+
 export interface BillingCheckoutResponse {
   plan: string;
   transaction_id: string;

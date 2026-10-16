@@ -96,6 +96,13 @@ from ..services.paddle_checkout import (
     verify_signed_checkout_custom_data,
 )
 from ..services.trial_service import TRIAL_DAYS
+from ..services.paddle_fulfillment import (
+    verify_notification,
+    dispatch_verified_notification,
+    create_portal_session_url,
+)
+from ..model_domains.paddle_billing import PaddleWebhookEvent
+from sqlalchemy.exc import IntegrityError
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -663,205 +670,27 @@ async def paddle_billing_webhook(
     request: Request,
     db: Session = Depends(get_db),
 ):
-    """Compatibility endpoint for the currently active Paddle provider."""
-    provider = get_billing_provider("paddle")
+    """Backward-compatible destination, now on the SDK-verified event ledger."""
     raw_body = await request.body()
-    signature_header = provider.webhook_signature_header or "Paddle-Signature"
-    signature = request.headers.get(signature_header, "")
-
+    secret = (os.getenv("PADDLE_WEBHOOK_SECRET") or "").strip()
+    if not secret:
+        raise HTTPException(status_code=503, detail="Paddle webhook is not configured")
     try:
-        provider.verify_webhook(raw_body, signature)
-    except BillingProviderConfigurationError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        event = verify_notification(raw_body, request.headers.get("Paddle-Signature", ""), secret)
     except ValueError as exc:
-        raise HTTPException(status_code=401, detail=str(exc)) from exc
-
+        raise HTTPException(status_code=401, detail="Invalid Paddle signature") from exc
     try:
-        event = json.loads(raw_body.decode("utf-8"))
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail="Invalid webhook payload") from exc
-
-    event_id = event.get("event_id")
-    event_type = event.get("event_type")
-    occurred_at_raw = event.get("occurred_at")
-    data = event.get("data") or {}
-
-    if not event_id or not event_type:
-        raise HTTPException(status_code=400, detail="Invalid Paddle event")
-
-    if event_type not in SUPPORTED_EVENTS:
-        return {"ok": True, "ignored": True, "event_type": event_type}
-
-    is_subscription_event = event_type in SUBSCRIPTION_EVENTS
-    is_transaction_event = event_type in TRANSACTION_EVENTS
-    subscription_id = (
-        data.get("id") if is_subscription_event else data.get("subscription_id")
-    )
-    transaction_id = data.get("id") if is_transaction_event else None
-    customer_id = data.get("customer_id")
-    custom_data = data.get("custom_data") or {}
-    organization_id_raw = custom_data.get("organization_id")
-
-    # Paddle.js direct checkouts carry server-signed metadata. Never let a
-    # browser-submitted organization ID provision a different tenant, plan,
-    # or cadence if the checkout payload is edited client-side.
-    if custom_data.get("checkout_signature"):
-        signed_plan = str(custom_data.get("plan") or "").strip().lower()
-        try:
-            signed_period = int(custom_data.get("billing_period_months") or 0)
-            expected_price_id = get_billing_price_id(
-                signed_plan, signed_period, "paddle",
-            )
-        except (InvalidBillingPlanError, TypeError, ValueError):
-            return {
-                "ok": True,
-                "ignored": True,
-                "reason": "invalid_checkout_intent",
-                "event_type": event_type,
-            }
-        checkout_secret = (os.getenv("PADDLE_WEBHOOK_SECRET") or "").strip()
-        if not verify_signed_checkout_custom_data(
-            custom_data,
-            actual_price_id=get_subscription_price_id(data),
-            expected_price_id=expected_price_id,
-            secret=checkout_secret,
-        ):
-            return {
-                "ok": True,
-                "ignored": True,
-                "reason": "invalid_checkout_intent",
-                "event_type": event_type,
-            }
-        organization_id_raw = custom_data.get("organization_id")
-    else:
-        # Do not resolve an organization from browser-controlled Paddle
-        # custom data. Existing subscriptions still resolve through their
-        # already-bound Paddle subscription/customer identifiers.
-        organization_id_raw = None
-
-    organization = resolve_organization(
-        db,
-        event_type,
-        subscription_id,
-        customer_id,
-        organization_id_raw,
-    )
-    if organization is None:
-        return {
-            "ok": True,
-            "ignored": True,
-            "reason": "organization_not_found",
-            "event_type": event_type,
-        }
-
-    if (
-        (organization.billing_provider or "").strip().lower() == "shopify"
-        or getattr(organization, "billing_onboarding_channel", None)
-        == "shopify_install"
-    ):
-        # Authenticated Paddle events must not mutate App Store-origin access,
-        # even if inconsistent legacy state names Paddle as its provider.
-        return {
-            "ok": True,
-            "ignored": True,
-            "reason": "shopify_managed_billing",
-            "event_type": event_type,
-        }
-
-    if (
-        is_transaction_event
-        and custom_data.get("purchase_type") == "ai_usage_package"
-    ):
-        package_occurred_at = None
-        if occurred_at_raw:
-            try:
-                package_occurred_at = datetime.fromisoformat(
-                    occurred_at_raw.replace("Z", "+00:00")
-                ).replace(tzinfo=None)
-            except ValueError:
-                package_occurred_at = None
-
-        result = fulfill_ai_usage_package_transaction(
-            db=db,
-            organization_id=organization.id,
-            data=data,
-            occurred_at=package_occurred_at,
-        )
-        result["event_type"] = event_type
-        result["transaction_id"] = transaction_id
-        return result
-
-    if not is_canonical_subscription(organization, subscription_id):
-        return {
-            "ok": True,
-            "ignored": True,
-            "reason": "non_canonical_subscription",
-            "event_type": event_type,
-            "organization_id": organization.id,
-            "subscription_id": subscription_id,
-            "canonical_subscription_id": organization.billing_subscription_id,
-        }
-
-    if is_duplicate_event(organization, event_id):
-        return {"ok": True, "duplicate": True, "event_type": event_type}
-
-    occurred_at = None
-    if occurred_at_raw:
-        try:
-            occurred_at = datetime.fromisoformat(
-                occurred_at_raw.replace("Z", "+00:00")
-            ).replace(tzinfo=None)
-        except ValueError:
-            occurred_at = None
-
-    if is_out_of_order_event(organization, occurred_at):
-        return {
-            "ok": True,
-            "ignored": True,
-            "reason": "out_of_order_event",
-            "event_type": event_type,
-        }
-
-    price_id = provider.get_subscription_price_id(data)
-    plan_key = provider.get_plan_from_price_id(price_id) if price_id else None
-    billing_period_months = (
-        provider.get_billing_period_from_price_id(price_id) if price_id else None
-    )
-
-    update_billing_fields(
-        organization,
-        customer_id,
-        subscription_id,
-        price_id,
-        billing_period_months,
-    )
-
-    status = data.get("status")
-    if is_transaction_event:
-        result = process_transaction_event(
-            organization,
-            event_id,
-            occurred_at,
-            plan_key,
-            data,
-            db,
-        )
-        result["event_type"] = event_type
-        result["transaction_id"] = transaction_id
-        return result
-
-    return process_subscription_event(
-        organization,
-        event_id,
-        occurred_at,
-        event_type,
-        plan_key,
-        price_id,
-        billing_period_months,
-        status,
-        data,
-        db,
-    )
+        return dispatch_verified_notification(event, db)
+    except IntegrityError as exc:
+        db.rollback()
+        event_id = str(event.get("event_id") or "")
+        if event_id and db.get(PaddleWebhookEvent, event_id):
+            return {"ok": True, "duplicate": True, "event_type": event.get("event_type")}
+        raise HTTPException(status_code=503, detail="Paddle event processing failed") from exc
+    except Exception:
+        db.rollback()
+        logger.exception("Paddle legacy event processing failed")
+        raise
 
 
 @router.patch("/api/billing/auto-renew")
@@ -1263,3 +1092,58 @@ def create_billing_checkout(
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
     except ValueError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.post("/api/billing/paddle/notifications")
+async def paddle_verified_notifications(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """SDK-verified raw Paddle deliveries. Acknowledged only after commit."""
+    raw_body = await request.body()
+    signature = request.headers.get("Paddle-Signature", "")
+    secret = (os.getenv("PADDLE_FULFILLMENT_WEBHOOK_SECRET") or "").strip()
+    if not secret:
+        raise HTTPException(status_code=503, detail="Paddle fulfillment webhook is not configured")
+    try:
+        event = verify_notification(raw_body, signature, secret)
+    except ValueError as exc:
+        raise HTTPException(status_code=401, detail="Invalid Paddle signature or body") from exc
+    try:
+        return dispatch_verified_notification(event, db)
+    except IntegrityError as exc:
+        # Parallel deliveries may race to insert the same event ID.
+        db.rollback()
+        event_id = str(event.get("event_id") or "")
+        if event_id and db.get(PaddleWebhookEvent, event_id):
+            return {"ok": True, "duplicate": True, "event_type": event.get("event_type")}
+        raise HTTPException(status_code=503, detail="Paddle event processing failed") from exc
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail="Invalid Paddle event data") from exc
+    except Exception:
+        db.rollback()
+        logger.exception("Paddle verified event processing failed")
+        raise
+
+
+@router.post("/api/billing/paddle/portal-session")
+def mint_paddle_customer_portal_session(
+    membership: OrganizationMembership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+):
+    """Authenticated tenant context only; client never supplies a customer ID."""
+    if membership.role not in {"owner", "manager"}:
+        raise HTTPException(status_code=403, detail="Billing access denied")
+    organization = membership.organization
+    _reject_shopify_managed_billing(organization)
+    try:
+        url = create_portal_session_url(db, organization)
+    except LookupError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    from fastapi.responses import JSONResponse
+    return JSONResponse({"url": url}, headers={"Cache-Control": "no-store"})
