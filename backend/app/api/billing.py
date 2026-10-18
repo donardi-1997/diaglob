@@ -100,6 +100,7 @@ from ..services.paddle_fulfillment import (
     verify_notification,
     dispatch_verified_notification,
     create_portal_session_url,
+    get_paddle_billing_capabilities,
 )
 from ..model_domains.paddle_billing import PaddleWebhookEvent
 from sqlalchemy.exc import IntegrityError
@@ -941,6 +942,19 @@ def process_downgrades_internal(
 
     results = process_pending_downgrades(db)
     return {"ok": True, "processed": len(results), "results": results}
+
+
+@router.get("/api/billing/paddle/status")
+def get_paddle_synchronization_status(
+    membership: OrganizationMembership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+):
+    """Read-only, scoped billing capabilities; never expose Paddle IDs."""
+    if membership.role not in {"owner", "manager"}:
+        raise HTTPException(status_code=403, detail="Billing access denied")
+    organization = membership.organization
+    _reject_shopify_managed_billing(organization)
+    return get_paddle_billing_capabilities(db, organization)
 
 
 @router.get("/api/billing/paddle/catalog")
