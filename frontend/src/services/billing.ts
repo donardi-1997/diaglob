@@ -14,6 +14,19 @@ export type {
 export { getBillingUpgradePayableAmount };
 
 
+export interface PaddleBillingStatus {
+  customer_synchronized: boolean;
+  subscription_synchronized: boolean;
+  portal_available: boolean;
+  plan_changes_available: boolean;
+}
+
+export async function getPaddleBillingStatus(): Promise<PaddleBillingStatus> {
+  const response = await api.get<PaddleBillingStatus>("/api/billing/paddle/status");
+  return response.data;
+}
+
+
 export async function createPaddlePortalSession(): Promise<{ url: string }> {
   const response = await api.post<{ url: string }>("/api/billing/paddle/portal-session");
   return response.data;
