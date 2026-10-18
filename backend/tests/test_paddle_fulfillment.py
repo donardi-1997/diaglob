@@ -18,6 +18,7 @@ from app.model_domains.paddle_billing import (
 from app.services.paddle_fulfillment import (
     dispatch_verified_notification, subscription_grants_access,
     verify_notification, create_portal_session_url,
+    get_paddle_billing_capabilities,
 )
 
 
@@ -153,6 +154,76 @@ def test_portal_rejects_tenant_mismatch_before_calling_paddle(db):
     )
     with pytest.raises(LookupError):
         create_portal_session_url(db, other_tenant)
+
+
+def test_legacy_paddle_ids_are_not_synchronized_entitlements(db):
+    from app.models import Organization
+
+    organization = Organization(
+        name="Legacy direct billing", slug="legacy-direct-billing",
+        plan="growth", billing_provider="paddle",
+        billing_customer_id="ctm_legacy_ref",
+        billing_subscription_id="sub_legacy_ref",
+        subscription_status="active",
+    )
+    db.add(organization)
+    db.commit()
+
+    status = get_paddle_billing_capabilities(db, organization)
+    assert status == {
+        "customer_synchronized": False,
+        "subscription_synchronized": False,
+        "portal_available": False,
+        "plan_changes_available": False,
+    }
+    with pytest.raises(LookupError, match="not synchronized"):
+        create_portal_session_url(db, organization)
+
+
+def test_paddle_status_requires_tenant_bound_customer_and_subscription(db):
+    from app.models import Organization
+
+    organization = Organization(
+        name="Billing test", slug="billing-sync-test",
+        plan="pro", billing_provider="paddle",
+        billing_customer_id="ctm_paddle_sync",
+        billing_subscription_id="sub_paddle_sync",
+    )
+    other = Organization(name="Other billing tenant", slug="billing-sync-other")
+    db.add_all([organization, other])
+    db.commit()
+
+    customer = PaddleBillingCustomer(
+        customer_id="ctm_paddle_sync", organization_id=other.id,
+    )
+    subscription = PaddleBillingSubscription(
+        subscription_id="sub_paddle_sync", organization_id=other.id,
+        customer_id="ctm_paddle_sync", status="active",
+    )
+    db.add_all([customer, subscription])
+    db.commit()
+
+    assert not get_paddle_billing_capabilities(db, organization)["portal_available"]
+    customer.organization_id = organization.id
+    db.commit()
+    partial = get_paddle_billing_capabilities(db, organization)
+    assert partial["customer_synchronized"]
+    assert not partial["subscription_synchronized"]
+    assert not partial["portal_available"]
+
+    subscription.organization_id = organization.id
+    db.commit()
+    ready = get_paddle_billing_capabilities(db, organization)
+    assert ready["customer_synchronized"]
+    assert ready["subscription_synchronized"]
+    assert ready["portal_available"]
+    assert ready["plan_changes_available"]
+
+    subscription.status = "canceled"
+    db.commit()
+    canceled = get_paddle_billing_capabilities(db, organization)
+    assert canceled["portal_available"]
+    assert not canceled["plan_changes_available"]
 
 
 def test_other_event_types_are_ignored_without_creating_receipts(db):
