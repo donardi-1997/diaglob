@@ -41,6 +41,19 @@ query DiaglobReadOnlyScopeGate($apiKey: String!) {
 DEFAULT_CONFIG = Path(__file__).resolve().parents[2] / "shopify.app.toml"
 _SCOPE = re.compile(r"^[a-z][a-z0-9_]*$")
 
+# Shopify grants read access together with its matching write scope.
+# Only explicitly observed, documented implied reads are accepted as
+# additional remote handles; never silently whitelist other permissions.
+# https://shopify.dev/docs/apps/build/authentication-authorization/manage-access-scopes
+_IMPLIED_BY_WRITE = {"write_draft_orders": "read_draft_orders"}
+
+
+def _expected_implicit_reads(required: set[str]) -> set[str]:
+    return {
+        implicit for write, implicit in _IMPLIED_BY_WRITE.items()
+        if write in required and implicit not in required
+    }
+
 
 def _scope_set(value: str) -> set[str]:
     if not isinstance(value, str) or not value:
@@ -118,8 +131,10 @@ def inspect_shopify_dev_store_scopes(
     installed = installation is not None
 
     source_toml_parity = declared == required
-    remote_requested_parity = requested == required
-    remote_granted_parity = installed and granted == required
+    permitted_implicit = _expected_implicit_reads(required)
+    allowed_remote = required | permitted_implicit
+    remote_requested_parity = required <= requested <= allowed_remote
+    remote_granted_parity = installed and required <= granted <= allowed_remote
     # Extra optional permissions require explicit review, even if current
     # requested/granted lists appear to match the source.
     passed = (
@@ -141,9 +156,11 @@ def inspect_shopify_dev_store_scopes(
         "remote_requested_parity": remote_requested_parity,
         "remote_granted_parity": remote_granted_parity,
         "requested_missing": sorted(required - requested),
-        "requested_extra": sorted(requested - required),
+        "requested_implicit_reads": sorted((requested - required) & permitted_implicit),
+        "requested_extra": sorted(requested - allowed_remote),
         "granted_missing": sorted(required - granted),
-        "granted_extra": sorted(granted - required),
+        "granted_implicit_reads": sorted((granted - required) & permitted_implicit),
+        "granted_extra": sorted(granted - allowed_remote),
         "scope_gate_passed": passed,
         "protected_customer_data_approval_verified": False,
         "shopify_app_version_verified": False,

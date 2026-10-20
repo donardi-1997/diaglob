@@ -191,3 +191,73 @@ def test_main_never_prints_remote_token(monkeypatch, capsys):
     assert token not in printed
     assert "scope_gate_passed" in printed
     client.query.assert_called_once()
+
+
+def test_shopify_post_release_grants_include_implicit_draft_order_read():
+    """2026-10-20 live POC metadata: 7 configured + read_draft_orders."""
+    observed = REQUIRED | {"read_draft_orders"}
+    report = _inspect(_payload(requested=observed, granted=observed))
+    assert report["source_toml_parity"] is True
+    assert report["remote_requested_parity"] is True
+    assert report["remote_granted_parity"] is True
+    assert report["requested_implicit_reads"] == ["read_draft_orders"]
+    assert report["granted_implicit_reads"] == ["read_draft_orders"]
+    assert report["requested_extra"] == []
+    assert report["granted_extra"] == []
+    assert report["scope_gate_passed"] is True
+    assert report["protected_customer_data_approval_verified"] is False
+    assert report["merchant_installation_e2e_verified"] is False
+
+
+def test_unrelated_read_scope_not_whitelisted_as_implied():
+    observed = REQUIRED | {"read_draft_orders", "read_customers"}
+    report = _inspect(_payload(requested=observed, granted=observed))
+    assert report["requested_extra"] == ["read_customers"]
+    assert report["granted_extra"] == ["read_customers"]
+    assert report["scope_gate_passed"] is False
+
+
+def test_writing_only_product_does_not_imply_unrequested_customer_reads():
+    observed = REQUIRED | {"read_draft_orders", "write_products"}
+    report = _inspect(_payload(requested=observed, granted=observed))
+    assert report["requested_extra"] == ["write_products"]
+    assert report["granted_extra"] == ["write_products"]
+    assert report["scope_gate_passed"] is False
+
+
+def test_missing_required_write_cannot_be_replaced_by_implied_read():
+    observed = (REQUIRED - {"write_draft_orders"}) | {"read_draft_orders"}
+    report = _inspect(_payload(requested=observed, granted=observed))
+    assert report["requested_missing"] == ["write_draft_orders"]
+    assert report["granted_missing"] == ["write_draft_orders"]
+    assert report["scope_gate_passed"] is False
+
+
+def test_implied_read_is_accepted_only_when_matching_write_requested_in_source():
+    without_write = REQUIRED - {"write_draft_orders"}
+    report = _inspect(
+        _payload(requested=without_write | {"read_draft_orders"},
+                 granted=without_write | {"read_draft_orders"}),
+        source_scopes=",".join(sorted(without_write)),
+        toml_scopes=",".join(sorted(without_write)),
+    )
+    assert report["requested_extra"] == ["read_draft_orders"]
+    assert report["granted_extra"] == ["read_draft_orders"]
+    assert report["scope_gate_passed"] is False
+
+
+def test_optional_scopes_still_block_even_with_shopify_implicit_read():
+    observed = REQUIRED | {"read_draft_orders"}
+    report = _inspect(_payload(
+        requested=observed, granted=observed, optional={"read_customers"}
+    ))
+    assert report["scope_gate_passed"] is False
+
+
+def test_live_scope_gate_never_proves_partner_pcd_or_merchant_link():
+    observed = REQUIRED | {"read_draft_orders"}
+    report = _inspect(_payload(requested=observed, granted=observed))
+    assert report["scope_gate_passed"] is True
+    assert report["protected_customer_data_approval_verified"] is False
+    assert report["shopify_app_version_verified"] is False
+    assert report["merchant_installation_e2e_verified"] is False
