@@ -38,6 +38,8 @@ def inspect_lightsail(client: Any, name: str) -> dict:
             for a in addons
         ),
         "automatic_snapshot_count": len(snapshots),
+        "automatic_snapshot_time_utc": automatic.get("snapshotTimeOfDay"),
+        "automatic_snapshot_present": len(snapshots) > 0,
         "manual_snapshot_count": len(matching),
         "available_manual_snapshot_count": len(available),
         "automatic_snapshot_addon_status": automatic.get("status", "NotConfigured"),
@@ -189,6 +191,10 @@ def readiness_findings(checks: dict[str, dict]) -> list[str]:
     if lightsail.get("state") == "verified":
         if not lightsail.get("automatic_snapshot_addon_enabled"):
             findings.append("LIGHTSAIL_AUTOSNAPSHOT_DISABLED")
+        elif lightsail.get("automatic_snapshot_count") == 0:
+            # Enabled configuration is not proof that a daily backup exists.
+            # A separate manual snapshot must not hide this pending check.
+            findings.append("LIGHTSAIL_AUTOSNAPSHOT_ENABLED_NO_SNAPSHOT")
         if (
             lightsail.get("automatic_snapshot_count") == 0
             and lightsail.get("manual_snapshot_count") == 0
@@ -271,6 +277,11 @@ def audit(session: Any, *, region: str, instance: str, bucket: str) -> dict:
         "findings": readiness_findings(results),
         "production_changes": False,
         "privacy_fulfillment_authorized": False,
+        # No combination of Lightsail add-on + one SSE-S3 bucket attests to
+        # encrypted PostgreSQL backups, independent key custody or restoration.
+        # A reviewed, externally supplied restore/encryption evidence bundle
+        # is required before this operational flag can ever change.
+        "shopify_pcd_q10_encrypted_backups_attested": False,
         "database_consistent_backup_verified": False,
         "snapshot_restoration_verified": False,
         "s3_lifecycle_changes_authorized": False,

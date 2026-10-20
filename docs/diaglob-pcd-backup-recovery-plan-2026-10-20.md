@@ -1,5 +1,16 @@
 # DIAGLOB — Plan verificable de recuperación y retención PCD
 
+> **ACTUALIZACIÓN 20-oct-2026, posterior a la inspección inicial:** la instancia
+> `diaglob-prod` ya muestra `AutoSnapshot=Enabled` a las 07:00 UTC.
+> `GetAutoSnapshots` sigue devolviendo **0** puntos automáticos, y la
+> instancia conserva 1 snapshot manual `available`. Los valores `Disabled`
+> y «activación no realizada» que aparecen **más abajo** son registros
+> históricos de la primera auditoría, **no el estado actual**.
+> Las copias cifradas independientes de PostgreSQL, su control de claves y
+> una restauración aislada aún no están verificadas.
+> Seguimiento específico pregunta 10:
+> `docs/shopify-pcd-question-10-encrypted-backups-2026-10-20.md`.
+
 **Fecha de inspección:** 2026-10-20. **Región:** `us-east-2`. **Alcance:** lectura de metadatos AWS, auditor de código y borrador de una regla S3 **deshabilitada**. No se modificó la infraestructura ni se accedió a datos personales, archivos, claves ni snapshots.
 
 ## 1. Hallazgos de producción comprobados
