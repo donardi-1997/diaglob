@@ -1,0 +1,82 @@
+name: Stage existing DIAGLOB Shopify version (manual only)
+
+# Never run on push, PR, schedule, or deploy pipeline.
+# This workflow only creates an UNRELEASED version of the EXISTING app.
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Type STAGE-DIAGLOB-NO-RELEASE (does not publish or reauthorize)"
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: diaglob-shopify-app-staging
+  cancel-in-progress: false
+
+jobs:
+  stage-unreleased-version:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SHOPIFY_CLI_NO_ANALYTICS: "1"
+      SHOPIFY_APP_AUTOMATION_TOKEN: ${{ secrets.SHOPIFY_APP_AUTOMATION_TOKEN }}
+      CONFIRMATION: ${{ inputs.confirmation }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require exact operator confirmation and explicit automation token
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$CONFIRMATION" != "STAGE-DIAGLOB-NO-RELEASE" ]]; then
+            echo "BLOCK: manual staging confirmation missing" >&2
+            exit 1
+          fi
+          if [[ -z "${SHOPIFY_APP_AUTOMATION_TOKEN:-}" ]]; then
+            echo "BLOCK: Shopify App Automation Token is not configured in GitHub Actions secrets" >&2
+            exit 1
+          fi
+          if [[ "${GITHUB_REF}" != "refs/heads/main" ]]; then
+            echo "BLOCK: staging only from audited main" >&2
+            exit 1
+          fi
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Fail-closed existing-app, seven-scope, GDPR and redirect preflight
+        run: python backend/tools/shopify_scope_release_preflight.py
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install current Shopify CLI (no credentials printed)
+        run: npm install --global @shopify/cli@latest
+
+      - name: Stage version without release, payments, merchant writes or reauthorization
+        shell: bash
+        run: |
+          set -euo pipefail
+          # --no-release is mandatory. No --allow-deletes, --reset,
+          # app create, auto-release or Shopify Admin data mutations.
+          shopify app deploy \
+            --no-release \
+            --no-input \
+            --version "diaglob-scopes-${GITHUB_RUN_NUMBER}" \
+            --message "Scope candidate only; not approved for release; SHA ${GITHUB_SHA}" \
+            --source-control-url "https://github.com/donardi-1997/diaglob/commit/${GITHUB_SHA}"
+
+      - name: Do not confuse staged version with active version
+        if: always()
+        shell: bash
+        run: |
+          echo "NOTICE: This workflow DOES NOT release a Shopify app version."
+          echo "NOTICE: Before release, compare actual version contents including extensions."
+          echo "NOTICE: Verify Shopify PCD approval and merchant reauthorization separately."
