@@ -531,22 +531,38 @@ def _upsert_customer(
         if profile is not None:
             customer = profile.customer
 
-    if customer is None and phone and allow_contact_fallback:
+    # Shopify customer IDs are authoritative for their shop. A contact
+    # value alone must NOT join two different Shopify customers or stores:
+    # multiple buyers can share a phone/email and Customer is org-shared.
+    # For guest orders (no Shopify customer ID), only reuse a prior GUEST
+    # profile of this very store, and never an already cross-store customer.
+    guest_store_profile = (
+        CustomerStoreProfile.organization_id == store.organization_id,
+        CustomerStoreProfile.store_id == store.id,
+        CustomerStoreProfile.external_customer_id.is_(None),
+    )
+    if customer is None and not external_customer_id and phone and allow_contact_fallback:
         customer = (
             db.query(Customer)
+            .join(CustomerStoreProfile, CustomerStoreProfile.customer_id == Customer.id)
             .filter(
                 Customer.organization_id == store.organization_id,
                 Customer.phone == phone,
+                *guest_store_profile,
+                ~Customer.store_profiles.any(CustomerStoreProfile.store_id != store.id),
             )
             .first()
         )
 
-    if customer is None and email and allow_contact_fallback:
+    if customer is None and not external_customer_id and email and allow_contact_fallback:
         customer = (
             db.query(Customer)
+            .join(CustomerStoreProfile, CustomerStoreProfile.customer_id == Customer.id)
             .filter(
                 Customer.organization_id == store.organization_id,
                 func.lower(Customer.email) == email.lower(),
+                *guest_store_profile,
+                ~Customer.store_profiles.any(CustomerStoreProfile.store_id != store.id),
             )
             .first()
         )
@@ -562,13 +578,28 @@ def _upsert_customer(
         db.add(customer)
         db.flush()
     else:
-        customer.name = name[:150]
-        if phone:
-            customer.phone = phone[:50]
-        if email:
-            customer.email = email
-        if country_code:
-            customer.country_code = country_code
+        # A legacy customer can already be linked to two independent stores.
+        # Updating its org-level contact fields would silently overwrite data
+        # visible in the other store, even when this Shopify ID is valid here.
+        # Keep the order-specific address on the scoped Order and do not
+        # mutate this shared Customer until identities are safely separated.
+        shared_elsewhere = (
+            db.query(CustomerStoreProfile.id)
+            .filter(
+                CustomerStoreProfile.customer_id == customer.id,
+                CustomerStoreProfile.store_id != store.id,
+            )
+            .first()
+            is not None
+        )
+        if not shared_elsewhere:
+            customer.name = name[:150]
+            if phone:
+                customer.phone = phone[:50]
+            if email:
+                customer.email = email
+            if country_code:
+                customer.country_code = country_code
 
     _ensure_customer_store_profile(
         db,
