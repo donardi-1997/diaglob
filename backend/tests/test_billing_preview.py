@@ -36,6 +36,8 @@ from app.models import (
     Organization,
     OrganizationMembership,
     User,
+    PaddleBillingCustomer,
+    PaddleBillingSubscription,
 )
 
 SQLALCHEMY_TEST_DATABASE_URL = (
@@ -85,7 +87,7 @@ def _make_org(
     db,
     plan="starter",
     subscription_status="active",
-    billing_subscription_id=None,
+    billing_subscription_id="mock_synced_subscription",
     billing_period_months=1,
 ):
     o = Organization(
@@ -98,6 +100,24 @@ def _make_org(
     )
     db.add(o)
     db.flush()
+    # Provider-backed preview tests use tenant-bound, synchronized mock rows.
+    # An explicit None remains unsynchronized and must fail closed.
+    if billing_subscription_id is not None:
+        customer_id = f"ctm_test_org_{o.id}"
+        subscription_id = (
+            f"sub_test_org_{o.id}" if billing_subscription_id == "mock_synced_subscription"
+            else billing_subscription_id
+        )
+        o.billing_customer_id = customer_id
+        o.billing_subscription_id = subscription_id
+        db.add(PaddleBillingCustomer(
+            customer_id=customer_id, organization_id=o.id,
+        ))
+        db.add(PaddleBillingSubscription(
+            subscription_id=subscription_id, customer_id=customer_id,
+            organization_id=o.id, status=subscription_status,
+        ))
+        db.flush()
     return o
 
 
@@ -369,7 +389,7 @@ class TestPreviewFallbackBehavior:
         assert resp.status_code == 200
         assert resp.json()["_source"] == "local"
 
-    def test_no_subscription_id_uses_local(
+    def test_no_subscription_id_is_not_a_verified_upgrade(
         self, client_factory, db
     ):
         org = _make_org(
@@ -385,10 +405,8 @@ class TestPreviewFallbackBehavior:
             json={"plan": "pro"},
         )
 
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["_source"] == "local"
-        assert data["amount_due"] is not None
+        assert resp.status_code == 409
+        assert "sincronizada" in resp.json()["detail"]
 
     def test_paddle_price_not_configured_uses_local(
         self, client_factory, db

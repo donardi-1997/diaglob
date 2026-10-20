@@ -7,7 +7,7 @@ import {
   type Organization,
 } from "../services/organizations";
 import { billingChannel } from "../services/billingChannel";
-import { createPaddlePortalSession } from "../services/billing";
+import { createPaddlePortalSession, getPaddleBillingStatus, type PaddleBillingStatus } from "../services/billing";
 import "../shopify-billing-workspace.css";
 
 /** Prevents accidentally presenting Paddle checkout to Shopify-managed shops. */
@@ -21,14 +21,28 @@ export default function BillingChannelPage({
   const [loading, setLoading] = useState(true);
   const [portalLoading, setPortalLoading] = useState(false);
   const [portalError, setPortalError] = useState("");
+  const [paddleStatus, setPaddleStatus] = useState<PaddleBillingStatus | null>(null);
 
   const load = useCallback(async (isCurrent: () => boolean = () => true) => {
     setLoading(true);
     setError(false);
     setOrganization(null);
+    setPaddleStatus(null);
     try {
       const result = await getCurrentOrganization();
-      if (isCurrent()) setOrganization(result);
+      let status: PaddleBillingStatus | null = null;
+      if (billingChannel(result.billing_provider) === "paddle") {
+        try {
+          status = await getPaddleBillingStatus();
+        } catch {
+          // Fail closed for existing subscriptions; do not block first checkout.
+          status = null;
+        }
+      }
+      if (isCurrent()) {
+        setOrganization(result);
+        setPaddleStatus(status);
+      }
     } catch {
       if (isCurrent()) setError(true);
     } finally {
@@ -56,7 +70,7 @@ export default function BillingChannelPage({
   }
 
   async function openPortal() {
-    if (portalLoading) return;
+    if (portalLoading || !paddleStatus?.portal_available) return;
     setPortalError("");
     setPortalLoading(true);
     try {
@@ -76,7 +90,7 @@ export default function BillingChannelPage({
     case "paddle":
       return (
         <>
-          {organization.subscription_status && (
+          {paddleStatus?.portal_available && (
             <section className="billing-channel-state">
               <h2>Facturación de tu cuenta</h2>
               <p>Consulta facturas, medios de pago y renovaciones en el portal seguro de Paddle.</p>
@@ -86,7 +100,10 @@ export default function BillingChannelPage({
               {portalError && <p role="alert">{portalError}</p>}
             </section>
           )}
-          <PlansPage userEmail={userEmail} />
+          <PlansPage
+            userEmail={userEmail}
+            paddlePlanChangesAvailable={Boolean(paddleStatus?.plan_changes_available)}
+          />
         </>
       );
     default:

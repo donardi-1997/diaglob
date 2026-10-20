@@ -217,8 +217,10 @@ function getDaysUntilBilling(
 
 export default function PlansPage({
   userEmail,
+  paddlePlanChangesAvailable = false,
 }: {
   userEmail?: string | null;
+  paddlePlanChangesAvailable?: boolean;
 }) {
   const { t, i18n } = useTranslation();
   const [currentPlan, setCurrentPlan] = useState<string | null>(null);
@@ -335,6 +337,8 @@ export default function PlansPage({
     currentPlan &&
     (planOrder[currentPlan.toLowerCase()] ?? 0) > 0,
   );
+  // An internal paid plan is not proof of a synchronized Paddle subscription.
+  const billingUnverified = hasPaidPlan && !paddlePlanChangesAvailable;
 
   const getBillingPeriodLabel = (
     period: number,
@@ -392,6 +396,12 @@ export default function PlansPage({
   async function handleChoosePlan(plan: string) {
     try {
       setCheckoutError("");
+      if (billingUnverified) {
+        setCheckoutError(
+          "Tu plan interno todavía no tiene una suscripción Paddle sincronizada. Contacta con soporte antes de modificar la facturación.",
+        );
+        return;
+      }
 
       const normalizedCurrent =
         (currentPlan || "none").toLowerCase();
@@ -744,7 +754,9 @@ export default function PlansPage({
 
 
   useEffect(() => {
-    if (!currentPlan) {
+    if (!currentPlan || !paddlePlanChangesAvailable) {
+      setUpgradePrices({});
+      setUpgradePreviewStatus({});
       return;
     }
 
@@ -850,6 +862,7 @@ export default function PlansPage({
     currentPlan,
     currentBillingPeriod,
     selectedBillingPeriod,
+    paddlePlanChangesAvailable,
   ]);
 
 
@@ -1114,6 +1127,17 @@ export default function PlansPage({
         </div>
       )}
 
+      {billingUnverified && !loadingPlan && (
+        <div className="plans-current-status" role="status">
+          <strong>Facturación Paddle pendiente de sincronización</strong>
+          <br />
+          <span>
+            Tu plan interno se conserva. No es posible administrar el portal ni
+            cambiar de plan hasta que se verifique una suscripción Paddle de esta organización.
+          </span>
+        </div>
+      )}
+
       {pendingPlan && (
         <div className="scheduled-plan-banner">
           <div className="scheduled-plan-banner-icon">
@@ -1349,11 +1373,12 @@ export default function PlansPage({
             targetRank > currentRank;
 
           const isImmediateUpgrade =
-            isUpgrade;
+            isUpgrade && paddlePlanChangesAvailable;
 
           const isDowngrade =
             currentRank > 0 &&
-            targetRank < currentRank;
+            targetRank < currentRank &&
+            paddlePlanChangesAvailable;
           const selectedPriceId = priceIdForPlan(
             paddleCatalog,
             plan.id,
@@ -1528,6 +1553,7 @@ export default function PlansPage({
                 disabled={
                   isCurrent ||
                   loadingPlan ||
+                  billingUnverified ||
                   checkoutPlan !== null ||
                   initialCheckoutUnavailable
                 }
@@ -1566,7 +1592,7 @@ export default function PlansPage({
         enabled={hasPaidPlan}
       />
 
-      {hasPaidPlan && (
+      {hasPaidPlan && paddlePlanChangesAvailable && (
       <section className="auto-renew-plan-section">
         <div className="auto-renew-plan-copy">
           <span className="eyebrow">

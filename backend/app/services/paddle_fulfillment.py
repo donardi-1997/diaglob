@@ -435,6 +435,43 @@ def dispatch_verified_notification(event: dict, db: Session) -> dict:
     return {**result, "event_type": kind, "transaction_id": data.get("id")}
 
 
+def get_paddle_billing_capabilities(db: Session, organization: Organization) -> dict[str, bool]:
+    """Read-only, tenant-bound state of locally synchronized Paddle records.
+
+    Legacy organization billing IDs are not proof of a synchronized subscription.
+    The provider remains authoritative for billing operations.
+    """
+    unavailable = {
+        "customer_synchronized": False,
+        "subscription_synchronized": False,
+        "portal_available": False,
+        "plan_changes_available": False,
+    }
+    if not _is_direct(organization):
+        return unavailable
+
+    customer_id = organization.billing_customer_id
+    customer = db.get(PaddleBillingCustomer, customer_id) if customer_id else None
+    customer_ok = bool(customer and customer.organization_id == organization.id)
+
+    subscription_id = organization.billing_subscription_id
+    subscription = (
+        db.get(PaddleBillingSubscription, subscription_id)
+        if customer_ok and subscription_id else None
+    )
+    subscription_ok = bool(
+        subscription and subscription.organization_id == organization.id
+        and subscription.customer_id == customer_id
+    )
+    return {
+        "customer_synchronized": customer_ok,
+        "subscription_synchronized": subscription_ok,
+        "portal_available": customer_ok and (not subscription_id or subscription_ok),
+        "plan_changes_available": subscription_ok
+        and subscription.status in {"active", "trialing"},
+    }
+
+
 def create_portal_session_url(db: Session, organization: Organization) -> str:
     """A temporary, tenant-bound session URL; never saved or logged."""
     if not _is_direct(organization):
