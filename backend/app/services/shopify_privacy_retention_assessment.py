@@ -6,7 +6,6 @@ An artifact SHA-256 is merely a submitted reference, not verified evidence.
 """
 from __future__ import annotations
 
-import re
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -26,6 +25,7 @@ class RetentionDecisionDraft(BaseModel):
     purpose_evidence_sha256: str | None = Field(default=None, pattern=_SHA256)
     legal_basis_evidence_sha256: str | None = Field(default=None, pattern=_SHA256)
     retention_days: int | None = Field(default=None, ge=0, le=36500)
+    start_event_evidence_sha256: str | None = Field(default=None, pattern=_SHA256)
     retention_start_event: Literal[
         "not_defined", "collection", "last_interaction", "order_completed",
         "contract_ended", "request_received", "other_documented",
@@ -69,7 +69,7 @@ def _category_gaps(item: RetentionDecisionDraft) -> list[str]:
         gaps.append("RETENTION_PERIOD_NOT_SPECIFIED")
     if item.retention_start_event == "not_defined":
         gaps.append("RETENTION_START_EVENT_NOT_SPECIFIED")
-    if item.retention_start_event == "other_documented" and item.purpose_evidence_sha256 is None:
+    if item.retention_start_event == "other_documented" and item.start_event_evidence_sha256 is None:
         gaps.append("CUSTOM_START_EVENT_EVIDENCE_MISSING")
     if item.statutory_exception == "not_reviewed":
         gaps.append("STATUTORY_EXCEPTION_NOT_REVIEWED")
