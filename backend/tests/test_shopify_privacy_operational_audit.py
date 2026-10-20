@@ -35,6 +35,14 @@ def test_empty_backlog_does_not_claim_live_shopify_subscription():
         assert report["released_shopify_subscription_verified"] is False
         assert report["valid_live_shopify_delivery_verified"] is False
         assert report["data_export_or_erasure_fulfilled"] is False
+        # An empty operational inbox is NOT a Shopify/privacy release PASS.
+        assert report["privacy_fulfillment_release_ready"] is False
+        assert "LIVE_CUSTOMER_AND_SHOP_REDACTION_NOT_ENABLED" in (
+            report["privacy_fulfillment_release_blockers"]
+        )
+        assert "LIVE_CUSTOMER_EXPORT_NOT_ENABLED" in (
+            report["privacy_fulfillment_release_blockers"]
+        )
     finally:
         engine.dispose()
 
