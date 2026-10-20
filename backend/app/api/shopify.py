@@ -21,6 +21,8 @@ from ..shopify_client import (
     ShopifyAPIError,
     ShopifyAuthError,
     ShopifyGraphQLError,
+    ShopifyProtectedCustomerDataError,
+    ShopifyScopeDeniedError,
     ShopifyTimeoutError,
     ShopifyUserError,
 )
@@ -415,6 +417,16 @@ def shopify_ensure_order_webhooks(
                 "message": str(exc),
             },
         ) from exc
+    except (ShopifyProtectedCustomerDataError, ShopifyScopeDeniedError) as exc:
+        # Access errors are merchant-actionable and must not leak provider PII.
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": str(exc),
+                "error": str(exc),
+                "message": "Shopify permission or protected data approval required.",
+            },
+        ) from exc
     except (
         ShopifyAPIError,
         ShopifyGraphQLError,
@@ -441,6 +453,16 @@ def shopify_test_connection(
         raise HTTPException(status_code=404, detail={"code": "SHOPIFY_NOT_CONNECTED", "message": "Shopify no está conectado."})
     except ShopifyAuthError as exc:
         raise HTTPException(status_code=401, detail={"connected": False, "error": str(exc)})
+    except (ShopifyProtectedCustomerDataError, ShopifyScopeDeniedError) as exc:
+        # Access errors are merchant-actionable and must not leak provider PII.
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": str(exc),
+                "error": str(exc),
+                "message": "Shopify permission or protected data approval required.",
+            },
+        ) from exc
     except (ShopifyAPIError, ShopifyGraphQLError) as exc:
         raise HTTPException(status_code=502, detail={"connected": False, "error": str(exc)})
 
@@ -457,6 +479,16 @@ def shopify_sync_products(
         raise HTTPException(status_code=404, detail={"code": "SHOPIFY_NOT_CONNECTED", "message": "Shopify no está conectado."})
     except ShopifyAuthError as exc:
         raise HTTPException(status_code=401, detail={"ok": False, "error": str(exc)})
+    except (ShopifyProtectedCustomerDataError, ShopifyScopeDeniedError) as exc:
+        # Access errors are merchant-actionable and must not leak provider PII.
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": str(exc),
+                "error": str(exc),
+                "message": "Shopify permission or protected data approval required.",
+            },
+        ) from exc
     except (ShopifyAPIError, ShopifyGraphQLError) as exc:
         raise HTTPException(status_code=502, detail={"ok": False, "error": str(exc)})
 
@@ -492,6 +524,16 @@ def create_shopify_poc_order(
         raise HTTPException(status_code=422, detail={"success": False, "error": str(exc)})
     except ShopifyTimeoutError as exc:
         raise HTTPException(status_code=504, detail={"success": False, "error": str(exc)})
+    except (ShopifyProtectedCustomerDataError, ShopifyScopeDeniedError) as exc:
+        # Access errors are merchant-actionable and must not leak provider PII.
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": str(exc),
+                "error": str(exc),
+                "message": "Shopify permission or protected data approval required.",
+            },
+        ) from exc
     except (ShopifyAPIError, ShopifyGraphQLError) as exc:
         raise HTTPException(status_code=502, detail={"success": False, "error": str(exc)})
 
@@ -537,6 +579,16 @@ def create_shopify_order(
         raise HTTPException(status_code=401, detail={"ok": False, "error": str(exc)})
     except ShopifyUserError as exc:
         raise HTTPException(status_code=422, detail={"ok": False, "error": str(exc)})
+    except (ShopifyProtectedCustomerDataError, ShopifyScopeDeniedError) as exc:
+        # Access errors are merchant-actionable and must not leak provider PII.
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": str(exc),
+                "error": str(exc),
+                "message": "Shopify permission or protected data approval required.",
+            },
+        ) from exc
     except (ShopifyAPIError, ShopifyGraphQLError) as exc:
         raise HTTPException(status_code=502, detail={"ok": False, "error": str(exc)})
 
