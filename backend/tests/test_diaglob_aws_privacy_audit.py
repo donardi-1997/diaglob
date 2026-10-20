@@ -316,3 +316,53 @@ def test_missing_s3_server_side_encryption_reported_without_claiming_db_state():
                    bucket="diaglob-test-knowledge")
     assert "S3_DEFAULT_ENCRYPTION_NOT_CONFIGURED" in report["findings"]
     assert report["checks"]["s3_security"]["database_disk_encryption_verified"] is False
+
+
+def test_enabled_auto_snapshot_without_recovery_point_is_reported_even_with_manual_backup():
+    session, lightsail, _, _, _ = fixtures()
+    lightsail.get_instance.return_value = {
+        "instance": {"state": {"name": "running"}, "addOns": [
+            {"name": "AutoSnapshot", "status": "Enabled", "snapshotTimeOfDay": "07:00"}
+        ]}
+    }
+    lightsail.get_instance_snapshots.return_value = {
+        "instanceSnapshots": [
+            {"fromInstanceName": "diaglob-prod", "state": "available", "createdAt": "2026-10-15T13:58:20Z"}
+        ]
+    }
+    result = audit(
+        session, region="us-east-2", instance="diaglob-prod",
+        bucket="diaglob-test-knowledge",
+    )
+    assert result["checks"]["lightsail"]["automatic_snapshot_addon_enabled"] is True
+    assert result["checks"]["lightsail"]["automatic_snapshot_time_utc"] == "07:00"
+    assert result["checks"]["lightsail"]["automatic_snapshot_present"] is False
+    assert result["checks"]["lightsail"]["available_manual_snapshot_count"] == 1
+    assert "LIGHTSAIL_AUTOSNAPSHOT_ENABLED_NO_SNAPSHOT" in result["findings"]
+    assert "NO_VERIFIED_LIGHTSAIL_RECOVERY_POINT" not in result["findings"]
+    assert "LIGHTSAIL_AUTOSNAPSHOT_DISABLED" not in result["findings"]
+    assert result["shopify_pcd_q10_encrypted_backups_attested"] is False
+    assert result["database_consistent_backup_verified"] is False
+    assert result["snapshot_restoration_verified"] is False
+
+
+def test_even_available_automatic_snapshot_is_not_encrypted_postgresql_backup_attestation():
+    session, lightsail, _, _, _ = fixtures()
+    lightsail.get_instance.return_value = {
+        "instance": {"state": {"name": "running"}, "addOns": [
+            {"name": "AutoSnapshot", "status": "Enabled", "snapshotTimeOfDay": "07:00"}
+        ]}
+    }
+    lightsail.get_auto_snapshots.return_value = {
+        "autoSnapshots": [{"status": "success", "createdAt": "2026-10-21T07:00:00Z"}]
+    }
+    result = audit(
+        session, region="us-east-2", instance="diaglob-prod",
+        bucket="diaglob-test-knowledge",
+    )
+    assert result["checks"]["lightsail"]["automatic_snapshot_count"] == 1
+    assert result["checks"]["lightsail"]["automatic_snapshot_present"] is True
+    assert "LIGHTSAIL_AUTOSNAPSHOT_ENABLED_NO_SNAPSHOT" not in result["findings"]
+    assert result["shopify_pcd_q10_encrypted_backups_attested"] is False
+    assert result["database_consistent_backup_verified"] is False
+    assert result["snapshot_restoration_verified"] is False
