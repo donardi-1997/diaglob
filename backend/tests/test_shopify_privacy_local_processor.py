@@ -766,32 +766,42 @@ def test_export_provenance_internal_endpoint_authenticates_before_db_query(
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
     from app.db import get_db
-    from app.api.shopify_privacy_backlog import router
+    from app.api.shopify_privacy_backlog import (
+        router, get_shopify_privacy_export_provenance,
+    )
 
     db, _ = sandbox
     monkeypatch.setenv("DIAGLOB_INTERNAL_SECRET", "synthetic-private-admin-key")
     app = FastAPI()
     app.include_router(router)
-    def provide_db():
-        yield db
-    app.dependency_overrides[get_db] = provide_db
+
+    def forbidden_db():
+        raise AssertionError("Unauthorized call should never query the database")
+        yield
+
+    app.dependency_overrides[get_db] = forbidden_db
     client = TestClient(app)
     url = f"/api/internal/shopify/privacy/cases/{RECEIPT_ID}/export/provenance"
-
     unauthorized = client.get(url)
     assert unauthorized.status_code == 401
-    result = client.get(url, headers={"X-Internal-Secret": "synthetic-private-admin-key"})
-    assert result.status_code == 200
-    assert result.json()["contains_customer_data"] is False
-    assert result.json()["live_export_authorized"] is False
-    missing = client.get(
-        "/api/internal/shopify/privacy/cases/" + "a" * 64 + "/export/provenance",
-        headers={"X-Internal-Secret": "synthetic-private-admin-key"},
-    )
-    assert missing.status_code == 404
-    assert "PRIVATE_MESSAGE" not in result.text
-    assert "SHARED_PRIVATE_NAME" not in result.text
 
+    # The SQLite fixture is thread-bound; exercise the authenticated handler
+    # directly in the owning thread, not TestClient's worker thread.
+    result = get_shopify_privacy_export_provenance(
+        request_id=RECEIPT_ID,
+        x_internal_secret="synthetic-private-admin-key", db=db,
+    )
+    assert result["contains_customer_data"] is False
+    assert result["live_export_authorized"] is False
+    with pytest.raises(HTTPException) as error:
+        get_shopify_privacy_export_provenance(
+            request_id="a" * 64,
+            x_internal_secret="synthetic-private-admin-key", db=db,
+        )
+    assert error.value.status_code == 404
+    text = json.dumps(result)
+    assert "PRIVATE_MESSAGE" not in text
+    assert "SHARED_PRIVATE_NAME" not in text
 
 def test_export_provenance_completed_case_not_reopened_for_counting(sandbox):
     db, receipt = sandbox
