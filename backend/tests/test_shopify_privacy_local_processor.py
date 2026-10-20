@@ -671,6 +671,10 @@ def test_export_provenance_reports_counted_vs_uncovered_for_shared_customer(sand
     assert report["subject_store_scope_verified"] is True
     assert report["counted_local_snapshot_sources"] == 6
     assert report["counted_automation_sources"] == 5
+    assert len(report["schema_sha256"]) == 64
+    assert report["candidate_sensitive_column_count"] > 0
+    assert rows["orders"]["candidate_sensitive_columns"] > 0
+    assert "unverified" in rows["orders"]["schema_subject_linkage"]
     assert rows["customer_store_profiles"]["matched_subject_store_rows"] == 1
     assert rows["orders"]["matched_subject_store_rows"] == 1
     assert rows["conversations"]["matched_subject_store_rows"] == 1
