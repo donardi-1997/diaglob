@@ -25,7 +25,11 @@ def inspect_lightsail(client: Any, name: str) -> dict:
     snapshots = client.get_auto_snapshots(resourceName=name).get("autoSnapshots", [])
     all_manual = client.get_instance_snapshots().get("instanceSnapshots", [])
     matching = [s for s in all_manual if s.get("fromInstanceName") == name]
+    available = [s for s in matching if s.get("state") == "available"]
     addons = instance.get("addOns", [])
+    automatic = next(
+        (a for a in addons if a.get("name") == "AutoSnapshot"), {}
+    )
     return {
         "state": "verified",
         "instance_state": instance.get("state", {}).get("name"),
@@ -35,6 +39,13 @@ def inspect_lightsail(client: Any, name: str) -> dict:
         ),
         "automatic_snapshot_count": len(snapshots),
         "manual_snapshot_count": len(matching),
+        "available_manual_snapshot_count": len(available),
+        "automatic_snapshot_addon_status": automatic.get("status", "NotConfigured"),
+        "latest_available_manual_snapshot_at": (
+            str(max(s.get("createdAt") for s in available if s.get("createdAt") is not None))
+            if any(s.get("createdAt") is not None for s in available) else None
+        ),
+        "restore_drill_verified": False,
     }
 
 
@@ -72,6 +83,51 @@ def inspect_s3(client: Any, bucket: str) -> dict:
         ),
         "delete_markers_on_page": len(historical.get("DeleteMarkers", [])),
         "version_history_truncated": bool(historical.get("IsTruncated")),
+    }
+
+
+def inspect_s3_security(client: Any, bucket: str) -> dict:
+    """Metadata-only encryption, public-access and server-access-log assessment.
+
+    This cannot attest DB volume encryption, actual IAM access, or TLS.
+    """
+    encryption = client.get_bucket_encryption(Bucket=bucket).get(
+        "ServerSideEncryptionConfiguration", {}
+    )
+    rules = encryption.get("Rules", [])
+    algorithms = sorted({
+        r.get("ApplyServerSideEncryptionByDefault", {}).get("SSEAlgorithm")
+        for r in rules
+        if r.get("ApplyServerSideEncryptionByDefault", {}).get("SSEAlgorithm")
+    })
+    block = client.get_public_access_block(Bucket=bucket).get(
+        "PublicAccessBlockConfiguration", {}
+    )
+    logging = client.get_bucket_logging(Bucket=bucket)
+    required_blocks = (
+        "BlockPublicAcls", "IgnorePublicAcls",
+        "BlockPublicPolicy", "RestrictPublicBuckets",
+    )
+    return {
+        "state": "verified",
+        "server_side_encryption_algorithms": algorithms,
+        "all_four_public_access_blocks": all(
+            block.get(name) is True for name in required_blocks
+        ),
+        "server_access_logging_enabled": bool(logging.get("LoggingEnabled")),
+        "database_disk_encryption_verified": False,
+        "backup_encryption_verified": False,
+    }
+
+
+def inspect_backup(client: Any) -> dict:
+    """Only AWS Backup's first metadata page, without resource ARNs."""
+    response = client.list_protected_resources(MaxResults=100)
+    return {
+        "state": "verified",
+        "protected_resources_on_page": len(response.get("Results", [])),
+        "protected_resources_truncated": bool(response.get("NextToken")),
+        "lightsail_database_recovery_verified": False,
     }
 
 
@@ -152,6 +208,23 @@ def readiness_findings(checks: dict[str, dict]) -> list[str]:
         ):
             findings.append("KNOWLEDGE_SOURCE_BUCKET_EMPTY")
 
+    s3_security = checks.get("s3_security", {})
+    if s3_security.get("state") == "verified":
+        if not s3_security.get("server_side_encryption_algorithms"):
+            findings.append("S3_DEFAULT_ENCRYPTION_NOT_CONFIGURED")
+        if not s3_security.get("all_four_public_access_blocks"):
+            findings.append("S3_PUBLIC_ACCESS_BLOCK_INCOMPLETE")
+        if not s3_security.get("server_access_logging_enabled"):
+            findings.append("S3_SERVER_ACCESS_LOGGING_NOT_ENABLED")
+
+    backup = checks.get("aws_backup", {})
+    if backup.get("state") == "verified":
+        if (
+            backup.get("protected_resources_on_page") == 0
+            and not backup.get("protected_resources_truncated")
+        ):
+            findings.append("AWS_BACKUP_NO_PROTECTED_RESOURCES")
+
     bedrock = checks.get("bedrock", {})
     if bedrock.get("state") == "verified":
         indexes = bedrock.get("knowledge_bases", [])
@@ -170,6 +243,12 @@ def audit(session: Any, *, region: str, instance: str, bucket: str) -> dict:
         ),
         "s3": lambda: inspect_s3(
             session.client("s3", region_name=region), bucket
+        ),
+        "s3_security": lambda: inspect_s3_security(
+            session.client("s3", region_name=region), bucket
+        ),
+        "aws_backup": lambda: inspect_backup(
+            session.client("backup", region_name=region)
         ),
         "bedrock": lambda: inspect_rag(
             session.client("bedrock-agent", region_name=region),
@@ -192,6 +271,9 @@ def audit(session: Any, *, region: str, instance: str, bucket: str) -> dict:
         "findings": readiness_findings(results),
         "production_changes": False,
         "privacy_fulfillment_authorized": False,
+        "database_consistent_backup_verified": False,
+        "snapshot_restoration_verified": False,
+        "s3_lifecycle_changes_authorized": False,
     }
 
 
