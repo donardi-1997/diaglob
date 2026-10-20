@@ -516,3 +516,19 @@ def test_download_rejects_tampered_inner_fixture_with_valid_outer_digest(sandbox
     assert db.query(ShopifyPrivacyDeliveryAudit).filter(
         ShopifyPrivacyDeliveryAudit.event_type == "redeemed",
     ).count() == 0
+
+
+def test_changed_or_historically_completed_privacy_case_blocks_ticket(sandbox):
+    ticket, params = issue(sandbox)
+    db, _, _, _, _ = sandbox
+    receipt = db.query(ShopifyPrivacyRequest).one()
+    receipt.status = "completed"
+    db.commit()
+    with pytest.raises(ShopifyPrivacySecureDeliveryError, match="SCOPE_UNVERIFIED"):
+        redeem_synthetic_secure_delivery(token=ticket.token, **params)
+    receipt.status = "pending_policy_review"
+    receipt.completed_at = datetime.utcnow()
+    db.commit()
+    with pytest.raises(ShopifyPrivacySecureDeliveryError, match="SCOPE_UNVERIFIED"):
+        redeem_synthetic_secure_delivery(token=ticket.token, **params)
+    assert db.query(ShopifyPrivacyDeliveryArtifact).one().redeemed_at is None
