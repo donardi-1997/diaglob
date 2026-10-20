@@ -13,6 +13,7 @@ from .shopify_privacy_case_assessment import (
     ShopifyPrivacyAssessmentError, assess_shopify_privacy_case,
 )
 from .shopify_privacy_inventory_coverage import inspect_shopify_privacy_coverage
+from .shopify_privacy_inventory_report import build_shopify_privacy_field_inventory
 from .shopify_privacy_local_processor import (
     ShopifyLocalPrivacyError, inspect_local_customer_export_counts,
 )
@@ -76,6 +77,10 @@ def inspect_shopify_export_provenance(
         raise ShopifyExportCoverageError(str(exc)) from exc
 
     inventory = inspect_shopify_privacy_coverage()
+    field_inventory = build_shopify_privacy_field_inventory()
+    field_summaries = {
+        row["table"]: row for row in field_inventory["table_reviews"]
+    }
     surface_counts = {
         **{name: getattr(counts, attr) for name, attr in _PARTIAL_SNAPSHOT_COUNTS.items()},
         **{name: getattr(counts, attr) for name, attr in _LINKED_AUTOMATION_COUNTS.items()},
@@ -94,10 +99,15 @@ def inspect_shopify_export_provenance(
         else:
             state = "not_attributed_or_exported"
             blocker = "SOURCE_ATTRIBUTION_AND_EXPORT_NOT_VERIFIED"
+        field_review = field_summaries.get(entry.table, {})
         sources.append({
             "source": entry.table,
             "ownership": entry.ownership,
             "inventory_coverage": entry.coverage,
+            "candidate_sensitive_columns": field_review.get("candidate_field_count", 0),
+            "schema_subject_linkage": field_review.get(
+                "subject_linkage", "unverified",
+            ),
             "matched_subject_store_rows": count,
             "reconciliation_state": state,
             "blocker_code": blocker,
@@ -115,7 +125,7 @@ def inspect_shopify_export_provenance(
         blockers.add("REQUESTED_SHOPIFY_ORDERS_UNRESOLVED")
     if assessment.shared_customers_protected:
         blockers.add("SHARED_CUSTOMER_IDENTITY_REQUIRES_REVIEW")
-    if inventory.unclassified_sensitive_tables:
+    if field_inventory["unclassified_sensitive_tables"]:
         blockers.add("UNCLASSIFIED_SENSITIVE_TABLES_REQUIRE_REVIEW")
     if inventory.missing_declared_tables:
         blockers.add("MISSING_DECLARED_SOURCE_TABLES_REQUIRE_REVIEW")
@@ -124,6 +134,8 @@ def inspect_shopify_export_provenance(
 
     return {
         "schema": "diaglob.shopify.export_provenance_review.v1",
+        "schema_sha256": field_inventory["schema_sha256"],
+        "candidate_sensitive_column_count": field_inventory["candidate_field_count"],
         "request_id": request_id,
         "topic": "customers/data_request",
         "signed_intake_verified": True,
@@ -133,7 +145,7 @@ def inspect_shopify_export_provenance(
         "unresolved_requested_order_count": counts.requested_orders_not_resolved,
         "shared_customer_records_requiring_review": assessment.shared_customers_protected,
         "sources": sources,
-        "unclassified_sensitive_tables": list(inventory.unclassified_sensitive_tables),
+        "unclassified_sensitive_tables": field_inventory["unclassified_sensitive_tables"],
         "missing_declared_tables": list(inventory.missing_declared_tables),
         "external_review_areas": [
             {"area": area, "reconciliation_state": "unverified"}
