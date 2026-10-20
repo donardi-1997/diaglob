@@ -126,3 +126,58 @@ def test_read_only_audit_does_not_activate_staged_suppressions():
             assert db.query(ShopifyPrivacySuppression).one().status == "staged"
     finally:
         engine.dispose()
+
+
+def test_unverified_completed_task_forces_review_even_with_ten_rows():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    now = datetime.utcnow()
+    try:
+        with Session(engine) as db:
+            request_id = "b" * 64
+            db.add(ShopifyPrivacyRequest(
+                request_id=request_id,
+                topic="shop/redact",
+                shop_id="PRIVATE_SHOP_ID",
+                shop_domain="private.myshopify.com",
+                selector_encrypted="ENCRYPTED_PRIVATE",
+                status="pending_policy_review",
+                created_at=now,
+                updated_at=now,
+                attempts=0,
+            ))
+            db.add(ShopifyPrivacyAuditEvent(
+                request_id=request_id, event_type="received",
+                from_status=None, to_status="pending_policy_review",
+                reason_code="tenant_unresolved", actor_type="shopify_hmac_verified",
+                created_at=now,
+            ))
+            db.add(ShopifyPrivacyAuditEvent(
+                request_id=request_id, event_type="processing_prepared",
+                from_status=None, to_status="pending_policy_review",
+                reason_code="signed_receipt_tasks_staged_without_data_access",
+                actor_type="internal_privacy_processor",
+                created_at=now,
+            ))
+            for index in range(10):
+                db.add(ShopifyPrivacyWorkItem(
+                    request_id=request_id, area=f"area_{index}",
+                    action="review", status="completed" if index == 0 else "blocked",
+                    created_at=now, updated_at=now,
+                ))
+            db.commit()
+            report = summarize_shopify_privacy_operations(db, environment={
+                "SHOPIFY_CLIENT_SECRET": "synthetic",
+                "SHOPIFY_TOKEN_ENCRYPTION_KEY": "synthetic",
+            })
+        assert report["receipt_total"] == 1
+        assert report["distinct_signed_received_audits"] == 1
+        assert report["distinct_processing_prepared_audits"] == 1
+        assert report["receipts_missing_complete_ten_item_queue"] == 0
+        assert report["work_items_with_unverified_completion_state"] == 1
+        assert report["review_required"] is True
+        assert report["privacy_fulfillment_release_ready"] is False
+        assert "PRIVATE_SHOP_ID" not in json.dumps(report)
+        assert "ENCRYPTED_PRIVATE" not in json.dumps(report)
+    finally:
+        engine.dispose()

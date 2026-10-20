@@ -62,6 +62,16 @@ def summarize_shopify_privacy_operations(
         func.coalesce(item_counts.c.total, 0) != REQUIRED_WORK_ITEMS_PER_RECEIPT,
     ).scalar() or 0)
 
+    # A task marked "completed" without a verified fulfillment path is
+    # anomalous even if the expected ten task rows are present.
+    unauthorized_completion_states = int(db.query(
+        func.count(ShopifyPrivacyWorkItem.id),
+    ).filter(
+        ShopifyPrivacyWorkItem.status.in_(
+            ("completed", "fulfilled", "delivered", "deleted", "erased")
+        ),
+    ).scalar() or 0)
+
     suppression_counts = {"staged": 0, "active": 0}
     for status, count in db.query(
         ShopifyPrivacySuppression.status, func.count(ShopifyPrivacySuppression.id),
@@ -83,6 +93,7 @@ def summarize_shopify_privacy_operations(
         "distinct_signed_received_audits": signed,
         "distinct_processing_prepared_audits": prepared_audit,
         "receipts_missing_complete_ten_item_queue": incomplete,
+        "work_items_with_unverified_completion_state": unauthorized_completion_states,
         "staged_suppressions": suppression_counts["staged"],
         "active_suppressions": suppression_counts["active"],
         "hmac_secret_present": hmac_configured,
@@ -110,6 +121,7 @@ def summarize_shopify_privacy_operations(
             not hmac_configured
             or not encrypted_selectors_configured
             or incomplete > 0
+            or unauthorized_completion_states > 0
             or signed != received
             or prepared_audit != received
             or suppression_counts["active"] > 0

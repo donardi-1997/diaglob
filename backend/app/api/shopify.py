@@ -61,6 +61,7 @@ from ..services.shopify_webhook_service import (
 from ..services.shopify_compliance_webhooks import (
     process_shopify_compliance_webhook,
 )
+from ..services.shopify_privacy_processing import ShopifyPrivacyProcessingError
 from ..services.shopify_uninstall import (
     ShopifyUninstallError,
     process_shopify_uninstall,
@@ -826,6 +827,16 @@ async def shopify_compliance_webhook(
             webhook_id=request.headers.get("x-shopify-webhook-id"),
             header_shop_domain=request.headers.get("x-shopify-shop-domain"),
         )
+    except ShopifyPrivacyProcessingError as exc:
+        # A broken receipt or review queue is an internal integrity fault:
+        # return 5xx so Shopify can retry, never mislabel it a bad payload.
+        db.rollback()
+        logging.getLogger(__name__).error(
+            "Shopify privacy intake integrity failure code=%s", type(exc).__name__,
+        )
+        raise HTTPException(
+            status_code=500, detail="Shopify compliance webhook processing failed",
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
