@@ -115,6 +115,12 @@ def build_shopify_privacy_field_inventory(metadata: MetaData | None = None) -> d
                 "candidate_field_count": len(candidates),
                 "requires_independent_review": True,
             })
+    # A newly introduced JSON/blob column must be flagged even when its name
+    # lacks the simple naming hints used by the legacy table-level inventory.
+    unknown_sensitive = sorted(set(coverage.unclassified_sensitive_tables) | {
+        entry["table"] for entry in summary
+        if entry["coverage"] == "unclassified" and entry["candidate_field_count"] > 0
+    })
     return {
         "inventory_type": "schema_metadata_review_only",
         "schema_sha256": _schema_signature(metadata),
@@ -122,7 +128,7 @@ def build_shopify_privacy_field_inventory(metadata: MetaData | None = None) -> d
         "candidate_field_count": len(reviewed),
         "table_reviews": summary,
         "field_reviews": reviewed,
-        "unclassified_sensitive_tables": list(coverage.unclassified_sensitive_tables),
+        "unclassified_sensitive_tables": unknown_sensitive,
         "missing_declared_tables": list(coverage.missing_declared_tables),
         "external_sources": [
             {"area": area, "independently_verified": False}
