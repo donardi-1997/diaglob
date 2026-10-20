@@ -94,9 +94,9 @@ async def assess_shopify_privacy_retention_draft(
         raise HTTPException(status_code=415, detail="JSON_CONTENT_TYPE_REQUIRED")
     raw = bytearray()
     async for chunk in request.stream():
-        raw.extend(chunk)
-        if len(raw) > 16_384:
+        if len(raw) + len(chunk) > 16_384:
             raise HTTPException(status_code=413, detail="RETENTION_DRAFT_TOO_LARGE")
+        raw.extend(chunk)
     try:
         payload = json.loads(raw)
         draft = RetentionPolicyDraft.model_validate(payload)
