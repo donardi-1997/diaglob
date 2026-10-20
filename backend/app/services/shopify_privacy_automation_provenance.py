@@ -29,6 +29,9 @@ from .shopify_privacy_scope_preview import (
     ShopifyPrivacyScopeError,
     preview_shopify_privacy_scope,
 )
+from .shopify_privacy_automation_parent_integrity import (
+    verify_automation_parent_lineage,
+)
 
 
 MAX_SUBJECT_PROFILE_MATCHES = 250
@@ -97,6 +100,11 @@ def inspect_shopify_automation_privacy_impact(
                 "SHOPIFY_AUTOMATION_SUBJECT_AMBIGUOUS"
             )
         subject_ids = tuple(sorted(row[0] for row in profiles))
+
+    verify_automation_parent_lineage(
+        db, organization_id=organization_id, store_id=store_id,
+        subject_ids=subject_ids,
+    )
 
     def count(query):
         return int(query.scalar() or 0)
