@@ -201,18 +201,6 @@ mutation orderCreate($order: OrderCreateOrderInput!) {
     order {
       id
       name
-      email
-      phone
-      note
-      tags
-      lineItems(first: 100) {
-        nodes {
-          variant {
-            id
-          }
-          quantity
-        }
-      }
     }
     userErrors {
       field
