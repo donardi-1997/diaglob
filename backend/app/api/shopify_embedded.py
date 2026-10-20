@@ -371,7 +371,29 @@ def embedded_managed_installation_stage(
     try:
         return stage_managed_installation(db, identity=identity, id_token=credentials.credentials)
     except ManagedShopifyInstallationError as exc:
-        raise HTTPException(status_code=502, detail="Shopify managed installation not verified") from exc
+        # Only return recognized internal reason codes. Never leak the OAuth
+        # response body, subject token or provider error_description.
+        public_codes = {
+            "INVALID_SHOPIFY_SHOP",
+            "INVALID_SHOPIFY_SESSION",
+            "SHOPIFY_MANAGED_INSTALL_NOT_CONFIGURED",
+            "SHOPIFY_APP_CREDENTIALS_REJECTED",
+            "SHOPIFY_SESSION_TOKEN_REJECTED",
+            "SHOPIFY_TOKEN_GRANT_REJECTED",
+            "SHOPIFY_TOKEN_EXCHANGE_REJECTED",
+            "SHOPIFY_TOKEN_EXCHANGE_UNAVAILABLE",
+            "SHOPIFY_EXPIRING_OFFLINE_TOKEN_REQUIRED",
+            "SHOPIFY_REQUIRED_SCOPES_MISSING",
+            "SHOPIFY_MANAGED_INSTALL_IDENTITY_MISMATCH",
+            "INVALID_SHOPIFY_MANAGED_GRANT",
+            "SHOPIFY_MANAGED_INSTALL_GRANT_FAILED",
+        }
+        code = str(exc) if str(exc) in public_codes else "SHOPIFY_MANAGED_INSTALL_GRANT_FAILED"
+        status_code = 503 if code == "SHOPIFY_MANAGED_INSTALL_NOT_CONFIGURED" else 502
+        raise HTTPException(
+            status_code=status_code,
+            detail={"code": code, "message": "No fue posible preparar la autorización Shopify."},
+        ) from exc
 
 
 @router.get("/api/shopify/embedded/authorize")
