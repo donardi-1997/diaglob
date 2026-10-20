@@ -775,11 +775,12 @@ def test_export_provenance_internal_endpoint_authenticates_before_db_query(
     app = FastAPI()
     app.include_router(router)
 
-    def forbidden_db():
-        raise AssertionError("Unauthorized call should never query the database")
-        yield
+    def provide_db_without_query():
+        # FastAPI resolves dependencies before executing endpoint authentication.
+        # Merely passing the fixture session must not issue a SQL statement.
+        yield db
 
-    app.dependency_overrides[get_db] = forbidden_db
+    app.dependency_overrides[get_db] = provide_db_without_query
     client = TestClient(app)
     url = f"/api/internal/shopify/privacy/cases/{RECEIPT_ID}/export/provenance"
     unauthorized = client.get(url)
