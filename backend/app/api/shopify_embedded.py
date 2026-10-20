@@ -159,7 +159,27 @@ def shopify_embedded_home() -> HTMLResponse:
             method: 'POST', cache: 'no-store',
             headers: {'Authorization': 'Bearer ' + token}
           });
-          if (!response.ok) throw new Error('No fue posible preparar la instalación.');
+          if (!response.ok) {
+            const result = await response.json().catch(() => null);
+            const code = result && result.detail && result.detail.code;
+            const safeCodes = {
+              SHOPIFY_APP_CREDENTIALS_REJECTED: 'Shopify rechazó la identidad de la aplicación. Revisa la configuración del backend.',
+              SHOPIFY_SESSION_TOKEN_REJECTED: 'Shopify rechazó la sesión actual. Recarga la aplicación desde Shopify Admin.',
+              SHOPIFY_TOKEN_GRANT_REJECTED: 'Shopify rechazó el intercambio de credenciales. Revisa la autorización de la aplicación.',
+              SHOPIFY_TOKEN_EXCHANGE_REJECTED: 'Shopify rechazó el intercambio de credenciales. Revisa la autorización de la aplicación.',
+              SHOPIFY_TOKEN_EXCHANGE_UNAVAILABLE: 'Shopify no pudo procesar el intercambio. Inténtalo más tarde.',
+              SHOPIFY_EXPIRING_OFFLINE_TOKEN_REQUIRED: 'Shopify no devolvió un token offline renovable. Se requiere revisar la integración.',
+              SHOPIFY_REQUIRED_SCOPES_MISSING: 'La autorización de Shopify no incluye todos los permisos necesarios.',
+              SHOPIFY_MANAGED_INSTALL_NOT_CONFIGURED: 'Falta configurar la autorización Shopify en el servidor de DIAGLOB.',
+              SHOPIFY_MANAGED_INSTALL_IDENTITY_MISMATCH: 'La tienda autorizada no coincide con la instalación. Contacta soporte.',
+              SHOPIFY_MANAGED_INSTALL_GRANT_FAILED: 'DIAGLOB no pudo completar la preparación. Revisa el diagnóstico del servidor.',
+            };
+            const known = typeof code === 'string' && Object.prototype.hasOwnProperty.call(safeCodes, code);
+            const message = known
+              ? safeCodes[code]
+              : 'No fue posible preparar la instalación. Revisa el código HTTP de la solicitud.';
+            throw new Error(message + (known ? ' (' + code + ')' : ''));
+          }
           const grant = await response.json();
           code.textContent = grant.claim_code;
           status.textContent = 'Copia el código y pégalo en la página de instalación de Diaglob. Caduca en 10 minutos.';
@@ -168,7 +188,9 @@ def shopify_embedded_home() -> HTMLResponse:
             if (code.textContent === currentCode) code.textContent = '';
           }, Math.min(600, grant.expires_in_seconds) * 1000);
         } catch (error) {
-          status.textContent = 'La instalación no se pudo preparar. Comprueba que Shopify haya concedido todos los permisos.';
+          status.textContent = error instanceof Error
+            ? error.message
+            : 'No se pudo completar la preparación de Shopify. Reintenta desde Shopify Admin.';
         } finally {
           button.disabled = false;
         }
