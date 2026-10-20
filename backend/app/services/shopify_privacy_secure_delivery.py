@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import os
 import re
 import secrets
@@ -23,8 +24,9 @@ from sqlalchemy.orm import Session
 from ..models import (
     MembershipStore, OrganizationMembership, ShopifyPrivacyAuditEvent,
     ShopifyPrivacyDeliveryArtifact, ShopifyPrivacyDeliveryAudit,
-    ShopifyPrivacyRequest, Store,
+    ShopifyPrivacyRequest, ShopifyPrivacyShopIdentity, Store,
 )
+from ..shopify_oauth import normalize_shop_domain
 from .shopify_privacy_synthetic_export import (
     EncryptedSyntheticExport, SyntheticPrivacyExportError,
     verify_encrypted_synthetic_export,
@@ -90,10 +92,11 @@ def _receipt_and_recipient(
         OrganizationMembership.active.is_(True),
         OrganizationMembership.role.in_(_ALLOWED_ROLES),
     ).first()
-    store = db.query(Store.id).filter(
+    store = db.query(Store).filter(
         Store.id == store_id,
         Store.organization_id == organization_id,
         Store.deleted.is_(False),
+        Store.active.is_(True),
     ).first()
     if membership is None or store is None:
         raise ShopifyPrivacySecureDeliveryError("DELIVERY_RECIPIENT_UNAUTHORIZED")
@@ -103,11 +106,12 @@ def _receipt_and_recipient(
     ).first() is None:
         raise ShopifyPrivacySecureDeliveryError("DELIVERY_RECIPIENT_UNAUTHORIZED")
 
-    receipt = db.query(ShopifyPrivacyRequest.id).filter(
+    receipt = db.query(ShopifyPrivacyRequest).filter(
         ShopifyPrivacyRequest.request_id == request_id,
         ShopifyPrivacyRequest.organization_id == organization_id,
         ShopifyPrivacyRequest.store_id == store_id,
         ShopifyPrivacyRequest.topic == "customers/data_request",
+        ShopifyPrivacyRequest.status == "pending_policy_review",
         ShopifyPrivacyRequest.completed_at.is_(None),
     ).first()
     signed = db.query(ShopifyPrivacyAuditEvent.id).filter(
@@ -116,6 +120,28 @@ def _receipt_and_recipient(
         ShopifyPrivacyAuditEvent.actor_type == "shopify_hmac_verified",
     ).first()
     if receipt is None or signed is None:
+        raise ShopifyPrivacySecureDeliveryError("SIGNED_DELIVERY_SCOPE_UNVERIFIED")
+
+    # Numeric store IDs can survive a disconnect/relink. A historic signed
+    # request must remain bound to the *same* Shopify domain and recorded shop
+    # identity at issuance, redemption and revocation.
+    try:
+        domain = normalize_shop_domain(receipt.shop_domain)
+        current_domain = normalize_shop_domain(store.shopify_domain)
+    except (ValueError, TypeError, AttributeError) as exc:
+        raise ShopifyPrivacySecureDeliveryError(
+            "SIGNED_DELIVERY_SCOPE_UNVERIFIED"
+        ) from exc
+    if not hmac.compare_digest(domain, current_domain):
+        raise ShopifyPrivacySecureDeliveryError("SIGNED_DELIVERY_SCOPE_UNVERIFIED")
+
+    identity = db.query(ShopifyPrivacyShopIdentity.id).filter(
+        ShopifyPrivacyShopIdentity.shop_id == receipt.shop_id,
+        ShopifyPrivacyShopIdentity.shop_domain == domain,
+        ShopifyPrivacyShopIdentity.organization_id == organization_id,
+        ShopifyPrivacyShopIdentity.store_id == store_id,
+    ).first()
+    if identity is None:
         raise ShopifyPrivacySecureDeliveryError("SIGNED_DELIVERY_SCOPE_UNVERIFIED")
 
 
@@ -219,9 +245,35 @@ def redeem_synthetic_secure_delivery(
     except (InvalidToken, ValueError) as exc:
         db.rollback()
         raise ShopifyPrivacySecureDeliveryError("PRIVACY_DELIVERY_ARTIFACT_INVALID") from exc
-    if not hmac.compare_digest(hashlib.sha256(content).hexdigest(), row.artifact_sha256):
+    if (
+        len(content) > _MAX_ARTIFACT
+        or not hmac.compare_digest(hashlib.sha256(content).hexdigest(), row.artifact_sha256)
+    ):
         db.rollback()
         raise ShopifyPrivacySecureDeliveryError("PRIVACY_DELIVERY_ARTIFACT_INVALID")
+    # Re-verify the *inner* fixture envelope on every download. A valid
+    # at-rest checksum or encryption layer alone is not evidence that stored
+    # bytes are still request-bound and synthetic-only.
+    try:
+        encryption_key = os.getenv("SHOPIFY_PRIVACY_DELIVERY_KEY", "").encode("ascii")
+        document = json.loads(Fernet(encryption_key).decrypt(content))
+        if not isinstance(document, dict) or not isinstance(document.get("records"), list):
+            raise ValueError("INVALID_SYNTHETIC_ENVELOPE")
+        verify_encrypted_synthetic_export(
+            artifact=EncryptedSyntheticExport(
+                ciphertext=content, sha256=row.artifact_sha256,
+                record_count=len(document["records"]), request_id=request_id,
+            ),
+            encryption_key=encryption_key, expected_request_id=request_id,
+        )
+    except (
+        SyntheticPrivacyExportError, InvalidToken, ValueError, TypeError,
+        UnicodeEncodeError,
+    ) as exc:
+        db.rollback()
+        raise ShopifyPrivacySecureDeliveryError(
+            "PRIVACY_DELIVERY_ARTIFACT_INVALID"
+        ) from exc
     checksum = row.artifact_sha256
     row.ciphertext_encrypted = None
     _audit(db, request_id, "redeemed", "authenticated_merchant")
