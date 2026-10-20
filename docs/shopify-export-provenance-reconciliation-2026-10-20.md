@@ -9,6 +9,7 @@ No realiza exportación ni autoriza una entrega. Construido sobre PR #277, ya in
 
 - Requiere `X-Internal-Secret` y evidencia `received` de webhook firmado; valida asociación exacta de solicitud, cliente Shopify y tienda.
 - Reutiliza el inspector de conteos existente: **6 fuentes locales** (perfiles, pedidos, artículos, conversaciones, mensajes y checkouts) y **5 fuentes de automatización** vinculadas por tienda y sujeto.
+- Añade `schema_sha256` del esquema ORM (sin datos de filas), `candidate_sensitive_column_count` y, por tabla, el número de columnas candidatas y la forma **aún no verificada** de enlazar un sujeto. Esto permite detectar cambios en tablas y en JSON/texto aunque no contengan la palabra `customer`.
 - Para cada tabla sensible inventariada devuelve `matched_subject_store_rows` solo si la atribución y el conteo ya están implementados. **`null` significa no inspeccionado**; no significa cero filas. Un cero en una tabla contada tampoco acredita ausencia de copias en proveedores o archivos.
 - Separa `partial_snapshot_unapproved` de `linked_count_only_not_exported` y de `not_attributed_or_exported`. Ninguno de estos estados significa fuente exportada completamente.
 - Reporta pedidos pedidos por Shopify que no coinciden, cliente compartido con otras tiendas, tablas sensibles no clasificadas, ausencia de tablas declaradas y proveedores sin reconciliar.
