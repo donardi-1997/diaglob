@@ -10,7 +10,7 @@ embedded = true
 # Mirror the backend OAuth requested scopes. This file is SOURCE-LOCAL:
 # only a verified Shopify CLI deployment updates the active app version.
 # Do not deploy or trigger reauthorization until merchant E2E is prepared.
-scopes = "read_products,read_inventory,read_customers,read_orders,write_orders,write_draft_orders,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders"
+scopes = "read_products,read_inventory,read_orders,write_orders,write_draft_orders,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders"
 
 [auth]
 redirect_urls = ["https://api.diaglob.tech/api/shopify/callback"]
