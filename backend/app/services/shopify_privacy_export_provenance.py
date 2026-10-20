@@ -6,8 +6,6 @@ without such a verified join must remain visibly *unknown*, never zero.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from sqlalchemy.orm import Session
 
 from .shopify_privacy_case_assessment import (
