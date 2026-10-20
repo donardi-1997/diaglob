@@ -49,7 +49,7 @@ cd backend
 python -m tools.shopify_review_source_preflight --config ../shopify.app.toml
 python -m pytest -q tests/test_shopify_review_source_preflight.py tests/test_shopify_managed_installation.py tests/test_shopify_compliance_webhooks.py tests/test_shopify_billing_channel_guard.py
 cd ../frontend
-npm test -- --run
+npm test
 npm run build
 ```
 
