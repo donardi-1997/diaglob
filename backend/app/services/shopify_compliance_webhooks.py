@@ -36,34 +36,84 @@ COMPLIANCE_TOPICS = frozenset(
 )
 
 
+def _legacy_delivery_key(
+    topic: str, payload: dict[str, Any], webhook_id: str,
+) -> str:
+    """Compatibility lookup for receipts stored with the pre-v2 key scheme.
+
+    Existing exact retries remain idempotent after deployment. Legacy keys
+    bound delivery ID to shop identity, so cross-shop conflicts from receipts
+    predating v2 still need independent investigation or a controlled backfill.
+    """
+    canonical = {
+        "topic": topic,
+        "shop_id": str(payload.get("shop_id") or ""),
+        "shop_domain": payload.get("shop_domain"),
+        "webhook_id": webhook_id,
+    }
+    serialized = json.dumps(canonical, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
 def _event_key(
     topic: str,
     payload: dict[str, Any],
     *,
     webhook_id: str | None = None,
 ) -> str:
-    """Deduplicate transport retries; prefer Shopify's delivery identifier.
+    """Deduplicate Shopify *deliveries* across topics and shop identities.
 
-    Without an ID we fall back to a canonical subject/payload hash; identical
-    legacy deliveries can therefore coalesce, and must be reviewed manually.
+    Shopify identifies a delivery with X-Shopify-Webhook-Id. The primary
+    idempotency key must not change when a conflicting retry changes its
+    topic/shop/subject; the persisted fields are verified on collision.
     """
     shop_id = str(payload.get("shop_id") or "")
     if not shop_id:
         raise ValueError("SHOP_ID_REQUIRED")
 
-    if webhook_id:
-        if len(webhook_id) > 255:
+    if webhook_id is not None:
+        if (
+            not isinstance(webhook_id, str)
+            or not webhook_id
+            or len(webhook_id) > 255
+            or any(ord(ch) < 33 or ord(ch) > 126 for ch in webhook_id)
+        ):
             raise ValueError("INVALID_WEBHOOK_ID")
-        canonical = {
-            "topic": topic,
-            "shop_id": shop_id,
-            "shop_domain": payload.get("shop_domain"),
-            "webhook_id": webhook_id,
-        }
+        canonical = ["diaglob.shopify.compliance.delivery.v2", webhook_id]
     else:
-        canonical = {"topic": topic, "shop_id": shop_id, "payload": payload}
+        # Legacy clients without delivery headers: coalesce identical payloads
+        # only. This fallback cannot independently deduplicate new semantics.
+        canonical = ["diaglob.shopify.compliance.legacy.no-header", topic, shop_id, payload]
     serialized = json.dumps(canonical, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def _receipt_lookup_keys(
+    topic: str, payload: dict[str, Any], webhook_id: str | None,
+) -> tuple[str, ...]:
+    primary = _event_key(topic, payload, webhook_id=webhook_id)
+    if webhook_id is None:
+        # No-header callers historically used a different canonical JSON.
+        legacy = hashlib.sha256(json.dumps(
+            {"topic": topic, "shop_id": str(payload.get("shop_id") or ""), "payload": payload},
+            sort_keys=True, separators=(",", ":"),
+        ).encode("utf-8")).hexdigest()
+    else:
+        legacy = _legacy_delivery_key(topic, payload, webhook_id)
+    return (primary,) if primary == legacy else (primary, legacy)
+
+
+def _find_existing_delivery(
+    db: Session, keys: tuple[str, ...],
+) -> ShopifyPrivacyRequest | None:
+    matched = db.query(ShopifyPrivacyRequest).filter(
+        ShopifyPrivacyRequest.request_id.in_(keys),
+    ).all()
+    if len(matched) > 1:
+        # A collision between historical and v2 receipts needs investigation.
+        raise RuntimeError("AMBIGUOUS_PRIVACY_DELIVERY_HISTORY")
+    return matched[0] if matched else None
+
 
 
 def _minimal_selectors(payload: dict[str, Any]) -> dict[str, Any]:
@@ -152,10 +202,9 @@ def process_shopify_compliance_webhook(
         raise ValueError("INVALID_SHOP_IDENTITY") from exc
 
     selectors = _minimal_selectors(payload)
-    receipt_id = _event_key(topic, payload, webhook_id=webhook_id)
-    existing = db.query(ShopifyPrivacyRequest).filter(
-        ShopifyPrivacyRequest.request_id == receipt_id,
-    ).first()
+    keys = _receipt_lookup_keys(topic, payload, webhook_id)
+    receipt_id = keys[0]
+    existing = _find_existing_delivery(db, keys)
     if existing is not None:
         _verify_duplicate_delivery(
             existing, topic=topic, shop_id=shop_id,
@@ -227,9 +276,7 @@ def process_shopify_compliance_webhook(
     except IntegrityError:
         # A second worker may have committed the same delivery concurrently.
         db.rollback()
-        already_recorded = db.query(ShopifyPrivacyRequest).filter(
-            ShopifyPrivacyRequest.request_id == receipt_id,
-        ).first()
+        already_recorded = _find_existing_delivery(db, keys)
         if already_recorded is None:
             raise
         _verify_duplicate_delivery(
