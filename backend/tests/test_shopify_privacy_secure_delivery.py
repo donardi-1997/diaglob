@@ -289,6 +289,10 @@ def test_http_requires_cognito_bearer_and_exact_ticket_and_no_cache(sandbox):
     db, org, store, user, _ = sandbox
     ticket, params = issue(sandbox)
     original = dict(app.dependency_overrides)
+    # Other tests can leave overrides that return detached ORM memberships.
+    # Isolate this HTTP security test from that shared global test state,
+    # then restore the previous mapping in finally.
+    app.dependency_overrides.clear()
     # TestClient executes requests in worker threads. Mirror production's
     # per-request SQLAlchemy session instead of sharing the fixture Session
     # across threads (which can detach a membership mid-request).
