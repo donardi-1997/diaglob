@@ -119,10 +119,15 @@ def test_internal_api_returns_only_sanitized_cases(sandbox, monkeypatch):
     monkeypatch.setenv("DIAGLOB_INTERNAL_SECRET", "verified-test-secret")
     _receipt(sandbox, index=4, days=23)
     sandbox.commit()
-    result = get_shopify_privacy_cases(
-        limit=10, offset=0, x_internal_secret="verified-test-secret",
-        db=sandbox,
-    )
+    # The API delegates to a queue that otherwise uses the real UTC clock.
+    # Freeze that clock so a historical fixture never crosses the critical
+    # threshold solely because CI runs on a later calendar date.
+    with patch("app.services.shopify_privacy_case_queue.datetime") as clock:
+        clock.now.return_value = NOW
+        result = get_shopify_privacy_cases(
+            limit=10, offset=0, x_internal_secret="verified-test-secret",
+            db=sandbox,
+        )
     assert result["cases"][0]["priority"] == "high"
     assert result["cases"][0]["topic"] == "customers/redact"
     assert "PRIVATE_SHOP_ID" not in str(result)
