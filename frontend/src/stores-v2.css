@@ -997,3 +997,37 @@
     grid-template-columns: 1fr 1fr;
   }
 }
+
+/* Temporary Shopify Admin user-link code: selectable, copyable and responsive. */
+.stores-v2-embedded-code-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.stores-v2-embedded-code-row code {
+  flex: 1 1 210px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  user-select: all;
+}
+
+.stores-v2-embedded-code-row .stores-v2-card-action {
+  flex: 0 0 auto;
+}
+
+.stores-v2-embedded-copy-feedback {
+  margin: 8px 0 0;
+  font-size: 0.78rem;
+}
+
+.stores-v2-embedded-copy-feedback.is-success {
+  color: #86efac;
+}
+
+.stores-v2-embedded-copy-feedback.is-error {
+  color: #fca5a5;
+}

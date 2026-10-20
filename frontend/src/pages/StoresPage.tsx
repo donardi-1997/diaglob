@@ -5,6 +5,7 @@ import {
   Check,
   CircleDollarSign,
   Clock3,
+  Copy,
   Globe2,
   Languages,
   Pencil,
@@ -31,6 +32,7 @@ import {
   type Organization,
 } from "../services/organizations";
 import { getCountryFlag, getLanguageName } from "../utils/markets";
+import { copyShopifyLinkCode } from "../utils/shopifyLinkClipboard";
 import "../stores-v2.css";
 
 interface StoresPageProps {
@@ -343,7 +345,11 @@ export default function StoresPage({
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
   const [form, setForm] = useState<StoreForm>(EMPTY_FORM);
-  const [embeddedLink, setEmbeddedLink] = useState<{storeId: number; code: string} | null>(null);
+  const [embeddedLink, setEmbeddedLink] = useState<{
+    storeId: number;
+    code: string;
+    copyStatus?: "copied" | "error";
+  } | null>(null);
   const [embeddedLinkPending, setEmbeddedLinkPending] = useState<number | null>(null);
   const [embeddedLinkError, setEmbeddedLinkError] = useState("");
 
@@ -363,6 +369,17 @@ export default function StoresPage({
     } finally {
       setEmbeddedLinkPending(null);
     }
+  }
+
+  async function copyEmbeddedCode(storeId: number, code: string) {
+    const copied = await copyShopifyLinkCode(code, window.navigator.clipboard);
+    // The code may expire or be regenerated while the browser prompts for permission.
+    // Never show feedback for a different or expired one-time code.
+    setEmbeddedLink((current) =>
+      current?.storeId === storeId && current.code === code
+        ? { ...current, copyStatus: copied ? "copied" : "error" }
+        : current
+    );
   }
 
   async function revokeEmbeddedCode(storeId: number) {
@@ -782,9 +799,32 @@ export default function StoresPage({
                     Revocar mis accesos Shopify
                   </button>
                   {embeddedLink?.storeId === store.id && (
-                    <div role="status">
+                    <div>
                       <p>Introduce este código en la aplicación DIAGLOB dentro de Shopify Admin:</p>
-                      <code style={{overflowWrap: "anywhere"}}>{embeddedLink.code}</code>
+                      <div className="stores-v2-embedded-code-row">
+                        <code>{embeddedLink.code}</code>
+                        <button
+                          type="button"
+                          className="stores-v2-card-action"
+                          aria-label="Copiar código de vinculación"
+                          onClick={() => { void copyEmbeddedCode(store.id, embeddedLink.code); }}
+                        >
+                          {embeddedLink.copyStatus === "copied"
+                            ? <Check size={14} aria-hidden="true" />
+                            : <Copy size={14} aria-hidden="true" />}
+                          {embeddedLink.copyStatus === "copied" ? "Copiado" : "Copiar código"}
+                        </button>
+                      </div>
+                      {embeddedLink.copyStatus === "copied" && (
+                        <p role="status" className="stores-v2-embedded-copy-feedback is-success">
+                          Código copiado al portapapeles.
+                        </p>
+                      )}
+                      {embeddedLink.copyStatus === "error" && (
+                        <p role="alert" className="stores-v2-embedded-copy-feedback is-error">
+                          No se pudo copiar. Selecciona el código y cópialo manualmente.
+                        </p>
+                      )}
                     </div>
                   )}
                   {embeddedLinkError && <p role="alert" className="shopify-install-error">{embeddedLinkError}</p>}
