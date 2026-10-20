@@ -44,6 +44,10 @@ from ..services.shopify_privacy_local_processor import (
     inspect_local_customer_export_counts,
     build_local_redaction_manifest,
 )
+from ..services.shopify_privacy_export_provenance import (
+    ShopifyExportCoverageError,
+    inspect_shopify_export_provenance,
+)
 from ..services.shopify_privacy_processing import (
     ShopifyPrivacyProcessingError,
     get_shopify_privacy_processing_case,
@@ -205,6 +209,22 @@ def prepare_pending_shopify_privacy_cases(
     try:
         return prepare_pending_shopify_privacy_processing_cases(db, limit=limit)
     except ShopifyPrivacyProcessingError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/api/internal/shopify/privacy/cases/{request_id}/export/provenance")
+def get_shopify_privacy_export_provenance(
+    request_id: str,
+    x_internal_secret: str | None = Header(None, alias="X-Internal-Secret"),
+    db: Session = Depends(get_db),
+):
+    """Review exactly attributed COUNTs, omissions and blockers; never PII."""
+    _require_internal_secret(x_internal_secret)
+    try:
+        return inspect_shopify_export_provenance(db, request_id=request_id)
+    except ShopifyExportCoverageError as exc:
+        if str(exc) == "PRIVACY_REQUEST_NOT_FOUND":
+            raise HTTPException(status_code=404, detail="Privacy request not found") from exc
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
