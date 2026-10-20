@@ -162,6 +162,7 @@ def shopify_embedded_home() -> HTMLResponse:
           if (!response.ok) {
             const result = await response.json().catch(() => null);
             const code = result && result.detail && result.detail.code;
+            const scopeDiagnostic = result && result.detail;
             const safeCodes = {
               SHOPIFY_APP_CREDENTIALS_REJECTED: 'Shopify rechazó la identidad de la aplicación. Revisa la configuración del backend.',
               SHOPIFY_SESSION_TOKEN_REJECTED: 'Shopify rechazó la sesión actual. Recarga la aplicación desde Shopify Admin.',
@@ -175,9 +176,29 @@ def shopify_embedded_home() -> HTMLResponse:
               SHOPIFY_MANAGED_INSTALL_GRANT_FAILED: 'DIAGLOB no pudo completar la preparación. Revisa el diagnóstico del servidor.',
             };
             const known = typeof code === 'string' && Object.prototype.hasOwnProperty.call(safeCodes, code);
-            const message = known
+            let message = known
               ? safeCodes[code]
               : 'No fue posible preparar la instalación. Revisa el código HTTP de la solicitud.';
+            if (code === 'SHOPIFY_REQUIRED_SCOPES_MISSING' && scopeDiagnostic) {
+              const state = scopeDiagnostic.scope_field_status;
+              const allowedScopes = new Set([
+                'read_products', 'read_inventory', 'read_orders', 'write_orders',
+                'write_draft_orders', 'read_merchant_managed_fulfillment_orders',
+                'write_merchant_managed_fulfillment_orders',
+              ]);
+              const missing = Array.isArray(scopeDiagnostic.missing_scopes)
+                ? scopeDiagnostic.missing_scopes.filter(
+                  (item) => typeof item === 'string' && allowedScopes.has(item)
+                )
+                : [];
+              if (state === 'absent') {
+                message = 'Shopify no informó el campo scope en la respuesta del token offline. Se requiere revisar el intercambio.';
+              } else if (state === 'empty_or_invalid') {
+                message = 'El campo scope del token offline de Shopify es inválido o está vacío.';
+              } else if (missing.length) {
+                message += ' Permisos faltantes en el token offline: ' + missing.join(', ') + '.';
+              }
+            }
             throw new Error(message + (known ? ' (' + code + ')' : ''));
           }
           const grant = await response.json();
@@ -412,9 +433,24 @@ def embedded_managed_installation_stage(
         }
         code = str(exc) if str(exc) in public_codes else "SHOPIFY_MANAGED_INSTALL_GRANT_FAILED"
         status_code = 503 if code == "SHOPIFY_MANAGED_INSTALL_NOT_CONFIGURED" else 502
+        detail = {"code": code, "message": "No fue posible preparar la autorización Shopify."}
+        if code == "SHOPIFY_REQUIRED_SCOPES_MISSING":
+            # Only expose names from the PUBLIC set of app-required scopes.
+            # The OAuth token, grant response, and other provider fields
+            # never cross this boundary.
+            from ..shopify_oauth import SHOPIFY_SCOPES
+            permitted_names = set(SHOPIFY_SCOPES.split(","))
+            missing = getattr(exc, "missing_scopes", ())
+            if isinstance(missing, tuple):
+                detail["missing_scopes"] = sorted(
+                    {s for s in missing if isinstance(s, str) and s in permitted_names}
+                )
+            status = getattr(exc, "scope_field_status", None)
+            if status in {"present", "absent", "empty_or_invalid"}:
+                detail["scope_field_status"] = status
         raise HTTPException(
             status_code=status_code,
-            detail={"code": code, "message": "No fue posible preparar la autorización Shopify."},
+            detail=detail,
         ) from exc
 
 

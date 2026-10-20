@@ -26,7 +26,21 @@ from ..shopify_oauth import normalize_shop_domain
 
 
 class ManagedShopifyInstallationError(RuntimeError):
-    """Managed installation couldn't be independently verified."""
+    """Managed installation couldn't be independently verified.
+
+    Only missing scope *names from our public app config* can be included
+    in diagnostics. Never carry access tokens, response bodies or secrets.
+    """
+
+    def __init__(
+        self, code: str, *,
+        missing_scopes: tuple[str, ...] = (),
+        scope_field_status: str | None = None,
+    ):
+        super().__init__(code)
+        self.missing_scopes = missing_scopes
+        self.scope_field_status = scope_field_status
+
 
 
 _TOKEN_EXCHANGE_GRANT = "urn:ietf:params:oauth:grant-type:token-exchange"
@@ -149,10 +163,26 @@ def stage_managed_installation(
         # Fail closed when the active Shopify app version grants fewer scopes
         # than the backend operations require.
         granted = tokens.get("scope")
-        if not isinstance(granted, str) or not set(SHOPIFY_SCOPES.split(",")).issubset(
-            {x.strip() for x in granted.split(",")}
-        ):
-            raise ManagedShopifyInstallationError("SHOPIFY_REQUIRED_SCOPES_MISSING")
+        required_scopes = {x.strip() for x in SHOPIFY_SCOPES.split(",")}
+        returned_scopes = (
+            {x.strip() for x in granted.split(",") if x.strip()}
+            if isinstance(granted, str) else set()
+        )
+        missing_scopes = tuple(sorted(required_scopes - returned_scopes))
+        if missing_scopes:
+            # A remote app's installed scopes do NOT prove the permissions
+            # carried by this newly minted, store-specific offline token.
+            # Reject until the actual token scope response is conforming.
+            scope_field_status = (
+                "present" if isinstance(granted, str) and granted.strip()
+                else "absent" if granted is None
+                else "empty_or_invalid"
+            )
+            raise ManagedShopifyInstallationError(
+                "SHOPIFY_REQUIRED_SCOPES_MISSING",
+                missing_scopes=missing_scopes,
+                scope_field_status=scope_field_status,
+            )
 
         details = ShopifyGraphQLClient(shop_domain=shop, access_token=access).query(_SHOP_QUERY)
         provider = details.get("shop") if isinstance(details, dict) else None
