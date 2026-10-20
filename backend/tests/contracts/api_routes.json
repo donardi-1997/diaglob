@@ -969,6 +969,10 @@
   ],
   [
     "POST",
+    "/api/internal/shopify/privacy/retention/assess"
+  ],
+  [
+    "POST",
     "/api/knowledge-bases"
   ],
   [
