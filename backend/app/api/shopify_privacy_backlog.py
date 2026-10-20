@@ -1,11 +1,12 @@
 """Internal authenticated, read-only Shopify privacy operational endpoints."""
 from __future__ import annotations
 
+import json
 import os
 import secrets
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
+from pydantic import BaseModel, ValidationError
 from sqlalchemy.orm import Session
 
 from ..db import get_db
@@ -83,14 +84,27 @@ def get_shopify_privacy_retention_template(
 
 
 @router.post("/api/internal/shopify/privacy/retention/assess")
-def assess_shopify_privacy_retention_draft(
-    body: RetentionPolicyDraft,
+async def assess_shopify_privacy_retention_draft(
+    request: Request,
     x_internal_secret: str | None = Header(None, alias="X-Internal-Secret"),
 ):
-    """Evaluate a PII-free draft only; no persistence, legal approval or erasure."""
+    """Authenticate before bounded JSON parsing; never echo submitted details."""
     _require_internal_secret(x_internal_secret)
+    if request.headers.get("content-type", "").split(";", 1)[0].strip().lower() != "application/json":
+        raise HTTPException(status_code=415, detail="JSON_CONTENT_TYPE_REQUIRED")
+    raw = bytearray()
+    async for chunk in request.stream():
+        raw.extend(chunk)
+        if len(raw) > 16_384:
+            raise HTTPException(status_code=413, detail="RETENTION_DRAFT_TOO_LARGE")
     try:
-        return assess_shopify_retention_policy_draft(body)
+        payload = json.loads(raw)
+        draft = RetentionPolicyDraft.model_validate(payload)
+    except (ValueError, TypeError, ValidationError) as exc:
+        # Returning a framework validation exception can echo unsafe content.
+        raise HTTPException(status_code=400, detail="INVALID_RETENTION_DRAFT") from exc
+    try:
+        return assess_shopify_retention_policy_draft(draft)
     except RetentionReviewError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
