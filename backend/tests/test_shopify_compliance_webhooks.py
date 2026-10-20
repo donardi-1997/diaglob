@@ -618,3 +618,188 @@ class TestShopifyComplianceWebhooks:
             safe_report = json.dumps(report)
             assert "sensitive-private@example.invalid" not in safe_report
             assert "test-store.myshopify.com" not in safe_report
+
+    def test_same_delivery_id_cross_shop_is_conflict_not_second_receipt(self, client):
+        first_payload = {"shop_id": 123, "shop_domain": "first.myshopify.com"}
+        second_payload = {"shop_id": 456, "shop_domain": "second.myshopify.com"}
+        first_body = json.dumps(first_payload).encode()
+        second_body = json.dumps(second_payload).encode()
+        secret, first_headers = _signed_headers(first_body, "shop/redact")
+        _, second_headers = _signed_headers(second_body, "shop/redact")
+        first_headers["X-Shopify-Webhook-Id"] = "global-delivery-unique"
+        second_headers["X-Shopify-Webhook-Id"] = "global-delivery-unique"
+        with patch.dict(os.environ, {"SHOPIFY_CLIENT_SECRET": secret}), patch(
+            "app.services.shopify_compliance_webhooks.resolve_shopify_connection",
+            return_value=None,
+        ):
+            first = client.post(
+                "/api/webhooks/shopify/compliance",
+                content=first_body, headers=first_headers,
+            )
+            conflict = client.post(
+                "/api/webhooks/shopify/compliance",
+                content=second_body, headers=second_headers,
+            )
+        assert first.status_code == 200
+        assert conflict.status_code == 400
+        assert conflict.json()["detail"] == "PRIVACY_WEBHOOK_DELIVERY_CONFLICT"
+        assert "second.myshopify.com" not in conflict.text
+        with TEST_SESSION() as session:
+            assert session.query(ShopifyPrivacyRequest).count() == 1
+            assert session.query(ShopifyPrivacyWorkItem).count() == 10
+
+    def test_same_delivery_id_cross_topic_is_conflict_not_second_receipt(self, client):
+        payload = {"shop_id": 777, "shop_domain": "test-store.myshopify.com"}
+        body = json.dumps(payload).encode()
+        secret, first_headers = _signed_headers(body, "shop/redact")
+        _, second_headers = _signed_headers(body, "customers/redact")
+        first_headers["X-Shopify-Webhook-Id"] = "global-topic-unique"
+        second_headers["X-Shopify-Webhook-Id"] = "global-topic-unique"
+        with patch.dict(os.environ, {"SHOPIFY_CLIENT_SECRET": secret}), patch(
+            "app.services.shopify_compliance_webhooks.resolve_shopify_connection",
+            return_value=None,
+        ):
+            assert client.post(
+                "/api/webhooks/shopify/compliance",
+                content=body, headers=first_headers,
+            ).status_code == 200
+            conflict = client.post(
+                "/api/webhooks/shopify/compliance",
+                content=body, headers=second_headers,
+            )
+        assert conflict.status_code == 400
+        assert conflict.json()["detail"] == "PRIVACY_WEBHOOK_DELIVERY_CONFLICT"
+        with TEST_SESSION() as session:
+            assert session.query(ShopifyPrivacyRequest).count() == 1
+
+    def test_retry_accepts_historical_key_without_creating_second_receipt(self, client):
+        from app.services.shopify_compliance_webhooks import _legacy_delivery_key
+
+        payload = {"shop_id": 456, "shop_domain": "test-store.myshopify.com"}
+        body = json.dumps(payload).encode()
+        secret, headers = _signed_headers(body, "shop/redact")
+        headers["X-Shopify-Webhook-Id"] = "historical-retry"
+        with patch.dict(os.environ, {"SHOPIFY_CLIENT_SECRET": secret}), patch(
+            "app.services.shopify_compliance_webhooks.resolve_shopify_connection",
+            return_value=None,
+        ):
+            original = client.post(
+                "/api/webhooks/shopify/compliance", content=body, headers=headers,
+            )
+            assert original.status_code == 200
+            legacy = _legacy_delivery_key("shop/redact", payload, "historical-retry")
+            with TEST_SESSION() as session:
+                session.query(ShopifyPrivacyRequest).update(
+                    {"request_id": legacy}, synchronize_session=False,
+                )
+                session.query(ShopifyPrivacyWorkItem).update(
+                    {"request_id": legacy}, synchronize_session=False,
+                )
+                session.query(ShopifyPrivacyAuditEvent).update(
+                    {"request_id": legacy}, synchronize_session=False,
+                )
+                session.commit()
+            retry = client.post(
+                "/api/webhooks/shopify/compliance", content=body, headers=headers,
+            )
+        assert retry.status_code == 200
+        assert retry.json()["action"] == "duplicate"
+        assert retry.json()["request_id"] == legacy
+        with TEST_SESSION() as session:
+            assert session.query(ShopifyPrivacyRequest).count() == 1
+            assert session.query(ShopifyPrivacyWorkItem).count() == 10
+            assert session.query(ShopifyPrivacyAuditEvent).count() == 2
+
+    @pytest.mark.parametrize("missing_event,actor", [
+        ("received", "shopify_hmac_verified"),
+        ("processing_prepared", "internal_privacy_processor"),
+    ])
+    def test_retry_without_required_audit_returns_500(
+        self, client, missing_event, actor,
+    ):
+        payload = {"shop_id": 456, "shop_domain": "test-store.myshopify.com"}
+        body = json.dumps(payload).encode()
+        secret, headers = _signed_headers(body, "shop/redact")
+        headers["X-Shopify-Webhook-Id"] = "missing-" + missing_event
+        with patch.dict(os.environ, {"SHOPIFY_CLIENT_SECRET": secret}), patch(
+            "app.services.shopify_compliance_webhooks.resolve_shopify_connection",
+            return_value=None,
+        ):
+            first = client.post(
+                "/api/webhooks/shopify/compliance", content=body, headers=headers,
+            )
+            assert first.status_code == 200
+            with TEST_SESSION() as session:
+                session.query(ShopifyPrivacyAuditEvent).filter(
+                    ShopifyPrivacyAuditEvent.event_type == missing_event,
+                    ShopifyPrivacyAuditEvent.actor_type == actor,
+                ).delete()
+                session.commit()
+            retry = client.post(
+                "/api/webhooks/shopify/compliance", content=body, headers=headers,
+            )
+        assert retry.status_code == 500
+        assert retry.json()["detail"] == "Shopify compliance webhook processing failed"
+        with TEST_SESSION() as session:
+            assert session.query(ShopifyPrivacyRequest).count() == 1
+            assert session.query(ShopifyPrivacyWorkItem).count() == 10
+
+    @pytest.mark.parametrize("tampering", ["completed_status", "wrong_action", "partial_queue"])
+    def test_retry_does_not_acknowledge_corrupt_review_tasks(self, client, tampering):
+        payload = {"shop_id": 456, "shop_domain": "test-store.myshopify.com"}
+        body = json.dumps(payload).encode()
+        secret, headers = _signed_headers(body, "shop/redact")
+        headers["X-Shopify-Webhook-Id"] = "corrupt-" + tampering
+        with patch.dict(os.environ, {"SHOPIFY_CLIENT_SECRET": secret}), patch(
+            "app.services.shopify_compliance_webhooks.resolve_shopify_connection",
+            return_value=None,
+        ):
+            first = client.post(
+                "/api/webhooks/shopify/compliance", content=body, headers=headers,
+            )
+            assert first.status_code == 200
+            with TEST_SESSION() as session:
+                task = session.query(ShopifyPrivacyWorkItem).filter(
+                    ShopifyPrivacyWorkItem.area == "local_structured_records",
+                ).one()
+                if tampering == "completed_status":
+                    task.status = "completed"
+                elif tampering == "wrong_action":
+                    task.action = "deliver"
+                else:
+                    session.delete(task)
+                session.commit()
+            retry = client.post(
+                "/api/webhooks/shopify/compliance", content=body, headers=headers,
+            )
+        assert retry.status_code == 500
+        with TEST_SESSION() as session:
+            assert session.query(ShopifyPrivacyRequest).count() == 1
+            assert session.query(ShopifyPrivacyAuditEvent).count() == 2
+
+    def test_retry_recreates_missing_tasks_without_duplicate_prepared_audit(self, client):
+        payload = {"shop_id": 456, "shop_domain": "test-store.myshopify.com"}
+        body = json.dumps(payload).encode()
+        secret, headers = _signed_headers(body, "shop/redact")
+        headers["X-Shopify-Webhook-Id"] = "recover-no-duplicate-audit"
+        with patch.dict(os.environ, {"SHOPIFY_CLIENT_SECRET": secret}), patch(
+            "app.services.shopify_compliance_webhooks.resolve_shopify_connection",
+            return_value=None,
+        ):
+            first = client.post(
+                "/api/webhooks/shopify/compliance", content=body, headers=headers,
+            )
+            assert first.status_code == 200
+            with TEST_SESSION() as session:
+                session.query(ShopifyPrivacyWorkItem).delete()
+                session.commit()
+            restored = client.post(
+                "/api/webhooks/shopify/compliance", content=body, headers=headers,
+            )
+        assert restored.status_code == 200
+        assert restored.json()["action"] == "duplicate"
+        with TEST_SESSION() as session:
+            assert session.query(ShopifyPrivacyWorkItem).count() == 10
+            assert session.query(ShopifyPrivacyAuditEvent).filter(
+                ShopifyPrivacyAuditEvent.event_type == "processing_prepared",
+            ).count() == 1
