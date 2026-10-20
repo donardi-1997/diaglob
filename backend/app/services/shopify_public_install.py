@@ -221,6 +221,8 @@ def claim_install(
         Organization.id == membership.organization_id,
         Organization.active.is_(True),
     ).with_for_update().first()
+    if organization is None:
+        raise ShopifyConnectionError("SHOPIFY_BILLING_ORGANIZATION_REQUIRED")
     existing = db.query(CommerceConnection).filter(
         CommerceConnection.store_id == store.id
     ).first()
