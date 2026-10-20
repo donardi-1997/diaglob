@@ -7,6 +7,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 from ..automations import safe_emit_event
+from .automation_event_subject_resolution import resolve_conversation_event_customer
 from ..models import Conversation, Customer, Message
 from ..models import Store, CustomerStoreProfile
 from .shopify_privacy_suppression import evaluate_shopify_privacy_suppression, evaluate_shopify_local_privacy
@@ -153,6 +154,10 @@ def emit_webhook_events(db: Session, new_conversations: list, new_messages: list
                     "mode": conversation.mode,
                 }
             },
+            subject_customer_id=resolve_conversation_event_customer(
+                db, organization_id=conversation.organization_id,
+                store_id=conversation.store_id, conversation_id=conversation.id,
+            ),
             event_id=f"conversation:{conversation.id}:created",
         )
 
@@ -176,5 +181,9 @@ def emit_webhook_events(db: Session, new_conversations: list, new_messages: list
                     "organization_id": conversation.organization_id,
                 },
             },
+            subject_customer_id=resolve_conversation_event_customer(
+                db, organization_id=conversation.organization_id,
+                store_id=conversation.store_id, conversation_id=conversation.id,
+            ),
             event_id=f"telegram-message:{message.external_message_id}",
         )
