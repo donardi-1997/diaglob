@@ -18,6 +18,9 @@ from app.services.shopify_privacy_local_processor import (
     ShopifyLocalPrivacyError, build_encrypted_local_customer_export,
     build_local_redaction_manifest, inspect_local_customer_export_counts,
 )
+from app.services.shopify_privacy_export_provenance import (
+    ShopifyExportCoverageError, inspect_shopify_export_provenance,
+)
 from app.api.shopify_privacy_backlog import (
     get_shopify_local_redaction_manifest,
     inspect_shopify_local_customer_export,
@@ -657,3 +660,130 @@ def test_export_inspection_fails_closed_if_automation_provenance_unavailable(
             )
     assert receipt.completed_at is None
     assert db.query(Order).count() == 2
+
+
+def test_export_provenance_reports_counted_vs_uncovered_for_shared_customer(sandbox):
+    """One subject across two stores: never infer completeness from counts."""
+    db, receipt = sandbox
+    report = inspect_shopify_export_provenance(db, request_id=RECEIPT_ID)
+    rows = {item["source"]: item for item in report["sources"]}
+    assert report["signed_intake_verified"] is True
+    assert report["subject_store_scope_verified"] is True
+    assert report["counted_local_snapshot_sources"] == 6
+    assert report["counted_automation_sources"] == 5
+    assert rows["customer_store_profiles"]["matched_subject_store_rows"] == 1
+    assert rows["orders"]["matched_subject_store_rows"] == 1
+    assert rows["conversations"]["matched_subject_store_rows"] == 1
+    assert rows["messages"]["matched_subject_store_rows"] == 1
+    assert rows["orders"]["reconciliation_state"] == "partial_snapshot_unapproved"
+    assert rows["automation_delivery_attempts"]["reconciliation_state"] == (
+        "linked_count_only_not_exported"
+    )
+    assert rows["customers"]["matched_subject_store_rows"] is None
+    assert rows["customers"]["reconciliation_state"] == "not_attributed_or_exported"
+    assert rows["agent_chat_messages"]["matched_subject_store_rows"] is None
+    assert "UNSCANNED_SENSITIVE_SOURCES_REMAIN" in report["blockers"]
+    assert report["shared_customer_records_requiring_review"] >= 1
+    assert "SHARED_CUSTOMER_IDENTITY_REQUIRES_REVIEW" in report["blockers"]
+    assert report["external_review_areas"]
+    assert report["complete"] is False
+    assert report["live_export_authorized"] is False
+    assert report["merchant_delivery_authorized"] is False
+    assert report["shopify_fulfillment_complete"] is False
+    serialized = json.dumps(report)
+    for forbidden in (
+        "SHARED_PRIVATE_NAME", "PRIVATE_GLOBAL_PHONE", "shared@example.com",
+        "PRIVATE_ADDRESS_0", "PRIVATE_ADDRESS_1",
+        "PRIVATE_MESSAGE_0", "PRIVATE_MESSAGE_1",
+        "private-shop-id", "privacy-shop-1.myshopify.com",
+    ):
+        assert forbidden not in serialized
+    assert receipt.status == "pending_policy_review"
+
+
+def test_export_provenance_missing_order_selection_remains_explicit_blocker(sandbox):
+    db, receipt = sandbox
+    receipt.selector_encrypted = encrypt_shopify_secret(json.dumps({
+        "customer": {"id": 700}, "orders_requested": [999],
+    }))
+    db.commit()
+    report = inspect_shopify_export_provenance(db, request_id=RECEIPT_ID)
+    by_source = {item["source"]: item for item in report["sources"]}
+    assert report["unresolved_requested_order_count"] == 1
+    assert by_source["orders"]["matched_subject_store_rows"] == 0
+    assert by_source["conversations"]["matched_subject_store_rows"] == 1
+    assert "REQUESTED_SHOPIFY_ORDERS_UNRESOLVED" in report["blockers"]
+    assert report["complete"] is False
+
+
+def test_export_provenance_requires_signed_intake_and_exact_subject(sandbox):
+    db, receipt = sandbox
+    db.query(ShopifyPrivacyAuditEvent).delete()
+    db.commit()
+    with pytest.raises(ShopifyExportCoverageError, match="SIGNED_INTAKE_REQUIRED"):
+        inspect_shopify_export_provenance(db, request_id=RECEIPT_ID)
+    db.add(ShopifyPrivacyAuditEvent(
+        request_id=RECEIPT_ID, event_type="received",
+        from_status=None, to_status="pending_policy_review",
+        reason_code="tenant_bound", actor_type="shopify_hmac_verified",
+        created_at=datetime.utcnow(),
+    ))
+    receipt.selector_encrypted = encrypt_shopify_secret(json.dumps({
+        "customer": {"id": 999999},
+    }))
+    db.commit()
+    with pytest.raises(
+        ShopifyExportCoverageError, match="SHOPIFY_SUBJECT_OR_STORE_UNRESOLVED",
+    ):
+        inspect_shopify_export_provenance(db, request_id=RECEIPT_ID)
+
+
+def test_export_provenance_rejects_unknown_case_and_invalid_id(sandbox):
+    db, _ = sandbox
+    with pytest.raises(ShopifyExportCoverageError, match="INVALID_PRIVACY_REQUEST_ID"):
+        inspect_shopify_export_provenance(db, request_id="not-a-request")
+    with pytest.raises(ShopifyExportCoverageError, match="PRIVACY_REQUEST_NOT_FOUND"):
+        inspect_shopify_export_provenance(db, request_id="a" * 64)
+
+
+def test_export_provenance_does_not_construct_a_customer_export(sandbox, monkeypatch):
+    from app.services import shopify_privacy_local_processor as processor
+    def forbid(*args, **kwargs):
+        raise AssertionError("export must not be generated by provenance inspection")
+    monkeypatch.setattr(processor, "build_encrypted_local_customer_export", forbid)
+    db, _ = sandbox
+    result = inspect_shopify_export_provenance(db, request_id=RECEIPT_ID)
+    assert result["contains_customer_data"] is False
+
+
+def test_export_provenance_internal_endpoint_authenticates_before_db_query(
+    sandbox, monkeypatch,
+):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from app.db import get_db
+    from app.api.shopify_privacy_backlog import router
+
+    db, _ = sandbox
+    monkeypatch.setenv("DIAGLOB_INTERNAL_SECRET", "synthetic-private-admin-key")
+    app = FastAPI()
+    app.include_router(router)
+    def provide_db():
+        yield db
+    app.dependency_overrides[get_db] = provide_db
+    client = TestClient(app)
+    url = f"/api/internal/shopify/privacy/cases/{RECEIPT_ID}/export/provenance"
+
+    unauthorized = client.get(url)
+    assert unauthorized.status_code == 401
+    result = client.get(url, headers={"X-Internal-Secret": "synthetic-private-admin-key"})
+    assert result.status_code == 200
+    assert result.json()["contains_customer_data"] is False
+    assert result.json()["live_export_authorized"] is False
+    missing = client.get(
+        "/api/internal/shopify/privacy/cases/" + "a" * 64 + "/export/provenance",
+        headers={"X-Internal-Secret": "synthetic-private-admin-key"},
+    )
+    assert missing.status_code == 404
+    assert "PRIVATE_MESSAGE" not in result.text
+    assert "SHARED_PRIVATE_NAME" not in result.text
