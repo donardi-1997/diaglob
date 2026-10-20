@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from unittest.mock import patch
 
 import pytest
+import httpx
 from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy import create_engine
@@ -123,3 +124,58 @@ def test_expired_pending_code_fails_closed(sandbox):
     sandbox.commit()
     assert not managed_install_pending(ShopifyManagedClaimCode(claim_code=code),
                                        membership=object(), db=sandbox)["pending"]
+
+
+@pytest.mark.parametrize("provider_error,expected", [
+    ("invalid_client", "SHOPIFY_APP_CREDENTIALS_REJECTED"),
+    ("invalid_subject_token", "SHOPIFY_SESSION_TOKEN_REJECTED"),
+    ("invalid_grant", "SHOPIFY_TOKEN_GRANT_REJECTED"),
+    ("invalid_scope", "SHOPIFY_REQUIRED_SCOPES_MISSING"),
+    ("arbitrary-unrecognized-error", "SHOPIFY_TOKEN_EXCHANGE_REJECTED"),
+])
+def test_managed_stage_reports_only_sanitized_shopify_oauth_reason(
+    sandbox, provider_error, expected,
+):
+    url = f"https://{SHOP}/admin/oauth/access_token"
+    request = httpx.Request("POST", url)
+    response = httpx.Response(
+        400, json={
+            "error": provider_error,
+            "error_description": "SENSITIVE RESPONSE SHOULD NEVER BE RETURNED",
+        }, request=request,
+    )
+    error = httpx.HTTPStatusError("sensitive response", request=request, response=response)
+    with patch("app.services.shopify_managed_installation.httpx.Client") as client:
+        client.return_value.__enter__.return_value.post.return_value.raise_for_status.side_effect = error
+        with pytest.raises(ManagedShopifyInstallationError, match=f"^{expected}$") as exc:
+            stage_managed_installation(
+                sandbox, identity=IDENTITY, id_token="synthetic-shopify-id-token",
+            )
+    assert "SENSITIVE" not in str(exc.value)
+    assert sandbox.query(ShopifyPendingInstall).count() == 0
+
+
+def test_managed_stage_api_exposes_safe_code_without_shopify_response_or_tokens(sandbox):
+    bearer = HTTPAuthorizationCredentials(scheme="Bearer", credentials="SYNTHETIC-SECRET")
+    with patch("app.api.shopify_embedded.verify_shopify_id_token", return_value=IDENTITY), patch(
+        "app.api.shopify_embedded.stage_managed_installation",
+        side_effect=ManagedShopifyInstallationError("SHOPIFY_APP_CREDENTIALS_REJECTED"),
+    ):
+        with pytest.raises(HTTPException) as exc:
+            embedded_managed_installation_stage(credentials=bearer, db=sandbox)
+    assert exc.value.status_code == 502
+    assert exc.value.detail["code"] == "SHOPIFY_APP_CREDENTIALS_REJECTED"
+    assert "SYNTHETIC-SECRET" not in str(exc.value.detail)
+
+
+def test_managed_stage_api_unknown_error_does_not_leak_text(sandbox):
+    bearer = HTTPAuthorizationCredentials(scheme="Bearer", credentials="SYNTHETIC-SECRET")
+    with patch("app.api.shopify_embedded.verify_shopify_id_token", return_value=IDENTITY), patch(
+        "app.api.shopify_embedded.stage_managed_installation",
+        side_effect=ManagedShopifyInstallationError("danger: secret token from provider"),
+    ):
+        with pytest.raises(HTTPException) as exc:
+            embedded_managed_installation_stage(credentials=bearer, db=sandbox)
+    assert exc.value.status_code == 502
+    assert exc.value.detail["code"] == "SHOPIFY_MANAGED_INSTALL_GRANT_FAILED"
+    assert "secret token" not in str(exc.value.detail)
