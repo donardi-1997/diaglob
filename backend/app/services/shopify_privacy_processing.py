@@ -109,7 +109,7 @@ def _task_specs(topic: str, *, verified_scope: bool, signed: bool):
 
 
 def stage_shopify_privacy_receipt_work_items(
-    db: Session, receipt: ShopifyPrivacyRequest,
+    db: Session, receipt: ShopifyPrivacyRequest, *, record_audit: bool = True,
 ) -> None:
     """Stage review-only work in the *same transaction* as signed webhook intake.
 
@@ -133,51 +133,101 @@ def stage_shopify_privacy_receipt_work_items(
             created_at=now,
             updated_at=now,
         ))
-    db.add(ShopifyPrivacyAuditEvent(
-        request_id=receipt.request_id,
-        event_type="processing_prepared",
-        from_status=receipt.status,
-        to_status=receipt.status,
-        reason_code="signed_receipt_tasks_staged_without_data_access",
+    if record_audit:
+        db.add(ShopifyPrivacyAuditEvent(
+            request_id=receipt.request_id,
+            event_type="processing_prepared",
+            from_status=receipt.status,
+            to_status=receipt.status,
+            reason_code="signed_receipt_tasks_staged_without_data_access",
+            actor_type="internal_privacy_processor",
+            created_at=now,
+        ))
+
+
+def _has_intake_audit(
+    db: Session, *, request_id: str, event_type: str, actor_type: str,
+) -> bool:
+    return db.query(ShopifyPrivacyAuditEvent.id).filter(
+        ShopifyPrivacyAuditEvent.request_id == request_id,
+        ShopifyPrivacyAuditEvent.event_type == event_type,
+        ShopifyPrivacyAuditEvent.actor_type == actor_type,
+    ).first() is not None
+
+
+def _verify_retry_queue(
+    db: Session, receipt: ShopifyPrivacyRequest,
+    items: list[ShopifyPrivacyWorkItem], specs: dict,
+) -> None:
+    """Never return 200 merely because ten work rows happen to exist.
+
+    Both signed intake and the corresponding preparation audit must exist.
+    Existing tasks may have been promoted for identity review, but a receipt
+    with unexpected actions or fabricated fulfillment states is not ackable.
+    """
+    if not _has_intake_audit(
+        db, request_id=receipt.request_id, event_type="received",
+        actor_type="shopify_hmac_verified",
+    ):
+        raise ShopifyPrivacyProcessingError("SIGNED_INTAKE_EVIDENCE_MISSING")
+    if not _has_intake_audit(
+        db, request_id=receipt.request_id, event_type="processing_prepared",
         actor_type="internal_privacy_processor",
-        created_at=now,
-    ))
+    ):
+        raise ShopifyPrivacyProcessingError("PROCESSING_PREPARED_EVIDENCE_MISSING")
+    if len(items) != len(specs) or {item.area for item in items} != set(specs):
+        raise ShopifyPrivacyProcessingError("INCOMPLETE_PRIVACY_WORK_ITEM_SET")
+    if receipt.completed_at is not None or receipt.status == "completed":
+        raise ShopifyPrivacyProcessingError("HISTORICAL_COMPLETION_REQUIRES_REVIEW")
+    for item in items:
+        if item.action != specs[item.area][0]:
+            raise ShopifyPrivacyProcessingError("PRIVACY_WORK_ITEM_ACTION_MISMATCH")
+        if item.status in {"completed", "fulfilled", "delivered", "deleted", "erased"}:
+            raise ShopifyPrivacyProcessingError("UNVERIFIED_PRIVACY_COMPLETION")
 
 
 def ensure_shopify_privacy_receipt_work_items(
     db: Session, receipt: ShopifyPrivacyRequest,
 ) -> None:
-    """Repair a committed legacy receipt on retry, without duplicate tasks.
+    """Validate audit-backed retry; repair a signed receipt with zero tasks.
 
-    A partially populated queue is not accepted as ready: return an error so
-    operators can investigate rather than acknowledging a broken GDPR case.
+    Never guess partial queue repair. An audit for old completed work items is
+    not a legal erasure authorization. On missing evidence, return a retryable
+    processing error rather than telling Shopify the inbox is healthy.
     """
     specs = _task_specs(receipt.topic, verified_scope=False, signed=True)
+    signed = _has_intake_audit(
+        db, request_id=receipt.request_id, event_type="received",
+        actor_type="shopify_hmac_verified",
+    )
+    if not signed:
+        raise ShopifyPrivacyProcessingError("SIGNED_INTAKE_EVIDENCE_MISSING")
     existing = db.query(ShopifyPrivacyWorkItem).filter(
         ShopifyPrivacyWorkItem.request_id == receipt.request_id,
     ).all()
     if existing:
-        if len(existing) != len(specs) or {x.area for x in existing} != set(specs):
-            raise ShopifyPrivacyProcessingError("INCOMPLETE_PRIVACY_WORK_ITEM_SET")
+        _verify_retry_queue(db, receipt, existing, specs)
         return
-    signed = db.query(ShopifyPrivacyAuditEvent.id).filter(
-        ShopifyPrivacyAuditEvent.request_id == receipt.request_id,
-        ShopifyPrivacyAuditEvent.event_type == "received",
-        ShopifyPrivacyAuditEvent.actor_type == "shopify_hmac_verified",
-    ).first()
-    if signed is None:
-        raise ShopifyPrivacyProcessingError("SIGNED_INTAKE_EVIDENCE_MISSING")
-    stage_shopify_privacy_receipt_work_items(db, receipt)
+    if receipt.completed_at is not None or receipt.status == "completed":
+        raise ShopifyPrivacyProcessingError("HISTORICAL_COMPLETION_REQUIRES_REVIEW")
+    prepared = _has_intake_audit(
+        db, request_id=receipt.request_id, event_type="processing_prepared",
+        actor_type="internal_privacy_processor",
+    )
+    # Legacy no-task inbox: create the missing preparation audit once, but do
+    # not duplicate a previously committed audit when only rows disappeared.
+    stage_shopify_privacy_receipt_work_items(
+        db, receipt, record_audit=not prepared,
+    )
     try:
         db.commit()
     except IntegrityError:
+        # Another worker may have repaired this signed delivery concurrently.
         db.rollback()
         saved = db.query(ShopifyPrivacyWorkItem).filter(
             ShopifyPrivacyWorkItem.request_id == receipt.request_id,
         ).all()
-        if len(saved) != len(specs) or {x.area for x in saved} != set(specs):
-            raise ShopifyPrivacyProcessingError("PRIVACY_WORK_ITEM_CONFLICT")
-
+        _verify_retry_queue(db, receipt, saved, specs)
 
 
 
