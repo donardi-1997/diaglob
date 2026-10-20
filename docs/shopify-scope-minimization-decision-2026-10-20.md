@@ -36,10 +36,23 @@
 7. No habilitar optional scopes sin UI de solicitud/denegación, soporte de revocación y validación de comportamiento con grants parciales.
 8. No desplegar cambios en Shopify ni retirar aprobaciones de clientes actuales hasta que CI, tienda de desarrollo, Partner Dashboard y responsable del producto autoricen la transición.
 
+## Prueba de scopes concedidos (solo lectura)
+
+Se añadió `backend/tools/shopify_scope_grant_probe.py`. Ejecutar **únicamente sobre una tienda de desarrollo autorizada**, con credenciales introducidas mediante un gestor seguro o variables de entorno privadas (sin escribir tokens en la consola o el repositorio):
+
+```bash
+cd backend
+python -m tools.shopify_scope_grant_probe
+```
+
+Requiere `SHOPIFY_AUDIT_SHOP` (dominio canónico `.myshopify.com`) y `SHOPIFY_AUDIT_ACCESS_TOKEN` (token de esa tienda). La herramienta llama solo a `currentAppInstallation { accessScopes { handle } }`, calcula el conjunto esperado, faltantes y grants adicionales, y devuelve 0 si hay paridad, 2 si faltan permisos y otro código si falla la solicitud. No registra ni devuelve tokens. **No prueba aprobaciones PCD**, ni el estado de la versión publicada, ni garantías de cifrado.
+
+Si aparece `read_customers` en `additional_existing_grants`, esto puede reflejar una instalación anterior: la configuración source por sí sola no lo revoca. Hacen falta comprobaciones antes/después de publicar una nueva versión, según Shopify.
+
 ## Evidencias de cierre
 
 - [x] Cambio source `shopify.app.toml` y `backend/app/shopify_oauth.py` alineado.
-- [x] Pruebas añadidas para coherencia de OAuth/TOML y guard de consulta directa Customer.
+- [x] Pruebas añadidas para coherencia de OAuth/TOML, guard de consulta directa Customer y sonda de scopes concedidos (sin acceso real).
 - [ ] CI verde del PR en SHA final.
 - [ ] Lectura y captura saneada de scopes efectivos en Shopify Dev Dashboard / tienda de desarrollo.
 - [ ] Pruebas con Shopify GraphQL, órdenes, fulfillment, webhook y reinstalación.
