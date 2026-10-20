@@ -3,11 +3,57 @@ from datetime import datetime
 from unittest.mock import patch
 
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 
-from app.models import CommerceConnection, Organization, Store, User, OrganizationMembership
+from app.db import Base
+from app.models import (
+    CommerceConnection, Organization, Store, User, OrganizationMembership,
+    ShopifyPendingInstall,
+)
+from app.services.shopify_managed_installation import stage_managed_installation
 from app.services.shopify_service import ShopifyConnectionError
 from app.services.shopify_public_install import claim_install
-from test_shopify_managed_onboarding import _stage, sandbox
+
+SHOP = "diaglob-poc.myshopify.com"
+SCOPES = (
+    "read_products,read_inventory,read_orders,write_orders,write_draft_orders,"
+    "read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders"
+)
+
+
+@pytest.fixture
+def sandbox(monkeypatch):
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    monkeypatch.setenv("SHOPIFY_CLIENT_ID", "fixture-client")
+    monkeypatch.setenv("SHOPIFY_CLIENT_SECRET", "fixture-secret")
+    with Session(engine) as db:
+        yield db
+    engine.dispose()
+
+
+def _stage(db):
+    with patch("app.services.shopify_managed_installation.httpx.Client") as client, patch(
+        "app.services.shopify_managed_installation.ShopifyGraphQLClient"
+    ) as graphql, patch(
+        "app.services.shopify_managed_installation.encrypt_shopify_secret",
+        side_effect=lambda token: "encrypted:" + token,
+    ):
+        client.return_value.__enter__.return_value.post.return_value.json.return_value = {
+            "access_token": "fixture-managed-access",
+            "refresh_token": "fixture-rotating-refresh",
+            "expires_in": 3600,
+            "refresh_token_expires_in": 7776000,
+            "scope": SCOPES,
+        }
+        graphql.return_value.query.return_value = {
+            "shop": {"myshopifyDomain": SHOP}
+        }
+        return stage_managed_installation(
+            db, identity={"shop": SHOP, "subject": "synthetic-merchant"},
+            id_token="synthetic-session-token",
+        )
 
 
 def _fixture(db, *, shop="diaglob-poc.myshopify.com", status="error"):
@@ -54,7 +100,7 @@ def test_paddle_billed_shopify_store_can_recover_same_managed_connection_without
     assert connection.id == old_connection_id
     assert connection.status == "connected"
     assert connection.last_error is None
-    assert connection.access_token_encrypted == "encrypted:fixture-online-exchanged-offline"
+    assert connection.access_token_encrypted == "encrypted:fixture-managed-access"
     assert connection.refresh_token_encrypted == "encrypted:fixture-rotating-refresh"
     assert sandbox.query(CommerceConnection).count() == 1
     assert (org.plan, org.billing_provider, org.billing_customer_id,
@@ -80,7 +126,7 @@ def test_error_connection_cannot_bypass_store_billing_check_with_unbound_grant(s
     # session can bypass new-install billing eligibility for the same shop.
     code = _stage(sandbox)["claim_code"]
     _, member, store, connection = _fixture(sandbox)
-    grant = sandbox.query(__import__("app.models", fromlist=["ShopifyPendingInstall"]).ShopifyPendingInstall).one()
+    grant = sandbox.query(ShopifyPendingInstall).one()
     grant.grant_method = "oauth"
     sandbox.commit()
     with pytest.raises(ShopifyConnectionError, match="SHOPIFY_BILLING_ORGANIZATION_REQUIRED"):
