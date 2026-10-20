@@ -26,6 +26,10 @@ from .models import (
     WhatsAppConnection,
 )
 
+from .services.automation_execution_provenance import (
+    prepare_execution_provenance, write_execution_provenance,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -590,6 +594,9 @@ def execute_automation(
     event_type: str,
     payload: dict[str, Any],
     event_id: str | None = None,
+    *,
+    event_store_id: int | None = None,
+    subject_customer_id: int | None = None,
 ) -> AutomationExecution:
     """
     Execute a single automation end-to-end.
@@ -599,10 +606,16 @@ def execute_automation(
     3. Execute actions
     4. Update execution status
     """
+    # Scope is derived from trusted store/customer relations, never payload
+    # text. Validate BEFORE writing the execution or performing actions.
+    scope = prepare_execution_provenance(
+        db, automation=automation, event_store_id=event_store_id,
+        subject_customer_id=subject_customer_id,
+    )
     execution = AutomationExecution(
         automation_id=automation.id,
         organization_id=automation.organization_id,
-        store_id=automation.store_id,
+        store_id=scope.store_id,
         event_type=event_type,
         event_id=event_id,
         status="running",
@@ -612,6 +625,9 @@ def execute_automation(
 
     db.add(execution)
     db.flush()
+    # Same DB transaction: no created execution can be committed without
+    # a provenance record. Historical rows remain deliberately unchanged.
+    write_execution_provenance(db, execution_id=execution.id, scope=scope)
 
     try:
         conditions = json.loads(
@@ -684,6 +700,8 @@ def run_automations_for_event(
     event_type: str,
     payload: dict[str, Any],
     event_id: str | None = None,
+    *,
+    subject_customer_id: int | None = None,
 ) -> list[AutomationExecution]:
     """
     Find and execute all active automations
@@ -729,6 +747,8 @@ def run_automations_for_event(
                 event_type=event_type,
                 payload=payload,
                 event_id=event_id,
+                event_store_id=store_id,
+                subject_customer_id=subject_customer_id,
             )
             executions.append(execution)
         except Exception as exc:
@@ -754,6 +774,8 @@ def safe_emit_event(
     event_type: str,
     payload: dict[str, Any],
     event_id: str | None = None,
+    *,
+    subject_customer_id: int | None = None,
 ) -> list[AutomationExecution] | None:
     """
     Safely emit an event for automation processing.
@@ -772,6 +794,7 @@ def safe_emit_event(
             event_type=event_type,
             payload=payload,
             event_id=event_id,
+            subject_customer_id=subject_customer_id,
         )
     except Exception as exc:
         logger.error(
@@ -814,6 +837,8 @@ def emit_event(
     event_type: str,
     payload: dict[str, Any],
     event_id: str | None = None,
+    *,
+    subject_customer_id: int | None = None,
 ) -> list[AutomationExecution]:
     """
     Public API for dispatching events.
@@ -828,4 +853,5 @@ def emit_event(
         event_type=event_type,
         payload=payload,
         event_id=event_id,
+        subject_customer_id=subject_customer_id,
     )
