@@ -179,7 +179,29 @@ def stage_managed_installation(
         db.commit()
         return {"claim_code": code, "expires_in_seconds": 600}
     except ManagedShopifyInstallationError:
+        db.rollback()
         raise
+    except httpx.HTTPStatusError as exc:
+        # Only a small, known list of Shopify OAuth error identifiers is
+        # inspected. Never echo raw response bodies or descriptions to users.
+        try:
+            provider_error = exc.response.json().get("error")
+        except (ValueError, AttributeError, TypeError):
+            provider_error = None
+        error_code = {
+            "invalid_client": "SHOPIFY_APP_CREDENTIALS_REJECTED",
+            "invalid_subject_token": "SHOPIFY_SESSION_TOKEN_REJECTED",
+            "invalid_grant": "SHOPIFY_TOKEN_GRANT_REJECTED",
+            "invalid_scope": "SHOPIFY_REQUIRED_SCOPES_MISSING",
+        }.get(provider_error) if isinstance(provider_error, str) else None
+        if not error_code:
+            error_code = (
+                "SHOPIFY_TOKEN_EXCHANGE_UNAVAILABLE"
+                if exc.response.status_code == 429 or exc.response.status_code >= 500
+                else "SHOPIFY_TOKEN_EXCHANGE_REJECTED"
+            )
+        db.rollback()
+        raise ManagedShopifyInstallationError(error_code) from None
     except (ShopifyAPIError, httpx.HTTPError, ValueError, TypeError, RuntimeError) as exc:
         db.rollback()
         raise ManagedShopifyInstallationError("SHOPIFY_MANAGED_INSTALL_GRANT_FAILED") from exc
