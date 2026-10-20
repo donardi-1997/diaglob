@@ -75,7 +75,7 @@ def build_encrypted_shopify_automation_fixture(
         if (
             receipt.topic != "customers/data_request"
             or receipt.completed_at is not None
-            or receipt.status == "completed"
+            or receipt.status != "pending_policy_review"
         ):
             raise ShopifyPrivacyExtractionError("CUSTOMER_EXPORT_SCOPE_REQUIRED")
         selector = _selectors(receipt)
