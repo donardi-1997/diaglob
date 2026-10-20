@@ -48,6 +48,25 @@ _SUBJECT_TYPE = "urn:ietf:params:oauth:token-type:id_token"
 _ONLINE_TYPE = "urn:shopify:params:oauth:token-type:online-access-token"
 _SHOP_QUERY = "query ManagedInstallationShop { shop { myshopifyDomain } }"
 
+# Shopify access scopes: a write scope includes its matching read scope.
+# Token-exchange responses may omit the redundant read handle. Only explicit,
+# documented pairs are inferred, and only from writes in the TOKEN response.
+# Do not infer permissions from the app's globally configured scopes.
+# https://shopify.dev/docs/apps/build/authentication-authorization/manage-access-scopes
+_IMPLIED_READS_BY_WRITE = {
+    "write_orders": "read_orders",
+    "write_merchant_managed_fulfillment_orders": "read_merchant_managed_fulfillment_orders",
+    "write_draft_orders": "read_draft_orders",
+}
+
+
+def _effective_offline_scopes(returned: set[str]) -> set[str]:
+    return returned | {
+        read for write, read in _IMPLIED_READS_BY_WRITE.items()
+        if write in returned
+    }
+
+
 
 def verify_managed_installation(*, identity: dict[str, str], id_token: str) -> dict:
     """Verify remote Shopify install without linking accounts or persisting a token.
@@ -168,11 +187,15 @@ def stage_managed_installation(
             {x.strip() for x in granted.split(",") if x.strip()}
             if isinstance(granted, str) else set()
         )
-        missing_scopes = tuple(sorted(required_scopes - returned_scopes))
+        # Do not require duplicate read handles that Shopify grants
+        # implicitly through the corresponding write handle. Compare against
+        # effective rights of THIS returned token, not global app grants.
+        missing_scopes = tuple(sorted(required_scopes - _effective_offline_scopes(returned_scopes)))
         if missing_scopes:
             # A remote app's installed scopes do NOT prove the permissions
             # carried by this newly minted, store-specific offline token.
-            # Reject until the actual token scope response is conforming.
+            # Reject unless the returned token covers every operation,
+            # including permitted write-implies-read equivalents.
             scope_field_status = (
                 "present" if isinstance(granted, str) and granted.strip()
                 else "absent" if granted is None
