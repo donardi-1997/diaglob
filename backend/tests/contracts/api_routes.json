@@ -185,6 +185,10 @@
   ],
   [
     "GET",
+    "/api/billing/paddle/status"
+  ],
+  [
+    "GET",
     "/api/billing/shopify/capabilities"
   ],
   [

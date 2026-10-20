@@ -100,6 +100,7 @@ from ..services.paddle_fulfillment import (
     verify_notification,
     dispatch_verified_notification,
     create_portal_session_url,
+    get_paddle_billing_capabilities,
 )
 from ..model_domains.paddle_billing import PaddleWebhookEvent
 from sqlalchemy.exc import IntegrityError
@@ -172,6 +173,15 @@ def refresh_shopify_billing_subscription(
             or code == "SHOPIFY_BILLING_UNAVAILABLE" else 409,
             detail={"code": code},
         ) from exc
+
+
+def _require_synchronized_paddle_subscription(db: Session, organization: Organization) -> None:
+    """Reject plan mutations on legacy IDs or non-active local subscriptions."""
+    if not get_paddle_billing_capabilities(db, organization)["plan_changes_available"]:
+        raise HTTPException(
+            status_code=409,
+            detail="No existe una suscripción Paddle activa y sincronizada para esta organización.",
+        )
 
 
 @router.get("/api/billing/shopify/capabilities")
@@ -705,6 +715,7 @@ def update_billing_auto_renew(
     _reject_shopify_managed_billing(membership.organization)
 
     organization = membership.organization
+    _require_synchronized_paddle_subscription(db, organization)
     if not organization.billing_subscription_id:
         raise HTTPException(
             status_code=409,
@@ -749,6 +760,7 @@ def preview_billing_upgrade(
     ).first()
     if not organization:
         raise HTTPException(status_code=404, detail="Organization not found")
+    _require_synchronized_paddle_subscription(db, organization)
 
     try:
         current_plan, target_plan = validate_plan_upgrade(organization, payload.plan)
@@ -792,6 +804,7 @@ def apply_billing_upgrade(
     ).first()
     if not organization:
         raise HTTPException(status_code=404, detail="Organization not found")
+    _require_synchronized_paddle_subscription(db, organization)
 
     try:
         _current_plan, target_plan = validate_plan_upgrade(organization, payload.plan)
@@ -822,6 +835,7 @@ def preview_billing_downgrade(
     _reject_shopify_managed_billing(membership.organization)
 
     organization = membership.organization
+    _require_synchronized_paddle_subscription(db, organization)
     try:
         current_plan, target_plan, current_period, target_period = (
             validate_plan_downgrade(
@@ -873,6 +887,7 @@ def apply_billing_downgrade(
     _reject_shopify_managed_billing(membership.organization)
 
     organization = membership.organization
+    _require_synchronized_paddle_subscription(db, organization)
     try:
         current_plan, target_plan, current_period, target_period = (
             validate_plan_downgrade(
@@ -941,6 +956,19 @@ def process_downgrades_internal(
 
     results = process_pending_downgrades(db)
     return {"ok": True, "processed": len(results), "results": results}
+
+
+@router.get("/api/billing/paddle/status")
+def get_paddle_synchronization_status(
+    membership: OrganizationMembership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+):
+    """Read-only, scoped billing capabilities; never expose Paddle IDs."""
+    if membership.role not in {"owner", "manager"}:
+        raise HTTPException(status_code=403, detail="Billing access denied")
+    organization = membership.organization
+    _reject_shopify_managed_billing(organization)
+    return get_paddle_billing_capabilities(db, organization)
 
 
 @router.get("/api/billing/paddle/catalog")
