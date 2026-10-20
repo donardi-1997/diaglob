@@ -179,3 +179,63 @@ def test_managed_stage_api_unknown_error_does_not_leak_text(sandbox):
     assert exc.value.status_code == 502
     assert exc.value.detail["code"] == "SHOPIFY_MANAGED_INSTALL_GRANT_FAILED"
     assert "secret token" not in str(exc.value.detail)
+
+
+@pytest.mark.parametrize("scope,expected_missing,expected_status", [
+    (
+        "read_products,read_orders,write_orders",
+        [
+            "read_inventory",
+            "read_merchant_managed_fulfillment_orders",
+            "write_draft_orders",
+            "write_merchant_managed_fulfillment_orders",
+        ],
+        "present",
+    ),
+    (None, sorted(set(__import__("app.shopify_oauth", fromlist=["SHOPIFY_SCOPES"]).SHOPIFY_SCOPES.split(","))), "absent"),
+    ([], sorted(set(__import__("app.shopify_oauth", fromlist=["SHOPIFY_SCOPES"]).SHOPIFY_SCOPES.split(","))), "empty_or_invalid"),
+])
+def test_staged_offline_token_reports_only_missing_public_scope_names(
+    sandbox, scope, expected_missing, expected_status,
+):
+    with patch("app.services.shopify_managed_installation.httpx.Client") as client, patch(
+        "app.services.shopify_managed_installation.ShopifyGraphQLClient"
+    ) as graphql:
+        client.return_value.__enter__.return_value.post.return_value.json.return_value = {
+            "access_token": "synthetic-offline-token-never-show",
+            "refresh_token": "synthetic-refresh-token-never-show",
+            "expires_in": 3600,
+            "refresh_token_expires_in": 7776000,
+            "scope": scope,
+        }
+        with pytest.raises(ManagedShopifyInstallationError, match="SHOPIFY_REQUIRED_SCOPES_MISSING") as err:
+            stage_managed_installation(sandbox, identity=IDENTITY, id_token="synthetic-id-token")
+    assert list(err.value.missing_scopes) == expected_missing
+    assert err.value.scope_field_status == expected_status
+    assert "synthetic-offline" not in str(err.value)
+    assert "synthetic-refresh" not in str(err.value)
+    graphql.assert_not_called()
+    assert sandbox.query(ShopifyPendingInstall).count() == 0
+
+
+def test_managed_scope_error_api_exposes_only_expected_public_scope_identifiers(sandbox):
+    from app.shopify_oauth import SHOPIFY_SCOPES
+    permitted = sorted(SHOPIFY_SCOPES.split(","))
+    bearer = HTTPAuthorizationCredentials(scheme="Bearer", credentials="SECRET-SESSION-DO-NOT-LEAK")
+    problem = ManagedShopifyInstallationError(
+        "SHOPIFY_REQUIRED_SCOPES_MISSING",
+        missing_scopes=("read_inventory", "PRIVATE-SHOULD-NEVER-LEAK"),
+        scope_field_status="present",
+    )
+    with patch("app.api.shopify_embedded.verify_shopify_id_token", return_value=IDENTITY), patch(
+        "app.api.shopify_embedded.stage_managed_installation", side_effect=problem,
+    ):
+        with pytest.raises(HTTPException) as exc:
+            embedded_managed_installation_stage(credentials=bearer, db=sandbox)
+    assert exc.value.status_code == 502
+    assert exc.value.detail["code"] == "SHOPIFY_REQUIRED_SCOPES_MISSING"
+    assert exc.value.detail["missing_scopes"] == ["read_inventory"]
+    assert set(exc.value.detail["missing_scopes"]).issubset(permitted)
+    assert exc.value.detail["scope_field_status"] == "present"
+    assert "PRIVATE" not in str(exc.value.detail)
+    assert "SECRET-SESSION" not in str(exc.value.detail)
