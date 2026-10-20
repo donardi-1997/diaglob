@@ -126,3 +126,25 @@ def test_read_only_endpoints_fail_closed_when_internal_secret_unconfigured(monke
     with pytest.raises(HTTPException) as exc:
         get_shopify_privacy_inventory(x_internal_secret="a-client-provided-value")
     assert exc.value.status_code == 401
+
+def test_inventory_http_routes_require_secret_and_expose_only_schema(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from app.api.shopify_privacy_backlog import router
+
+    monkeypatch.setenv("DIAGLOB_INTERNAL_SECRET", "synthetic-expected-secret")
+    app = FastAPI()
+    app.include_router(router)
+    client = TestClient(app)
+    for path in (
+        "/api/internal/shopify/privacy/inventory",
+        "/api/internal/shopify/privacy/retention/template",
+    ):
+        assert client.get(path).status_code == 401
+        assert client.get(path, headers={"X-Internal-Secret": "wrong"}).status_code == 401
+        response = client.get(
+            path, headers={"X-Internal-Secret": "synthetic-expected-secret"}
+        )
+        assert response.status_code == 200
+        assert response.json().get("live_erasure_authorized") is False
+        assert "synthetic-expected-secret" not in response.text
