@@ -221,12 +221,6 @@ def claim_install(
         Organization.id == membership.organization_id,
         Organization.active.is_(True),
     ).with_for_update().first()
-    # An OAuth grant is not a subscription. A legacy Paddle customer or an
-    # already-paid direct organization must never be silently converted to
-    # Shopify billing, even if a stale shopify_install hint is present.
-    if not _eligible_shopify_claim_billing(organization):
-        raise ShopifyConnectionError("SHOPIFY_BILLING_ORGANIZATION_REQUIRED")
-
     existing = db.query(CommerceConnection).filter(
         CommerceConnection.store_id == store.id
     ).first()
@@ -245,6 +239,19 @@ def claim_install(
     ).first()
     if conflicting is not None and (existing is None or conflicting.id != existing.id):
         raise ShopifyConnectionError("SHOPIFY_STORE_ALREADY_CONNECTED")
+
+    # A fresh, Shopify-verified managed installation grant can rotate the
+    # credentials of the *same* tenant/store connection, including for an
+    # existing Paddle/direct-billed organization. This is a credential
+    # recovery, not a new Shopify subscription, plan migration, or tenant
+    # claim. Never let legacy/unbound OAuth bypass the billing guard.
+    same_store_managed_recovery = (
+        same_store
+        and grant.grant_method == "managed"
+        and existing.status in ("connected", "error")
+    )
+    if not same_store_managed_recovery and not _eligible_shopify_claim_billing(organization):
+        raise ShopifyConnectionError("SHOPIFY_BILLING_ORGANIZATION_REQUIRED")
 
     # A grant is not a subscription. Never assign billing entitlements here.
     now = datetime.utcnow()
@@ -285,9 +292,12 @@ def claim_install(
         db.rollback()
         raise ShopifyOAuthError("SHOPIFY_INSTALL_GRANT_EXPIRED")
     db.commit()
-    confirm_shopify_install_billing(
-        db, organization_id=membership.organization_id, connection_id=connection.id
-    )
+    if not same_store:
+        # Only brand-new, eligibility-checked Shopify-onboarded installs can
+        # update billing provenance. Reauth of an existing store MUST NOT.
+        confirm_shopify_install_billing(
+            db, organization_id=membership.organization_id, connection_id=connection.id
+        )
 
     # Match legacy OAuth: register order lifecycle and uninstall hooks after
     # binding a verified shop. An API failure must not lose the saved grant;
