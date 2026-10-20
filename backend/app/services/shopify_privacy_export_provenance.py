@@ -17,6 +17,9 @@ from .shopify_privacy_inventory_report import build_shopify_privacy_field_invent
 from .shopify_privacy_local_processor import (
     ShopifyLocalPrivacyError, inspect_local_customer_export_counts,
 )
+from .shopify_privacy_legacy_ai_attribution import (
+    ShopifyLegacyAttributionError, inspect_shopify_legacy_ai_attribution,
+)
 
 # Local partial encrypted snapshot includes nested item and message rows, but
 # does not attest field completeness, third-party copies or delivery approval.
@@ -62,6 +65,7 @@ def inspect_shopify_export_provenance(
         raise ShopifyExportCoverageError("SHOPIFY_SUBJECT_OR_STORE_UNRESOLVED")
     state = db.query(
         ShopifyPrivacyRequest.status, ShopifyPrivacyRequest.completed_at,
+        ShopifyPrivacyRequest.organization_id, ShopifyPrivacyRequest.store_id,
     ).filter(ShopifyPrivacyRequest.request_id == request_id).first()
     if (
         state is None
@@ -74,6 +78,13 @@ def inspect_shopify_export_provenance(
     try:
         counts = inspect_local_customer_export_counts(db, request_id=request_id)
     except ShopifyLocalPrivacyError as exc:
+        raise ShopifyExportCoverageError(str(exc)) from exc
+
+    try:
+        unattributed = inspect_shopify_legacy_ai_attribution(
+            db, organization_id=state.organization_id, store_id=state.store_id,
+        )
+    except ShopifyLegacyAttributionError as exc:
         raise ShopifyExportCoverageError(str(exc)) from exc
 
     inventory = inspect_shopify_privacy_coverage()
@@ -121,6 +132,7 @@ def inspect_shopify_export_provenance(
         "RETENTION_AND_LEGAL_HOLD_APPROVAL_MISSING",
         "INDEPENDENT_DELIVERY_AUTHORIZATION_MISSING",
     }
+    blockers.update(unattributed["blockers"])
     if counts.requested_orders_not_resolved:
         blockers.add("REQUESTED_SHOPIFY_ORDERS_UNRESOLVED")
     if assessment.shared_customers_protected:
@@ -144,6 +156,7 @@ def inspect_shopify_export_provenance(
         "counted_automation_sources": len(_LINKED_AUTOMATION_COUNTS),
         "unresolved_requested_order_count": counts.requested_orders_not_resolved,
         "shared_customer_records_requiring_review": assessment.shared_customers_protected,
+        "unattributed_legacy_and_ai": unattributed,
         "sources": sources,
         "unclassified_sensitive_tables": field_inventory["unclassified_sensitive_tables"],
         "missing_declared_tables": list(inventory.missing_declared_tables),

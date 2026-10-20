@@ -10,8 +10,8 @@ from sqlalchemy.orm import Session
 
 from app.db import Base
 from app.models import (
-    Conversation, Customer, CustomerStoreProfile, Message, Order, Organization,
-    ShopifyPrivacyAuditEvent, ShopifyPrivacyRequest, Store,
+    Automation, AutomationExecution, Conversation, Customer, CustomerStoreProfile,
+    Message, Order, Organization, ShopifyPrivacyAuditEvent, ShopifyPrivacyRequest, Store,
 )
 from app.shopify_security import decrypt_shopify_secret, encrypt_shopify_secret
 from app.services.shopify_privacy_local_processor import (
@@ -819,3 +819,147 @@ def test_export_provenance_completed_case_not_reopened_for_counting(sandbox):
         ShopifyExportCoverageError, match="HISTORICAL_OR_NONPENDING_CASE_REQUIRES_REVIEW",
     ):
         inspect_shopify_export_provenance(db, request_id=RECEIPT_ID)
+
+
+def _insert_legacy_automation(db, *, org_id, parent_store, execution_store,
+                              event="shopify.test", payload="SECRET_SYNTHETIC"):
+    automation = Automation(
+        organization_id=org_id, store_id=parent_store,
+        name=f"legacy-{db.query(Automation).count() + 1}",
+        trigger_type="manual",
+        conditions_json='[]', actions_json='[]',
+    )
+    db.add(automation)
+    db.flush()
+    execution = AutomationExecution(
+        automation_id=automation.id, organization_id=org_id,
+        store_id=execution_store, event_type=event,
+        input_json=json.dumps({"private": payload}),
+        result_json=json.dumps({"private": payload}),
+        error_message=payload,
+    )
+    db.add(execution)
+    db.commit()
+    return automation, execution
+
+
+def test_signed_export_report_identifies_legacy_automation_risk_without_pii(sandbox):
+    from app.services.shopify_privacy_export_provenance import (
+        inspect_shopify_export_provenance,
+    )
+
+    db, receipt = sandbox
+    stores = db.query(Store).filter(
+        Store.organization_id == receipt.organization_id,
+    ).order_by(Store.id).all()
+    target, other = stores
+    _insert_legacy_automation(
+        db, org_id=receipt.organization_id,
+        parent_store=target.id, execution_store=target.id,
+    )
+    _insert_legacy_automation(
+        db, org_id=receipt.organization_id,
+        parent_store=target.id, execution_store=None,
+    )
+    _insert_legacy_automation(
+        db, org_id=receipt.organization_id,
+        parent_store=None, execution_store=target.id,
+    )
+    _insert_legacy_automation(
+        db, org_id=receipt.organization_id,
+        parent_store=None, execution_store=None,
+    )
+    _insert_legacy_automation(
+        db, org_id=receipt.organization_id,
+        parent_store=other.id, execution_store=other.id,
+        payload="OTHER_STORE_PRIVATE",
+    )
+    result = inspect_shopify_export_provenance(db, request_id=RECEIPT_ID)
+    legacy = result["unattributed_legacy_and_ai"]["legacy_automation_executions"]
+    assert legacy["both_store_keys_match"] == 1
+    assert legacy["parent_store_only"] == 1
+    assert legacy["execution_store_only"] == 1
+    assert legacy["organization_wide_potential_copies"] == 1
+    assert legacy["buyer_linkage"] == "unavailable_no_customer_fk"
+    assert legacy["matching_subject_rows"] is None
+    assert legacy["read_input_or_result_payload"] is False
+    assert legacy["export_verified"] is False
+    assert "LEGACY_AUTOMATION_CUSTOMER_ATTRIBUTION_UNVERIFIED" in result["blockers"]
+    assert result["live_export_authorized"] is False
+    ai = {
+        row["source"]: row
+        for row in result["unattributed_legacy_and_ai"]["ai_and_derived_sources"]
+    }
+    assert ai["agent_chat_sessions"]["matching_subject_rows"] is None
+    assert ai["agent_chat_sessions"]["customer_shopify_identity_verified"] is False
+    for secret in ("SECRET_SYNTHETIC", "OTHER_STORE_PRIVATE",
+                   "shared@example.com", "PRIVATE_MESSAGE_0"):
+        assert secret not in json.dumps(result)
+    assert receipt.completed_at is None
+
+
+def test_legacy_automation_cross_store_parent_blocks_export_review(sandbox):
+    from app.services.shopify_privacy_export_provenance import (
+        ShopifyExportCoverageError, inspect_shopify_export_provenance,
+    )
+
+    db, receipt = sandbox
+    stores = db.query(Store).filter(
+        Store.organization_id == receipt.organization_id,
+    ).order_by(Store.id).all()
+    _insert_legacy_automation(
+        db, org_id=receipt.organization_id,
+        parent_store=stores[0].id, execution_store=stores[1].id,
+    )
+    with pytest.raises(
+        ShopifyExportCoverageError, match="LEGACY_AUTOMATION_PARENT_STORE_MISMATCH",
+    ):
+        inspect_shopify_export_provenance(db, request_id=RECEIPT_ID)
+
+
+def test_legacy_automation_cross_organization_parent_blocks_review(sandbox):
+    from app.services.shopify_privacy_export_provenance import (
+        ShopifyExportCoverageError, inspect_shopify_export_provenance,
+    )
+
+    db, receipt = sandbox
+    foreign_org = Organization(
+        name="Foreign synthetic tenant", slug="foreign-legacy-tenant", plan="starter",
+    )
+    db.add(foreign_org)
+    db.flush()
+    _, execution = _insert_legacy_automation(
+        db, org_id=receipt.organization_id,
+        parent_store=receipt.store_id, execution_store=receipt.store_id,
+    )
+    execution.organization_id = foreign_org.id
+    db.commit()
+    with pytest.raises(
+        ShopifyExportCoverageError, match="LEGACY_AUTOMATION_PARENT_TENANT_MISMATCH",
+    ):
+        inspect_shopify_export_provenance(db, request_id=RECEIPT_ID)
+
+
+def test_legacy_unattributed_preflight_requires_valid_tenant_and_never_exports(sandbox):
+    from app.services.shopify_privacy_legacy_ai_attribution import (
+        ShopifyLegacyAttributionError, inspect_shopify_legacy_ai_attribution,
+    )
+
+    db, receipt = sandbox
+    with pytest.raises(
+        ShopifyLegacyAttributionError, match="UNVERIFIED_LEGACY_TENANT",
+    ):
+        inspect_shopify_legacy_ai_attribution(
+            db, organization_id=receipt.organization_id, store_id=0,
+        )
+    output = inspect_shopify_legacy_ai_attribution(
+        db, organization_id=receipt.organization_id, store_id=receipt.store_id,
+    )
+    assert output["live_export_authorized"] is False
+    assert output["contains_personal_data"] is False
+    assert output["legacy_automation_executions"]["matching_subject_rows"] is None
+    assert output["ai_and_derived_sources"]
+    assert all(
+        not item["export_verified"] and not item["customer_shopify_identity_verified"]
+        for item in output["ai_and_derived_sources"]
+    )
