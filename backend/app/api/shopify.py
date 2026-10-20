@@ -479,7 +479,7 @@ def shopify_test_connection(
             detail={
                 "code": str(exc),
                 "connected": False,
-                "message": "Shopify requiere permisos o aprobación de datos protegidos.",
+                "message": "Shopify permission or protected data approval required.",
             },
         ) from exc
     except (ShopifyAPIError, ShopifyGraphQLError) as exc:
