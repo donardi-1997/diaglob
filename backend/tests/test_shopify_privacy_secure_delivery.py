@@ -22,7 +22,8 @@ from app.main import app
 from app.models import (
     MembershipStore, Organization, OrganizationMembership, ShopifyPrivacyAuditEvent,
     ShopifyPrivacyDeliveryArtifact, ShopifyPrivacyDeliveryAudit,
-    ShopifyPrivacyRequest, Store, User, Customer, CustomerStoreProfile, Order,
+    ShopifyPrivacyRequest, ShopifyPrivacyShopIdentity, Store, User,
+    Customer, CustomerStoreProfile, Order,
 )
 from app.services.shopify_privacy_secure_delivery import (
     ShopifyPrivacySecureDeliveryError, issue_synthetic_secure_delivery,
@@ -80,6 +81,11 @@ def sandbox(monkeypatch):
             actor_type="shopify_hmac_verified", reason_code="tenant_bound",
             from_status=None, to_status="pending_policy_review",
             created_at=datetime.utcnow(),
+        ))
+        db.add(ShopifyPrivacyShopIdentity(
+            shop_id="321", shop_domain=SHOP, organization_id=org.id,
+            store_id=store.id, provenance="signed_compliance_webhook",
+            first_seen_at=datetime.utcnow(), last_seen_at=datetime.utcnow(),
         ))
         db.commit()
         yield db, org, store, user, member
@@ -433,3 +439,80 @@ def test_signed_scope_to_encrypted_fixture_to_single_use_delivery_e2e(
         )
     assert db.query(ShopifyPrivacyRequest).one().status == "pending_policy_review"
     assert db.query(Customer).one().name == "SYNTHETIC_TEST_BUYER"
+
+
+def test_shop_identity_relink_blocks_ticket_redemption_without_consuming(sandbox):
+    ticket, params = issue(sandbox)
+    db, org, store, user, _ = sandbox
+    store.shopify_domain = "relinked-merchant.myshopify.com"
+    db.commit()
+    with pytest.raises(ShopifyPrivacySecureDeliveryError, match="SCOPE_UNVERIFIED"):
+        redeem_synthetic_secure_delivery(token=ticket.token, **params)
+    assert db.query(ShopifyPrivacyDeliveryArtifact).one().redeemed_at is None
+    with pytest.raises(ShopifyPrivacySecureDeliveryError, match="SCOPE_UNVERIFIED"):
+        revoke_synthetic_secure_delivery(token=ticket.token, **params)
+    with pytest.raises(ShopifyPrivacySecureDeliveryError, match="SCOPE_UNVERIFIED"):
+        issue_synthetic_secure_delivery(
+            artifact=artifact(), fixture_authorized=True, **params,
+        )
+    store.shopify_domain = SHOP
+    db.commit()
+    assert redeem_synthetic_secure_delivery(token=ticket.token, **params).synthetic_only
+
+
+def test_deleted_or_inactive_shop_blocks_export_ticket(sandbox):
+    ticket, params = issue(sandbox)
+    db, _, store, _, _ = sandbox
+    store.active = False
+    db.commit()
+    with pytest.raises(ShopifyPrivacySecureDeliveryError, match="UNAUTHORIZED"):
+        redeem_synthetic_secure_delivery(token=ticket.token, **params)
+    store.active = True
+    store.deleted = True
+    db.commit()
+    with pytest.raises(ShopifyPrivacySecureDeliveryError, match="UNAUTHORIZED"):
+        redeem_synthetic_secure_delivery(token=ticket.token, **params)
+    assert db.query(ShopifyPrivacyDeliveryArtifact).one().redeemed_at is None
+
+
+def test_missing_or_conflicting_signed_shop_identity_blocks_delivery(sandbox):
+    ticket, params = issue(sandbox)
+    db, _, _, _, _ = sandbox
+    identity = db.query(ShopifyPrivacyShopIdentity).one()
+    identity.shop_id = "999"
+    db.commit()
+    with pytest.raises(ShopifyPrivacySecureDeliveryError, match="SCOPE_UNVERIFIED"):
+        redeem_synthetic_secure_delivery(token=ticket.token, **params)
+    assert db.query(ShopifyPrivacyDeliveryArtifact).one().redeemed_at is None
+    db.delete(identity)
+    db.commit()
+    with pytest.raises(ShopifyPrivacySecureDeliveryError, match="SCOPE_UNVERIFIED"):
+        issue_synthetic_secure_delivery(
+            artifact=artifact(), fixture_authorized=True, **params,
+        )
+
+
+def test_download_rejects_tampered_inner_fixture_with_valid_outer_digest(sandbox):
+    ticket, params = issue(sandbox)
+    db, _, _, _, _ = sandbox
+    key = os.environ["SHOPIFY_PRIVACY_DELIVERY_KEY"].encode("ascii")
+    # Simulate ciphertext substitution in storage with a self-consistent outer
+    # encryption layer and SHA-256; inner contents are NOT synthetic fixture data.
+    forged_inner = Fernet(key).encrypt(json.dumps({
+        "schema_version": 1, "synthetic_only": True,
+        "request_id": REQUEST,
+        "records": [{"source": "orders", "record": "SYNTHETIC",
+                     "fields": {"email": "real-buyer@example.invalid"}}],
+    }).encode("utf-8"))
+    row = db.query(ShopifyPrivacyDeliveryArtifact).one()
+    row.ciphertext_encrypted = Fernet(key).encrypt(forged_inner).decode("ascii")
+    row.artifact_sha256 = hashlib.sha256(forged_inner).hexdigest()
+    db.commit()
+    with pytest.raises(ShopifyPrivacySecureDeliveryError, match="ARTIFACT_INVALID"):
+        redeem_synthetic_secure_delivery(token=ticket.token, **params)
+    db.refresh(row)
+    assert row.redeemed_at is None
+    assert row.ciphertext_encrypted is not None
+    assert db.query(ShopifyPrivacyDeliveryAudit).filter(
+        ShopifyPrivacyDeliveryAudit.event_type == "redeemed",
+    ).count() == 0
