@@ -221,7 +221,7 @@ def shopify_embedded_home() -> HTMLResponse:
       // Shopify Admin can be opened from different time zones.
       function formatProductSyncTime(raw) {
         if (typeof raw !== 'string' || !raw.trim()) return 'No registrada';
-        const normalized = /(?:Z|[+-]\\d{2}:\\d{2})$/i.test(raw) ? raw : raw + 'Z';
+        const normalized = /(?:Z|[+-][0-9]{2}:[0-9]{2})$/i.test(raw) ? raw : raw + 'Z';
         const date = new Date(normalized);
         if (Number.isNaN(date.getTime())) return 'Fecha no disponible';
         return new Intl.DateTimeFormat('es-CO', {
