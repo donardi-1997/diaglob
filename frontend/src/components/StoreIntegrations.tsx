@@ -765,7 +765,9 @@ export default function StoreIntegrations({
             >
               {commerce?.connected
                 ? "Configurado · Por verificar"
-                : t("integrationsDisconnected")}
+                : commerce?.provider === "shopify" && commerce.status === "error"
+                  ? "Requiere reautorización"
+                  : t("integrationsDisconnected")}
             </span>
           </div>
         </div>
@@ -836,6 +838,15 @@ export default function StoreIntegrations({
           </div>
         )}
 
+        {commerce?.provider === "shopify" && commerce.status === "error" && (
+          <p role="status" className="store-integration-test-result error">
+            La app sigue instalada, pero la conexión API necesita recuperarse.
+            Abre DIAGLOB desde Shopify Admin, genera un código de instalación
+            de 10 minutos y reautoriza esta misma tienda. No la desconectes
+            ni crees otra.
+          </p>
+        )}
+
         {canWrite && (
           <div className="store-integration-actions">
             {commerce?.connected ? (
@@ -850,6 +861,15 @@ export default function StoreIntegrations({
                   : <Trash2 size={15} />}
 
                 {t("integrationsDisconnect")}
+              </button>
+            ) : commerce?.provider === "shopify" && commerce.status === "error" ? (
+              <button
+                type="button"
+                className="store-integration-button primary"
+                onClick={() => { window.location.assign("/shopify/install?managed=1"); }}
+              >
+                <Plug size={15} />
+                Recuperar conexión Shopify
               </button>
             ) : (
               <button
