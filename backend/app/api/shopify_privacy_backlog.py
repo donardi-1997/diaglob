@@ -10,6 +10,10 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..services.shopify_privacy_backlog import summarize_shopify_privacy_backlog
+from ..services.shopify_privacy_inventory_report import (
+    build_shopify_privacy_field_inventory,
+    build_shopify_retention_review_template,
+)
 from ..services.shopify_privacy_controls import (
     ShopifyPrivacyControlError,
     inspect_shopify_privacy_closure_controls,
@@ -53,6 +57,24 @@ def _require_internal_secret(value: str | None) -> None:
         or not secrets.compare_digest(value, expected)
     ):
         raise HTTPException(status_code=401, detail="Unauthorized internal request")
+
+
+@router.get("/api/internal/shopify/privacy/inventory")
+def get_shopify_privacy_inventory(
+    x_internal_secret: str | None = Header(None, alias="X-Internal-Secret"),
+):
+    """Read schema shape only after authenticating; never select user data."""
+    _require_internal_secret(x_internal_secret)
+    return build_shopify_privacy_field_inventory()
+
+
+@router.get("/api/internal/shopify/privacy/retention/template")
+def get_shopify_privacy_retention_template(
+    x_internal_secret: str | None = Header(None, alias="X-Internal-Secret"),
+):
+    """Return blank legal decision requirements, not an approved policy."""
+    _require_internal_secret(x_internal_secret)
+    return build_shopify_retention_review_template()
 
 
 @router.get("/api/internal/shopify/privacy/backlog")
