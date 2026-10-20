@@ -1,19 +1,19 @@
 # DIAGLOB — Matriz de aceptación Shopify App Store / tienda POC
 
-**Fecha:** 2026-10-20. **Tienda:** `diaglob-poc.myshopify.com` (Shopify Basic App Development). **Aplicación:** DIAGLOB existente, Client ID público `c5fc9aed710462d41767477fa9e595c0`.
+**Fecha:** 2026-10-20. **Actualización tras lanzamiento Shopify:** requested/granted consultados de nuevo. **Tienda:** `diaglob-poc.myshopify.com` (Shopify Basic App Development). **Aplicación:** DIAGLOB existente, Client ID público `c5fc9aed710462d41767477fa9e595c0`.
 
 **Política de evidencia:** únicamente aprobaciones y pruebas ejecutadas cuentan como `PASS`. Se deben guardar resultados con fecha, versión Shopify, commit/backend, ejecutor, expectativas y enlaces a capturas saneadas. Los casos de venta/entrega usan datos ficticios de tienda de desarrollo y no generan cargos reales. No copiar tokens, datos de compradores, códigos de claim ni IDs de tickets privados al repositorio.
 
 | ID | Frente | Acción controlada | Evidencia necesaria y criterio PASS | Estado 20-Oct |
 | --- | --- | --- | --- | --- |
 | S01 | Identidad | Consultar `appByKey` en tienda POC, misma app y dominio Shopify | `appByKey.apiKey` coincide y `installation` existe | **PASS** (solo metadata) |
-| S02 | Versión | Inspeccionar versión activa y nueva candidata de app **existente** en Dev Dashboard | Identidad, URLs embedded, extensiones, tópicos GDPR y versión previas sin regresiones | **NO VERIFICADO** |
-| S03 | Scopes requested | Consultar `requestedAccessScopes` de DIAGLOB | Exactamente los siete scopes de `SHOPIFY_SCOPES` | **FAIL**: Shopify solicita seis heredados |
-| S04 | Scopes granted | Consultar `installation.accessScopes` después de abrir app y autorizar | Exactamente siete, sin `read_customers` ni `write_products` | **FAIL**: concedidos seis heredados |
+| S02 | Versión | Inspeccionar versión activa y nueva candidata de app **existente** en Dev Dashboard | Identidad, URLs embedded, extensiones, tópicos GDPR y versión previas sin regresiones | **PARCIAL**: comparación visual `diaglob-4` / `diaglob-scopes-1`; nueva versión activa aún sin lectura Partner posterior al lanzamiento |
+| S03 | Scopes requested | Consultar `requestedAccessScopes` de DIAGLOB | 7 scopes de `SHOPIFY_SCOPES` y solo lecturas implícitas documentadas por Shopify (ahora `read_draft_orders`) | **PASS metadata**: 7 declarados + `read_draft_orders` implícito; sin `read_customers` ni `write_products` |
+| S04 | Scopes granted | Consultar `installation.accessScopes` después de abrir app y autorizar | Mismo set solicitado (7 + lectura implícita), sin permisos extra | **PASS metadata**: 8 concedidos = 8 solicitados; la prueba de autorización del merchant no se registró por separado |
 | S05 | PCD Nivel 2 | En Dev Dashboard verificar selección y estado `Name, Address, Email, Phone` | Campos seleccionados/justificados conforme a necesidades reales, sin afirmaciones falsas de cumplimiento | **NO VERIFICADO** |
 | S06 | Entrada embedded | Abrir DIAGLOB en Shopify Admin POC | App Bridge emite token de sesión válido y backend verifica tienda con identidad correcta | **SIN E2E** |
 | S07 | Instalación managed | Cuenta merchant de prueba genera código de un solo uso y reclama tienda autorizada | Se vincula organización/tienda adecuada; código expira y replay falla | **SIN E2E** |
-| S08 | Consentimiento scopes | Abrir app tras versión publicada y consentir permisos añadidos | Eventos y lecturas requested/granted coinciden; rechazo no concede información | **BLOQUEADO POR S02-S04** |
+| S08 | Consentimiento scopes | Abrir app tras versión publicada y consentir permisos añadidos | Eventos y lecturas requested/granted coinciden; rechazo no concede información | **PARCIAL**: requested/granted coinciden; escenario de rechazo y recuperación sin E2E |
 | S09 | Permiso PCD denegado | Con app de test en estado controlado sin aprobación, ejecutar consulta controlada | Error seguro `SHOPIFY_PROTECTED_CUSTOMER_DATA_NOT_APPROVED` o campo `null`; no PII parcial ni log | **SOLO UNIT TESTS** |
 | S10 | Scope revocado | Simular revocación con ciclo de reautorización oficial y operador | `SHOPIFY_SCOPE_DENIED`; sin acceso a operaciones que requieren scope | **SIN E2E** |
 | S11 | Roles/tiendas | Acceder desde staff limitado a otra tienda de **la misma organización** | Respuesta 403/404, sin nombres, importes ni datos de tienda no asignada | **SOLO TESTS SINTÉTICOS** |
@@ -39,7 +39,7 @@
 
 ### Estado real de fecha base
 
-La única prueba de Shopify ejecutada directamente en esta revisión fue **metadatos de instalación y scopes de la POC** (S01, S03, S04). El resto se deriva de fuente y pruebas sintéticas; no se realizaron nuevas operaciones de instalación, checkout, GDPR real ni publicación Shopify.
+**Actualización posterior:** lectura real read-only de Shopify Admin `appByKey` confirma 8 requested y 8 granted, conformados por 7 scopes fuente + `read_draft_orders`, implícito en `write_draft_orders`. Shopify documenta que un scope `write_` concede su `read_` correspondiente. En la captura del usuario el embedded abre y solicita **vinculación del usuario DIAGLOB**; eso no certifica vinculación completa, E2E ni acceso PCD Nivel 2. El resto se deriva de fuente y pruebas sintéticas; no se ejecutaron nuevas operaciones de checkout, GDPR ni comercio real.
 
 ### Evidencia y recursos
 
@@ -50,3 +50,6 @@ La única prueba de Shopify ejecutada directamente en esta revisión fue **metad
 - Documentación oficial: https://shopify.dev/docs/apps/launch/protected-customer-data y https://shopify.dev/docs/apps/build/authentication-authorization/manage-access-scopes
 
 **Regla de aprobación:** NO-GO hasta evidencia externa y controles de Nivel 2. La matriz está diseñada para rechazar falsas declaraciones de completitud.
+
+
+**Fuente de semántica de scopes write/read:** https://shopify.dev/docs/apps/build/authentication-authorization/manage-access-scopes .
