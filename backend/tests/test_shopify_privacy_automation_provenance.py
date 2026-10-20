@@ -625,3 +625,24 @@ def test_corrupt_flow_provenance_blocks_pii_free_operational_inspection(
         ShopifyLocalPrivacyError, match="AUTOMATION_PROVENANCE_UNVERIFIED",
     ):
         inspect_local_customer_export_counts(db, request_id=receipt.request_id)
+
+
+@pytest.mark.parametrize("invalid_status", ("completed", "failed", "rejected"))
+def test_automation_fixture_blocks_nonpending_case(scenario, invalid_status):
+    from app.services.shopify_privacy_automation_fixture_export import (
+        build_encrypted_shopify_automation_fixture,
+    )
+    from app.services.shopify_privacy_scoped_extraction import (
+        ShopifyPrivacyExtractionError,
+    )
+    db, receipt = scenario
+    _authorize_synthetic_export(db, receipt)
+    receipt.status = invalid_status
+    db.commit()
+    with pytest.raises(
+        ShopifyPrivacyExtractionError, match="CUSTOMER_EXPORT_SCOPE_REQUIRED",
+    ):
+        build_encrypted_shopify_automation_fixture(
+            db, request_id=receipt.request_id,
+            encryption_key=Fernet.generate_key(), fixture_authorized=True,
+        )
