@@ -111,6 +111,7 @@ def _receipt_and_recipient(
         ShopifyPrivacyRequest.organization_id == organization_id,
         ShopifyPrivacyRequest.store_id == store_id,
         ShopifyPrivacyRequest.topic == "customers/data_request",
+        ShopifyPrivacyRequest.status == "pending_policy_review",
         ShopifyPrivacyRequest.completed_at.is_(None),
     ).first()
     signed = db.query(ShopifyPrivacyAuditEvent.id).filter(
