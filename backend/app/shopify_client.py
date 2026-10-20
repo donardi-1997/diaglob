@@ -112,17 +112,42 @@ class ShopifyGraphQLClient:
                 "Invalid JSON from Shopify"
             ) from exc
 
+        if not isinstance(data, dict):
+            raise ShopifyAPIError("Invalid JSON from Shopify")
+
         errors = data.get("errors") or []
 
         if errors:
-            first = errors[0] if errors else {}
-
-            raise ShopifyGraphQLError(
-                first.get(
-                    "message",
-                    "GraphQL error",
+            # Shopify can return HTTP 200, partial data and field-level
+            # errors when customer information is not approved. Do not
+            # process partial responses or echo provider messages (which
+            # may contain personally identifiable information).
+            for error in errors if isinstance(errors, list) else [errors]:
+                if not isinstance(error, dict):
+                    continue
+                message = str(error.get("message") or "").lower()
+                extensions = error.get("extensions")
+                code = (
+                    str(extensions.get("code") or "").upper()
+                    if isinstance(extensions, dict)
+                    else ""
                 )
-            )
+                if (
+                    "not approved to access" in message
+                    or "not approved to use" in message
+                    or "protected customer data" in message
+                ):
+                    raise ShopifyProtectedCustomerDataError(
+                        "SHOPIFY_PROTECTED_CUSTOMER_DATA_NOT_APPROVED"
+                    )
+                if (
+                    code in {"ACCESS_DENIED", "FORBIDDEN"}
+                    or "access denied" in message
+                    or "required access" in message
+                ):
+                    raise ShopifyScopeDeniedError("SHOPIFY_SCOPE_DENIED")
+
+            raise ShopifyGraphQLError("SHOPIFY_GRAPHQL_QUERY_FAILED")
 
         return data.get("data", {})
 
@@ -153,6 +178,14 @@ class ShopifyGraphQLError(
     ShopifyAPIError
 ):
     pass
+
+class ShopifyProtectedCustomerDataError(ShopifyGraphQLError):
+    """Shopify has not approved a customer resource or protected field."""
+
+
+class ShopifyScopeDeniedError(ShopifyGraphQLError):
+    """The shop token lacks the access scope required by this query."""
+
 
 
 class ShopifyUserError(
