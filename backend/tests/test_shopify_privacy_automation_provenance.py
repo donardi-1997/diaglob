@@ -531,3 +531,97 @@ def test_automation_fixture_denies_when_persisted_impact_disagrees(scenario):
                 db, request_id=receipt.request_id,
                 encryption_key=Fernet.generate_key(), fixture_authorized=True,
             )
+
+
+@pytest.mark.parametrize("corruption", (
+    "campaign_run_tenant",
+    "flow_run_store",
+    "flow_run_version",
+    "flow_recipient_tenant",
+    "flow_recipient_version",
+))
+def test_export_refuses_inconsistent_automation_parent_lineage(
+    scenario, corruption,
+):
+    """A matching customer ID cannot override corrupt campaign/flow ownership."""
+    from app.services.shopify_privacy_automation_fixture_export import (
+        build_encrypted_shopify_automation_fixture,
+    )
+    from app.services.shopify_privacy_scoped_extraction import (
+        ShopifyPrivacyExtractionError,
+    )
+
+    db, receipt = scenario
+    _authorize_synthetic_export(db, receipt)
+    a = db.query(Store).filter(Store.id == receipt.store_id).one()
+    other = db.query(Store).filter(
+        Store.organization_id == receipt.organization_id,
+        Store.id != receipt.store_id,
+    ).one()
+    campaign = db.query(AutomationCampaign).filter(
+        AutomationCampaign.store_id == a.id,
+    ).one()
+    run = db.query(AutomationRun).filter(
+        AutomationRun.automation_id == campaign.id,
+    ).one()
+    flow_run = db.query(AutomationFlowRun).filter(
+        AutomationFlowRun.store_id == a.id,
+    ).one()
+    flow_recipient = db.query(AutomationFlowRecipientExecution).filter(
+        AutomationFlowRecipientExecution.flow_run_id == flow_run.id,
+    ).one()
+    other_version = db.query(AutomationFlowVersion).join(
+        AutomationFlow,
+        AutomationFlowVersion.flow_id == AutomationFlow.id,
+    ).filter(AutomationFlow.store_id == other.id).one()
+    if corruption == "campaign_run_tenant":
+        run.organization_id = db.query(Store).filter(
+            Store.organization_id != receipt.organization_id,
+        ).first().organization_id
+    elif corruption == "flow_run_store":
+        flow_run.store_id = other.id
+    elif corruption == "flow_run_version":
+        flow_run.flow_version_id = other_version.id
+    elif corruption == "flow_recipient_tenant":
+        flow_recipient.organization_id = db.query(Store).filter(
+            Store.organization_id != receipt.organization_id,
+        ).first().organization_id
+    else:
+        flow_recipient.flow_version_id = other_version.id
+    db.commit()
+
+    with pytest.raises(ShopifyPrivacyScopeError, match="MISMATCH"):
+        inspect_shopify_automation_privacy_impact(db, receipt)
+    with pytest.raises(ShopifyPrivacyExtractionError, match="SCOPE_UNVERIFIED"):
+        build_encrypted_shopify_automation_fixture(
+            db, request_id=receipt.request_id,
+            encryption_key=Fernet.generate_key(), fixture_authorized=True,
+        )
+    # No case can become completed or authorize live privacy fulfillment.
+    assert receipt.status == "pending_policy_review"
+    assert not db.dirty and not db.new and not db.deleted
+
+
+def test_corrupt_flow_provenance_blocks_pii_free_operational_inspection(
+    scenario,
+):
+    """Even count-only endpoints must not report a false zero/clean scope."""
+    from app.services.shopify_privacy_local_processor import (
+        ShopifyLocalPrivacyError,
+    )
+
+    db, receipt = scenario
+    _authorize_synthetic_export(db, receipt)
+    flow_run = db.query(AutomationFlowRun).filter(
+        AutomationFlowRun.store_id == receipt.store_id,
+    ).one()
+    flow_run.store_id = db.query(Store).filter(
+        Store.organization_id == receipt.organization_id,
+        Store.id != receipt.store_id,
+    ).first().id
+    db.commit()
+
+    with pytest.raises(
+        ShopifyLocalPrivacyError, match="AUTOMATION_PROVENANCE_UNVERIFIED",
+    ):
+        inspect_local_customer_export_counts(db, request_id=receipt.request_id)
