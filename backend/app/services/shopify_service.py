@@ -564,7 +564,24 @@ def _handle_refresh_failure(
 
 def test_connection(db: Session, organization_id: int, store_id: int) -> dict:
     _require_store(db, organization_id, store_id)
-    connection = _require_connection(db, organization_id, store_id)
+    try:
+        connection = _require_connection(db, organization_id, store_id)
+    except ShopifyNotFoundError:
+        # A failed token check intentionally marks the connection "error".
+        # On subsequent clicks don't mislabel that saved installation as
+        # "not connected"; offer the managed reauthorization path instead.
+        failed_auth = db.query(CommerceConnection.id).filter(
+            CommerceConnection.organization_id == organization_id,
+            CommerceConnection.store_id == store_id,
+            CommerceConnection.provider == "shopify",
+            CommerceConnection.status == "error",
+            CommerceConnection.last_error.in_(
+                ("SHOPIFY_REAUTH_REQUIRED", "auth error"),
+            ),
+        ).first()
+        if failed_auth is not None:
+            raise ShopifyAuthError("SHOPIFY_REAUTH_REQUIRED") from None
+        raise
 
     try:
         result = test_shopify_connection(connection)
