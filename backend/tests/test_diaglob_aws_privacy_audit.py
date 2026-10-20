@@ -3,7 +3,9 @@ from unittest.mock import Mock
 
 from botocore.exceptions import ClientError
 
-from tools.diaglob_aws_privacy_audit import audit, inspect_rag, inspect_s3
+from tools.diaglob_aws_privacy_audit import (
+    audit, inspect_rag, inspect_s3, inspect_s3_security, inspect_backup,
+)
 
 
 def aws_error(code):
@@ -43,6 +45,22 @@ def fixtures():
         "IsTruncated": False,
     }
 
+    s3.get_bucket_encryption.return_value = {
+        "ServerSideEncryptionConfiguration": {
+            "Rules": [{"ApplyServerSideEncryptionByDefault": {"SSEAlgorithm": "AES256"}}]
+        }
+    }
+    s3.get_public_access_block.return_value = {
+        "PublicAccessBlockConfiguration": {
+            "BlockPublicAcls": True, "IgnorePublicAcls": True,
+            "BlockPublicPolicy": True, "RestrictPublicBuckets": True,
+        }
+    }
+    s3.get_bucket_logging.return_value = {}
+
+    backup = Mock()
+    backup.list_protected_resources.return_value = {"Results": []}
+
     agent = Mock()
     agent.list_knowledge_bases.return_value = {
         "knowledgeBaseSummaries": [
@@ -70,6 +88,7 @@ def fixtures():
         clients = {
             "lightsail": lightsail,
             "s3": s3,
+            "backup": backup,
             "bedrock-agent": agent,
             "s3vectors": vectors,
         }
@@ -89,9 +108,11 @@ def test_audit_identifies_backup_retention_and_rag_gaps_without_exposing_pii():
     )
     assert result["findings"] == [
         "ALL_DIAGLOB_VECTOR_INDEXES_EMPTY",
+        "AWS_BACKUP_NO_PROTECTED_RESOURCES",
         "KNOWLEDGE_SOURCE_BUCKET_EMPTY",
         "LIGHTSAIL_AUTOSNAPSHOT_DISABLED",
         "NO_VERIFIED_LIGHTSAIL_RECOVERY_POINT",
+        "S3_SERVER_ACCESS_LOGGING_NOT_ENABLED",
         "VERSIONED_S3_WITHOUT_NONCURRENT_EXPIRATION",
     ]
     assert result["mode"] == "read_only"
@@ -99,6 +120,15 @@ def test_audit_identifies_backup_retention_and_rag_gaps_without_exposing_pii():
     assert result["privacy_fulfillment_authorized"] is False
     assert result["checks"]["lightsail"]["automatic_snapshot_addon_enabled"] is False
     assert result["checks"]["lightsail"]["automatic_snapshot_count"] == 0
+    assert result["checks"]["lightsail"]["available_manual_snapshot_count"] == 0
+    assert result["checks"]["lightsail"]["restore_drill_verified"] is False
+    assert result["checks"]["s3_security"]["server_side_encryption_algorithms"] == ["AES256"]
+    assert result["checks"]["s3_security"]["all_four_public_access_blocks"] is True
+    assert result["checks"]["s3_security"]["server_access_logging_enabled"] is False
+    assert result["checks"]["aws_backup"]["protected_resources_on_page"] == 0
+    assert result["database_consistent_backup_verified"] is False
+    assert result["snapshot_restoration_verified"] is False
+    assert result["s3_lifecycle_changes_authorized"] is False
     assert result["checks"]["s3"]["lifecycle_configured"] is False
     assert result["checks"]["s3"]["noncurrent_versions_on_page"] == 2
     assert result["checks"]["s3"]["delete_markers_on_page"] == 2
@@ -116,6 +146,9 @@ def test_audit_identifies_backup_retention_and_rag_gaps_without_exposing_pii():
     )
     lightsail.create_instance_snapshot.assert_not_called()
     s3.put_bucket_lifecycle_configuration.assert_not_called()
+    lightsail.enable_add_on.assert_not_called()
+    s3.put_bucket_logging.assert_not_called()
+    s3.put_bucket_encryption.assert_not_called()
     vectors.delete_vectors.assert_not_called()
 
 
@@ -204,3 +237,82 @@ def test_disabled_lifecycle_rules_do_not_hide_s3_retention_gap():
     assert result["checks"]["s3"]["lifecycle_configured"] is True
     assert result["checks"]["s3"]["active_noncurrent_expiration_rule_count"] == 0
     assert "VERSIONED_S3_WITHOUT_NONCURRENT_EXPIRATION" in result["findings"]
+
+
+def test_s3_security_fails_closed_without_public_access_block():
+    _, _, s3, _, _ = fixtures()
+    s3.get_public_access_block.return_value["PublicAccessBlockConfiguration"][
+        "RestrictPublicBuckets"
+    ] = False
+    report = inspect_s3_security(s3, "synthetic-test-bucket")
+    assert report["all_four_public_access_blocks"] is False
+    assert report["database_disk_encryption_verified"] is False
+
+
+def test_s3_security_uses_only_metadata_without_exposing_bucket_objects():
+    _, _, s3, _, _ = fixtures()
+    report = inspect_s3_security(s3, "synthetic-test-bucket")
+    assert "AES256" in report["server_side_encryption_algorithms"]
+    assert "SECRET" not in str(report)
+    s3.get_object.assert_not_called()
+    s3.list_object_versions.assert_not_called()
+
+
+def test_aws_backup_inventory_is_not_restore_drill_proof():
+    backup = Mock()
+    backup.list_protected_resources.return_value = {
+        "Results": [{"ResourceArn": "arn:aws:backup:us-east-2:999:synthetic"}],
+        "NextToken": "next",
+    }
+    report = inspect_backup(backup)
+    assert report == {
+        "state": "verified",
+        "protected_resources_on_page": 1,
+        "protected_resources_truncated": True,
+        "lightsail_database_recovery_verified": False,
+    }
+    assert "arn:" not in str(report)
+
+
+def test_s3_security_access_denied_does_not_pretend_encryption_verified():
+    session, _, s3, _, _ = fixtures()
+    s3.get_bucket_encryption.side_effect = aws_error("AccessDenied")
+    report = audit(session, region="us-east-2", instance="diaglob-prod",
+                   bucket="diaglob-test-knowledge")
+    assert report["checks"]["s3"]["state"] == "verified"
+    assert report["checks"]["s3_security"] == {
+        "state": "unverified", "error_code": "AccessDenied",
+    }
+    assert "S3_DEFAULT_ENCRYPTION_NOT_CONFIGURED" not in report["findings"]
+
+
+def test_lightsail_available_manual_snapshot_does_not_claim_restore_test():
+    session, lightsail, _, _, _ = fixtures()
+    lightsail.get_instance_snapshots.return_value = {
+        "instanceSnapshots": [
+            {"fromInstanceName": "diaglob-prod", "state": "available",
+             "createdAt": "2026-10-15T13:58:20Z", "name": "manual-snapshot"},
+            {"fromInstanceName": "other-app", "state": "available",
+             "createdAt": "2026-10-19T13:58:20Z"},
+        ]
+    }
+    report = audit(session, region="us-east-2", instance="diaglob-prod",
+                   bucket="diaglob-test-knowledge")
+    assert report["checks"]["lightsail"]["available_manual_snapshot_count"] == 1
+    assert report["checks"]["lightsail"]["latest_available_manual_snapshot_at"] == (
+        "2026-10-15T13:58:20Z"
+    )
+    assert report["checks"]["lightsail"]["restore_drill_verified"] is False
+    assert "NO_VERIFIED_LIGHTSAIL_RECOVERY_POINT" not in report["findings"]
+    assert "LIGHTSAIL_AUTOSNAPSHOT_DISABLED" in report["findings"]
+
+
+def test_missing_s3_server_side_encryption_reported_without_claiming_db_state():
+    session, _, s3, _, _ = fixtures()
+    s3.get_bucket_encryption.return_value = {
+        "ServerSideEncryptionConfiguration": {"Rules": []}
+    }
+    report = audit(session, region="us-east-2", instance="diaglob-prod",
+                   bucket="diaglob-test-knowledge")
+    assert "S3_DEFAULT_ENCRYPTION_NOT_CONFIGURED" in report["findings"]
+    assert report["checks"]["s3_security"]["database_disk_encryption_verified"] is False
