@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from app.api.shopify_privacy_backlog import router
 from app.services.shopify_privacy_controls import RETENTION_CONTROLS
+from app.services.shopify_privacy_inventory_report import build_shopify_retention_review_template
 from app.services.shopify_privacy_retention_assessment import (
     RetentionDecisionDraft,
     RetentionPolicyDraft,
@@ -162,3 +163,15 @@ def test_no_secret_configuration_rejects_even_well_formed_draft(monkeypatch):
         headers={"X-Internal-Secret": "some-user-controlled-value"},
     )
     assert response.status_code == 401
+
+
+def test_template_supplies_complete_shape_for_non_approved_draft():
+    template = build_shopify_retention_review_template()
+    draft = RetentionPolicyDraft.model_validate(template["assessment_draft"])
+    assert template["assessment_endpoint"] == "/api/internal/shopify/privacy/retention/assess"
+    assert len(draft.categories) == len(RETENTION_CONTROLS)
+    assert all(item.retention_days is None for item in draft.categories)
+    assert all(item.legal_hold == "not_reviewed" for item in draft.categories)
+    result = assess_shopify_retention_policy_draft(draft)
+    assert result["live_erasure_authorized"] is False
+    assert result["policy_approved"] is False
