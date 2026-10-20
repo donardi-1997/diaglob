@@ -71,6 +71,14 @@ def inspect_version_candidate(raw: str, *, backend_scopes: set[str]) -> dict:
         raise ValueError("INVALID_SHOPIFY_CONFIG") from None
 
     blockers: list[str] = []
+    # Fail closed on unreviewed CLI config/extension keys; releasing a CLI
+    # version snapshots more than scopes and may omit remote extensions.
+    expected_top_level = {
+        "name", "client_id", "application_url", "embedded",
+        "access_scopes", "auth", "webhooks", "build",
+    }
+    if set(cfg) != expected_top_level:
+        blockers.append("UNREVIEWED_SHOPIFY_CONFIG_KEYS")
     if cfg.get("name") != "DIAGLOB" or cfg.get("client_id") != DIAGLOB_PUBLIC_CLIENT_ID:
         blockers.append("EXISTING_DIAGLOB_APP_IDENTITY_MISMATCH")
     if cfg.get("embedded") is not True or cfg.get("application_url") != APP_URL:
@@ -100,6 +108,8 @@ def inspect_version_candidate(raw: str, *, backend_scopes: set[str]) -> dict:
     if not isinstance(scopes, dict):
         raise ValueError("INVALID_SCOPE_CONFIGURATION")
     declared = _parse_scopes(scopes.get("scopes"))
+    if set(scopes) != {"scopes"}:
+        blockers.append("UNREVIEWED_SCOPE_CONFIG_KEYS")
     if scopes.get("optional_scopes"):
         blockers.append("OPTIONAL_SCOPES_REQUIRE_SEPARATE_APPROVAL")
     if declared != EXPECTED_SCOPES:
@@ -110,6 +120,16 @@ def inspect_version_candidate(raw: str, *, backend_scopes: set[str]) -> dict:
         blockers.append("BACKEND_TOML_SCOPE_DRIFT")
     if declared & LEGACY_FORBIDDEN:
         blockers.append("LEGACY_SCOPES_STILL_REQUESTED")
+    if isinstance(auth, dict) and set(auth) != {"redirect_urls"}:
+        blockers.append("UNREVIEWED_AUTH_CONFIG_KEYS")
+    if isinstance(webhooks, dict) and set(webhooks) != {"api_version", "subscriptions"}:
+        blockers.append("UNREVIEWED_WEBHOOK_CONFIG_KEYS")
+    if (
+        isinstance(subscriptions, list) and len(subscriptions) == 1
+        and isinstance(subscriptions[0], dict)
+        and set(subscriptions[0]) != {"compliance_topics", "uri"}
+    ):
+        blockers.append("UNREVIEWED_SUBSCRIPTION_CONFIG_KEYS")
     if cfg.get("build") != {"automatically_update_urls_on_dev": False}:
         blockers.append("SHOPIFY_BUILD_CONFIGURATION_CHANGED")
     return {
