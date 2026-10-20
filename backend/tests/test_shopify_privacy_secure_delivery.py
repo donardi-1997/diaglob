@@ -289,7 +289,16 @@ def test_http_requires_cognito_bearer_and_exact_ticket_and_no_cache(sandbox):
     db, org, store, user, _ = sandbox
     ticket, params = issue(sandbox)
     original = dict(app.dependency_overrides)
-    app.dependency_overrides[get_db] = lambda: db
+    # TestClient executes requests in worker threads. Mirror production's
+    # per-request SQLAlchemy session instead of sharing the fixture Session
+    # across threads (which can detach a membership mid-request).
+    fixture_engine = db.get_bind()
+
+    def request_db():
+        with Session(fixture_engine) as isolated:
+            yield isolated
+
+    app.dependency_overrides[get_db] = request_db
     url = f"/api/stores/{store.id}/shopify/privacy/cases/{REQUEST}/delivery"
     try:
         with TestClient(app) as client:
