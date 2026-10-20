@@ -19,6 +19,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..automations import safe_emit_event
+from .automation_event_subject_resolution import resolve_shopify_order_event_customer
 from ..models import (
     CommerceConnection,
     Customer,
@@ -286,6 +287,13 @@ def process_shopify_order_webhook(
             organization_id=connection.organization_id,
             store_id=connection.store_id,
             event_type=event_type,
+            # HMAC-verified webhook + persisted order + exact store profile.
+            # Never derive this from a contact, email or arbitrary payload.
+            subject_customer_id=resolve_shopify_order_event_customer(
+                db, organization_id=connection.organization_id,
+                store_id=connection.store_id, order_id=order.id,
+                external_shopify_customer_id=_shopify_customer_id(payload),
+            ),
             payload={
                 "order": {
                     "id": order.id,
