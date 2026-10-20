@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
+from ..models import ShopifyPrivacyRequest
 from .shopify_privacy_case_assessment import (
     ShopifyPrivacyAssessmentError, assess_shopify_privacy_case,
 )
@@ -58,6 +59,15 @@ def inspect_shopify_export_provenance(
         raise ShopifyExportCoverageError("SIGNED_INTAKE_REQUIRED")
     if not assessment.verified_shop_scope:
         raise ShopifyExportCoverageError("SHOPIFY_SUBJECT_OR_STORE_UNRESOLVED")
+    state = db.query(
+        ShopifyPrivacyRequest.status, ShopifyPrivacyRequest.completed_at,
+    ).filter(ShopifyPrivacyRequest.request_id == request_id).first()
+    if (
+        state is None
+        or state.status != "pending_policy_review"
+        or state.completed_at is not None
+    ):
+        raise ShopifyExportCoverageError("HISTORICAL_OR_NONPENDING_CASE_REQUIRES_REVIEW")
     # Reuse the existing *read-only* counting path; unlike a real data export it
     # never reads names, contact columns, order notes or message bodies.
     try:
