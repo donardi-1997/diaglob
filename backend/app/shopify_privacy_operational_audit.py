@@ -92,6 +92,20 @@ def summarize_shopify_privacy_operations(
         "released_shopify_subscription_verified": False,
         "valid_live_shopify_delivery_verified": False,
         "data_export_or_erasure_fulfilled": False,
+        # The intake-only "review_required" flag below must never be used
+        # as an App Store compliance or production fulfillment verdict.
+        # These release controls are deliberately fail-closed until backed by
+        # an independently verified, end-to-end workflow.
+        "privacy_fulfillment_release_ready": False,
+        "privacy_fulfillment_release_blockers": [
+            "SHOPIFY_ACTIVE_VERSION_SUBSCRIPTIONS_NOT_VERIFIED_BY_THIS_AUDIT",
+            "REAL_SHOPIFY_DELIVERY_NOT_VERIFIED_BY_THIS_AUDIT",
+            "LEGAL_RETENTION_AND_HOLDS_NOT_APPROVED",
+            "EXTERNAL_PROCESSOR_ERASURE_NOT_VERIFIED",
+            "BACKUP_RESTORE_AND_REINGESTION_NOT_VERIFIED",
+            "LIVE_CUSTOMER_EXPORT_NOT_ENABLED",
+            "LIVE_CUSTOMER_AND_SHOP_REDACTION_NOT_ENABLED",
+        ],
         "review_required": (
             not hmac_configured
             or not encrypted_selectors_configured
