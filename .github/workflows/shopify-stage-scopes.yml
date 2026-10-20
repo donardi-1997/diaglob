@@ -68,7 +68,7 @@ jobs:
           # app create, auto-release or Shopify Admin data mutations.
           shopify app deploy \
             --no-release \
-            --no-input \
+            --client-id c5fc9aed710462d41767477fa9e595c0 \
             --version "diaglob-scopes-${GITHUB_RUN_NUMBER}" \
             --message "Scope candidate only; not approved for release; SHA ${GITHUB_SHA}" \
             --source-control-url "https://github.com/donardi-1997/diaglob/commit/${GITHUB_SHA}"
