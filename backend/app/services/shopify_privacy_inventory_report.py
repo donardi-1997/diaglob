@@ -20,6 +20,7 @@ from .shopify_privacy_inventory_coverage import (
     inspect_shopify_privacy_coverage,
 )
 from .shopify_privacy_controls import RETENTION_CONTROLS
+from .shopify_privacy_retention_assessment import RetentionDecisionDraft
 
 # Conservative names: free-form payloads and opaque tokens can contain personal
 # information even without a column literally named "customer" or "email".
@@ -161,6 +162,14 @@ def build_shopify_retention_review_template() -> dict:
     return {
         "template_type": "privacy_retention_legal_review_only",
         "version": 1,
+        "assessment_endpoint": "/api/internal/shopify/privacy/retention/assess",
+        "assessment_draft": {
+            "schema_version": 1,
+            "categories": [
+                RetentionDecisionDraft(category=name).model_dump()
+                for name, _, _ in RETENTION_CONTROLS
+            ],
+        },
         "categories": [
             {
                 "category": category,
