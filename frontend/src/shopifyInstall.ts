@@ -1,3 +1,23 @@
+/** Parse explicit Shopify installation modes, ignoring only known UTM markers.
+ * UI tracking parameters must not change the authenticated Shopify grant path.
+ * A mode flag is a navigation hint, never proof of merchant authorization.
+ */
+export function parseShopifyInstallMode(search: string): "managed" | "authorized" | null {
+  if (!search || search.length > 1024) return null;
+  const params = new URLSearchParams(search);
+  const supportedTracking = new Set([
+    "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term",
+  ]);
+  const modeKeys = ["managed", "authorized"].filter((key) => params.has(key));
+  if (modeKeys.length !== 1) return null;
+  const mode = modeKeys[0] as "managed" | "authorized";
+  if (params.getAll(mode).length !== 1 || params.get(mode) !== "1") return null;
+  if ([...params.keys()].some((key) => key !== mode && !supportedTracking.has(key))) {
+    return null;
+  }
+  return mode;
+}
+
 /** Only a merchant-facing hint; never evidence of Shopify ownership. */
 const SHOP_DOMAIN = /^[a-z0-9][a-z0-9-]*\.myshopify\.com$/;
 

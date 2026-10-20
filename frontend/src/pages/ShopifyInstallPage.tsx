@@ -9,6 +9,7 @@ import {
   eligibleShopifyInstallStores,
   buildPostOAuthStorePayload,
   parseShopifyInstallHint,
+  parseShopifyInstallMode,
   validatedShopifyAuthorizationUrl,
 } from "../shopifyInstall";
 import "../shopify-install.css";
@@ -21,8 +22,9 @@ interface Props {
 export default function ShopifyInstallPage({ canWrite, onStoresChanged }: Props) {
   const location = useLocation();
   const navigate = useNavigate();
-  const oauthCompleted = location.search === "?authorized=1";
-  const managedInstall = location.search === "?managed=1";
+  const installMode = parseShopifyInstallMode(location.search);
+  const oauthCompleted = installMode === "authorized";
+  const managedInstall = installMode === "managed";
   const [claimCode, setClaimCode] = useState("");
   const [managedVerifying, setManagedVerifying] = useState(false);
   const [managedVerified, setManagedVerified] = useState(false);

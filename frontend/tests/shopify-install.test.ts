@@ -5,6 +5,7 @@ import {
   buildPostOAuthStorePayload,
   eligibleShopifyInstallStores,
   parseShopifyInstallHint,
+  parseShopifyInstallMode,
   validatedShopifyAuthorizationUrl,
 } from "../src/shopifyInstall.ts";
 
@@ -82,5 +83,25 @@ test("post-OAuth store bootstrap rejects browser hints, malformed shops and unsu
       () => buildPostOAuthStorePayload("diaglob-poc.myshopify.com", "Store", country, ["CO", "MX"]),
       /Select a supported market/,
     );
+  }
+});
+
+test("managed installation mode survives safe UTM parameters added to links", () => {
+  assert.equal(parseShopifyInstallMode("?managed=1"), "managed");
+  assert.equal(parseShopifyInstallMode("?managed=1&utm_source=chatgpt.com"), "managed");
+  assert.equal(parseShopifyInstallMode("?managed=1&utm_source=chatgpt.com&utm_medium=referral"), "managed");
+  assert.equal(parseShopifyInstallMode("?authorized=1&utm_source=chatgpt.com"), "authorized");
+  assert.equal(parseShopifyInstallMode("?authorized=1"), "authorized");
+});
+
+test("tracking never authorizes an invalid, duplicate or ambiguous Shopify installation", () => {
+  for (const invalid of [
+    "?managed=0", "?managed=yes", "?managed=1&managed=1", "?managed=1&managed=0",
+    "?managed=1&authorized=1", "?managed=1&shop=evil.myshopify.com",
+    "?managed=1&next=https://evil.example",
+    "?authorized=1&managed=1", "?authorized=1&authorized=1",
+    "?utm_source=chatgpt.com", "", "?"+"x".repeat(1050),
+  ]) {
+    assert.equal(parseShopifyInstallMode(invalid), null, invalid);
   }
 });
