@@ -239,3 +239,56 @@ def test_managed_scope_error_api_exposes_only_expected_public_scope_identifiers(
     assert exc.value.detail["scope_field_status"] == "present"
     assert "PRIVATE" not in str(exc.value.detail)
     assert "SECRET-SESSION" not in str(exc.value.detail)
+
+
+def test_shopify_offline_token_accepts_read_scopes_implicitly_granted_by_writes(sandbox):
+    # Real 2026-10-20 POC response: Shopify returned the matching write grants
+    # but omitted read_orders and read_merchant_managed_fulfillment_orders.
+    # Shopify documents write => corresponding read.
+    effective_grants = (
+        "read_products,read_inventory,write_orders,write_draft_orders,"
+        "write_merchant_managed_fulfillment_orders"
+    )
+    assert _stage(sandbox, scope=effective_grants)["expires_in_seconds"] == 600
+    staged = sandbox.query(ShopifyPendingInstall).one()
+    assert staged.grant_method == "managed"
+    assert staged.token_encrypted is not None
+    assert staged.claim_hash is not None
+    assert staged.refresh_token_encrypted is not None
+
+
+@pytest.mark.parametrize("partial_grants,expected_missing", [
+    (
+        "read_products,read_inventory,write_orders,write_draft_orders",
+        ("read_merchant_managed_fulfillment_orders", "write_merchant_managed_fulfillment_orders"),
+    ),
+    (
+        "read_products,read_inventory,read_orders,write_draft_orders,"
+        "write_merchant_managed_fulfillment_orders",
+        ("write_orders",),
+    ),
+    (
+        "read_products,write_orders,write_draft_orders,"
+        "write_merchant_managed_fulfillment_orders",
+        ("read_inventory",),
+    ),
+])
+def test_missing_required_permissions_still_block_offline_install_stage(
+    sandbox, partial_grants, expected_missing,
+):
+    with pytest.raises(ManagedShopifyInstallationError, match="SHOPIFY_REQUIRED_SCOPES_MISSING") as exc:
+        _stage(sandbox, scope=partial_grants)
+    assert exc.value.missing_scopes == expected_missing
+    assert sandbox.query(ShopifyPendingInstall).count() == 0
+
+
+def test_scope_inference_only_uses_handles_on_the_actual_offline_token():
+    from app.services.shopify_managed_installation import _effective_offline_scopes
+    assert "read_orders" not in _effective_offline_scopes({"read_products"})
+    assert "read_orders" in _effective_offline_scopes({"write_orders"})
+    assert "read_merchant_managed_fulfillment_orders" in _effective_offline_scopes(
+        {"write_merchant_managed_fulfillment_orders"}
+    )
+    assert "read_draft_orders" in _effective_offline_scopes({"write_draft_orders"})
+    assert "read_customers" not in _effective_offline_scopes({"write_orders"})
+    assert "write_orders" not in _effective_offline_scopes({"read_orders"})
