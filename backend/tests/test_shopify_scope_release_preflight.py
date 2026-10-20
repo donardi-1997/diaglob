@@ -106,3 +106,34 @@ def test_source_preflight_never_reads_credentials(monkeypatch):
     # Only filesystem + static config are inspected; ensure no token values leak.
     monkeypatch.setenv("SHOPIFY_APP_AUTOMATION_TOKEN", "synthetic_private_token")
     assert "synthetic_private_token" not in str(inspect_repository(ROOT))
+
+
+@pytest.mark.parametrize("tail,blocker", [
+    ('\n[app_proxy]\nurl = "https://other.example.test"\n',
+     "UNREVIEWED_SHOPIFY_CONFIG_KEYS"),
+    ('\n[access_scopes]\nscopes = "read_products"\n', None),
+])
+def test_unknown_version_components_do_not_get_automatic_staging(tail, blocker):
+    if blocker is None:
+        # Duplicate sections must fail before authorization can be implied.
+        with pytest.raises(ValueError, match="INVALID_SHOPIFY_CONFIG"):
+            check(RAW + tail)
+    else:
+        result = check(RAW + tail)
+        assert blocker in result["blockers"]
+        assert result["candidate_safe_to_stage_without_release"] is False
+
+
+def test_staging_workflow_is_manual_and_never_releases_a_version():
+    source = (ROOT / ".github" / "workflows" / "shopify-stage-scopes.yml").read_text()
+    assert "workflow_dispatch:" in source
+    assert "\n  push:" not in source
+    assert "\n  schedule:" not in source
+    assert "\n  pull_request:" not in source
+    assert "--no-release" in source
+    assert "--no-input" in source
+    assert "SHOPIFY_APP_AUTOMATION_TOKEN" in source
+    assert "STAGE-DIAGLOB-NO-RELEASE" in source
+    assert "\n          shopify app release " not in source
+    assert "shopify app config link" not in source
+    assert "shopify app init" not in source
