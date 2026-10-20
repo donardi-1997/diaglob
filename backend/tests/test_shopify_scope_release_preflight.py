@@ -131,7 +131,8 @@ def test_staging_workflow_is_manual_and_never_releases_a_version():
     assert "\n  schedule:" not in source
     assert "\n  pull_request:" not in source
     assert "--no-release" in source
-    assert "--no-input" in source
+    assert "--client-id c5fc9aed710462d41767477fa9e595c0" in source
+    assert "--no-input" not in source
     assert "SHOPIFY_APP_AUTOMATION_TOKEN" in source
     assert "STAGE-DIAGLOB-NO-RELEASE" in source
     assert "\n          shopify app release " not in source
