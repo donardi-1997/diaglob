@@ -467,7 +467,7 @@ def shopify_test_connection(
         message = (
             "Shopify devolvió una tienda distinta de la autorizada. Contacta soporte de DIAGLOB."
             if code == "SHOPIFY_SHOP_IDENTITY_MISMATCH"
-            else "La credencial de Shopify requiere renovación. Abre DIAGLOB desde Shopify Admin y completa la conexión gestionada con tu tienda existente; no la desconectes."
+            else "La credencial guardada de Shopify requiere reautorización. Abre DIAGLOB desde Shopify Admin para recuperar la conexión con tu tienda existente. No la desconectes ni crees otra tienda."
         )
         raise HTTPException(
             status_code=401,
