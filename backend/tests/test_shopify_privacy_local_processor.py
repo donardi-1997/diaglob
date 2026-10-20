@@ -787,3 +787,20 @@ def test_export_provenance_internal_endpoint_authenticates_before_db_query(
     assert missing.status_code == 404
     assert "PRIVATE_MESSAGE" not in result.text
     assert "SHARED_PRIVATE_NAME" not in result.text
+
+
+def test_export_provenance_completed_case_not_reopened_for_counting(sandbox):
+    db, receipt = sandbox
+    receipt.completed_at = datetime.utcnow()
+    db.commit()
+    with pytest.raises(
+        ShopifyExportCoverageError, match="HISTORICAL_OR_NONPENDING_CASE_REQUIRES_REVIEW",
+    ):
+        inspect_shopify_export_provenance(db, request_id=RECEIPT_ID)
+    receipt.completed_at = None
+    receipt.status = "completed"
+    db.commit()
+    with pytest.raises(
+        ShopifyExportCoverageError, match="HISTORICAL_OR_NONPENDING_CASE_REQUIRES_REVIEW",
+    ):
+        inspect_shopify_export_provenance(db, request_id=RECEIPT_ID)
