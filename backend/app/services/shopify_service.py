@@ -25,6 +25,7 @@ from ..shopify_oauth import (
     verify_shopify_hmac,
 )
 from ..shopify_security import encrypt_shopify_secret
+from ..shopify_token_lifecycle import ShopifyTokenRefreshError
 from ..shopify_webhook_subscriptions import (
     ensure_shopify_order_webhooks,
 )
@@ -543,20 +544,58 @@ def disconnect(db: Session, organization_id: int, store_id: int) -> dict:
     return {"ok": True, "connected": False, "store_id": store.id}
 
 
+def _handle_refresh_failure(
+    db: Session, connection: CommerceConnection, exc: ShopifyTokenRefreshError,
+) -> None:
+    """Surface safe recovery categories; never leak or return token material."""
+    db.rollback()  # release the row lock acquired while attempting refresh
+    if str(exc) == "SHOPIFY_REFRESH_TOKEN_EXPIRED":
+        connection.status = "error"
+        connection.last_error = "SHOPIFY_REAUTH_REQUIRED"
+        db.commit()
+        raise ShopifyAuthError("SHOPIFY_REAUTH_REQUIRED") from exc
+    # Network failures and invalid responses are not proof of revocation.
+    # Keep the connection available for another health check, not an
+    # automatic reinstall, and avoid logging Shopify refresh details.
+    connection.last_error = "SHOPIFY_REFRESH_UNAVAILABLE"
+    db.commit()
+    raise ShopifyAPIError("SHOPIFY_REFRESH_UNAVAILABLE") from exc
+
+
 def test_connection(db: Session, organization_id: int, store_id: int) -> dict:
-    store = _require_store(db, organization_id, store_id)
-    connection = _require_connection(db, organization_id, store_id)
+    _require_store(db, organization_id, store_id)
+    try:
+        connection = _require_connection(db, organization_id, store_id)
+    except ShopifyNotFoundError:
+        # A failed token check intentionally marks the connection "error".
+        # On subsequent clicks don't mislabel that saved installation as
+        # "not connected"; offer the managed reauthorization path instead.
+        failed_auth = db.query(CommerceConnection.id).filter(
+            CommerceConnection.organization_id == organization_id,
+            CommerceConnection.store_id == store_id,
+            CommerceConnection.provider == "shopify",
+            CommerceConnection.status == "error",
+            CommerceConnection.last_error.in_(
+                ("SHOPIFY_REAUTH_REQUIRED", "auth error"),
+            ),
+        ).first()
+        if failed_auth is not None:
+            raise ShopifyAuthError("SHOPIFY_REAUTH_REQUIRED") from None
+        raise
 
     try:
         result = test_shopify_connection(connection)
+    except ShopifyTokenRefreshError as exc:
+        _handle_refresh_failure(db, connection, exc)
     except ShopifyAuthError:
         connection.status = "error"
-        connection.last_error = "auth error"
+        connection.last_error = "SHOPIFY_REAUTH_REQUIRED"
         db.commit()
         raise
     except (ShopifyAPIError, ShopifyGraphQLError):
-        connection.status = "error"
-        connection.last_error = "api error"
+        # Temporary transport or Shopify errors must not invalidate an
+        # otherwise connected store or disrupt merchant access.
+        connection.last_error = "SHOPIFY_CONNECTION_CHECK_FAILED"
         db.commit()
         raise
 
@@ -568,18 +607,20 @@ def test_connection(db: Session, organization_id: int, store_id: int) -> dict:
 
 
 def sync_products(db: Session, organization_id: int, store_id: int) -> dict:
-    store = _require_store(db, organization_id, store_id)
+    _require_store(db, organization_id, store_id)
     connection = _require_connection(db, organization_id, store_id)
 
     try:
         result = sync_shopify_products(db, connection)
+    except ShopifyTokenRefreshError as exc:
+        _handle_refresh_failure(db, connection, exc)
     except ShopifyAuthError:
         connection.status = "error"
-        connection.last_error = "auth error"
+        connection.last_error = "SHOPIFY_REAUTH_REQUIRED"
         db.commit()
         raise
     except (ShopifyAPIError, ShopifyGraphQLError):
-        connection.last_error = "api error"
+        connection.last_error = "SHOPIFY_PRODUCTS_SYNC_FAILED"
         db.commit()
         raise
 

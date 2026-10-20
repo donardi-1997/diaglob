@@ -1,5 +1,6 @@
 import axios from "axios";
 import { resolveRequestStoreId } from "./storeRequestScope";
+import { isShopifyProviderAuthFailure } from "./shopifyProviderAuth";
 
 import {
   clearSession,
@@ -171,6 +172,13 @@ api.interceptors.response.use(
 
     const originalRequest =
       error.config;
+
+    // Shopify's expired/retired offline Admin API token is NOT a
+    // DIAGLOB login failure. Retrying Cognito here could sign the
+    // merchant out of DIAGLOB without repairing Shopify credentials.
+    if (isShopifyProviderAuthFailure(responseStatus, responseDetail)) {
+      return Promise.reject(error);
+    }
 
     if (
       responseStatus !== 401 ||
