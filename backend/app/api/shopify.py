@@ -451,21 +451,48 @@ def shopify_test_connection(
     try:
         return svc_test_connection(db, membership.organization_id, store_id)
     except ShopifyNotFoundError as exc:
-        raise HTTPException(status_code=404, detail={"code": "SHOPIFY_NOT_CONNECTED", "message": "Shopify no está conectado."})
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "SHOPIFY_NOT_CONNECTED", "message": "Shopify no está conectado a esta tienda."},
+        ) from exc
     except ShopifyAuthError as exc:
-        raise HTTPException(status_code=401, detail={"connected": False, "error": str(exc)})
+        # An active embedded Shopify session does not prove that the saved
+        # backend offline token is valid. Reacquire it via Shopify-managed
+        # installation, NEVER by accepting a token in the browser.
+        code = (
+            "SHOPIFY_SHOP_IDENTITY_MISMATCH"
+            if str(exc) == "SHOPIFY_SHOP_IDENTITY_MISMATCH"
+            else "SHOPIFY_REAUTH_REQUIRED"
+        )
+        message = (
+            "Shopify devolvió una tienda distinta de la autorizada. Contacta soporte de DIAGLOB."
+            if code == "SHOPIFY_SHOP_IDENTITY_MISMATCH"
+            else "La credencial de Shopify requiere renovación. Abre DIAGLOB desde Shopify Admin y completa la conexión gestionada con tu tienda existente; no la desconectes."
+        )
+        raise HTTPException(
+            status_code=401,
+            detail={"connected": False, "code": code, "message": message},
+        ) from exc
     except (ShopifyProtectedCustomerDataError, ShopifyScopeDeniedError) as exc:
-        # Access errors are merchant-actionable and must not leak provider PII.
         raise HTTPException(
             status_code=403,
             detail={
                 "code": str(exc),
-                "error": str(exc),
-                "message": "Shopify permission or protected data approval required.",
+                "connected": False,
+                "message": "Shopify requiere permisos o aprobación de datos protegidos.",
             },
         ) from exc
     except (ShopifyAPIError, ShopifyGraphQLError) as exc:
-        raise HTTPException(status_code=502, detail={"connected": False, "error": str(exc)})
+        # A transport/GraphQL error is not evidence that the merchant's
+        # installation is revoked. Don't expose provider response details.
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "connected": False,
+                "code": "SHOPIFY_CONNECTION_CHECK_FAILED",
+                "message": "No se pudo consultar Shopify. Reintenta más tarde; si persiste, revisa los registros del servidor.",
+            },
+        ) from exc
 
 
 @router.post("/api/stores/{store_id}/shopify/sync/products", dependencies=[Depends(require_authorized_path_store)])
