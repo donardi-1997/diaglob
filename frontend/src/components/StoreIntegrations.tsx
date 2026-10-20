@@ -157,6 +157,8 @@ export default function StoreIntegrations({
 
   const [shopifyTestResult, setShopifyTestResult] =
     useState<ShopifyTestResult | null>(null);
+  const [shopifyTestStoreId, setShopifyTestStoreId] =
+    useState<number | null>(null);
 
   const [shopifySyncResult, setShopifySyncResult] =
     useState<ShopifySyncResult | null>(null);
@@ -217,6 +219,11 @@ export default function StoreIntegrations({
 
 
   useEffect(() => {
+    // A verification result is specific to one store and this page session.
+    // Switching active stores must not inherit the prior merchant's status.
+    setShopifyTestResult(null);
+    setShopifyTestStoreId(null);
+    setShopifySyncResult(null);
     load();
   }, [storeId]);
 
@@ -287,6 +294,7 @@ export default function StoreIntegrations({
   async function handleTestShopify() {
     clearMessages();
     setShopifyTestResult(null);
+    setShopifyTestStoreId(null);
 
     try {
       setTestingShopify(true);
@@ -295,6 +303,7 @@ export default function StoreIntegrations({
         await testShopifyConnection(storeId);
 
       setShopifyTestResult(result);
+      setShopifyTestStoreId(storeId);
 
       if (result.connected) {
         setSuccess(
@@ -304,6 +313,7 @@ export default function StoreIntegrations({
     } catch (err: any) {
       console.error(err);
 
+      setShopifyTestStoreId(storeId);
       setShopifyTestResult({
         connected: false,
         shop_name: "",
@@ -758,13 +768,19 @@ export default function StoreIntegrations({
 
             <span
               className={
-                commerce?.connected
+                commerce?.connected && !(
+                  shopifyTestStoreId === storeId && shopifyTestResult?.connected === false
+                )
                   ? "integration-status connected"
                   : "integration-status disconnected"
               }
             >
               {commerce?.connected
-                ? "Configurado · Por verificar"
+                ? shopifyTestStoreId === storeId && shopifyTestResult?.connected === true
+                  ? "Conexión verificada"
+                  : shopifyTestStoreId === storeId && shopifyTestResult?.connected === false
+                    ? "Última prueba fallida"
+                    : "Conectada"
                 : commerce?.provider === "shopify" && commerce.status === "error"
                   ? "Requiere reautorización"
                   : t("integrationsDisconnected")}
