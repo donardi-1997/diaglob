@@ -506,7 +506,14 @@ def shopify_sync_products(
     except ShopifyNotFoundError as exc:
         raise HTTPException(status_code=404, detail={"code": "SHOPIFY_NOT_CONNECTED", "message": "Shopify no está conectado."})
     except ShopifyAuthError as exc:
-        raise HTTPException(status_code=401, detail={"ok": False, "error": str(exc)})
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "ok": False,
+                "code": "SHOPIFY_REAUTH_REQUIRED",
+                "message": "La credencial Shopify requiere reautorización desde Shopify Admin.",
+            },
+        ) from exc
     except (ShopifyProtectedCustomerDataError, ShopifyScopeDeniedError) as exc:
         # Access errors are merchant-actionable and must not leak provider PII.
         raise HTTPException(
