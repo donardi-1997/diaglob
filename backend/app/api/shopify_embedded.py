@@ -47,7 +47,7 @@ def shopify_embedded_home() -> HTMLResponse:
   label{display:block}h2{margin-top:0}
   [hidden]{display:none!important}
   @media(max-width:600px){main{padding:16px}.card{padding:16px}}
-  .tabbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:20px}.tabbar button{background:#e6edf7;color:#153f75}.tabbar button[aria-current="page"]{background:#153f75;color:white}.searchbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:18px 0}.searchbar input{margin:0;max-width:360px}.pager{display:flex;align-items:center;gap:12px;margin-top:16px}.pager button{padding:9px 14px}.pager button:disabled{opacity:.45;cursor:not-allowed}.metricnum{font-size:24px;font-weight:800;margin-top:8px}.itemrow{padding:12px;border-bottom:1px solid #e0e6ed}.itemrow strong{display:block}.itemrow span{font-size:13px;color:#546980}</style>
+  .tabbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:20px}.tabbar button{background:#e6edf7;color:#153f75}.tabbar button[aria-current="page"]{background:#153f75;color:white}.searchbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:18px 0}.searchbar input{margin:0;max-width:360px}.pager{display:flex;align-items:center;gap:12px;margin-top:16px}.pager button{padding:9px 14px}.pager button:disabled{opacity:.45;cursor:not-allowed}.metricnum{font-size:24px;font-weight:800;margin-top:8px}.metricnum.small{font-size:16px;font-weight:650;overflow-wrap:anywhere;line-height:1.5}.itemrow{padding:12px;border-bottom:1px solid #e0e6ed}.itemrow strong{display:block}.itemrow span{font-size:13px;color:#546980}</style>
   <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>
 </head>
 <body>
@@ -78,7 +78,7 @@ def shopify_embedded_home() -> HTMLResponse:
 <button type="button" data-panel="orders">Pedidos</button>
 </nav>
 <div id="metrics" class="grid" hidden>
-<div class="card"><div class="small">Productos sincronizados</div><div id="metric-products" class="metricnum">—</div></div>
+<div class="card"><div class="small">Productos guardados en DIAGLOB</div><div id="metric-products" class="metricnum">—</div></div>
 <div class="card"><div class="small">Pedidos registrados</div><div id="metric-orders" class="metricnum">—</div></div>
 <div class="card"><div class="small">Última sincronización de productos</div><div id="metric-sync" class="metricnum small">No registrada</div></div>
 </div>
@@ -216,6 +216,21 @@ def shopify_embedded_home() -> HTMLResponse:
           button.disabled = false;
         }
       });
+      // Product timestamps are stored as naive UTC by the sync worker.
+      // Treat such timestamps as UTC, not as the browser's local time.
+      // Shopify Admin can be opened from different time zones.
+      function formatProductSyncTime(raw) {
+        if (typeof raw !== 'string' || !raw.trim()) return 'No registrada';
+        const normalized = /(?:Z|[+-]\\d{2}:\\d{2})$/i.test(raw) ? raw : raw + 'Z';
+        const date = new Date(normalized);
+        if (Number.isNaN(date.getTime())) return 'Fecha no disponible';
+        return new Intl.DateTimeFormat('es-CO', {
+          dateStyle: 'medium',
+          timeStyle: 'short',
+          timeZone: 'America/Bogota'
+        }).format(date) + ' (Bogotá)';
+      }
+
       let embeddedAccessToken = null;
       let currentSection = 'home';
       let currentPage = 1;
@@ -248,7 +263,7 @@ def shopify_embedded_home() -> HTMLResponse:
             const data = await metrics.json();
             document.getElementById('metric-products').textContent = data.products;
             document.getElementById('metric-orders').textContent = data.orders;
-            document.getElementById('metric-sync').textContent = data.last_product_sync || 'No registrada';
+            document.getElementById('metric-sync').textContent = formatProductSyncTime(data.last_product_sync);
           } catch (error) { output.textContent = error.message || 'Error al cargar métricas.'; }
           return;
         }
