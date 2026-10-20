@@ -14,6 +14,11 @@ from ..services.shopify_privacy_inventory_report import (
     build_shopify_privacy_field_inventory,
     build_shopify_retention_review_template,
 )
+from ..services.shopify_privacy_retention_assessment import (
+    RetentionPolicyDraft,
+    RetentionReviewError,
+    assess_shopify_retention_policy_draft,
+)
 from ..services.shopify_privacy_controls import (
     ShopifyPrivacyControlError,
     inspect_shopify_privacy_closure_controls,
@@ -75,6 +80,19 @@ def get_shopify_privacy_retention_template(
     """Return blank legal decision requirements, not an approved policy."""
     _require_internal_secret(x_internal_secret)
     return build_shopify_retention_review_template()
+
+
+@router.post("/api/internal/shopify/privacy/retention/assess")
+def assess_shopify_privacy_retention_draft(
+    body: RetentionPolicyDraft,
+    x_internal_secret: str | None = Header(None, alias="X-Internal-Secret"),
+):
+    """Evaluate a PII-free draft only; no persistence, legal approval or erasure."""
+    _require_internal_secret(x_internal_secret)
+    try:
+        return assess_shopify_retention_policy_draft(body)
+    except RetentionReviewError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/api/internal/shopify/privacy/backlog")
