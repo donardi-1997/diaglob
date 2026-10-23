@@ -19,6 +19,9 @@ from ..shopify_oauth import normalize_shop_domain
 from .shopify_privacy_installation_identity import (
     ShopifyPrivacyShopIdentityError, bind_signed_shopify_privacy_identity,
 )
+from .shopify_privacy_processing import (
+    ShopifyPrivacyProcessingError, _task_specs, _verify_retry_queue,
+)
 
 _REQUEST_ID = re.compile(r"^[0-9a-f]{64}$")
 _ALLOWED_HISTORY = frozenset({"hmac_uninstall", "hmac_compliance"})
@@ -80,16 +83,9 @@ def repair_signed_shopify_privacy_receipt_identity(
     if signed is None:
         raise ShopifyPrivacyIdentityRepairError("SIGNED_INTAKE_EVIDENCE_MISSING")
 
-    prepared = db.query(ShopifyPrivacyAuditEvent.id).filter(
-        ShopifyPrivacyAuditEvent.request_id == request_id,
-        ShopifyPrivacyAuditEvent.event_type == "processing_prepared",
-        ShopifyPrivacyAuditEvent.actor_type == "internal_privacy_processor",
-    ).first()
-    work_items = db.query(ShopifyPrivacyWorkItem.id).filter(
+    work_items = db.query(ShopifyPrivacyWorkItem).filter(
         ShopifyPrivacyWorkItem.request_id == request_id,
-    ).count()
-    if prepared is None or work_items != 10:
-        raise ShopifyPrivacyIdentityRepairError("PRIVACY_PROCESSING_QUEUE_UNVERIFIED")
+    ).all()
     premature_completion = db.query(ShopifyPrivacyWorkItem.id).filter(
         ShopifyPrivacyWorkItem.request_id == request_id,
         ShopifyPrivacyWorkItem.status.in_(
@@ -98,6 +94,18 @@ def repair_signed_shopify_privacy_receipt_identity(
     ).first()
     if premature_completion is not None:
         raise ShopifyPrivacyIdentityRepairError("UNVERIFIED_PRIVACY_COMPLETION")
+
+    # Identity recovery must not trust merely having ten rows. Require the
+    # same signed audit, area and action evidence as every other retry path.
+    try:
+        _verify_retry_queue(
+            db, receipt, work_items,
+            _task_specs(receipt.topic, verified_scope=False, signed=True),
+        )
+    except ShopifyPrivacyProcessingError as exc:
+        raise ShopifyPrivacyIdentityRepairError(
+            "PRIVACY_PROCESSING_QUEUE_UNVERIFIED"
+        ) from exc
 
     if (receipt.organization_id is None) != (receipt.store_id is None):
         raise ShopifyPrivacyIdentityRepairError("PARTIAL_TENANT_BINDING_UNSAFE")
