@@ -75,6 +75,14 @@ def repair_signed_shopify_privacy_receipt_identity(
     ).count()
     if prepared is None or work_items != 10:
         raise ShopifyPrivacyIdentityRepairError("PRIVACY_PROCESSING_QUEUE_UNVERIFIED")
+    premature_completion = db.query(ShopifyPrivacyWorkItem.id).filter(
+        ShopifyPrivacyWorkItem.request_id == request_id,
+        ShopifyPrivacyWorkItem.status.in_(
+            ("completed", "fulfilled", "delivered", "deleted", "erased")
+        ),
+    ).first()
+    if premature_completion is not None:
+        raise ShopifyPrivacyIdentityRepairError("UNVERIFIED_PRIVACY_COMPLETION")
 
     if (receipt.organization_id is None) != (receipt.store_id is None):
         raise ShopifyPrivacyIdentityRepairError("PARTIAL_TENANT_BINDING_UNSAFE")
