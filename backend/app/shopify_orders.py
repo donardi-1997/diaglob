@@ -667,7 +667,10 @@ def create_shopify_draft_order(
             not shopify_gid
             or url is None
             or url.scheme != "https"
-            or not url.hostname
+            # Invoice URLs must resolve to the exact Shopify shop we
+            # authenticated, not an arbitrary HTTPS destination.
+            or url.netloc.lower() != connection.external_store_url.lower()
+            or "/invoices/" not in url.path
             or url.username is not None
             or url.password is not None
             or url.fragment
