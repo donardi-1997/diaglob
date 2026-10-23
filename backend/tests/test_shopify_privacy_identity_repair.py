@@ -15,6 +15,7 @@ from app.services.shopify_privacy_identity_repair import (
     ShopifyPrivacyIdentityRepairError,
     repair_signed_shopify_privacy_receipt_identity,
 )
+from app.services.shopify_privacy_processing import _task_specs
 from app.api.shopify_privacy_backlog import repair_shopify_privacy_case_identity
 
 
@@ -70,10 +71,11 @@ def sandbox():
             actor_type="internal_privacy_processor",
             created_at=NOW,
         ))
-        for k in range(10):
+        specs = _task_specs("shop/redact", verified_scope=False, signed=True)
+        for area, (action, status, blocker) in specs.items():
             db.add(ShopifyPrivacyWorkItem(
-                request_id=RID, area=f"review_area_{k}",
-                action="review", status="blocked",
+                request_id=RID, area=area,
+                action=action, status=status, blocker_code=blocker,
                 created_at=NOW, updated_at=NOW,
             ))
         db.commit()
@@ -143,6 +145,39 @@ def test_repair_refuses_uncorroborated_or_partial_history(sandbox, change, reaso
     assert (receipt.organization_id, receipt.store_id) == (None, None)
     assert db.query(Order).count() == 0
     assert db.query(Customer).count() == 0
+
+
+@pytest.mark.parametrize("tamper", ["action", "area", "missing_preparation_audit"])
+def test_identity_repair_rejects_corrupted_queue_evidence(sandbox, tamper):
+    db, _, _, _, receipt = sandbox
+    if tamper == "missing_preparation_audit":
+        db.query(ShopifyPrivacyAuditEvent).filter(
+            ShopifyPrivacyAuditEvent.request_id == RID,
+            ShopifyPrivacyAuditEvent.event_type == "processing_prepared",
+        ).delete(synchronize_session=False)
+    else:
+        item = db.query(ShopifyPrivacyWorkItem).filter(
+            ShopifyPrivacyWorkItem.request_id == RID,
+            ShopifyPrivacyWorkItem.area == "local_structured_records",
+        ).one()
+        if tamper == "action":
+            item.action = "unauthorized_action"
+        else:
+            item.area = "unexpected_privacy_area"
+    db.commit()
+
+    with pytest.raises(
+        ShopifyPrivacyIdentityRepairError,
+        match="PRIVACY_PROCESSING_QUEUE_UNVERIFIED",
+    ):
+        repair_signed_shopify_privacy_receipt_identity(db, request_id=RID)
+
+    db.refresh(receipt)
+    assert receipt.organization_id is None
+    assert receipt.store_id is None
+    assert db.query(ShopifyPrivacyAuditEvent).filter(
+        ShopifyPrivacyAuditEvent.event_type == "shop_identity_recovered",
+    ).count() == 0
 
 
 def test_identity_repair_api_refuses_unauthenticated_operator(sandbox, monkeypatch):
