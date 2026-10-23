@@ -35,8 +35,9 @@ Una excepción exige decisiones de retención documentadas, no un `200 OK`.
   **no suprimir** alertas de operación.
 
 El workflow `.github/workflows/shopify-privacy-sla-watch.yml` ejecuta
-el monitor cada seis horas, manualmente y después de modificar el workflow
-en `main`. Se conecta por SSH a la instancia de producción, carga
+el monitor cada seis horas, manualmente y después de que el workflow `Deploy Production` finalice
+con éxito en `main`. Nunca inicia el primer audit desde el evento de push,
+pues el módulo podría no estar desplegado todavía. Se conecta por SSH a la instancia de producción, carga
 `/etc/diaglob/diaglob.env`, ejecuta exclusivamente SQL de lectura y
 utiliza los secretos existentes de Telegram para avisar si falla la tarea.
 Si Telegram no está configurado, GitHub Actions conserva el estado fallido;
@@ -75,3 +76,27 @@ Fuentes oficiales:
 
 - https://shopify.dev/docs/apps/build/compliance/privacy-law-compliance
 - https://shopify.dev/docs/apps/build/webhooks/subscribe
+
+## Verificación de infraestructura AWS (read-only, 2026-10-23)
+
+Comprobación puntual de AWS us-east-2, **no** auditoría de todos los
+servicios/cuentas/regiones y **no** prueba de una política legal aprobada.
+
+| Recurso | Observado | Pendiente |
+| --- | --- | --- |
+| Lightsail `diaglob-prod` | Instancia en `running`, 3 snapshots automáticos visibles, 1 snapshot manual `pre-release` disponible | Acreditar periodicidad/retención, cifrado, destrucción, recuperación y prueba real de restauración |
+| S3 `diaglob-knowledge-765761474007-us-east-2` | `AES256` por defecto, versionado `Enabled`, cuatro controles de bloqueo de acceso público `true` | Faltan revisión de permisos IAM, de lectores/autorizaciones, trazabilidad de objetos y restauración |
+| S3 lifecycle | `NoSuchLifecycleConfiguration` al consultar el bucket conocido | No existe una regla de lifecycle configurada para versiones/objetos en ese bucket; aprobar periodos antes de implementar, sin purgas automáticas arbitrarias |
+
+El versionado de S3 no es una garantía de borrado de datos personales;
+eliminar la versión actual puede dejar versiones antiguas recuperables.
+No se debe interpretar existencia de snapshots como evidencia de que las
+copias siguen los tiempos legales o que DIAGLOB pueda reprimir la reingesta
+después de restaurarlas. Abrir una decisión de retención/restore y documentar
+el dueño responsable antes de habilitar borrado Shopify real.
+
+**Observación de despliegue:** la primera ejecución automática por evento
+`push` falló mientras producción todavía no había recibido el módulo
+`app.shopify_privacy_sla_watch`. La corrección del workflow activa la
+comprobación al finalizar con éxito `Deploy Production`, más el cron y
+la ejecución manual. Ese fallo era un *race* de despliegue, no un caso GDPR.
