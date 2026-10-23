@@ -9,7 +9,7 @@ import re
 from datetime import datetime
 
 from sqlalchemy import and_, exists, or_
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 
 from ..models import (
     ShopifyPrivacyAuditEvent, ShopifyPrivacyRequest,
@@ -47,8 +47,22 @@ def repair_signed_shopify_privacy_receipt_identity(
     query = db.query(ShopifyPrivacyRequest).filter(
         ShopifyPrivacyRequest.request_id == request_id
     )
-    # Read-only diagnosis must not acquire writer locks or mutate anything.
-    if not dry_run:
+    # Read-only diagnosis must not read encrypted subject selectors or
+    # acquire writer locks. Production repair still locks the request row.
+    if dry_run:
+        query = query.options(load_only(
+            ShopifyPrivacyRequest.request_id,
+            ShopifyPrivacyRequest.topic,
+            ShopifyPrivacyRequest.shop_id,
+            ShopifyPrivacyRequest.shop_domain,
+            ShopifyPrivacyRequest.organization_id,
+            ShopifyPrivacyRequest.store_id,
+            ShopifyPrivacyRequest.status,
+            ShopifyPrivacyRequest.last_error_code,
+            ShopifyPrivacyRequest.created_at,
+            ShopifyPrivacyRequest.completed_at,
+        ))
+    else:
         query = query.with_for_update()
     receipt = query.first()
     if receipt is None:
