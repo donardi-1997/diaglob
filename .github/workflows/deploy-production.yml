@@ -363,6 +363,26 @@ jobs:
           # A missing Shopify Partner token is reported, not interpreted as
           # evidence that a webhook subscription is absent in Shopify.
 
+      - name: Audit effective Shopify chat checkout pilot scope (read only)
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -i "$HOME/.ssh/diaglob_actions_prod" \
+            "$PROD_USER@$PROD_HOST" 'sudo bash -s' <<'REMOTE'
+          set -euo pipefail
+          set +x
+          set -a
+          . /etc/diaglob/diaglob.env
+          set +a
+          cd /opt/diaglob/app/backend
+          .venv/bin/python -m app.shopify_chat_checkout_rollout_audit
+          REMOTE
+          # Emits only one allowlisted status; no env values, tenant IDs or PII.
+
       - name: Audit Shopify Partner configuration on production (read only)
         env:
           PROD_HOST: ${{ secrets.PROD_HOST }}
