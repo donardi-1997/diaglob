@@ -1,6 +1,7 @@
 from .shopify_token_lifecycle import connection_access_token
 import uuid
 import re
+from urllib.parse import urlsplit
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -658,6 +659,23 @@ def create_shopify_draft_order(
     invoice_url = (
         draft_order.get("invoiceUrl")
     )
+    if source == "shopify_chat_checkout":
+        # A failed/malformed response could have created a draft in Shopify.
+        # Fail closed and do NOT retry blindly, or claim any order completed.
+        url = urlsplit(invoice_url) if isinstance(invoice_url, str) else None
+        if (
+            not shopify_gid
+            or url is None
+            or url.scheme != "https"
+            or not url.hostname
+            or url.username is not None
+            or url.password is not None
+            or url.fragment
+        ):
+            order.external_creation_status = "unknown"
+            order.external_last_error = "SHOPIFY_CHECKOUT_LINK_UNAVAILABLE"
+            db.commit()
+            raise ShopifyUserError("SHOPIFY_CHECKOUT_LINK_UNAVAILABLE")
 
     order_name = (
         draft_order.get("name", "")
@@ -680,8 +698,8 @@ def create_shopify_draft_order(
 
     db.commit()
 
-    # Chat checkout drafts are NOT Shopify orders or completed purchases.
-    # Wait for a verified Shopify order webhook before emitting order.created.
+    # Shopify chat checkout has only created a draft, not a purchase.
+    # Its order.created automation must come from a verified order webhook.
     if source != "shopify_chat_checkout":
         safe_emit_event(
             db=db,
@@ -689,17 +707,17 @@ def create_shopify_draft_order(
             store_id=store.id,
             event_type="order.created",
             payload={
-            "order": {
-                "id": order.id,
-                "store_id": store.id,
-                "organization_id": store.organization_id,
-                "source": order.source,
-                "total": float(order.total_amount),
-                "currency": order.currency,
-                "external_creation_status": "created",
-                "shopify_draft_order_id": order.shopify_draft_order_id,
-            }
-        },
+                "order": {
+                    "id": order.id,
+                    "store_id": store.id,
+                    "organization_id": store.organization_id,
+                    "source": order.source,
+                    "total": float(order.total_amount),
+                    "currency": order.currency,
+                    "external_creation_status": "created",
+                    "shopify_draft_order_id": order.shopify_draft_order_id,
+                }
+            },
             event_id=f"order:{order.id}:created",
         )
 
