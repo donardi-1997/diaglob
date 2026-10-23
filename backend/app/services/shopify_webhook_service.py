@@ -19,7 +19,10 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..automations import safe_emit_event
+from ..model_domains.conversational_checkout import ConversationalCheckout
+from .sales_attribution import record_order_attribution
 from .automation_event_subject_resolution import resolve_shopify_order_event_customer
+from .shopify_chat_draft_reconciliation import verified_chat_draft_for_order
 from ..models import (
     CommerceConnection,
     Customer,
@@ -177,6 +180,20 @@ def process_shopify_order_webhook(
         )
         .first()
     )
+    verified_chat_draft = (
+        verified_chat_draft_for_order(
+            db,
+            connection=connection,
+            shopify_order_id=external_order_id,
+            note_attributes=payload.get("note_attributes"),
+        )
+        if order is None and topic == "orders/create"
+        else None
+    )
+    if verified_chat_draft is not None:
+        # Reuse the draft's local order row rather than counting the new
+        # Shopify order as a second DIAGLOB sale.
+        order = verified_chat_draft
 
     old_state = (
         (
@@ -212,7 +229,7 @@ def process_shopify_order_webhook(
         allow_contact_fallback=not contact_fallback_forbidden,
     )
 
-    created = order is None
+    created = order is None or verified_chat_draft is not None
 
     if order is None:
         order = Order(
@@ -243,6 +260,19 @@ def process_shopify_order_webhook(
         customer=customer,
         store=store,
     )
+    if verified_chat_draft is not None:
+        order.shopify_order_id = external_order_id
+        order.source = "shopify_chat_checkout"
+        # The draft's provisional line items lack Shopify order line IDs;
+        # replace them with webhook-confirmed items, never double-count.
+        (
+            db.query(OrderItem)
+            .filter(
+                OrderItem.order_id == order.id,
+                OrderItem.shopify_line_item_id.is_(None),
+            )
+            .delete(synchronize_session=False)
+        )
     _replace_order_items(
         db,
         order=order,
@@ -252,6 +282,48 @@ def process_shopify_order_webhook(
 
     db.commit()
     db.refresh(order)
+
+    if verified_chat_draft is not None:
+        # A Shopify-verified conversion, not a chat response, is the sole
+        # authority for transitioning the conversation to order_created.
+        ref = verified_chat_draft.idempotency_key or ""
+        components = ref.split(":")
+        if len(components) == 3 and all(part.isdecimal() for part in components[1:]):
+            checkout = (
+                db.query(ConversationalCheckout)
+                .filter(
+                    ConversationalCheckout.id == int(components[1]),
+                    ConversationalCheckout.conversation_id == int(components[2]),
+                    ConversationalCheckout.organization_id == connection.organization_id,
+                    ConversationalCheckout.store_id == connection.store_id,
+                    ConversationalCheckout.created_order_id == order.id,
+                    ConversationalCheckout.status.in_(
+                        ("awaiting_shopify_checkout", "expired"),
+                    ),
+                )
+                .first()
+            )
+            if checkout is not None:
+                checkout.status = "order_created"
+                checkout.failure_reason = None
+                checkout.updated_at = datetime.utcnow()
+                db.commit()
+                if checkout.ai_agent_id is not None:
+                    try:
+                        record_order_attribution(
+                            db, connection.organization_id, connection.store_id,
+                            order.id, actor_type="ai",
+                            ai_agent_id=checkout.ai_agent_id,
+                            conversation_id=checkout.conversation_id,
+                            source="ai_conversational_checkout",
+                        )
+                    except Exception:
+                        # Checkout verification and merchant order ingestion
+                        # must not fail due to an inactive/reassigned agent.
+                        db.rollback()
+                        logger.exception(
+                            "Unable to attribute verified Shopify checkout %s", order.id,
+                        )
 
     if customer is not None:
         _refresh_customer_store_profile(
@@ -304,7 +376,7 @@ def process_shopify_order_webhook(
                     "payment_status": order.payment_status,
                     "fulfillment_status": order.fulfillment_status,
                     "lifecycle_status": order.lifecycle_status,
-                    "source": "shopify",
+                    "source": order.source,
                 },
                 "customer_id": order.customer_id,
             },

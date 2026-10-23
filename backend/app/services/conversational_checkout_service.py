@@ -7,6 +7,7 @@ confirmation before creating an external order.
 """
 from __future__ import annotations
 
+import os
 import re
 import unicodedata
 from datetime import datetime, timedelta
@@ -16,8 +17,9 @@ from sqlalchemy.orm import Session
 
 from ..commerce import search_products
 from ..model_domains.conversational_checkout import ConversationalCheckout
-from ..models import Agent, CommerceConnection, Conversation, Message, Product, ProductVariant
+from ..models import Agent, CommerceConnection, Conversation, Message, Order, Product, ProductVariant
 from .attributed_order_service import create_attributed_shopify_cod_order
+from ..shopify_orders import create_shopify_draft_order
 from .catalog_availability import variant_is_purchasable
 
 ACTIVE_STATUSES = {
@@ -34,6 +36,7 @@ ACTIVE_STATUSES = {
     "collecting_delivery_reference",
     "awaiting_order_confirmation",
     "creating_order",
+    "awaiting_shopify_checkout",
 }
 TERMINAL_STATUSES = {"order_created", "cancelled", "failed", "expired"}
 CHECKOUT_TTL = timedelta(hours=24)
@@ -260,9 +263,23 @@ def _final_confirmation_text(checkout: ConversationalCheckout, locale: str) -> s
     address = f"{checkout.address_line}, {checkout.neighborhood}, {checkout.city}, {checkout.region}"
     if checkout.address_complement:
         address += f", {checkout.address_complement}"
+
+    shopify_checkout = os.getenv("SHOPIFY_CHAT_CHECKOUT_VIA_DRAFT", "").strip().lower() in (
+        "1", "true", "yes",
+    )
     if locale == "en":
+        intro = (
+            "Shopify Checkout link request:"
+            if shopify_checkout else "Final COD order confirmation:"
+        )
+        instruction = (
+            "Reply CONFIRM to generate a secure Shopify Checkout link. "
+            "Payment methods, delivery and final total are confirmed in Shopify."
+            if shopify_checkout else
+            "You will pay when you receive the order. To create it, reply exactly: CONFIRM"
+        )
         return (
-            "Final COD order confirmation:\n"
+            f"{intro}\n"
             f"{checkout.product_title}{variant}\n"
             f"Quantity: {checkout.quantity}\n"
             f"Product total: {total}\n"
@@ -270,11 +287,21 @@ def _final_confirmation_text(checkout: ConversationalCheckout, locale: str) -> s
             f"Reference: {checkout.delivery_reference}\n"
             f"Recipient: {checkout.customer_name}\n"
             f"Phone: {checkout.phone}\n\n"
-            "You will pay when you receive the order. To create it, reply exactly: CONFIRM"
+            f"{instruction}"
         )
     if locale == "pt":
+        intro = (
+            "Solicitação de link da Shopify:"
+            if shopify_checkout else "Confirmação final do pedido contra entrega:"
+        )
+        instruction = (
+            "Responda CONFIRMO para gerar o link seguro de checkout da Shopify. "
+            "Pagamento, frete e total final serão confirmados na Shopify."
+            if shopify_checkout else
+            "Você paga ao receber. Para criar o pedido, responda exatamente: CONFIRMO"
+        )
         return (
-            "Confirmação final do pedido contra entrega:\n"
+            f"{intro}\n"
             f"{checkout.product_title}{variant}\n"
             f"Quantidade: {checkout.quantity}\n"
             f"Total dos produtos: {total}\n"
@@ -282,10 +309,20 @@ def _final_confirmation_text(checkout: ConversationalCheckout, locale: str) -> s
             f"Referência: {checkout.delivery_reference}\n"
             f"Recebe: {checkout.customer_name}\n"
             f"Telefone: {checkout.phone}\n\n"
-            "Você paga ao receber. Para criar o pedido, responda exatamente: CONFIRMO"
+            f"{instruction}"
         )
+    intro = (
+        "Solicitud de enlace de compra Shopify:"
+        if shopify_checkout else "Confirmación final del pedido contraentrega:"
+    )
+    instruction = (
+        "Responde CONFIRMO para generar un enlace seguro de Shopify Checkout. "
+        "Los medios de pago, el envío y el total final se confirman en Shopify."
+        if shopify_checkout else
+        "Pagarás al recibir. Para crear el pedido responde exactamente: CONFIRMO"
+    )
     return (
-        "Confirmación final del pedido contraentrega:\n"
+        f"{intro}\n"
         f"{checkout.product_title}{variant}\n"
         f"Cantidad: {checkout.quantity}\n"
         f"Total de productos: {total}\n"
@@ -293,7 +330,7 @@ def _final_confirmation_text(checkout: ConversationalCheckout, locale: str) -> s
         f"Referencia: {checkout.delivery_reference}\n"
         f"Recibe: {checkout.customer_name}\n"
         f"Teléfono: {checkout.phone}\n\n"
-        "Pagarás al recibir. Para crear el pedido responde exactamente: CONFIRMO"
+        f"{instruction}"
     )
 
 
@@ -587,22 +624,72 @@ def _finalize_checkout(
         f"{checkout.city}; {checkout.region}; {checkout.country_code}"
     )
 
+    # Gated migration from direct orderCreate to official Shopify Checkout.
+    # Default stays disabled until Shopify POC E2E and billing/checkout approval.
+    via_shopify_checkout = os.getenv("SHOPIFY_CHAT_CHECKOUT_VIA_DRAFT", "").strip().lower() in (
+        "1", "true", "yes",
+    )
     try:
-        result = create_attributed_shopify_cod_order(
-            db,
-            checkout.organization_id,
-            checkout.store_id,
-            customer_id=checkout.customer_id,
-            variant_local_id=int(checkout.variant_id),
-            quantity=checkout.quantity,
-            customer_email=(conversation.customer.email if conversation.customer else None),
-            customer_phone=checkout.phone or "",
-            shipping_address=shipping_address,
-            note=note,
-            idempotency_key=f"chat-cod:{checkout.id}:{checkout.conversation_id}",
-            ai_agent_id=agent.id,
-            conversation_id=conversation.id,
-        )
+        if via_shopify_checkout:
+            connection = (
+                db.query(CommerceConnection)
+                .filter(
+                    CommerceConnection.organization_id == checkout.organization_id,
+                    CommerceConnection.store_id == checkout.store_id,
+                    CommerceConnection.provider == "shopify",
+                    CommerceConnection.status == "connected",
+                )
+                .first()
+            )
+            if connection is None:
+                raise ValueError("SHOPIFY_NOT_CONNECTED")
+            name_parts = (checkout.customer_name or "Cliente").split()
+            address_parts = [
+                checkout.address_complement,
+                f"Barrio {checkout.neighborhood}" if checkout.neighborhood else None,
+            ]
+            draft_shipping = {
+                "firstName": name_parts[0],
+                "lastName": " ".join(name_parts[1:]) or None,
+                "address1": checkout.address_line,
+                "address2": " · ".join(v for v in address_parts if v) or None,
+                "city": checkout.city,
+                "countryCode": checkout.country_code,
+                "zip": checkout.postal_code,
+                "phone": checkout.phone,
+            }
+            result = create_shopify_draft_order(
+                db=db,
+                store=conversation.store,
+                connection=connection,
+                items_payload=[
+                    {"variant_local_id": int(checkout.variant_id), "quantity": checkout.quantity}
+                ],
+                customer_email=(conversation.customer.email if conversation.customer else None),
+                customer_name=checkout.customer_name,
+                customer_phone=checkout.phone,
+                customer_id=checkout.customer_id,
+                shipping_address=draft_shipping,
+                note=f"DIAGLOB Shopify conversational checkout {checkout.id}",
+                idempotency_key=f"chat-checkout:{checkout.id}:{checkout.conversation_id}",
+                source="shopify_chat_checkout",
+            )
+        else:
+            result = create_attributed_shopify_cod_order(
+                db,
+                checkout.organization_id,
+                checkout.store_id,
+                customer_id=checkout.customer_id,
+                variant_local_id=int(checkout.variant_id),
+                quantity=checkout.quantity,
+                customer_email=(conversation.customer.email if conversation.customer else None),
+                customer_phone=checkout.phone or "",
+                shipping_address=shipping_address,
+                note=note,
+                idempotency_key=f"chat-cod:{checkout.id}:{checkout.conversation_id}",
+                ai_agent_id=agent.id,
+                conversation_id=conversation.id,
+            )
     except Exception as exc:
         checkout.status = "failed"
         checkout.failure_reason = str(exc)[:500]
@@ -622,11 +709,42 @@ def _finalize_checkout(
         return "No pude confirmar la creación externa del pedido. No voy a duplicarlo; un asesor revisará el caso."
 
     checkout.created_order_id = int(result["order_id"])
-    checkout.status = "order_created"
     checkout.failure_reason = None
     checkout.updated_at = datetime.utcnow()
-    db.commit()
+    if via_shopify_checkout:
+        if (
+            result.get("external_creation_status") != "created"
+            or not isinstance(result.get("invoice_url"), str)
+            or not result.get("shopify_draft_order_id")
+        ):
+            checkout.status = "failed"
+            checkout.failure_reason = "SHOPIFY_CHECKOUT_LINK_UNAVAILABLE"
+            conversation.mode = "human"
+            db.commit()
+            return "No pude generar un enlace de compra verificable. Un asesor continuará contigo."
+        checkout.status = "awaiting_shopify_checkout"
+        db.commit()
+        link = result["invoice_url"]
+        if locale == "en":
+            return (
+                f"Your secure Shopify Checkout link: {link}. "
+                "Review shipping, payment methods and final total in Shopify. "
+                "The order is not confirmed until Shopify finishes checkout."
+            )
+        if locale == "pt":
+            return (
+                f"Seu link seguro para finalizar a compra na Shopify: {link}. "
+                "Confira envio, meios de pagamento e total final na Shopify. "
+                "O pedido só será confirmado quando o checkout for concluído."
+            )
+        return (
+            f"Tu enlace seguro para finalizar la compra en Shopify: {link}. "
+            "Revisa envío, medios de pago y total final en Shopify. "
+            "El pedido solo se confirma cuando termines el checkout."
+        )
 
+    checkout.status = "order_created"
+    db.commit()
     order_number = result.get("order_number") or result.get("order_id")
     if locale == "en":
         return f"Order {order_number} confirmed. Payment is cash on delivery. Keep your phone available for delivery coordination."
@@ -649,7 +767,7 @@ def process_conversational_checkout_turn(
 
     locale = _locale(conversation)
     normalized = _plain(text)
-    if normalized in CANCEL_WORDS:
+    if normalized in CANCEL_WORDS and checkout.status != "awaiting_shopify_checkout":
         checkout.status = "cancelled"
         checkout.customer_confirmed = False
         checkout.customer_confirmed_at = None
@@ -660,6 +778,37 @@ def process_conversational_checkout_turn(
         if locale == "pt":
             return "O processo do pedido foi cancelado. Nenhum pedido foi criado."
         return "Cancelé el proceso del pedido. No se creó ninguna orden."
+
+    if checkout.status == "awaiting_shopify_checkout":
+        # A customer cannot finalize a Shopify order through a chat reply.
+        # An existing Shopify draft must not be declared cancelled here:
+        # it may still be completed through Shopify Checkout.
+        order = (
+            db.query(Order)
+            .filter(
+                Order.id == checkout.created_order_id,
+                Order.organization_id == checkout.organization_id,
+                Order.store_id == checkout.store_id,
+                Order.source == "shopify_chat_checkout",
+            )
+            .first()
+        )
+        if normalized in CANCEL_WORDS:
+            conversation.mode = "human"
+            db.commit()
+            return (
+                "Un asesor revisará tu solicitud. El enlace de Shopify podría "
+                "seguir activo; no se ha cancelado ningún pedido en Shopify."
+            )
+        if order is None or not order.invoice_url:
+            conversation.mode = "human"
+            db.commit()
+            return "No encuentro el enlace de checkout. Un asesor continuará contigo."
+        if locale == "en":
+            return f"Your order is awaiting Shopify Checkout: {order.invoice_url}"
+        if locale == "pt":
+            return f"Sua compra está aguardando o checkout da Shopify: {order.invoice_url}"
+        return f"Tu compra está pendiente de completar el checkout de Shopify: {order.invoice_url}"
 
     if checkout.status == "creating_order":
         if locale == "en":

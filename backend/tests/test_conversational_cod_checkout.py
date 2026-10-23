@@ -1,5 +1,5 @@
 """Regression coverage for conversational COD checkout safety rules."""
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 from sqlalchemy import create_engine
@@ -14,6 +14,7 @@ from app.models import (
     Conversation,
     Customer,
     Order,
+    OrderItem,
     Organization,
     Product,
     ProductVariant,
@@ -25,6 +26,13 @@ from app.services.conversational_checkout_service import (
     process_conversational_checkout_turn,
 )
 from app.shopify_cod_orders import create_shopify_cod_order
+from app.shopify_orders import create_shopify_draft_order, build_draft_order_input
+from app.shopify_client import ShopifyUserError
+from app.services.shopify_chat_draft_reconciliation import (
+    ShopifyDraftConversionNotReady,
+    verified_chat_draft_for_order,
+)
+from app.services.shopify_webhook_service import process_shopify_order_webhook
 
 SQLALCHEMY_TEST_DATABASE_URL = "sqlite:///./test_conversational_cod_checkout.db"
 engine = create_engine(
@@ -393,3 +401,445 @@ def test_shopify_cod_order_sends_confirmed_shipping_data(db, monkeypatch):
     assert order.payment_status == "pending"
     assert order.lifecycle_status == "confirmed"
     assert order.customer_id == customer.id
+
+
+def test_chat_checkout_draft_has_shipping_link_without_premature_order_event(db, monkeypatch):
+    """Buyer has a Shopify checkout link; no Shopify Order exists yet."""
+    _, store, customer, _, _, variant, _, connection = _scenario(db)
+    captured = {"calls": 0, "events": []}
+
+    class FakeClient:
+        def __init__(self, shop_domain, access_token):
+            assert shop_domain == "diaglob-poc.myshopify.com"
+
+        def query(self, query, variables):
+            captured["calls"] += 1
+            captured["input"] = variables["input"]
+            assert "draftOrderCreate" in query
+            return {
+                "draftOrderCreate": {
+                    "draftOrder": {
+                        "id": "gid://shopify/DraftOrder/987",
+                        "name": "#D987",
+                        "invoiceUrl": "https://diaglob-poc.myshopify.com/123456/invoices/draft-token",
+                        "totalPriceSet": {"shopMoney": {"amount": "100.00", "currencyCode": "COP"}},
+                    },
+                    "userErrors": [],
+                }
+            }
+
+    monkeypatch.setattr("app.shopify_orders.decrypt_shopify_secret", lambda value: "synthetic")
+    monkeypatch.setattr("app.shopify_orders.ShopifyGraphQLClient", FakeClient)
+    monkeypatch.setattr(
+        "app.shopify_orders.safe_emit_event",
+        lambda **kwargs: captured["events"].append(kwargs["event_type"]),
+    )
+    shipping = {
+        "firstName": "Cliente",
+        "lastName": "Sintético",
+        "address1": "Calle 80 # 15-24",
+        "address2": "Apto 302",
+        "city": "Bogota",
+        "countryCode": "CO",
+        "phone": customer.phone,
+    }
+    params = {
+        "db": db,
+        "store": store,
+        "connection": connection,
+        "items_payload": [{"variant_local_id": variant.id, "quantity": 1}],
+        "customer_email": customer.email,
+        "customer_name": customer.name,
+        "customer_phone": customer.phone,
+        "customer_id": customer.id,
+        "shipping_address": shipping,
+        "note": "Synthetic conversational checkout",
+        "idempotency_key": "chat-checkout:987:123",
+        "source": "shopify_chat_checkout",
+    }
+    result = create_shopify_draft_order(**params)
+    assert result["invoice_url"].startswith("https://diaglob-poc.myshopify.com/")
+    assert result["shopify_draft_order_id"] == "gid://shopify/DraftOrder/987"
+    assert result["status"] == "pending"
+    assert captured["input"]["shippingAddress"] == shipping
+    assert captured["input"]["phone"] == customer.phone
+    assert {"key": "diaglob_checkout_ref", "value": "chat-checkout:987:123"} in captured["input"]["customAttributes"]
+    assert "name" not in captured["input"]
+    assert captured["events"] == []
+    order = db.query(Order).filter(Order.id == result["order_id"]).one()
+    assert order.shopify_order_id is None
+    assert order.source == "shopify_chat_checkout"
+    assert order.payment_status == "pending"
+    assert order.customer_id == customer.id
+
+    replay = create_shopify_draft_order(**params)
+    assert replay["idempotent"] is True
+    assert captured["calls"] == 1
+    assert db.query(Order).count() == 1
+
+
+@pytest.mark.parametrize(
+    "invoice_url",
+    [
+        "http://unsafe.example.invalid/checkout",
+        "https://evil.example.invalid/123456/invoices/draft-token",
+        "https://diaglob-poc.myshopify.com.evil.invalid/123456/invoices/token",
+        "https://diaglob-poc.myshopify.com:444/123456/invoices/token",
+        "https://diaglob-poc.myshopify.com/redirect?next=/invoices/token",
+    ],
+)
+def test_chat_checkout_draft_rejects_insecure_link_without_duplicate_order(
+    db, monkeypatch, invoice_url
+):
+    _, store, customer, _, _, variant, _, connection = _scenario(db)
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            pass
+
+        def query(self, query, variables):
+            return {
+                "draftOrderCreate": {
+                    "draftOrder": {
+                        "id": "gid://shopify/DraftOrder/55",
+                        "invoiceUrl": invoice_url,
+                        "totalPriceSet": {"shopMoney": {"amount": "100.00", "currencyCode": "COP"}},
+                    },
+                    "userErrors": [],
+                }
+            }
+
+    monkeypatch.setattr("app.shopify_orders.decrypt_shopify_secret", lambda value: "synthetic")
+    monkeypatch.setattr("app.shopify_orders.ShopifyGraphQLClient", FakeClient)
+    monkeypatch.setattr("app.shopify_orders.safe_emit_event", lambda **kwargs: None)
+    with pytest.raises(ShopifyUserError, match="SHOPIFY_CHECKOUT_LINK_UNAVAILABLE"):
+        create_shopify_draft_order(
+            db=db, store=store, connection=connection,
+            items_payload=[{"variant_local_id": variant.id, "quantity": 1}],
+            customer_id=customer.id,
+            customer_email=customer.email,
+            idempotency_key="chat-checkout:55:123",
+            source="shopify_chat_checkout",
+        )
+    order = db.query(Order).one()
+    assert order.external_creation_status == "unknown"
+    assert order.shopify_order_id is None
+
+
+def test_draft_shipping_input_rejects_unsupported_shopify_fields():
+    with pytest.raises(ValueError, match="SHOPIFY_DRAFT_SHIPPING_ADDRESS_INVALID"):
+        build_draft_order_input(
+            line_items=[],
+            note=None,
+            customer_email=None,
+            customer_name=None,
+            shipping_address={
+                "address1": "Calle 80 # 15-24", "countryCode": "CO",
+                "province": "Cundinamarca",
+            },
+        )
+
+
+def _stage_synthetic_checkout_draft(db, store, customer):
+    order = Order(
+        organization_id=store.organization_id,
+        store_id=store.id,
+        customer_id=customer.id,
+        order_number="#D987",
+        total_amount=100,
+        currency="COP",
+        financial_status="pending",
+        payment_status="pending",
+        source="shopify_chat_checkout",
+        idempotency_key="chat-checkout:987:123",
+        shopify_draft_order_id="gid://shopify/DraftOrder/987",
+        external_creation_status="created",
+    )
+    db.add(order)
+    db.flush()
+    db.add(OrderItem(
+        order_id=order.id,
+        organization_id=store.organization_id,
+        store_id=store.id,
+        title="Pending draft line",
+        quantity=1,
+        unit_price=100,
+        currency="COP",
+    ))
+    db.commit()
+    return order
+
+
+def test_draft_reconciliation_requires_shopify_verified_order_relationship(db, monkeypatch):
+    _, store, customer, _, _, _, _, connection = _scenario(db)
+    pending = _stage_synthetic_checkout_draft(db, store, customer)
+    called = []
+
+    class FakeClient:
+        def __init__(self, shop_domain, access_token):
+            assert shop_domain == "diaglob-poc.myshopify.com"
+            assert access_token == "synthetic-token"
+
+        def query(self, query, variables):
+            called.append(variables)
+            return {
+                "draftOrder": {
+                    "id": variables["draftId"],
+                    "order": {"id": "gid://shopify/Order/456"},
+                }
+            }
+
+    monkeypatch.setattr(
+        "app.services.shopify_chat_draft_reconciliation.connection_access_token",
+        lambda *args, **kwargs: "synthetic-token",
+    )
+    monkeypatch.setattr(
+        "app.services.shopify_chat_draft_reconciliation.ShopifyGraphQLClient",
+        FakeClient,
+    )
+    attrs = [{"name": "diaglob_checkout_ref", "value": "chat-checkout:987:123"}]
+    assert verified_chat_draft_for_order(
+        db, connection=connection, shopify_order_id="456", note_attributes=attrs,
+    ).id == pending.id
+    assert called == [{"draftId": "gid://shopify/DraftOrder/987"}]
+
+    # A copied or buyer-supplied marker cannot claim an unrelated order.
+    assert verified_chat_draft_for_order(
+        db, connection=connection, shopify_order_id="789", note_attributes=attrs,
+    ) is None
+    assert verified_chat_draft_for_order(
+        db, connection=connection, shopify_order_id="456",
+        note_attributes=attrs + attrs,
+    ) is None
+
+
+def test_draft_reconciliation_cannot_claim_another_store(db, monkeypatch):
+    org, store, customer, _, _, _, _, connection = _scenario(db)
+    _stage_synthetic_checkout_draft(db, store, customer)
+
+    def no_provider(*args, **kwargs):
+        raise AssertionError("must not access Shopify for foreign tenant/store")
+
+    monkeypatch.setattr(
+        "app.services.shopify_chat_draft_reconciliation.ShopifyGraphQLClient",
+        no_provider,
+    )
+    foreign_connection = CommerceConnection(
+        organization_id=org.id, store_id=store.id + 1000,
+        provider="shopify", external_store_url="other.myshopify.com",
+        status="connected",
+    )
+    assert verified_chat_draft_for_order(
+        db, connection=foreign_connection, shopify_order_id="456",
+        note_attributes=[{"name": "diaglob_checkout_ref", "value": "chat-checkout:987:123"}],
+    ) is None
+
+
+def test_signed_shopify_order_webhook_converts_chat_draft_without_duplicate(db, monkeypatch):
+    org, store, customer, agent, _, variant, conversation, connection = _scenario(db)
+    draft = _stage_synthetic_checkout_draft(db, store, customer)
+    reference = f"chat-checkout:987:{conversation.id}"
+    draft.idempotency_key = reference
+    checkout = ConversationalCheckout(
+        id=987, organization_id=org.id, store_id=store.id,
+        conversation_id=conversation.id, customer_id=customer.id,
+        ai_agent_id=agent.id, status="awaiting_shopify_checkout",
+        created_order_id=draft.id, quantity=1,
+        currency="COP", country_code="CO",
+        expires_at=datetime.utcnow() + timedelta(hours=24),
+    )
+    db.add(checkout)
+    db.commit()
+    events = []
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            pass
+
+        def query(self, query, variables):
+            return {
+                "draftOrder": {
+                    "id": "gid://shopify/DraftOrder/987",
+                    "order": {"id": "gid://shopify/Order/456"},
+                }
+            }
+
+    monkeypatch.setattr(
+        "app.services.shopify_chat_draft_reconciliation.connection_access_token",
+        lambda *args, **kwargs: "synthetic-token",
+    )
+    monkeypatch.setattr(
+        "app.services.shopify_chat_draft_reconciliation.ShopifyGraphQLClient",
+        FakeClient,
+    )
+    monkeypatch.setattr(
+        "app.services.shopify_webhook_service.evaluate_shopify_privacy_suppression",
+        lambda *args, **kwargs: (None, False),
+    )
+    monkeypatch.setattr(
+        "app.services.shopify_webhook_service._upsert_customer",
+        lambda *args, **kwargs: customer,
+    )
+    monkeypatch.setattr(
+        "app.services.shopify_webhook_service._refresh_customer_store_profile",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "app.services.shopify_webhook_service.resolve_shopify_order_event_customer",
+        lambda *args, **kwargs: customer.id,
+    )
+    monkeypatch.setattr(
+        "app.services.shopify_webhook_service.safe_emit_event",
+        lambda **kwargs: events.append(kwargs["event_type"]),
+    )
+
+    payload = {
+        "id": 456, "name": "#456", "current_total_price": "100.00",
+        "currency": "COP", "financial_status": "pending",
+        "fulfillment_status": None,
+        "note_attributes": [
+            {"name": "diaglob_checkout_ref", "value": reference},
+        ],
+        "line_items": [
+            {"id": 999, "variant_id": int(variant.shopify_variant_id),
+             "title": variant.title, "sku": variant.sku,
+             "price": "100.00", "quantity": 1},
+        ],
+    }
+    first = process_shopify_order_webhook(
+        db, connection=connection, topic="orders/create", payload=payload,
+    )
+    assert first["order_id"] == draft.id
+    assert first["action"] == "created"
+    db.refresh(draft)
+    assert draft.shopify_order_id == "456"
+    assert draft.source == "shopify_chat_checkout"
+    assert db.query(Order).count() == 1
+    assert db.query(OrderItem).filter(OrderItem.order_id == draft.id).count() == 1
+    assert events == ["order.created"]
+    db.refresh(checkout)
+    assert checkout.status == "order_created"
+    assert checkout.created_order_id == draft.id
+    attribution = db.query(OrderSalesAttribution).filter(
+        OrderSalesAttribution.order_id == draft.id,
+    ).one()
+    assert attribution.ai_agent_id == agent.id
+    assert attribution.conversation_id == conversation.id
+
+    repeated = process_shopify_order_webhook(
+        db, connection=connection, topic="orders/create", payload=payload,
+    )
+    assert repeated["order_id"] == draft.id
+    assert db.query(Order).count() == 1
+    assert len(events) == 1
+    assert db.query(OrderSalesAttribution).filter(
+        OrderSalesAttribution.order_id == draft.id,
+    ).count() == 1
+
+
+def test_draft_reconciliation_waits_for_shopify_conversion_without_duplicate(db, monkeypatch):
+    _, store, customer, _, _, _, _, connection = _scenario(db)
+    pending = _stage_synthetic_checkout_draft(db, store, customer)
+
+    class ShopifyStillIndexing:
+        def __init__(self, **kwargs):
+            pass
+
+        def query(self, query, variables):
+            return {
+                "draftOrder": {
+                    "id": "gid://shopify/DraftOrder/987",
+                    "order": None,
+                }
+            }
+
+    monkeypatch.setattr(
+        "app.services.shopify_chat_draft_reconciliation.connection_access_token",
+        lambda *args, **kwargs: "synthetic-token",
+    )
+    monkeypatch.setattr(
+        "app.services.shopify_chat_draft_reconciliation.ShopifyGraphQLClient",
+        ShopifyStillIndexing,
+    )
+    with pytest.raises(ShopifyDraftConversionNotReady):
+        verified_chat_draft_for_order(
+            db, connection=connection, shopify_order_id="456",
+            note_attributes=[
+                {"name": "diaglob_checkout_ref", "value": "chat-checkout:987:123"},
+            ],
+        )
+    assert db.query(Order).count() == 1
+    db.refresh(pending)
+    assert pending.shopify_order_id is None
+
+
+def test_shopify_checkout_handoff_is_opt_in_and_never_declares_an_order_complete(
+    db, monkeypatch
+):
+    org, store, customer, agent, _, _, conversation, _ = _scenario(db)
+    monkeypatch.setenv("SHOPIFY_CHAT_CHECKOUT_VIA_DRAFT", "true")
+    summary = _advance_to_final_confirmation(db, conversation, agent)
+    assert "Shopify Checkout" in summary
+    assert "Pagarás al recibir" not in summary
+    drafts_created = []
+
+    def fake_checkout_draft(**kwargs):
+        drafts_created.append(kwargs)
+        order = Order(
+            organization_id=org.id, store_id=store.id, customer_id=customer.id,
+            order_number="#D98", total_amount=100, currency="COP",
+            financial_status="pending", payment_status="pending",
+            shopify_draft_order_id="gid://shopify/DraftOrder/98",
+            invoice_url="https://diaglob-poc.myshopify.com/1/invoices/test-token",
+            idempotency_key=kwargs["idempotency_key"],
+            source="shopify_chat_checkout", external_creation_status="created",
+        )
+        db.add(order)
+        db.commit()
+        return {
+            "ok": True, "order_id": order.id,
+            "shopify_draft_order_id": order.shopify_draft_order_id,
+            "invoice_url": order.invoice_url,
+            "external_creation_status": "created",
+        }
+
+    monkeypatch.setattr(
+        "app.services.conversational_checkout_service.create_shopify_draft_order",
+        fake_checkout_draft,
+    )
+    result = _turn(db, conversation, agent, "CONFIRMO")
+    checkout = db.query(ConversationalCheckout).one()
+    assert checkout.status == "awaiting_shopify_checkout"
+    assert checkout.created_order_id is not None
+    assert len(drafts_created) == 1
+    assert drafts_created[0]["idempotency_key"] == (
+        f"chat-checkout:{checkout.id}:{conversation.id}"
+    )
+    assert "invoices/test-token" in result
+    assert "solo se confirma cuando termines el checkout" in result
+    assert db.query(Order).one().shopify_order_id is None
+
+    repeated = _turn(db, conversation, agent, "CONFIRMO")
+    assert "invoices/test-token" in repeated
+    assert len(drafts_created) == 1
+    assert checkout.status == "awaiting_shopify_checkout"
+
+    cancellation = _turn(db, conversation, agent, "CANCELAR")
+    db.refresh(checkout)
+    assert checkout.status == "awaiting_shopify_checkout"
+    assert "no se ha cancelado" in cancellation
+    assert len(drafts_created) == 1
+
+
+def test_shopify_checkout_pending_state_is_allowed_by_sqlalchemy_constraint(db):
+    org, store, customer, agent, _, _, conversation, _ = _scenario(db)
+    checkout = ConversationalCheckout(
+        organization_id=org.id, store_id=store.id,
+        conversation_id=conversation.id, customer_id=customer.id,
+        ai_agent_id=agent.id, status="awaiting_shopify_checkout",
+        quantity=1, currency="COP", country_code="CO",
+        expires_at=datetime.utcnow() + timedelta(hours=24),
+    )
+    db.add(checkout)
+    db.commit()
+    assert checkout.status == "awaiting_shopify_checkout"

@@ -1,6 +1,7 @@
 from .shopify_token_lifecycle import connection_access_token
 import uuid
 import re
+from urllib.parse import urlsplit
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -32,6 +33,8 @@ def build_draft_order_input(
     note: str | None,
     customer_email: str | None,
     customer_name: str | None,
+    customer_phone: str | None = None,
+    shipping_address: dict | None = None,
 ) -> dict:
     """Build only fields supported by Shopify's DraftOrderInput.
 
@@ -48,6 +51,25 @@ def build_draft_order_input(
         payload["customAttributes"] = [
             {"key": "diaglob_customer_name", "value": customer_name.strip()},
         ]
+    if customer_phone:
+        payload["phone"] = customer_phone
+    if shipping_address is not None:
+        # MailingAddressInput has no province text field. In particular,
+        # do not blindly forward input supplied by a buyer or AI agent.
+        supported = {
+            "firstName", "lastName", "address1", "address2",
+            "city", "countryCode", "provinceCode", "zip", "phone",
+            "company",
+        }
+        if not isinstance(shipping_address, dict):
+            raise ValueError("SHOPIFY_DRAFT_SHIPPING_ADDRESS_INVALID")
+        extra = set(shipping_address) - supported
+        if extra or not shipping_address.get("address1") or not shipping_address.get("countryCode"):
+            raise ValueError("SHOPIFY_DRAFT_SHIPPING_ADDRESS_INVALID")
+        payload["shippingAddress"] = {
+            key: value for key, value in shipping_address.items()
+            if value is not None and value != ""
+        }
     return payload
 
 
@@ -223,6 +245,10 @@ def create_shopify_draft_order(
     customer_name: str | None = None,
     note: str | None = None,
     idempotency_key: str | None = None,
+    customer_phone: str | None = None,
+    customer_id: int | None = None,
+    shipping_address: dict | None = None,
+    source: str = "shopify",
 ) -> dict:
     """
     Creates a Shopify Draft Order with proper
@@ -254,10 +280,18 @@ def create_shopify_draft_order(
       failed   → reuse order, retry Shopify
     """
 
+    if source == "shopify_chat_checkout" and (
+        not isinstance(idempotency_key, str)
+        or not re.fullmatch(r"chat-checkout:[0-9]+:[0-9]+", idempotency_key)
+    ):
+        raise ValueError("SHOPIFY_CHECKOUT_REFERENCE_INVALID")
+
     # No draft order or existing retry may reinstate an actively suppressed buyer.
     privacy_block = evaluate_shopify_local_privacy(
         db, organization_id=store.organization_id, store_id=store.id,
+        local_customer_id=customer_id,
         customer_email=customer_email,
+        customer_phone=customer_phone,
     )
     if privacy_block:
         raise ValueError("SHOPIFY_PRIVACY_SUPPRESSED")
@@ -330,8 +364,10 @@ def create_shopify_draft_order(
             total_amount=0,
             currency=store.currency,
             financial_status="pending",
+            payment_status="pending",
+            customer_id=customer_id,
             fulfillment_status=None,
-            source="shopify",
+            source=source,
             shopify_draft_order_id=None,
             invoice_url=None,
             idempotency_key=idempotency_key,
@@ -463,7 +499,16 @@ def create_shopify_draft_order(
             note=note,
             customer_email=customer_email,
             customer_name=customer_name,
+            customer_phone=customer_phone,
+            shipping_address=shipping_address,
         )
+        if source == "shopify_chat_checkout":
+            # The value is only a lookup hint on the signed Shopify webhook.
+            # The corresponding draft->order mapping MUST be verified through
+            # Shopify Admin before any chat attribution or order reconciliation.
+            shopify_input.setdefault("customAttributes", []).append(
+                {"key": "diaglob_checkout_ref", "value": idempotency_key}
+            )
 
         data = client.query(
             DRAFT_ORDER_CREATE_MUTATION,
@@ -627,6 +672,26 @@ def create_shopify_draft_order(
     invoice_url = (
         draft_order.get("invoiceUrl")
     )
+    if source == "shopify_chat_checkout":
+        # A failed/malformed response could have created a draft in Shopify.
+        # Fail closed and do NOT retry blindly, or claim any order completed.
+        url = urlsplit(invoice_url) if isinstance(invoice_url, str) else None
+        if (
+            not shopify_gid
+            or url is None
+            or url.scheme != "https"
+            # Invoice URLs must resolve to the exact Shopify shop we
+            # authenticated, not an arbitrary HTTPS destination.
+            or url.netloc.lower() != connection.external_store_url.lower()
+            or "/invoices/" not in url.path
+            or url.username is not None
+            or url.password is not None
+            or url.fragment
+        ):
+            order.external_creation_status = "unknown"
+            order.external_last_error = "SHOPIFY_CHECKOUT_LINK_UNAVAILABLE"
+            db.commit()
+            raise ShopifyUserError("SHOPIFY_CHECKOUT_LINK_UNAVAILABLE")
 
     order_name = (
         draft_order.get("name", "")
@@ -649,26 +714,28 @@ def create_shopify_draft_order(
 
     db.commit()
 
-    # Emit order.created event for automations
-    safe_emit_event(
-        db=db,
-        organization_id=store.organization_id,
-        store_id=store.id,
-        event_type="order.created",
-        payload={
-            "order": {
-                "id": order.id,
-                "store_id": store.id,
-                "organization_id": store.organization_id,
-                "source": order.source,
-                "total": float(order.total_amount),
-                "currency": order.currency,
-                "external_creation_status": "created",
-                "shopify_draft_order_id": order.shopify_draft_order_id,
-            }
-        },
-        event_id=f"order:{order.id}:created",
-    )
+    # Shopify chat checkout has only created a draft, not a purchase.
+    # Its order.created automation must come from a verified order webhook.
+    if source != "shopify_chat_checkout":
+        safe_emit_event(
+            db=db,
+            organization_id=store.organization_id,
+            store_id=store.id,
+            event_type="order.created",
+            payload={
+                "order": {
+                    "id": order.id,
+                    "store_id": store.id,
+                    "organization_id": store.organization_id,
+                    "source": order.source,
+                    "total": float(order.total_amount),
+                    "currency": order.currency,
+                    "external_creation_status": "created",
+                    "shopify_draft_order_id": order.shopify_draft_order_id,
+                }
+            },
+            event_id=f"order:{order.id}:created",
+        )
 
     return {
         "ok": True,
