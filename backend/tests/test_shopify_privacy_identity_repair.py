@@ -194,3 +194,27 @@ def test_repair_rejects_redact_before_48_hours_after_uninstall(sandbox):
         )
     db.refresh(receipt)
     assert receipt.organization_id is None
+
+
+def test_live_diagnostic_classifies_exact_history_without_logging_identifiers(sandbox):
+    import json
+    from datetime import timezone
+    from app.shopify_privacy_case_live_diagnostic import diagnose_shopify_privacy_cases
+
+    db, _, _, history, receipt = sandbox
+    report = diagnose_shopify_privacy_cases(
+        db, now=NOW.replace(tzinfo=timezone.utc), environment={},
+    )
+    assert report["classification_counts"]["eligible_for_controlled_identity_repair"] == 1
+    assert not report["internal_operator_auth_configured"]
+    assert not report["erasure_authorized"]
+    assert RID not in json.dumps(report)
+    assert SHOP not in json.dumps(report)
+    db.delete(history)
+    db.commit()
+    blocked = diagnose_shopify_privacy_cases(
+        db, now=NOW.replace(tzinfo=timezone.utc), environment={},
+    )
+    assert blocked["classification_counts"]["SIGNED_SHOP_HISTORY_MISSING"] == 1
+    db.refresh(receipt)
+    assert receipt.store_id is None
