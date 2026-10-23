@@ -228,15 +228,11 @@ def test_ambiguous_final_reply_never_creates_order(db, monkeypatch):
     summary = _advance_to_final_confirmation(db, conversation, agent)
     assert "CONFIRMO" in summary
 
-    calls = []
-    monkeypatch.setattr(
-        "app.services.conversational_checkout_service.create_attributed_shopify_cod_order",
-        lambda *args, **kwargs: calls.append((args, kwargs)),
-    )
+
     answer = _turn(db, conversation, agent, "dale")
     checkout = db.query(ConversationalCheckout).one()
 
-    assert calls == []
+    assert db.query(Order).count() == 0
     assert checkout.status == "awaiting_order_confirmation"
     assert checkout.customer_confirmed is False
     assert "ambigua" in answer
@@ -246,17 +242,13 @@ def test_live_price_change_forces_second_final_confirmation(db, monkeypatch):
     _, _, _, agent, _, variant, conversation, _ = _scenario(db)
     _advance_to_final_confirmation(db, conversation, agent)
 
-    calls = []
-    monkeypatch.setattr(
-        "app.services.conversational_checkout_service.create_attributed_shopify_cod_order",
-        lambda *args, **kwargs: calls.append((args, kwargs)) or {"ok": True, "order_id": 999, "order_number": "#999"},
-    )
+
     variant.price = 120
     db.commit()
 
     changed = _turn(db, conversation, agent, "CONFIRMO")
     checkout = db.query(ConversationalCheckout).one()
-    assert calls == []
+    assert db.query(Order).count() == 0
     assert checkout.status == "awaiting_order_confirmation"
     assert checkout.customer_confirmed is False
     assert float(checkout.total) == 120.0
@@ -265,7 +257,7 @@ def test_live_price_change_forces_second_final_confirmation(db, monkeypatch):
 
     answer = _turn(db, conversation, agent, "CONFIRMO")
     db.refresh(checkout)
-    assert calls == []
+    assert db.query(Order).count() == 0
     assert checkout.status == "failed"
     assert checkout.failure_reason == "SHOPIFY_CHECKOUT_REQUIRED"
     assert checkout.created_order_id is None
@@ -283,16 +275,12 @@ def test_zero_price_is_not_offered_for_conversational_checkout(db):
 def test_price_becoming_zero_blocks_final_confirmation(db, monkeypatch):
     _, _, _, agent, _, variant, conversation, _ = _scenario(db)
     _advance_to_final_confirmation(db, conversation, agent)
-    calls = []
-    monkeypatch.setattr(
-        "app.services.conversational_checkout_service.create_attributed_shopify_cod_order",
-        lambda *args, **kwargs: calls.append(kwargs),
-    )
+
     variant.price = 0
     db.commit()
     _turn(db, conversation, agent, "CONFIRMO")
     checkout = db.query(ConversationalCheckout).one()
-    assert calls == []
+    assert db.query(Order).count() == 0
     assert checkout.status == "failed"
     assert checkout.customer_confirmed is False
 
