@@ -28,6 +28,7 @@ from app.services.conversational_checkout_service import (
 )
 from app.shopify_cod_orders import create_shopify_cod_order
 from app.shopify_orders import create_shopify_draft_order, build_draft_order_input
+from app.shopify_chat_checkout_rollout_audit import effective_pilot_status
 from app.shopify_client import ShopifyUserError
 from app.services.shopify_chat_draft_reconciliation import (
     ShopifyDraftConversionNotReady,
@@ -915,3 +916,34 @@ def test_checkout_rollout_does_not_activate_another_store(db, monkeypatch):
     summary = _advance_to_final_confirmation(db, conversation, agent)
     assert "Shopify Checkout" not in summary
     assert "Pagarás al recibir" in summary
+
+
+def test_poc_rollout_audit_reports_only_safe_statuses(db, monkeypatch):
+    org, store, _, _, _, _, _, connection = _scenario(db)
+
+    class SessionScope:
+        def __enter__(self):
+            return db
+
+        def __exit__(self, *args):
+            return False
+
+    monkeypatch.setattr(
+        "app.shopify_chat_checkout_rollout_audit.SessionLocal",
+        lambda: SessionScope(),
+    )
+    monkeypatch.delenv("SHOPIFY_CHAT_CHECKOUT_VIA_DRAFT", raising=False)
+    assert effective_pilot_status() == "disabled"
+
+    monkeypatch.setenv("SHOPIFY_CHAT_CHECKOUT_VIA_DRAFT", "true")
+    monkeypatch.delenv("SHOPIFY_CHAT_CHECKOUT_POC_ORGANIZATION_ID", raising=False)
+    monkeypatch.delenv("SHOPIFY_CHAT_CHECKOUT_POC_STORE_ID", raising=False)
+    assert effective_pilot_status() == "blocked_missing_scope"
+
+    monkeypatch.setenv("SHOPIFY_CHAT_CHECKOUT_POC_ORGANIZATION_ID", str(org.id))
+    monkeypatch.setenv("SHOPIFY_CHAT_CHECKOUT_POC_STORE_ID", str(store.id))
+    assert effective_pilot_status() == "scoped_poc_ready"
+
+    connection.external_store_url = "attacker.myshopify.com"
+    db.commit()
+    assert effective_pilot_status() == "blocked_unverified_connection"
