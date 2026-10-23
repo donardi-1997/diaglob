@@ -16,6 +16,7 @@ NOW = datetime(2026, 10, 23, 18, 0, tzinfo=timezone.utc)
 ENV = {
     "SHOPIFY_CLIENT_SECRET": "synthetic-hmac-key",
     "SHOPIFY_TOKEN_ENCRYPTION_KEY": "synthetic-fernet-key",
+    "DIAGLOB_INTERNAL_SECRET": "synthetic-operator-secret",
 }
 
 
@@ -146,3 +147,18 @@ def test_watch_rejects_naive_now(db):
         audit_shopify_privacy_sla(
             db, now=datetime(2026, 10, 23, 18, 0), environment=ENV,
         )
+
+
+def test_open_signed_request_without_operator_review_api_is_critical(db):
+    receipt(db, 1, days=1, topic="shop/redact")
+    disabled = {k: v for k, v in ENV.items() if k != "DIAGLOB_INTERNAL_SECRET"}
+    out = audit_shopify_privacy_sla(db, now=NOW, environment=disabled)
+    assert out["state"] == "critical"
+    assert out["counts"]["review_api_unavailable_with_open_receipts"] == 1
+    assert out["fulfillment_complete"] is False
+
+    enabled = audit_shopify_privacy_sla(db, now=NOW, environment=ENV)
+    assert enabled["counts"]["review_api_unavailable_with_open_receipts"] == 0
+    # Authentication by itself is not permission to process PII.
+    assert enabled["privacy_release_ready"] is False
+    assert enabled["fulfillment_authorized"] is False
