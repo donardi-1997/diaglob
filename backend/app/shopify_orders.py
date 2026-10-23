@@ -280,6 +280,12 @@ def create_shopify_draft_order(
       failed   → reuse order, retry Shopify
     """
 
+    if source == "shopify_chat_checkout" and (
+        not isinstance(idempotency_key, str)
+        or not re.fullmatch(r"chat-checkout:[0-9]+:[0-9]+", idempotency_key)
+    ):
+        raise ValueError("SHOPIFY_CHECKOUT_REFERENCE_INVALID")
+
     # No draft order or existing retry may reinstate an actively suppressed buyer.
     privacy_block = evaluate_shopify_local_privacy(
         db, organization_id=store.organization_id, store_id=store.id,
@@ -496,6 +502,13 @@ def create_shopify_draft_order(
             customer_phone=customer_phone,
             shipping_address=shipping_address,
         )
+        if source == "shopify_chat_checkout":
+            # The value is only a lookup hint on the signed Shopify webhook.
+            # The corresponding draft->order mapping MUST be verified through
+            # Shopify Admin before any chat attribution or order reconciliation.
+            shopify_input.setdefault("customAttributes", []).append(
+                {"key": "diaglob_checkout_ref", "value": idempotency_key}
+            )
 
         data = client.query(
             DRAFT_ORDER_CREATE_MUTATION,
