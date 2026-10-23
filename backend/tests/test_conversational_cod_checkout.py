@@ -448,7 +448,7 @@ def test_chat_checkout_draft_has_shipping_link_without_premature_order_event(db,
         "customer_id": customer.id,
         "shipping_address": shipping,
         "note": "Synthetic conversational checkout",
-        "idempotency_key": "chat-checkout:synthetic:987",
+        "idempotency_key": "chat-checkout:987:123",
         "source": "shopify_chat_checkout",
     }
     result = create_shopify_draft_order(**params)
@@ -457,6 +457,7 @@ def test_chat_checkout_draft_has_shipping_link_without_premature_order_event(db,
     assert result["status"] == "pending"
     assert captured["input"]["shippingAddress"] == shipping
     assert captured["input"]["phone"] == customer.phone
+    assert {"key": "diaglob_checkout_ref", "value": "chat-checkout:987:123"} in captured["input"]["customAttributes"]
     assert "name" not in captured["input"]
     assert captured["events"] == []
     order = db.query(Order).filter(Order.id == result["order_id"]).one()
@@ -511,7 +512,7 @@ def test_chat_checkout_draft_rejects_insecure_link_without_duplicate_order(
             items_payload=[{"variant_local_id": variant.id, "quantity": 1}],
             customer_id=customer.id,
             customer_email=customer.email,
-            idempotency_key="chat-checkout:bad-link",
+            idempotency_key="chat-checkout:55:123",
             source="shopify_chat_checkout",
         )
     order = db.query(Order).one()
