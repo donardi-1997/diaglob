@@ -40,7 +40,6 @@ from ..services.shopify_service import (
     ShopifyNotFoundError,
     ShopifyOAuthError,
     ShopifyProviderError,
-    create_poc as svc_create_poc,
     disconnect as svc_disconnect,
     ensure_order_webhooks as svc_ensure_order_webhooks,
     get_order as svc_get_order,
@@ -543,42 +542,19 @@ def create_shopify_poc_order(
     membership: OrganizationMembership = Depends(require_permission("commerce.write")),
     db: Session = Depends(get_db),
 ):
-    try:
-        return svc_create_poc(
-            db=db,
-            organization_id=membership.organization_id,
-            store_id=store_id,
-            variant_id=payload.variant_id,
-            quantity=payload.quantity,
-            customer_email=payload.customer_email,
-            customer_phone=payload.customer_phone,
-            shipping_address=payload.shipping_address.model_dump(),
-            tags=payload.tags,
-            note=payload.note,
-            idempotency_key=payload.idempotency_key,
-        )
-    except ShopifyNotFoundError as exc:
-        raise HTTPException(status_code=404, detail={"code": "SHOPIFY_NOT_CONNECTED", "message": "Shopify no está conectado."})
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except ShopifyAuthError as exc:
-        raise HTTPException(status_code=401, detail={"success": False, "error": str(exc)})
-    except ShopifyUserError as exc:
-        raise HTTPException(status_code=422, detail={"success": False, "error": str(exc)})
-    except ShopifyTimeoutError as exc:
-        raise HTTPException(status_code=504, detail={"success": False, "error": str(exc)})
-    except (ShopifyProtectedCustomerDataError, ShopifyScopeDeniedError) as exc:
-        # Access errors are merchant-actionable and must not leak provider PII.
-        raise HTTPException(
-            status_code=403,
-            detail={
-                "code": str(exc),
-                "error": str(exc),
-                "message": "Shopify permission or protected data approval required.",
-            },
-        ) from exc
-    except (ShopifyAPIError, ShopifyGraphQLError) as exc:
-        raise HTTPException(status_code=502, detail={"success": False, "error": str(exc)})
+    """Retired public endpoint: no Shopify buyer order via Admin orderCreate.
+
+    Keep authentication and tenant scoping for stable API semantics, but
+    do not create any local or external Shopify order for this legacy route.
+    Developers can test Draft Orders via Shopify Admin on a development shop.
+    """
+    raise HTTPException(
+        status_code=410,
+        detail={
+            "code": "SHOPIFY_CHECKOUT_REQUIRED",
+            "message": "This legacy test order endpoint is retired; use Shopify Checkout.",
+        },
+    )
 
 
 @router.post("/api/stores/{store_id}/shopify/orders", dependencies=[Depends(require_authorized_path_store)])
