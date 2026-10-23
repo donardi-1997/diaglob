@@ -777,7 +777,10 @@ def test_shopify_checkout_handoff_is_opt_in_and_never_declares_an_order_complete
     db, monkeypatch
 ):
     org, store, customer, agent, _, _, conversation, _ = _scenario(db)
-    _advance_to_final_confirmation(db, conversation, agent)
+    monkeypatch.setenv("SHOPIFY_CHAT_CHECKOUT_VIA_DRAFT", "true")
+    summary = _advance_to_final_confirmation(db, conversation, agent)
+    assert "Shopify Checkout" in summary
+    assert "Pagarás al recibir" not in summary
     drafts_created = []
 
     def fake_checkout_draft(**kwargs):
@@ -800,7 +803,6 @@ def test_shopify_checkout_handoff_is_opt_in_and_never_declares_an_order_complete
             "external_creation_status": "created",
         }
 
-    monkeypatch.setenv("SHOPIFY_CHAT_CHECKOUT_VIA_DRAFT", "true")
     monkeypatch.setattr(
         "app.services.conversational_checkout_service.create_shopify_draft_order",
         fake_checkout_draft,
