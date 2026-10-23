@@ -28,7 +28,10 @@ from app.services.conversational_checkout_service import (
 from app.shopify_cod_orders import create_shopify_cod_order
 from app.shopify_orders import create_shopify_draft_order, build_draft_order_input
 from app.shopify_client import ShopifyUserError
-from app.services.shopify_chat_draft_reconciliation import verified_chat_draft_for_order
+from app.services.shopify_chat_draft_reconciliation import (
+    ShopifyDraftConversionNotReady,
+    verified_chat_draft_for_order,
+)
 from app.services.shopify_webhook_service import process_shopify_order_webhook
 
 SQLALCHEMY_TEST_DATABASE_URL = "sqlite:///./test_conversational_cod_checkout.db"
@@ -709,3 +712,39 @@ def test_signed_shopify_order_webhook_converts_chat_draft_without_duplicate(db, 
     assert repeated["order_id"] == draft.id
     assert db.query(Order).count() == 1
     assert len(events) == 1
+
+
+def test_draft_reconciliation_waits_for_shopify_conversion_without_duplicate(db, monkeypatch):
+    _, store, customer, _, _, _, _, connection = _scenario(db)
+    pending = _stage_synthetic_checkout_draft(db, store, customer)
+
+    class ShopifyStillIndexing:
+        def __init__(self, **kwargs):
+            pass
+
+        def query(self, query, variables):
+            return {
+                "draftOrder": {
+                    "id": "gid://shopify/DraftOrder/987",
+                    "order": None,
+                }
+            }
+
+    monkeypatch.setattr(
+        "app.services.shopify_chat_draft_reconciliation.connection_access_token",
+        lambda *args, **kwargs: "synthetic-token",
+    )
+    monkeypatch.setattr(
+        "app.services.shopify_chat_draft_reconciliation.ShopifyGraphQLClient",
+        ShopifyStillIndexing,
+    )
+    with pytest.raises(ShopifyDraftConversionNotReady):
+        verified_chat_draft_for_order(
+            db, connection=connection, shopify_order_id="456",
+            note_attributes=[
+                {"name": "diaglob_checkout_ref", "value": "chat-checkout:987:123"},
+            ],
+        )
+    assert db.query(Order).count() == 1
+    db.refresh(pending)
+    assert pending.shopify_order_id is None
