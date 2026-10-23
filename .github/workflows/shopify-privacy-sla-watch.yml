@@ -43,6 +43,7 @@ jobs:
           chmod 600 "$HOME/.ssh/known_hosts"
 
       - name: Audit live receipt metadata without reading buyer data
+        id: audit
         env:
           PROD_HOST: ${{ secrets.PROD_HOST }}
           PROD_USER: ${{ secrets.PROD_USER }}
@@ -50,30 +51,102 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$PROD_USER"
-          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes \
+          # Exit 2 from the audited application is an *operational* alert,
+          # NOT a broken monitor. No other nonzero code may be normalized.
+          set +e
+          report="$(ssh -o BatchMode=yes -o StrictHostKeyChecking=yes \
             -i "$HOME/.ssh/diaglob_actions_prod" \
             "$PROD_USER@$PROD_HOST" 'sudo bash -s' <<'REMOTE'
           set -euo pipefail
           set +x
           ENV_FILE=/etc/diaglob/diaglob.env
           if [[ ! -r "$ENV_FILE" ]]; then
-            echo "PRIVACY_WATCH_CONFIG_UNAVAILABLE"
+            echo "PRIVACY_WATCH_CONFIG_UNAVAILABLE" >&2
             exit 1
           fi
           set -a
           . "$ENV_FILE"
           set +a
           cd /opt/diaglob/app/backend
-          # The audit selects count/metadata only, and exits 2 on
-          # urgent/approaching cases. It NEVER exports or deletes data.
           exec .venv/bin/python -m app.shopify_privacy_sla_watch
           REMOTE
+          )"
+          remote_status=$?
+          set -e
+          if [[ "$remote_status" != 0 && "$remote_status" != 2 ]]; then
+            echo "PRIVACY_WATCH_TECHNICAL_FAILURE exit=$remote_status" >&2
+            exit 1
+          fi
 
-      - name: Alert operational owner on failure
-        if: failure()
+          # Treat only the exact PII-free JSON schema as a valid report and
+          # cross-check the remote exit code. Invalid/missing/mismatched
+          # reports are always technical errors, never successful alerts.
+          parsed="$(printf '%s' "$report" | python3 -c '
+          import json
+          import sys
+          try:
+              value = json.load(sys.stdin)
+              state = value["state"]
+              attention = value["attention_required"]
+              counts = value["counts"]
+              expected_code = 2 if attention else 0
+              valid = (
+                  type(value) is dict
+                  and value["audit"] == "shopify_privacy_sla_watch_read_only"
+                  and state in ("normal", "warning", "critical")
+                  and type(attention) is bool
+                  and (state == "normal") == (not attention)
+                  and value["read_only"] is True
+                  and value["privacy_release_ready"] is False
+                  and value["fulfillment_authorized"] is False
+                  and value["fulfillment_complete"] is False
+                  and type(value["receipt_total"]) is int
+                  and value["receipt_total"] >= 0
+                  and type(counts) is dict
+                  and all(type(x) is int and x >= 0 for x in counts.values())
+                  and expected_code == int(sys.argv[1])
+              )
+              if not valid:
+                  raise ValueError("invalid SLA report")
+              print(
+                  state, int(attention), value["receipt_total"],
+                  counts["tenant_store_unresolved"],
+                  counts["review_api_unavailable_with_open_receipts"],
+              )
+          except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+              sys.exit("PRIVACY_WATCH_REPORT_INVALID")
+          ' "$remote_status")"
+          read -r severity attention total unresolved no_review <<< "$parsed"
+
+          {
+            echo "state=$severity"
+            echo "attention=$attention"
+            echo "total=$total"
+            echo "unresolved=$unresolved"
+            echo "review_unavailable=$no_review"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "### Shopify Privacy SLA — $severity"
+            echo
+            echo "| PII-free operational metric | Value |"
+            echo "| --- | ---: |"
+            echo "| Signed/privacy receipt total | $total |"
+            echo "| Unresolved tenant/store | $unresolved |"
+            echo "| Internal review unavailable with receipts | $no_review |"
+            echo
+            echo "**State is not evidence of GDPR fulfillment.**"
+            echo "See [privacy P0 #266](https://github.com/${GITHUB_REPOSITORY}/issues/266) for investigation."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "PRIVACY_WATCH_STATE=$severity (operational; privacy not fulfilled)"
+
+      - name: Notify owner about privacy exceptions or technical failures
+        if: ${{ failure() || steps.audit.outputs.attention == '1' }}
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          PRIVACY_STATE: ${{ steps.audit.outputs.state || 'technical_failure' }}
+          PRIVACY_UNRESOLVED: ${{ steps.audit.outputs.unresolved || 'unknown' }}
+          PRIVACY_REVIEW: ${{ steps.audit.outputs.review_unavailable || 'unknown' }}
           GH_REPOSITORY: ${{ github.repository }}
           GH_RUN_ID: ${{ github.run_id }}
           GH_SERVER: ${{ github.server_url }}
@@ -81,10 +154,13 @@ jobs:
         run: |
           set -euo pipefail
           if [[ -z "$TELEGRAM_BOT_TOKEN" || -z "$TELEGRAM_CHAT_ID" ]]; then
-            echo "Telegram not configured; failed Actions run is the alert."
-            exit 0
+            echo "PRIVACY_ALERT_DELIVERY_UNAVAILABLE" >&2
+            exit 1
           fi
+          # Only metric counts and fixed labels: never send customer selectors,
+          # Shopify shop IDs/domains, recipient metadata or secret values.
           curl --fail --silent --show-error --output /dev/null --max-time 15 \
             -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
-            --data-urlencode "text=DIAGLOB Shopify PRIVACY ACTION REQUIRED (no PII): ${GH_SERVER}/${GH_REPOSITORY}/actions/runs/${GH_RUN_ID}"
+            --data-urlencode "text=DIAGLOB Shopify privacy ${PRIVACY_STATE}: unresolved_scope=${PRIVACY_UNRESOLVED}, review_unavailable=${PRIVACY_REVIEW}. Operational action required, NOT GDPR completion. https://github.com/${GH_REPOSITORY}/issues/266 ; run: ${GH_SERVER}/${GH_REPOSITORY}/actions/runs/${GH_RUN_ID}"
+          echo "PRIVACY_ALERT_DELIVERED=true"
