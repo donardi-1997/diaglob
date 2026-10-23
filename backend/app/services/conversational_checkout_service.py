@@ -263,9 +263,12 @@ def _final_confirmation_text(checkout: ConversationalCheckout, locale: str) -> s
     address = f"{checkout.address_line}, {checkout.neighborhood}, {checkout.city}, {checkout.region}"
     if checkout.address_complement:
         address += f", {checkout.address_complement}"
+    checkout_via_shopify = os.getenv("SHOPIFY_CHAT_CHECKOUT_VIA_DRAFT", "").strip().lower() in (
+        "1", "true", "yes",
+    )
     if locale == "en":
         return (
-            "Final COD order confirmation:\n"
+            ("Shopify Checkout link request:\n" if checkout_via_shopify else "Final COD order confirmation:\n")
             f"{checkout.product_title}{variant}\n"
             f"Quantity: {checkout.quantity}\n"
             f"Product total: {total}\n"
@@ -273,11 +276,16 @@ def _final_confirmation_text(checkout: ConversationalCheckout, locale: str) -> s
             f"Reference: {checkout.delivery_reference}\n"
             f"Recipient: {checkout.customer_name}\n"
             f"Phone: {checkout.phone}\n\n"
-            "You will pay when you receive the order. To create it, reply exactly: CONFIRM"
+            (
+                "Reply CONFIRM to generate a secure Shopify Checkout link. "
+                "Payment methods, delivery and final total are confirmed in Shopify."
+                if checkout_via_shopify else
+                "You will pay when you receive the order. To create it, reply exactly: CONFIRM"
+            )
         )
     if locale == "pt":
         return (
-            "Confirmação final do pedido contra entrega:\n"
+            ("Solicitação de link da Shopify:\n" if checkout_via_shopify else "Confirmação final do pedido contra entrega:\n")
             f"{checkout.product_title}{variant}\n"
             f"Quantidade: {checkout.quantity}\n"
             f"Total dos produtos: {total}\n"
@@ -285,10 +293,15 @@ def _final_confirmation_text(checkout: ConversationalCheckout, locale: str) -> s
             f"Referência: {checkout.delivery_reference}\n"
             f"Recebe: {checkout.customer_name}\n"
             f"Telefone: {checkout.phone}\n\n"
-            "Você paga ao receber. Para criar o pedido, responda exatamente: CONFIRMO"
+            (
+                "Responda CONFIRMO para gerar o link seguro de checkout da Shopify. "
+                "Pagamento, frete e total final serão confirmados na Shopify."
+                if checkout_via_shopify else
+                "Você paga ao receber. Para criar o pedido, responda exatamente: CONFIRMO"
+            )
         )
     return (
-        "Confirmación final del pedido contraentrega:\n"
+        ("Solicitud de enlace de compra Shopify:\n" if checkout_via_shopify else "Confirmación final del pedido contraentrega:\n")
         f"{checkout.product_title}{variant}\n"
         f"Cantidad: {checkout.quantity}\n"
         f"Total de productos: {total}\n"
@@ -296,7 +309,12 @@ def _final_confirmation_text(checkout: ConversationalCheckout, locale: str) -> s
         f"Referencia: {checkout.delivery_reference}\n"
         f"Recibe: {checkout.customer_name}\n"
         f"Teléfono: {checkout.phone}\n\n"
-        "Pagarás al recibir. Para crear el pedido responde exactamente: CONFIRMO"
+        (
+            "Responde CONFIRMO para generar un enlace seguro de Shopify Checkout. "
+            "Los medios de pago, el envío y el total final se confirman en Shopify."
+            if checkout_via_shopify else
+            "Pagarás al recibir. Para crear el pedido responde exactamente: CONFIRMO"
+        )
     )
 
 
