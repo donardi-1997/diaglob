@@ -84,7 +84,7 @@ jobs:
             echo "Telegram not configured; failed Actions run is the alert."
             exit 0
           fi
-          curl --fail --silent --show-error --max-time 15 \
+          curl --fail --silent --show-error --output /dev/null --max-time 15 \
             -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
             --data-urlencode "text=DIAGLOB Shopify PRIVACY ACTION REQUIRED (no PII): ${GH_SERVER}/${GH_REPOSITORY}/actions/runs/${GH_RUN_ID}"
