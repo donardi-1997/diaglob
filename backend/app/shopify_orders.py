@@ -26,6 +26,31 @@ from .services.catalog_availability import variant_is_purchasable
 from .services.shopify_privacy_suppression import evaluate_shopify_local_privacy
 
 
+def build_draft_order_input(
+    *,
+    line_items: list[dict],
+    note: str | None,
+    customer_email: str | None,
+    customer_name: str | None,
+) -> dict:
+    """Build only fields supported by Shopify's DraftOrderInput.
+
+    DraftOrderInput has no `name` property. Buyer name supplied to DIAGLOB
+    is metadata, not the draft order name or an authenticated Shopify Customer.
+    Never invent a customer identity by setting an unsupported GraphQL field.
+    """
+    payload = {"lineItems": line_items}
+    if note:
+        payload["note"] = note
+    if customer_email:
+        payload["email"] = customer_email
+    if customer_name and customer_name.strip():
+        payload["customAttributes"] = [
+            {"key": "diaglob_customer_name", "value": customer_name.strip()},
+        ]
+    return payload
+
+
 def _sanitize_error(msg: str) -> str:
     msg = re.sub(
         r"token\s*[=:]\s*\S+",
@@ -433,22 +458,12 @@ def create_shopify_draft_order(
             access_token=token,
         )
 
-        shopify_input: dict = {
-            "lineItems": shopify_line_items,
-        }
-
-        if note:
-            shopify_input["note"] = note
-
-        if customer_email:
-            shopify_input["email"] = (
-                customer_email
-            )
-
-        if customer_name:
-            shopify_input["name"] = (
-                customer_name
-            )
+        shopify_input = build_draft_order_input(
+            line_items=shopify_line_items,
+            note=note,
+            customer_email=customer_email,
+            customer_name=customer_name,
+        )
 
         data = client.query(
             DRAFT_ORDER_CREATE_MUTATION,
