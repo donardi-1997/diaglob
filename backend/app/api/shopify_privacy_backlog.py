@@ -48,6 +48,10 @@ from ..services.shopify_privacy_export_provenance import (
     ShopifyExportCoverageError,
     inspect_shopify_export_provenance,
 )
+from ..services.shopify_privacy_identity_repair import (
+    ShopifyPrivacyIdentityRepairError,
+    repair_signed_shopify_privacy_receipt_identity,
+)
 from ..services.shopify_privacy_processing import (
     ShopifyPrivacyProcessingError,
     get_shopify_privacy_processing_case,
@@ -162,6 +166,25 @@ def get_shopify_privacy_case_assessment(
     if assessment is None:
         raise HTTPException(status_code=404, detail="Privacy request not found")
     return assessment.safe_dict()
+
+
+@router.post("/api/internal/shopify/privacy/cases/{request_id}/repair-identity")
+def repair_shopify_privacy_case_identity(
+    request_id: str,
+    x_internal_secret: str | None = Header(None, alias="X-Internal-Secret"),
+    db: Session = Depends(get_db),
+):
+    """Rebind a signed GDPR receipt only to an exact past signed shop mapping.
+
+    No data exports, redactions, or Shopify provider requests are made.
+    """
+    _require_internal_secret(x_internal_secret)
+    try:
+        return repair_signed_shopify_privacy_receipt_identity(
+            db, request_id=request_id,
+        )
+    except ShopifyPrivacyIdentityRepairError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
 
 
 @router.post("/api/internal/shopify/privacy/cases/{request_id}/prepare")

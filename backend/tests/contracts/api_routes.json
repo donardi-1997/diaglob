@@ -965,6 +965,10 @@
   ],
   [
     "POST",
+    "/api/internal/shopify/privacy/cases/{request_id}/repair-identity"
+  ],
+  [
+    "POST",
     "/api/internal/shopify/privacy/cases/{request_id}/suppressions/prepare"
   ],
   [
