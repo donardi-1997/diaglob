@@ -856,11 +856,24 @@ async def shopify_compliance_webhook(
             status_code=500, detail="Shopify compliance webhook processing failed",
         ) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        # Webhook validation failures can contain caller-controlled selectors.
+        # Only a fixed machine code may leave this route, never str(exc).
+        code = (
+            "PRIVACY_WEBHOOK_DELIVERY_CONFLICT"
+            if str(exc) == "PRIVACY_WEBHOOK_DELIVERY_CONFLICT"
+            else "INVALID_COMPLIANCE_WEBHOOK_PAYLOAD"
+        )
+        raise HTTPException(status_code=400, detail=code) from None
     except Exception as exc:
         db.rollback()
-        logging.getLogger(__name__).exception(
-            "Shopify compliance webhook processing failed for topic=%s", topic
+        # Logging an exception traceback can copy customer selectors, emails
+        # or raw Shopify payload fragments from provider/SQL exception text.
+        logging.getLogger(__name__).error(
+            "Shopify compliance webhook processing failed topic=%s error_type=%s",
+            topic, type(exc).__name__,
         )
-        raise HTTPException(status_code=500, detail="Shopify compliance webhook processing failed") from exc
+        raise HTTPException(
+            status_code=500,
+            detail="Shopify compliance webhook processing failed",
+        ) from None
 

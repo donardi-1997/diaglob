@@ -2,6 +2,7 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import os
 
 from cryptography.fernet import Fernet
@@ -803,3 +804,51 @@ class TestShopifyComplianceWebhooks:
             assert session.query(ShopifyPrivacyAuditEvent).filter(
                 ShopifyPrivacyAuditEvent.event_type == "processing_prepared",
             ).count() == 1
+
+
+def test_privacy_webhook_failure_does_not_log_customer_identifier(client, caplog):
+    body = json.dumps({
+        "shop_id": 12, "shop_domain": "synthetic.myshopify.com",
+        "customer": {"email": "SECRET_CUSTOMER@example.com"},
+    }).encode("utf-8")
+    secret, headers = _signed_headers(body, "customers/data_request")
+    with (
+        patch.dict(os.environ, {"SHOPIFY_CLIENT_SECRET": secret}),
+        patch(
+            "app.api.shopify.process_shopify_compliance_webhook",
+            side_effect=RuntimeError(
+                "Provider crash with SECRET_CUSTOMER@example.com"
+            ),
+        ),
+        caplog.at_level(logging.ERROR),
+    ):
+        resp = client.post(
+            "/api/webhooks/shopify/compliance", content=body, headers=headers,
+        )
+    assert resp.status_code == 500
+    assert resp.json()["detail"] == "Shopify compliance webhook processing failed"
+    assert "SECRET_CUSTOMER@example.com" not in caplog.text
+    assert "SECRET_CUSTOMER@example.com" not in resp.text
+
+
+def test_privacy_webhook_value_error_is_a_sanitized_machine_code(client):
+    body = json.dumps({
+        "shop_id": 13, "shop_domain": "synthetic.myshopify.com",
+        "customer": {"email": "SECRET_CUSTOMER@example.com"},
+    }).encode("utf-8")
+    secret, headers = _signed_headers(body, "customers/redact")
+    with (
+        patch.dict(os.environ, {"SHOPIFY_CLIENT_SECRET": secret}),
+        patch(
+            "app.api.shopify.process_shopify_compliance_webhook",
+            side_effect=ValueError(
+                "Untrusted selector SECRET_CUSTOMER@example.com"
+            ),
+        ),
+    ):
+        resp = client.post(
+            "/api/webhooks/shopify/compliance", content=body, headers=headers,
+        )
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "INVALID_COMPLIANCE_WEBHOOK_PAYLOAD"
+    assert "SECRET_CUSTOMER@example.com" not in resp.text
