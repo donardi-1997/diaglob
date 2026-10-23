@@ -43,6 +43,49 @@ CHECKOUT_TTL = timedelta(hours=24)
 MAX_QUANTITY = 10
 ADDRESS_CONFIDENCE_MIN = 75
 
+# The pilot is locked to one Shopify-owned test shop. Two numeric IDs must
+# independently match the tenant/store; the global switch ALONE grants nothing.
+# A second store with the same domain or a forged URL cannot enter the pilot.
+_PILOT_SHOP_DOMAIN = "diaglob-poc.myshopify.com"
+
+
+def _poc_checkout_connection(
+    db: Session, checkout: ConversationalCheckout,
+) -> CommerceConnection | None:
+    enabled = os.getenv("SHOPIFY_CHAT_CHECKOUT_VIA_DRAFT", "").strip().lower()
+    if enabled not in {"1", "true", "yes"}:
+        return None
+
+    org = os.getenv("SHOPIFY_CHAT_CHECKOUT_POC_ORGANIZATION_ID", "").strip()
+    store = os.getenv("SHOPIFY_CHAT_CHECKOUT_POC_STORE_ID", "").strip()
+    if (
+        not org.isascii() or not org.isdecimal() or not store.isascii()
+        or not store.isdecimal() or not int(org) or not int(store)
+    ):
+        # Missing or malformed explicit scope is disabled, never global.
+        return None
+    if (checkout.organization_id, checkout.store_id) != (int(org), int(store)):
+        return None
+
+    matches = (
+        db.query(CommerceConnection)
+        .filter(
+            CommerceConnection.organization_id == checkout.organization_id,
+            CommerceConnection.store_id == checkout.store_id,
+            CommerceConnection.provider == "shopify",
+            CommerceConnection.status == "connected",
+            CommerceConnection.external_store_url == _PILOT_SHOP_DOMAIN,
+        )
+        .limit(2)
+        .all()
+    )
+    if len(matches) != 1:
+        # Do not fall back to direct orderCreate for a targeted pilot whose
+        # verified Shopify connection disappeared or became ambiguous.
+        raise ValueError("SHOPIFY_POC_CONNECTION_UNAVAILABLE")
+    return matches[0]
+
+
 PURCHASE_PATTERNS = (
     "quiero comprar",
     "quiero pedir",
@@ -257,16 +300,15 @@ def _address_confirmation_text(checkout: ConversationalCheckout, locale: str) ->
     )
 
 
-def _final_confirmation_text(checkout: ConversationalCheckout, locale: str) -> str:
+def _final_confirmation_text(
+    checkout: ConversationalCheckout, locale: str, *, shopify_checkout: bool = False,
+) -> str:
     total = _money(checkout.total, checkout.currency)
     variant = f" · {checkout.variant_title}" if checkout.variant_title else ""
     address = f"{checkout.address_line}, {checkout.neighborhood}, {checkout.city}, {checkout.region}"
     if checkout.address_complement:
         address += f", {checkout.address_complement}"
 
-    shopify_checkout = os.getenv("SHOPIFY_CHAT_CHECKOUT_VIA_DRAFT", "").strip().lower() in (
-        "1", "true", "yes",
-    )
     if locale == "en":
         intro = (
             "Shopify Checkout link request:"
@@ -589,7 +631,10 @@ def _finalize_checkout(
             prefix = "O preço mudou enquanto confirmávamos seus dados. Revise o novo total.\n\n"
         else:
             prefix = "El precio cambió mientras confirmábamos tus datos. Revisa el nuevo total.\n\n"
-        return prefix + _final_confirmation_text(checkout, locale)
+        return prefix + _final_confirmation_text(
+            checkout, locale,
+            shopify_checkout=_poc_checkout_connection(db, checkout) is not None,
+        )
 
     checkout.customer_confirmed = True
     checkout.customer_confirmed_at = datetime.utcnow()
@@ -624,25 +669,12 @@ def _finalize_checkout(
         f"{checkout.city}; {checkout.region}; {checkout.country_code}"
     )
 
-    # Gated migration from direct orderCreate to official Shopify Checkout.
-    # Default stays disabled until Shopify POC E2E and billing/checkout approval.
-    via_shopify_checkout = os.getenv("SHOPIFY_CHAT_CHECKOUT_VIA_DRAFT", "").strip().lower() in (
-        "1", "true", "yes",
-    )
+    # Exact tenant/store AND verified POC shop are required. No other tenant
+    # can be opted in by changing the global flag.
     try:
+        connection = _poc_checkout_connection(db, checkout)
+        via_shopify_checkout = connection is not None
         if via_shopify_checkout:
-            connection = (
-                db.query(CommerceConnection)
-                .filter(
-                    CommerceConnection.organization_id == checkout.organization_id,
-                    CommerceConnection.store_id == checkout.store_id,
-                    CommerceConnection.provider == "shopify",
-                    CommerceConnection.status == "connected",
-                )
-                .first()
-            )
-            if connection is None:
-                raise ValueError("SHOPIFY_NOT_CONNECTED")
             name_parts = (checkout.customer_name or "Cliente").split()
             address_parts = [
                 checkout.address_complement,
@@ -976,7 +1008,10 @@ def process_conversational_checkout_turn(
         checkout.customer_confirmed = False
         checkout.customer_confirmed_at = None
         db.commit()
-        return _final_confirmation_text(checkout, locale)
+        return _final_confirmation_text(
+            checkout, locale,
+            shopify_checkout=_poc_checkout_connection(db, checkout) is not None,
+        )
 
     if checkout.status == "awaiting_order_confirmation":
         expected = "confirm" if locale == "en" else "confirmo"
@@ -987,7 +1022,10 @@ def process_conversational_checkout_turn(
                 return "Não vou criar o pedido com uma resposta ambígua. Revise o resumo e responda exatamente CONFIRMO, ou CANCELAR para parar."
             return "No crearé el pedido con una respuesta ambigua. Revisa el resumen y responde exactamente CONFIRMO, o CANCELAR para detenerlo."
         if normalized != expected and normalized not in {f"{expected} pedido", "confirmar pedido"}:
-            return _final_confirmation_text(checkout, locale)
+            return _final_confirmation_text(
+            checkout, locale,
+            shopify_checkout=_poc_checkout_connection(db, checkout) is not None,
+        )
         return _finalize_checkout(db, conversation, agent, checkout)
 
     return None
