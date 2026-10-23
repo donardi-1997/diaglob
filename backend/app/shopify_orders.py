@@ -32,6 +32,8 @@ def build_draft_order_input(
     note: str | None,
     customer_email: str | None,
     customer_name: str | None,
+    customer_phone: str | None = None,
+    shipping_address: dict | None = None,
 ) -> dict:
     """Build only fields supported by Shopify's DraftOrderInput.
 
@@ -48,6 +50,25 @@ def build_draft_order_input(
         payload["customAttributes"] = [
             {"key": "diaglob_customer_name", "value": customer_name.strip()},
         ]
+    if customer_phone:
+        payload["phone"] = customer_phone
+    if shipping_address is not None:
+        # MailingAddressInput has no province text field. In particular,
+        # do not blindly forward input supplied by a buyer or AI agent.
+        supported = {
+            "firstName", "lastName", "address1", "address2",
+            "city", "countryCode", "provinceCode", "zip", "phone",
+            "company",
+        }
+        if not isinstance(shipping_address, dict):
+            raise ValueError("SHOPIFY_DRAFT_SHIPPING_ADDRESS_INVALID")
+        extra = set(shipping_address) - supported
+        if extra or not shipping_address.get("address1") or not shipping_address.get("countryCode"):
+            raise ValueError("SHOPIFY_DRAFT_SHIPPING_ADDRESS_INVALID")
+        payload["shippingAddress"] = {
+            key: value for key, value in shipping_address.items()
+            if value is not None and value != ""
+        }
     return payload
 
 
@@ -223,6 +244,10 @@ def create_shopify_draft_order(
     customer_name: str | None = None,
     note: str | None = None,
     idempotency_key: str | None = None,
+    customer_phone: str | None = None,
+    customer_id: int | None = None,
+    shipping_address: dict | None = None,
+    source: str = "shopify",
 ) -> dict:
     """
     Creates a Shopify Draft Order with proper
@@ -257,7 +282,9 @@ def create_shopify_draft_order(
     # No draft order or existing retry may reinstate an actively suppressed buyer.
     privacy_block = evaluate_shopify_local_privacy(
         db, organization_id=store.organization_id, store_id=store.id,
+        local_customer_id=customer_id,
         customer_email=customer_email,
+        customer_phone=customer_phone,
     )
     if privacy_block:
         raise ValueError("SHOPIFY_PRIVACY_SUPPRESSED")
@@ -330,8 +357,10 @@ def create_shopify_draft_order(
             total_amount=0,
             currency=store.currency,
             financial_status="pending",
+            payment_status="pending",
+            customer_id=customer_id,
             fulfillment_status=None,
-            source="shopify",
+            source=source,
             shopify_draft_order_id=None,
             invoice_url=None,
             idempotency_key=idempotency_key,
@@ -463,6 +492,8 @@ def create_shopify_draft_order(
             note=note,
             customer_email=customer_email,
             customer_name=customer_name,
+            customer_phone=customer_phone,
+            shipping_address=shipping_address,
         )
 
         data = client.query(
@@ -649,13 +680,15 @@ def create_shopify_draft_order(
 
     db.commit()
 
-    # Emit order.created event for automations
-    safe_emit_event(
-        db=db,
-        organization_id=store.organization_id,
-        store_id=store.id,
-        event_type="order.created",
-        payload={
+    # Chat checkout drafts are NOT Shopify orders or completed purchases.
+    # Wait for a verified Shopify order webhook before emitting order.created.
+    if source != "shopify_chat_checkout":
+        safe_emit_event(
+            db=db,
+            organization_id=store.organization_id,
+            store_id=store.id,
+            event_type="order.created",
+            payload={
             "order": {
                 "id": order.id,
                 "store_id": store.id,
@@ -667,8 +700,8 @@ def create_shopify_draft_order(
                 "shopify_draft_order_id": order.shopify_draft_order_id,
             }
         },
-        event_id=f"order:{order.id}:created",
-    )
+            event_id=f"order:{order.id}:created",
+        )
 
     return {
         "ok": True,
