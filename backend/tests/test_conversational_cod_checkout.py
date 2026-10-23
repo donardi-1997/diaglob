@@ -636,8 +636,20 @@ def test_draft_reconciliation_cannot_claim_another_store(db, monkeypatch):
 
 
 def test_signed_shopify_order_webhook_converts_chat_draft_without_duplicate(db, monkeypatch):
-    _, store, customer, _, _, variant, _, connection = _scenario(db)
+    org, store, customer, agent, _, variant, conversation, connection = _scenario(db)
     draft = _stage_synthetic_checkout_draft(db, store, customer)
+    reference = f"chat-checkout:987:{conversation.id}"
+    draft.idempotency_key = reference
+    checkout = ConversationalCheckout(
+        id=987, organization_id=org.id, store_id=store.id,
+        conversation_id=conversation.id, customer_id=customer.id,
+        ai_agent_id=agent.id, status="awaiting_shopify_checkout",
+        created_order_id=draft.id, quantity=1,
+        currency="COP", country_code="CO",
+        expires_at=datetime.utcnow() + timedelta(hours=24),
+    )
+    db.add(checkout)
+    db.commit()
     events = []
 
     class FakeClient:
@@ -686,7 +698,7 @@ def test_signed_shopify_order_webhook_converts_chat_draft_without_duplicate(db, 
         "currency": "COP", "financial_status": "pending",
         "fulfillment_status": None,
         "note_attributes": [
-            {"name": "diaglob_checkout_ref", "value": "chat-checkout:987:123"},
+            {"name": "diaglob_checkout_ref", "value": reference},
         ],
         "line_items": [
             {"id": 999, "variant_id": int(variant.shopify_variant_id),
@@ -705,6 +717,14 @@ def test_signed_shopify_order_webhook_converts_chat_draft_without_duplicate(db, 
     assert db.query(Order).count() == 1
     assert db.query(OrderItem).filter(OrderItem.order_id == draft.id).count() == 1
     assert events == ["order.created"]
+    db.refresh(checkout)
+    assert checkout.status == "order_created"
+    assert checkout.created_order_id == draft.id
+    attribution = db.query(OrderSalesAttribution).filter(
+        OrderSalesAttribution.order_id == draft.id,
+    ).one()
+    assert attribution.ai_agent_id == agent.id
+    assert attribution.conversation_id == conversation.id
 
     repeated = process_shopify_order_webhook(
         db, connection=connection, topic="orders/create", payload=payload,
@@ -712,6 +732,9 @@ def test_signed_shopify_order_webhook_converts_chat_draft_without_duplicate(db, 
     assert repeated["order_id"] == draft.id
     assert db.query(Order).count() == 1
     assert len(events) == 1
+    assert db.query(OrderSalesAttribution).filter(
+        OrderSalesAttribution.order_id == draft.id,
+    ).count() == 1
 
 
 def test_draft_reconciliation_waits_for_shopify_conversion_without_duplicate(db, monkeypatch):
