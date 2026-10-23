@@ -36,6 +36,7 @@ CHECKOUT_STATUSES = (
     "collecting_delivery_reference",
     "awaiting_order_confirmation",
     "creating_order",
+    "awaiting_shopify_checkout",
     "order_created",
     "cancelled",
     "failed",
@@ -56,7 +57,8 @@ class ConversationalCheckout(Base):
             "'collecting_address','collecting_neighborhood',"
             "'collecting_address_complement','awaiting_address_confirmation',"
             "'collecting_delivery_reference','awaiting_order_confirmation',"
-            "'creating_order','order_created','cancelled','failed','expired'"
+            "'creating_order','awaiting_shopify_checkout','order_created',"
+            "'cancelled','failed','expired'"
             ")",
             name="ck_conversational_checkout_status",
         ),
