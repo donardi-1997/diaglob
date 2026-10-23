@@ -29,6 +29,10 @@ query VerifyShopifyDraftConversion($draftId: ID!) {
 """
 
 
+class ShopifyDraftConversionNotReady(RuntimeError):
+    """Shopify has not exposed the draft's completed order yet; retry webhook."""
+
+
 def _candidate_reference(note_attributes: Any) -> str | None:
     """Accept only one unambiguous app-scoped marker from a Shopify order."""
     if not isinstance(note_attributes, list):
@@ -92,6 +96,10 @@ def verified_chat_draft_for_order(
     if not isinstance(linked, dict) or linked.get("id") != draft.shopify_draft_order_id:
         return None
     converted = linked.get("order")
+    if converted is None:
+        # Do not write a second local Order while Shopify's draft conversion
+        # is not yet visible through Admin GraphQL; retry the signed webhook.
+        raise ShopifyDraftConversionNotReady("SHOPIFY_DRAFT_CONVERSION_NOT_READY")
     target_order_gid = f"gid://shopify/Order/{int(shopify_order_id)}"
     if not isinstance(converted, dict) or converted.get("id") != target_order_gid:
         return None
