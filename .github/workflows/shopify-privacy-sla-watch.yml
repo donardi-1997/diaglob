@@ -1,10 +1,11 @@
 name: Shopify Privacy SLA Watch
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/shopify-privacy-sla-watch.yml"
+  # Push starts the deploy workflow concurrently. Run the first audit ONLY
+  # after that deployment completes successfully and the module is present.
+  workflow_run:
+    workflows: ["Deploy Production"]
+    types: [completed]
   schedule:
     # Every six hours: Shopify's action window is 30 days; do not rely on
     # a developer noticing a failed deployment.
@@ -20,6 +21,7 @@ concurrency:
 
 jobs:
   read-only-sla:
+    if: ${{ github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main') }}
     name: Audit Shopify privacy deadlines (NO data access)
     runs-on: ubuntu-latest
     timeout-minutes: 12
@@ -82,7 +84,7 @@ jobs:
             echo "Telegram not configured; failed Actions run is the alert."
             exit 0
           fi
-          curl --fail --silent --show-error --max-time 15 \
+          curl --fail --silent --show-error --output /dev/null --max-time 15 \
             -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
             --data-urlencode "text=DIAGLOB Shopify PRIVACY ACTION REQUIRED (no PII): ${GH_SERVER}/${GH_REPOSITORY}/actions/runs/${GH_RUN_ID}"
