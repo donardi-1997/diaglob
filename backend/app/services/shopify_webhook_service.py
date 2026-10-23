@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from ..automations import safe_emit_event
 from .automation_event_subject_resolution import resolve_shopify_order_event_customer
+from .shopify_chat_draft_reconciliation import verified_chat_draft_for_order
 from ..models import (
     CommerceConnection,
     Customer,
@@ -177,6 +178,20 @@ def process_shopify_order_webhook(
         )
         .first()
     )
+    verified_chat_draft = (
+        verified_chat_draft_for_order(
+            db,
+            connection=connection,
+            shopify_order_id=external_order_id,
+            note_attributes=payload.get("note_attributes"),
+        )
+        if order is None and topic == "orders/create"
+        else None
+    )
+    if verified_chat_draft is not None:
+        # Reuse the draft's local order row rather than counting the new
+        # Shopify order as a second DIAGLOB sale.
+        order = verified_chat_draft
 
     old_state = (
         (
@@ -212,7 +227,7 @@ def process_shopify_order_webhook(
         allow_contact_fallback=not contact_fallback_forbidden,
     )
 
-    created = order is None
+    created = order is None or verified_chat_draft is not None
 
     if order is None:
         order = Order(
@@ -243,6 +258,19 @@ def process_shopify_order_webhook(
         customer=customer,
         store=store,
     )
+    if verified_chat_draft is not None:
+        order.shopify_order_id = external_order_id
+        order.source = "shopify_chat_checkout"
+        # The draft's provisional line items lack Shopify order line IDs;
+        # replace them with webhook-confirmed items, never double-count.
+        (
+            db.query(OrderItem)
+            .filter(
+                OrderItem.order_id == order.id,
+                OrderItem.shopify_line_item_id.is_(None),
+            )
+            .delete(synchronize_session=False)
+        )
     _replace_order_items(
         db,
         order=order,
