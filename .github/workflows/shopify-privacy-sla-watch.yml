@@ -1,0 +1,88 @@
+name: Shopify Privacy SLA Watch
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/shopify-privacy-sla-watch.yml"
+  schedule:
+    # Every six hours: Shopify's action window is 30 days; do not rely on
+    # a developer noticing a failed deployment.
+    - cron: "23 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: diaglob-shopify-privacy-sla-watch
+  cancel-in-progress: false
+
+jobs:
+  read-only-sla:
+    name: Audit Shopify privacy deadlines (NO data access)
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Configure production SSH
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_SSH_KEY_B64: ${{ secrets.PROD_SSH_KEY_B64 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$PROD_HOST"
+          test -n "$PROD_SSH_KEY_B64"
+          mkdir -p "$HOME/.ssh"
+          chmod 700 "$HOME/.ssh"
+          printf '%s' "$PROD_SSH_KEY_B64" | base64 --decode > "$HOME/.ssh/diaglob_actions_prod"
+          chmod 600 "$HOME/.ssh/diaglob_actions_prod"
+          ssh-keyscan -H "$PROD_HOST" >> "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Audit live receipt metadata without reading buyer data
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$PROD_USER"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -i "$HOME/.ssh/diaglob_actions_prod" \
+            "$PROD_USER@$PROD_HOST" 'sudo bash -s' <<'REMOTE'
+          set -euo pipefail
+          set +x
+          ENV_FILE=/etc/diaglob/diaglob.env
+          if [[ ! -r "$ENV_FILE" ]]; then
+            echo "PRIVACY_WATCH_CONFIG_UNAVAILABLE"
+            exit 1
+          fi
+          set -a
+          . "$ENV_FILE"
+          set +a
+          cd /opt/diaglob/app/backend
+          # The audit selects count/metadata only, and exits 2 on
+          # urgent/approaching cases. It NEVER exports or deletes data.
+          exec .venv/bin/python -m app.shopify_privacy_sla_watch
+          REMOTE
+
+      - name: Alert operational owner on failure
+        if: failure()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GH_REPOSITORY: ${{ github.repository }}
+          GH_RUN_ID: ${{ github.run_id }}
+          GH_SERVER: ${{ github.server_url }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$TELEGRAM_BOT_TOKEN" || -z "$TELEGRAM_CHAT_ID" ]]; then
+            echo "Telegram not configured; failed Actions run is the alert."
+            exit 0
+          fi
+          curl --fail --silent --show-error --max-time 15 \
+            -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=DIAGLOB Shopify PRIVACY ACTION REQUIRED (no PII): ${GH_SERVER}/${GH_REPOSITORY}/actions/runs/${GH_RUN_ID}"
