@@ -1,10 +1,11 @@
 name: Shopify Privacy SLA Watch
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/shopify-privacy-sla-watch.yml"
+  # Push starts the deploy workflow concurrently. Run the first audit ONLY
+  # after that deployment completes successfully and the module is present.
+  workflow_run:
+    workflows: ["Deploy Production"]
+    types: [completed]
   schedule:
     # Every six hours: Shopify's action window is 30 days; do not rely on
     # a developer noticing a failed deployment.
@@ -20,6 +21,7 @@ concurrency:
 
 jobs:
   read-only-sla:
+    if: ${{ github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main') }}
     name: Audit Shopify privacy deadlines (NO data access)
     runs-on: ubuntu-latest
     timeout-minutes: 12
