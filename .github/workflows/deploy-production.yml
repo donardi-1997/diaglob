@@ -473,7 +473,7 @@ jobs:
 
           ${SERVER_URL}/${REPOSITORY}/actions/runs/${RUN_ID}"
 
-          curl --fail --silent --show-error \
+          curl --fail --silent --show-error --output /dev/null \
             -X POST \
             "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
