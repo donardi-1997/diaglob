@@ -1,13 +1,12 @@
-"""HTTP journey tests: signup -> billing -> signed Shopify OAuth -> replay.
+"""HTTP journey tests: signup -> billing -> verified Shopify-managed claim.
 
 These are provider-SIMULATED API E2E tests. They run actual FastAPI routing,
 persistence and HMAC verification without a paid Paddle checkout or live
 Shopify Admin/Partner calls. They do NOT certify external merchant E2E.
 """
-from datetime import datetime
+from datetime import datetime, timedelta
 import hashlib
-import hmac
-from urllib.parse import parse_qs, urlsplit
+import secrets
 from unittest.mock import patch
 
 import pytest
@@ -19,7 +18,7 @@ from app.db import Base, get_db
 from app.main import app, get_current_membership, get_current_user
 from app.models import (
     CommerceConnection, Organization, OrganizationMembership,
-    ShopifyOAuthState, Store, User,
+    ShopifyOAuthState, ShopifyPendingInstall, Store, User,
 )
 
 SHOP = "diaglob-poc.myshopify.com"
@@ -90,18 +89,30 @@ def signup(client: TestClient, channel: str):
     return response.json()
 
 
-def signed_callback(state: str, *, shop: str = SHOP) -> dict:
-    params = {
-        "code": "fake-oauth-exchange-code",
-        "shop": shop,
-        "state": state,
-        "timestamp": "1474933560",
-    }
-    message = "&".join(f"{key}={params[key]}" for key in sorted(params))
-    params["hmac"] = hmac.new(
-        SECRET.encode(), message.encode(), hashlib.sha256,
-    ).hexdigest()
-    return params
+def stage_verified_managed_install(db: Session) -> str:
+    """Synthetic stand-in for a Shopify-issued, verified offline grant.
+
+    No Shopify network call or live token; the claim HTTP handler and
+    actual DIAGLOB billing guard still run without mocks.
+    """
+    now = datetime.utcnow()
+    code = secrets.token_urlsafe(32)
+    db.add(ShopifyPendingInstall(
+        state=secrets.token_urlsafe(32),
+        shop_domain=SHOP,
+        expires_at=now + timedelta(minutes=10),
+        state_used=True,
+        grant_method="managed",
+        token_encrypted="encrypted-synthetic-access",
+        refresh_token_encrypted="encrypted-synthetic-refresh",
+        access_token_expires_at=now + timedelta(hours=1),
+        refresh_token_expires_at=now + timedelta(days=10),
+        claim_hash=hashlib.sha256(code.encode()).hexdigest(),
+        claim_expires_at=now + timedelta(minutes=10),
+        created_at=now,
+    ))
+    db.commit()
+    return code
 
 
 def test_direct_signup_to_paddle_checkout_with_no_network_or_charge(scenario):
@@ -134,7 +145,7 @@ def test_direct_signup_to_paddle_checkout_with_no_network_or_charge(scenario):
     assert org.billing_subscription_id is None
 
 
-def test_pending_shopify_signup_blocks_paddle_before_and_after_oauth(scenario):
+def test_pending_shopify_signup_blocks_paddle_before_and_after_managed_claim(scenario):
     client, db = scenario
     registration = signup(client, "shopify_install")
     org = db.get(Organization, registration["organization"]["id"])
@@ -172,56 +183,41 @@ def test_pending_shopify_signup_blocks_paddle_before_and_after_oauth(scenario):
     db.add(store)
     db.commit()
 
-    start = client.post(
+    legacy = client.post(
         f"/api/stores/{store.id}/shopify/connect",
         json={"shop_domain": SHOP},
     )
-    assert start.status_code == 200, start.text
-    destination = urlsplit(start.json()["authorization_url"])
-    assert destination.hostname == SHOP
-    assert destination.path == "/admin/oauth/authorize"
-    oauth_state = parse_qs(destination.query)["state"][0]
-    assert db.query(ShopifyOAuthState).filter_by(state=oauth_state).one().used is False
+    assert legacy.status_code == 410
+    assert legacy.json()["detail"]["code"] == "SHOPIFY_MANAGED_INSTALL_REQUIRED"
+    assert db.query(ShopifyOAuthState).count() == 0
     db.refresh(org)
     assert org.billing_provider is None
 
+    code = stage_verified_managed_install(db)
     with patch(
-        "app.services.shopify_service.exchange_access_token",
-        return_value="fake-provider-token",
-    ) as exchange, patch(
-        "app.services.shopify_service.encrypt_shopify_secret",
-        return_value="fake-encrypted-token",
-    ), patch(
-        "app.services.shopify_service.ensure_shopify_order_webhooks",
+        "app.services.shopify_public_install.ensure_shopify_order_webhooks",
         return_value={"ok": True},
-    ), patch(
-        "app.services.product_analytics.track_shopify_connected"
-    ), patch(
-        "app.services.shopify_service.record_lifecycle_conversion"
-    ):
-        rejected = signed_callback(oauth_state)
-        rejected["hmac"] = "0" * 64
-        bad = client.get("/api/shopify/callback", params=rejected)
-        assert bad.status_code == 403
-        assert db.query(ShopifyOAuthState).filter_by(state=oauth_state).one().used is False
-        exchange.assert_not_called()
+    ) as webhooks:
+        claimed = client.post(
+            f"/api/stores/{store.id}/shopify/install/claim-code",
+            json={"claim_code": code},
+        )
+        assert claimed.status_code == 200, claimed.text
+        assert claimed.json()["connected"] is True
+        assert claimed.json()["shop_domain"] == SHOP
+        webhooks.assert_called_once()
 
-        valid = signed_callback(oauth_state)
-        callback = client.get("/api/shopify/callback", params=valid)
-        assert callback.status_code in {302, 307}, callback.text
-        assert callback.headers["location"].startswith("https://diaglob.tech")
-        exchange.assert_called_once_with(SHOP, "fake-oauth-exchange-code")
-
-        replay = client.get("/api/shopify/callback", params=valid)
-        assert replay.status_code == 400
-        exchange.assert_called_once()
+        replay = client.post(
+            f"/api/stores/{store.id}/shopify/install/claim-code",
+            json={"claim_code": code},
+        )
+        assert replay.status_code == 404
 
     db.expire_all()
     connection = db.query(CommerceConnection).one()
     assert connection.external_store_url == SHOP
     assert connection.status == "connected"
-    assert connection.access_token_encrypted == "fake-encrypted-token"
-    assert db.query(ShopifyOAuthState).filter_by(state=oauth_state).one().used is True
+    assert connection.access_token_encrypted == "encrypted-synthetic-access"
     assert db.get(Organization, org.id).billing_provider == "shopify"
     assert db.get(Organization, org.id).plan == "trial"
 
@@ -238,7 +234,7 @@ def test_pending_shopify_signup_blocks_paddle_before_and_after_oauth(scenario):
     checkout.assert_not_called()
 
 
-def test_direct_paddle_customer_can_connect_shopify_for_commerce_only(scenario):
+def test_direct_paddle_customer_cannot_claim_new_shopify_public_install(scenario):
     client, db = scenario
     registration = signup(client, "direct")
     org = db.get(Organization, registration["organization"]["id"])
@@ -254,30 +250,23 @@ def test_direct_paddle_customer_can_connect_shopify_for_commerce_only(scenario):
     db.add(store)
     db.commit()
 
-    start = client.post(
+    legacy = client.post(
         f"/api/stores/{store.id}/shopify/connect",
         json={"shop_domain": SHOP},
     )
-    assert start.status_code == 200
-    state = parse_qs(urlsplit(start.json()["authorization_url"]).query)["state"][0]
-    with patch(
-        "app.services.shopify_service.exchange_access_token",
-        return_value="synthetic",
-    ), patch(
-        "app.services.shopify_service.encrypt_shopify_secret",
-        return_value="encrypted-synthetic",
-    ), patch(
-        "app.services.shopify_service.ensure_shopify_order_webhooks",
-        return_value={"ok": True},
-    ), patch(
-        "app.services.product_analytics.track_shopify_connected"
-    ), patch(
-        "app.services.shopify_service.record_lifecycle_conversion"
-    ):
-        callback = client.get(
-            "/api/shopify/callback", params=signed_callback(state),
+    assert legacy.status_code == 410
+    assert legacy.json()["detail"]["code"] == "SHOPIFY_MANAGED_INSTALL_REQUIRED"
+
+    code = stage_verified_managed_install(db)
+    with patch("app.services.shopify_public_install.ensure_shopify_order_webhooks") as webhooks:
+        claim = client.post(
+            f"/api/stores/{store.id}/shopify/install/claim-code",
+            json={"claim_code": code},
         )
-    assert callback.status_code in {302, 307}, callback.text
+    assert claim.status_code == 409
+    assert claim.json()["detail"] == "SHOPIFY_BILLING_ORGANIZATION_REQUIRED"
+    webhooks.assert_not_called()
     db.expire_all()
     assert db.get(Organization, org.id).billing_provider == "paddle"
-    assert db.query(CommerceConnection).one().status == "connected"
+    assert db.query(CommerceConnection).count() == 0
+    assert db.query(ShopifyOAuthState).count() == 0

@@ -47,7 +47,6 @@ interface StoreForm {
   currency: string;
   timezone: string;
   default_language: string;
-  shopify_domain: string;
   active: boolean;
 }
 
@@ -59,7 +58,6 @@ const EMPTY_FORM: StoreForm = {
   currency: "",
   timezone: "",
   default_language: "",
-  shopify_domain: "",
   active: true,
 };
 
@@ -159,7 +157,7 @@ const COPY: Record<
     market: "País / mercado",
     storeName: "Nombre de la tienda",
     commerceDomainHelp:
-      "Opcional. Guarda el dominio de Shopify como identificador; la conexión OAuth se completa después en Integraciones.",
+      "Solo lectura. El dominio se obtiene de una instalación autorizada por Shopify; no se configura manualmente.",
     status: "Estado operativo",
     activeHelp: "La tienda estará disponible para la operación y para seleccionar en el workspace.",
     inactiveHelp: "La tienda queda suspendida y no participa en la operación activa.",
@@ -221,7 +219,7 @@ const COPY: Record<
     market: "Country / market",
     storeName: "Store name",
     commerceDomainHelp:
-      "Optional. Save the Shopify domain as an identifier; complete the OAuth connection later in Integrations.",
+      "Read only. Shopify provides the verified domain during installation; it cannot be set manually.",
     status: "Operating status",
     activeHelp: "The store will be available for operations and workspace selection.",
     inactiveHelp: "The store remains suspended and is excluded from active operations.",
@@ -283,7 +281,7 @@ const COPY: Record<
     market: "País / mercado",
     storeName: "Nome da loja",
     commerceDomainHelp:
-      "Opcional. Salve o domínio Shopify como identificador; conclua a conexão OAuth depois em Integrações.",
+      "Somente leitura. A Shopify fornece o domínio verificado durante a instalação; não é definido manualmente.",
     status: "Status operacional",
     activeHelp: "A loja ficará disponível para operação e seleção no workspace.",
     inactiveHelp: "A loja fica suspensa e não participa da operação ativa.",
@@ -447,7 +445,6 @@ export default function StoresPage({
             currency: firstMarket.currency,
             timezone: firstMarket.default_timezone,
             default_language: firstMarket.default_language,
-            shopify_domain: "",
             active: true,
           }
         : EMPTY_FORM,
@@ -465,7 +462,6 @@ export default function StoresPage({
       currency: store.currency,
       timezone: store.timezone,
       default_language: store.default_language,
-      shopify_domain: store.shopify_domain || "",
       active: store.active,
     });
     setError("");
@@ -521,7 +517,6 @@ export default function StoresPage({
           currency: form.currency,
           timezone: form.timezone,
           default_language: form.default_language,
-          shopify_domain: form.shopify_domain.trim() || null,
           active: form.active,
         });
         setSuccess(
@@ -536,7 +531,6 @@ export default function StoresPage({
           currency: form.currency,
           timezone: form.timezone,
           default_language: form.default_language,
-          shopify_domain: form.shopify_domain.trim() || null,
           active: form.active,
         });
         setSuccess(t("storesI18nCreatedSuccess"));
@@ -977,15 +971,13 @@ export default function StoresPage({
                 />
               </label>
 
-              <label className="stores-v2-field is-full">
-                <span className="stores-v2-field-label">{copy.commerceDomain}</span>
-                <input
-                  value={form.shopify_domain}
-                  onChange={(event) => setForm((current) => ({ ...current, shopify_domain: event.target.value }))}
-                  placeholder="mitienda.myshopify.com"
-                />
-                <small>{copy.commerceDomainHelp}</small>
-              </label>
+              {editingStore && (
+                <div className="stores-v2-field is-full">
+                  <span className="stores-v2-field-label">{copy.commerceDomain}</span>
+                  <strong>{editingStore.shopify_domain || copy.noCommerceDomain}</strong>
+                  <small>{copy.commerceDomainHelp}</small>
+                </div>
+              )}
 
               <div className="stores-v2-toggle-row">
                 <label>

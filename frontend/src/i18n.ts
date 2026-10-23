@@ -2132,7 +2132,7 @@ const resources = {
       onboardingStepShopify: "Conecta Shopify",
       onboardingStepShopifyHelp: "Sincroniza productos, variantes e inventario automáticamente.",
       onboardingStepShopifyAction: "Conectar Shopify",
-      onboardingStepShopifyHint: "Necesitas tu dominio .myshopify.com (ej: mitienda.myshopify.com)",
+      onboardingStepShopifyHint: "Inicia la instalación desde Shopify Admin y vincula la tienda con un código temporal.",
 
       onboardingStepCatalog: "Sincroniza tu catálogo",
       onboardingStepCatalogHelp: "Tus productos estarán disponibles en DIAGLOB.",
@@ -4326,7 +4326,7 @@ const resources = {
       onboardingStepShopify: "Connect Shopify",
       onboardingStepShopifyHelp: "Sync products, variants, and inventory automatically.",
       onboardingStepShopifyAction: "Connect Shopify",
-      onboardingStepShopifyHint: "You need your .myshopify.com domain (e.g., mystore.myshopify.com)",
+      onboardingStepShopifyHint: "Start installation from Shopify Admin and link your store with a one-time code.",
 
       onboardingStepCatalog: "Sync your catalog",
       onboardingStepCatalogHelp: "Your products will be available in DIAGLOB.",
@@ -4562,7 +4562,7 @@ const resources = {
       onboardingStepShopify: "Conecte o Shopify",
       onboardingStepShopifyHelp: "Sincronize produtos, variantes e inventário automaticamente.",
       onboardingStepShopifyAction: "Conectar Shopify",
-      onboardingStepShopifyHint: "Você precisa do seu domínio .myshopify.com (ex: minhaloja.myshopify.com)",
+      onboardingStepShopifyHint: "Inicie a instalação no Shopify Admin e vincule a loja com um código temporário.",
 
       onboardingStepCatalog: "Sincronize seu catálogo",
       onboardingStepCatalogHelp: "Seus produtos estarão disponíveis no DIAGLOB.",

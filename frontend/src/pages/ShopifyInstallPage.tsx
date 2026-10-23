@@ -3,14 +3,12 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { ArrowRight, LockKeyhole, ShieldCheck, Store } from "lucide-react";
 import { getMarkets, type Market } from "../services/markets";
 
-import { connectShopify, getPendingShopifyInstall, claimPendingShopifyInstall, verifyManagedShopifyClaimCode, claimManagedShopifyInstall } from "../services/integrations";
+import { getPendingShopifyInstall, claimPendingShopifyInstall, verifyManagedShopifyClaimCode, claimManagedShopifyInstall } from "../services/integrations";
 import { createStore, getStoresForManagement, type Store as DiaglobStore } from "../services/stores";
 import {
   eligibleShopifyInstallStores,
   buildPostOAuthStorePayload,
-  parseShopifyInstallHint,
   parseShopifyInstallMode,
-  validatedShopifyAuthorizationUrl,
 } from "../shopifyInstall";
 import "../shopify-install.css";
 
@@ -31,10 +29,9 @@ export default function ShopifyInstallPage({ canWrite, onStoresChanged }: Props)
   const authorizedGrant = oauthCompleted || (managedInstall && managedVerified);
   const [authorizedShop, setAuthorizedShop] = useState<string | null>(null);
   const [checkingGrant, setCheckingGrant] = useState(oauthCompleted);
-  const shop = useMemo(
-    () => authorizedGrant ? authorizedShop : managedInstall ? null : parseShopifyInstallHint(location.search),
-    [location.search, authorizedGrant, authorizedShop, managedInstall],
-  );
+  // A Shopify-issued grant, verified on the server, is the only shop identity.
+  // Never initiate OAuth from a caller-supplied ?shop= browser hint.
+  const shop = authorizedGrant ? authorizedShop : null;
   const [stores, setStores] = useState<DiaglobStore[]>([]);
   const [selected, setSelected] = useState("");
   const [loading, setLoading] = useState(true);
@@ -171,7 +168,7 @@ export default function ShopifyInstallPage({ canWrite, onStoresChanged }: Props)
   );
 
   async function handleConnect() {
-    if (!canWrite || !shop || connecting) return;
+    if (!canWrite || !authorizedGrant || !shop || connecting) return;
     const chosen = eligibleStores.find((store) => String(store.id) === selected);
     if (!chosen) {
       setError("Selecciona una tienda válida antes de continuar.");
@@ -180,20 +177,12 @@ export default function ShopifyInstallPage({ canWrite, onStoresChanged }: Props)
     setConnecting(true);
     setError("");
     try {
-      if (authorizedGrant) {
-        // A verified managed claim code or HttpOnly OAuth claim is bound only
-        // after a separately authenticated, store-authorized DIAGLOB login.
-        if (managedInstall) await claimManagedShopifyInstall(chosen.id, claimCode.trim());
-        else await claimPendingShopifyInstall(chosen.id);
-        setClaimCode("");
-        navigate("/app/stores?shopify=connected", { replace: true });
-      } else {
-        const result = await connectShopify(chosen.id, shop);
-        const destination = validatedShopifyAuthorizationUrl(
-          result.authorization_url, shop,
-        );
-        window.location.assign(destination);
-      }
+      // A verified managed claim code or HttpOnly OAuth claim is bound only
+      // after a separately authenticated, store-authorized DIAGLOB login.
+      if (managedInstall) await claimManagedShopifyInstall(chosen.id, claimCode.trim());
+      else await claimPendingShopifyInstall(chosen.id);
+      setClaimCode("");
+      navigate("/app/stores?shopify=connected", { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "No fue posible conectar Shopify.");
       setConnecting(false);
@@ -210,7 +199,7 @@ export default function ShopifyInstallPage({ canWrite, onStoresChanged }: Props)
           ? "Shopify ya verificó esta instalación. Selecciona una tienda autorizada de Diaglob o crea una nueva para finalizar."
           : managedInstall
             ? "Introduce el código temporal que obtuviste dentro de la aplicación Diaglob en Shopify Admin."
-            : "Selecciona la tienda de Diaglob que administrará tu operación. Después te enviaremos a Shopify para aprobar los permisos."}</p>
+            : "Inicia la instalación desde Shopify Admin y abre DIAGLOB allí. Después vincula la tienda con el código temporal."}</p>
         {managedInstall && !managedVerified && (
           <div className="shopify-install-bootstrap">
             <label className="shopify-install-label" htmlFor="shopify-managed-code">
@@ -231,19 +220,17 @@ export default function ShopifyInstallPage({ canWrite, onStoresChanged }: Props)
           <p role="status">Validando la autorización de Shopify…</p>
         ) : !shop ? (
           <p className="shopify-install-error" role="alert">
-            {oauthCompleted ? (error || "La autorización de Shopify no está disponible.") : "El enlace de instalación no contiene una tienda Shopify válida."}
+            {oauthCompleted ? (error || "La autorización de Shopify no está disponible.") : "Abre DIAGLOB desde Shopify Admin y genera un código de instalación. No necesitas introducir el dominio de tu tienda."}
           </p>
         ) : (
           <>
             <div className="shopify-install-shop">
               <ShieldCheck size={19} aria-hidden="true" />
-              <span>Dominio solicitado</span>
+              <span>Dominio verificado por Shopify</span>
               <strong>{shop}</strong>
             </div>
             <p className="shopify-install-hint">
-              {oauthCompleted
-                ? "Shopify confirmó la tienda. Selecciona a qué espacio autorizado de Diaglob vincularla. No se generará ningún cargo."
-                : "El dominio aún no está verificado. La conexión solo se establecerá al completar la autorización de Shopify."}
+              Shopify confirmó la tienda. Selecciona a qué espacio autorizado de Diaglob vincularla. No se generará ningún cargo.
             </p>
             {!canWrite ? (
               <p className="shopify-install-error" role="alert">
@@ -329,7 +316,7 @@ export default function ShopifyInstallPage({ canWrite, onStoresChanged }: Props)
                 disabled={!canWrite || !selected || !shop || connecting || loading}
                 onClick={() => { void handleConnect(); }}
               >
-                {connecting ? "Conectando…" : authorizedGrant ? "Finalizar conexión" : "Continuar a Shopify"}
+                {connecting ? "Conectando…" : "Finalizar conexión"}
                 {!connecting && <ArrowRight size={18} aria-hidden="true" />}
               </button>
             )}

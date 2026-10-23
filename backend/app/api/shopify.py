@@ -46,7 +46,6 @@ from ..services.shopify_service import (
     get_order as svc_get_order,
     list_orders as svc_list_orders,
     process_oauth_callback as svc_process_oauth_callback,
-    start_oauth as svc_start_oauth,
     start_reauthorization as svc_start_reauthorization,
     sync_products as svc_sync_products,
     test_connection as svc_test_connection,
@@ -301,12 +300,21 @@ def start_shopify_connection(
     membership: OrganizationMembership = Depends(require_permission("stores.write")),
     db: Session = Depends(get_db),
 ):
-    try:
-        return svc_start_oauth(
-            db, membership.organization_id, store_id, membership.user_id, payload.shop_domain
-        )
-    except (ShopifyNotFoundError, ShopifyConnectionError, ShopifyOAuthError) as exc:
-        _map_oauth_error(exc)
+    # Public App Store installs must originate in Shopify Admin and use
+    # a signed managed-install grant. Legacy DIAGLOB-origin manual-domain
+    # OAuth is intentionally retired; never create OAuth state from this body.
+    # Keep the route for a safe, actionable response to older clients.
+    raise HTTPException(
+        status_code=410,
+        detail={
+            "code": "SHOPIFY_MANAGED_INSTALL_REQUIRED",
+            "message": (
+                "Abre DIAGLOB desde Shopify Admin, genera un código de instalación "
+                "y vincula la tienda desde /shopify/install?managed=1."
+            ),
+        },
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @router.post("/api/stores/{store_id}/shopify/reauthorize", dependencies=[Depends(require_authorized_path_store)])
