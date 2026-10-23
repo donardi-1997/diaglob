@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -104,4 +105,23 @@ test("tracking never authorizes an invalid, duplicate or ambiguous Shopify insta
   ]) {
     assert.equal(parseShopifyInstallMode(invalid), null, invalid);
   }
+});
+
+test("2.3.1: general store settings never ask for a Shopify domain", () => {
+  const storesPage = readFileSync(new URL("../src/pages/StoresPage.tsx", import.meta.url), "utf8");
+  assert.equal(storesPage.includes("value={form.shopify_domain}"), false);
+  assert.equal(storesPage.includes("shopify_domain: form.shopify_domain"), false);
+  assert.equal(storesPage.includes('placeholder="mitienda.myshopify.com"'), false);
+  // Preserve existing identity as read-only: never erase it during a general edit.
+  assert.ok(storesPage.includes("editingStore.shopify_domain || copy.noCommerceDomain"));
+});
+
+test("2.3.1: installation requires a verified Shopify grant, not URL hints", () => {
+  const installPage = readFileSync(new URL("../src/pages/ShopifyInstallPage.tsx", import.meta.url), "utf8");
+  const integrations = readFileSync(new URL("../src/components/StoreIntegrations.tsx", import.meta.url), "utf8");
+  assert.ok(installPage.includes("const shop = authorizedGrant ? authorizedShop : null"));
+  assert.equal(installPage.includes("parseShopifyInstallHint(location.search)"), false);
+  assert.equal(/\bconnectShopify\(/.test(installPage), false);
+  assert.equal(/\bconnectShopify\(/.test(integrations), false);
+  assert.ok(integrations.includes("/shopify/install?managed=1"));
 });
