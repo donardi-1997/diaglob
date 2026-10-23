@@ -415,7 +415,7 @@ def test_chat_checkout_draft_has_shipping_link_without_premature_order_event(db,
                     "draftOrder": {
                         "id": "gid://shopify/DraftOrder/987",
                         "name": "#D987",
-                        "invoiceUrl": "https://diaglob-poc.myshopify.com/checkouts/draft/987",
+                        "invoiceUrl": "https://diaglob-poc.myshopify.com/123456/invoices/draft-token",
                         "totalPriceSet": {"shopMoney": {"amount": "100.00", "currencyCode": "COP"}},
                     },
                     "userErrors": [],
@@ -471,7 +471,19 @@ def test_chat_checkout_draft_has_shipping_link_without_premature_order_event(db,
     assert db.query(Order).count() == 1
 
 
-def test_chat_checkout_draft_rejects_insecure_link_without_duplicate_order(db, monkeypatch):
+@pytest.mark.parametrize(
+    "invoice_url",
+    [
+        "http://unsafe.example.invalid/checkout",
+        "https://evil.example.invalid/123456/invoices/draft-token",
+        "https://diaglob-poc.myshopify.com.evil.invalid/123456/invoices/token",
+        "https://diaglob-poc.myshopify.com:444/123456/invoices/token",
+        "https://diaglob-poc.myshopify.com/redirect?next=/invoices/token",
+    ],
+)
+def test_chat_checkout_draft_rejects_insecure_link_without_duplicate_order(
+    db, monkeypatch, invoice_url
+):
     _, store, customer, _, _, variant, _, connection = _scenario(db)
 
     class FakeClient:
@@ -483,7 +495,7 @@ def test_chat_checkout_draft_rejects_insecure_link_without_duplicate_order(db, m
                 "draftOrderCreate": {
                     "draftOrder": {
                         "id": "gid://shopify/DraftOrder/55",
-                        "invoiceUrl": "http://unsafe.example.invalid/checkout",
+                        "invoiceUrl": invoice_url,
                         "totalPriceSet": {"shopMoney": {"amount": "100.00", "currencyCode": "COP"}},
                     },
                     "userErrors": [],
