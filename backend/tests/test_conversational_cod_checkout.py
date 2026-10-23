@@ -24,6 +24,7 @@ from app.services.attributed_order_service import create_attributed_shopify_cod_
 from app.services.conversational_checkout_service import (
     normalize_delivery_address,
     process_conversational_checkout_turn,
+    _poc_checkout_connection,
 )
 from app.shopify_cod_orders import create_shopify_cod_order
 from app.shopify_orders import create_shopify_draft_order, build_draft_order_input
@@ -778,6 +779,8 @@ def test_shopify_checkout_handoff_is_opt_in_and_never_declares_an_order_complete
 ):
     org, store, customer, agent, _, _, conversation, _ = _scenario(db)
     monkeypatch.setenv("SHOPIFY_CHAT_CHECKOUT_VIA_DRAFT", "true")
+    monkeypatch.setenv("SHOPIFY_CHAT_CHECKOUT_POC_ORGANIZATION_ID", str(org.id))
+    monkeypatch.setenv("SHOPIFY_CHAT_CHECKOUT_POC_STORE_ID", str(store.id))
     summary = _advance_to_final_confirmation(db, conversation, agent)
     assert "Shopify Checkout" in summary
     assert "Pagarás al recibir" not in summary
@@ -843,3 +846,72 @@ def test_shopify_checkout_pending_state_is_allowed_by_sqlalchemy_constraint(db):
     db.add(checkout)
     db.commit()
     assert checkout.status == "awaiting_shopify_checkout"
+
+
+def test_checkout_rollout_requires_all_poc_identifiers_and_approved_connection(db, monkeypatch):
+    org, store, _, _, _, _, _, connection = _scenario(db)
+    checkout = ConversationalCheckout(
+        organization_id=org.id, store_id=store.id,
+        status="awaiting_order_confirmation",
+        quantity=1, currency="COP", country_code="CO",
+        expires_at=datetime.utcnow() + timedelta(hours=1),
+    )
+
+    monkeypatch.setenv("SHOPIFY_CHAT_CHECKOUT_VIA_DRAFT", "true")
+    # A global flag by itself is never permission to generate Shopify drafts.
+    monkeypatch.delenv("SHOPIFY_CHAT_CHECKOUT_POC_ORGANIZATION_ID", raising=False)
+    monkeypatch.delenv("SHOPIFY_CHAT_CHECKOUT_POC_STORE_ID", raising=False)
+    assert _poc_checkout_connection(db, checkout) is None
+
+    monkeypatch.setenv("SHOPIFY_CHAT_CHECKOUT_POC_ORGANIZATION_ID", str(org.id))
+    assert _poc_checkout_connection(db, checkout) is None
+    monkeypatch.setenv("SHOPIFY_CHAT_CHECKOUT_POC_STORE_ID", str(store.id))
+    assert _poc_checkout_connection(db, checkout).id == connection.id
+
+    checkout.organization_id = org.id + 1000
+    assert _poc_checkout_connection(db, checkout) is None
+    checkout.organization_id = org.id
+    checkout.store_id = store.id + 1000
+    assert _poc_checkout_connection(db, checkout) is None
+    checkout.store_id = store.id
+
+    monkeypatch.setenv("SHOPIFY_CHAT_CHECKOUT_POC_STORE_ID", "0")
+    assert _poc_checkout_connection(db, checkout) is None
+    monkeypatch.setenv("SHOPIFY_CHAT_CHECKOUT_POC_STORE_ID", "all")
+    assert _poc_checkout_connection(db, checkout) is None
+    monkeypatch.setenv("SHOPIFY_CHAT_CHECKOUT_POC_STORE_ID", str(store.id))
+    monkeypatch.setenv("SHOPIFY_CHAT_CHECKOUT_VIA_DRAFT", "false")
+    assert _poc_checkout_connection(db, checkout) is None
+
+
+def test_checkout_rollout_rejects_unverified_or_disconnected_poc_shop(db, monkeypatch):
+    org, store, _, _, _, _, _, connection = _scenario(db)
+    checkout = ConversationalCheckout(
+        organization_id=org.id, store_id=store.id,
+        status="awaiting_order_confirmation",
+        quantity=1, currency="COP", country_code="CO",
+        expires_at=datetime.utcnow() + timedelta(hours=1),
+    )
+    monkeypatch.setenv("SHOPIFY_CHAT_CHECKOUT_VIA_DRAFT", "true")
+    monkeypatch.setenv("SHOPIFY_CHAT_CHECKOUT_POC_ORGANIZATION_ID", str(org.id))
+    monkeypatch.setenv("SHOPIFY_CHAT_CHECKOUT_POC_STORE_ID", str(store.id))
+
+    connection.external_store_url = "other.myshopify.com"
+    db.commit()
+    with pytest.raises(ValueError, match="SHOPIFY_POC_CONNECTION_UNAVAILABLE"):
+        _poc_checkout_connection(db, checkout)
+    connection.external_store_url = "diaglob-poc.myshopify.com"
+    connection.status = "disconnected"
+    db.commit()
+    with pytest.raises(ValueError, match="SHOPIFY_POC_CONNECTION_UNAVAILABLE"):
+        _poc_checkout_connection(db, checkout)
+
+
+def test_checkout_rollout_does_not_activate_another_store(db, monkeypatch):
+    org, store, _, agent, _, _, conversation, _ = _scenario(db)
+    monkeypatch.setenv("SHOPIFY_CHAT_CHECKOUT_VIA_DRAFT", "true")
+    monkeypatch.setenv("SHOPIFY_CHAT_CHECKOUT_POC_ORGANIZATION_ID", str(org.id))
+    monkeypatch.setenv("SHOPIFY_CHAT_CHECKOUT_POC_STORE_ID", str(store.id + 55))
+    summary = _advance_to_final_confirmation(db, conversation, agent)
+    assert "Shopify Checkout" not in summary
+    assert "Pagarás al recibir" in summary
