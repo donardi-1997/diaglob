@@ -440,6 +440,41 @@ def test_customer_link_rejects_cross_tenant_customer(sandbox):
     ).count() == 1
 
 
+def test_duplicate_same_customer_profile_is_unresolved(sandbox):
+    from app.services.shopify_privacy_case_assessment import (
+        assess_shopify_privacy_case,
+    )
+    from app.services.shopify_privacy_scoped_extraction import (
+        ShopifyPrivacyExtractionError,
+        build_encrypted_shopify_fixture_extraction,
+    )
+
+    db, receipt = sandbox
+    original = db.query(CustomerStoreProfile).filter(
+        CustomerStoreProfile.organization_id == receipt.organization_id,
+        CustomerStoreProfile.store_id == receipt.store_id,
+        CustomerStoreProfile.external_customer_id == "700",
+    ).one()
+    db.add(CustomerStoreProfile(
+        organization_id=receipt.organization_id,
+        store_id=receipt.store_id,
+        customer_id=original.customer_id,
+        external_customer_id="700", currency="COP",
+    ))
+    db.commit()
+    assessment = assess_shopify_privacy_case(db, request_id=REQUEST_ID)
+    assert assessment.verified_shop_scope is False
+    assert assessment.scope_status == "subject_unresolved"
+    with pytest.raises(
+        ShopifyPrivacyExtractionError, match="UNVERIFIED_CUSTOMER_EXPORT_SCOPE",
+    ):
+        build_encrypted_shopify_fixture_extraction(
+            db, request_id=REQUEST_ID, encryption_key=Fernet.generate_key(),
+            fixture_authorized=True,
+        )
+    assert receipt.completed_at is None
+
+
 def test_extraction_rejects_duplicate_shopify_customer_links(sandbox):
     from app.services.shopify_privacy_scoped_extraction import (
         ShopifyPrivacyExtractionError,
