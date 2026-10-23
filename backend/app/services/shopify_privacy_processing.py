@@ -270,8 +270,7 @@ def prepare_shopify_privacy_processing_case(
         ShopifyPrivacyWorkItem.request_id == request_id,
     ).all()
     if existing:
-        if len(existing) != len(specs) or {x.area for x in existing} != set(specs):
-            raise ShopifyPrivacyProcessingError("INCOMPLETE_PRIVACY_WORK_ITEM_SET")
+        _verify_retry_queue(db, receipt, existing, specs)
         # Lightweight webhook intake intentionally avoids tenant queries.
         # After an independent, signed scope assessment, promote only
         # identity evidence (not export/redaction/legal clearance).
@@ -327,8 +326,12 @@ def prepare_shopify_privacy_processing_case(
         saved = db.query(ShopifyPrivacyWorkItem).filter(
             ShopifyPrivacyWorkItem.request_id == request_id,
         ).all()
-        if len(saved) != len(specs):
-            raise ShopifyPrivacyProcessingError("PRIVACY_WORK_ITEM_CONFLICT")
+        try:
+            _verify_retry_queue(db, receipt, saved, specs)
+        except ShopifyPrivacyProcessingError as exc:
+            raise ShopifyPrivacyProcessingError(
+                "PRIVACY_WORK_ITEM_CONFLICT"
+            ) from exc
         return _serialize(receipt, saved, created=False)
     return _serialize(receipt, items, created=True)
 

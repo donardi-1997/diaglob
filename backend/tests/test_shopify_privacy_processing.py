@@ -499,3 +499,124 @@ def test_extraction_is_disabled_by_default_and_on_file_database(sandbox, tmp_pat
                 encryption_key=Fernet.generate_key(), fixture_authorized=True,
             )
     file_engine.dispose()
+
+
+@pytest.mark.parametrize(
+    ("field", "tampered_value"),
+    [
+        ("action", "unauthorized_action"),
+        ("status", "completed"),
+        ("status", "deleted"),
+    ],
+)
+def test_retry_rejects_tampered_work_items(sandbox, field, tampered_value):
+    db, receipt = sandbox
+
+    initial = prepare_shopify_privacy_processing_case(
+        db, request_id=REQUEST_ID
+    )
+    assert initial["created"] is True
+
+    work_item = db.query(ShopifyPrivacyWorkItem).filter(
+        ShopifyPrivacyWorkItem.request_id == REQUEST_ID,
+        ShopifyPrivacyWorkItem.area == "local_structured_records",
+    ).one()
+
+    setattr(work_item, field, tampered_value)
+    db.commit()
+
+    with pytest.raises(ShopifyPrivacyProcessingError):
+        prepare_shopify_privacy_processing_case(
+            db, request_id=REQUEST_ID
+        )
+
+    assert receipt.completed_at is None
+    assert db.query(ShopifyPrivacyWorkItem).count() == 10
+    assert db.query(Customer).one().name == "SENSITIVE_CUSTOMER"
+
+
+def test_retry_rejects_missing_preparation_audit(sandbox):
+    db, receipt = sandbox
+
+    prepare_shopify_privacy_processing_case(
+        db, request_id=REQUEST_ID
+    )
+
+    db.query(ShopifyPrivacyAuditEvent).filter(
+        ShopifyPrivacyAuditEvent.request_id == REQUEST_ID,
+        ShopifyPrivacyAuditEvent.event_type == "processing_prepared",
+    ).delete(synchronize_session=False)
+    db.commit()
+
+    with pytest.raises(
+        ShopifyPrivacyProcessingError,
+        match="PROCESSING_PREPARED_EVIDENCE_MISSING",
+    ):
+        prepare_shopify_privacy_processing_case(
+            db, request_id=REQUEST_ID
+        )
+
+    assert receipt.completed_at is None
+    assert db.query(ShopifyPrivacyWorkItem).count() == 10
+
+
+def test_retry_rejects_unexpected_work_item_area(sandbox):
+    db, receipt = sandbox
+
+    prepare_shopify_privacy_processing_case(
+        db, request_id=REQUEST_ID
+    )
+
+    item = db.query(ShopifyPrivacyWorkItem).filter(
+        ShopifyPrivacyWorkItem.request_id == REQUEST_ID,
+        ShopifyPrivacyWorkItem.area == "local_structured_records",
+    ).one()
+
+    item.area = "unexpected_privacy_area"
+    db.commit()
+
+    with pytest.raises(
+        ShopifyPrivacyProcessingError,
+        match="INCOMPLETE_PRIVACY_WORK_ITEM_SET",
+    ):
+        prepare_shopify_privacy_processing_case(
+            db, request_id=REQUEST_ID
+        )
+
+    assert receipt.completed_at is None
+    assert db.query(ShopifyPrivacyWorkItem).count() == 10
+
+
+def test_concurrent_retry_rejects_invalid_queue(sandbox, monkeypatch):
+    from sqlalchemy.exc import IntegrityError
+
+    db, receipt = sandbox
+    original_commit = db.commit
+    original_rollback = db.rollback
+
+    def concurrent_commit():
+        # Simulate a concurrent winner persisting an invalid work queue.
+        db.flush()
+        item = db.query(ShopifyPrivacyWorkItem).filter(
+            ShopifyPrivacyWorkItem.request_id == REQUEST_ID,
+            ShopifyPrivacyWorkItem.area == "local_structured_records",
+        ).one()
+        item.action = "unauthorized_action"
+        original_commit()
+        raise IntegrityError("simulated conflict", {}, Exception("duplicate"))
+
+    monkeypatch.setattr(db, "commit", concurrent_commit)
+
+    with pytest.raises(
+        ShopifyPrivacyProcessingError,
+        match="PRIVACY_WORK_ITEM_CONFLICT",
+    ):
+        prepare_shopify_privacy_processing_case(
+            db, request_id=REQUEST_ID
+        )
+
+    monkeypatch.setattr(db, "commit", original_commit)
+    monkeypatch.setattr(db, "rollback", original_rollback)
+
+    assert db.query(ShopifyPrivacyWorkItem).count() == 10
+    assert receipt.completed_at is None
