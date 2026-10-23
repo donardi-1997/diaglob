@@ -1,5 +1,5 @@
 """Regression coverage for conversational COD checkout safety rules."""
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 from sqlalchemy import create_engine
@@ -748,3 +748,73 @@ def test_draft_reconciliation_waits_for_shopify_conversion_without_duplicate(db,
     assert db.query(Order).count() == 1
     db.refresh(pending)
     assert pending.shopify_order_id is None
+
+
+def test_shopify_checkout_handoff_is_opt_in_and_never_declares_an_order_complete(
+    db, monkeypatch
+):
+    org, store, customer, agent, _, _, conversation, _ = _scenario(db)
+    _advance_to_final_confirmation(db, conversation, agent)
+    drafts_created = []
+
+    def fake_checkout_draft(**kwargs):
+        drafts_created.append(kwargs)
+        order = Order(
+            organization_id=org.id, store_id=store.id, customer_id=customer.id,
+            order_number="#D98", total_amount=100, currency="COP",
+            financial_status="pending", payment_status="pending",
+            shopify_draft_order_id="gid://shopify/DraftOrder/98",
+            invoice_url="https://diaglob-poc.myshopify.com/1/invoices/test-token",
+            idempotency_key=kwargs["idempotency_key"],
+            source="shopify_chat_checkout", external_creation_status="created",
+        )
+        db.add(order)
+        db.commit()
+        return {
+            "ok": True, "order_id": order.id,
+            "shopify_draft_order_id": order.shopify_draft_order_id,
+            "invoice_url": order.invoice_url,
+            "external_creation_status": "created",
+        }
+
+    monkeypatch.setenv("SHOPIFY_CHAT_CHECKOUT_VIA_DRAFT", "true")
+    monkeypatch.setattr(
+        "app.services.conversational_checkout_service.create_shopify_draft_order",
+        fake_checkout_draft,
+    )
+    result = _turn(db, conversation, agent, "CONFIRMO")
+    checkout = db.query(ConversationalCheckout).one()
+    assert checkout.status == "awaiting_shopify_checkout"
+    assert checkout.created_order_id is not None
+    assert len(drafts_created) == 1
+    assert drafts_created[0]["idempotency_key"] == (
+        f"chat-checkout:{checkout.id}:{conversation.id}"
+    )
+    assert "invoices/test-token" in result
+    assert "solo se confirma cuando termines el checkout" in result
+    assert db.query(Order).one().shopify_order_id is None
+
+    repeated = _turn(db, conversation, agent, "CONFIRMO")
+    assert "invoices/test-token" in repeated
+    assert len(drafts_created) == 1
+    assert checkout.status == "awaiting_shopify_checkout"
+
+    cancellation = _turn(db, conversation, agent, "CANCELAR")
+    db.refresh(checkout)
+    assert checkout.status == "awaiting_shopify_checkout"
+    assert "no se ha cancelado" in cancellation
+    assert len(drafts_created) == 1
+
+
+def test_shopify_checkout_pending_state_is_allowed_by_sqlalchemy_constraint(db):
+    org, store, customer, agent, _, _, conversation, _ = _scenario(db)
+    checkout = ConversationalCheckout(
+        organization_id=org.id, store_id=store.id,
+        conversation_id=conversation.id, customer_id=customer.id,
+        ai_agent_id=agent.id, status="awaiting_shopify_checkout",
+        quantity=1, currency="COP", country_code="CO",
+        expires_at=datetime.utcnow() + timedelta(hours=24),
+    )
+    db.add(checkout)
+    db.commit()
+    assert checkout.status == "awaiting_shopify_checkout"
