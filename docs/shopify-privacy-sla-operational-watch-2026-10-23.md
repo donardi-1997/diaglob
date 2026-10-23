@@ -15,7 +15,8 @@ Una excepción exige decisiones de retención documentadas, no un `200 OK`.
 - `D+30`: crítica; se cuenta toda solicitud no acreditada aunque el estado
   local diga `completed`.
 - **Crítica inmediata** por tienda/organización no resuelta, tipo de webhook
-  desconocido, hora de recepción futura o ausente, faltante de auditoría
+  desconocido, ausencia de `DIAGLOB_INTERNAL_SECRET` cuando existen solicitudes
+  pendientes, hora de recepción futura o ausente, faltante de auditoría
   `shopify_hmac_verified`, cola de trabajo incompleta, ausencia de
   `processing_prepared`, marcado `completed` no verificado, o credenciales
   esenciales de HMAC/cifrado ausentes.
@@ -100,3 +101,18 @@ el dueño responsable antes de habilitar borrado Shopify real.
 `app.shopify_privacy_sla_watch`. La corrección del workflow activa la
 comprobación al finalizar con éxito `Deploy Production`, más el cron y
 la ejecución manual. Ese fallo era un *race* de despliegue, no un caso GDPR.
+
+## Diagnóstico concreto en producción (auditoría de despliegue #40000698508)
+
+El reporte agregado de la aplicación del 23-oct-2026 mostró:
+
+- 1 `shop/redact` HMAC-auditado; 0 `customers/redact` y 0 `customers/data_request` en ese corte. No se inspeccionaron datos identificatorios del merchant ni del cliente.
+- 1 `processing_prepared` y 1 `received` de origen autenticado, 0 recibos con cola incompleta, 0 trabajos marcados completados falsamente. **Esto demuestra intake/cola, no erasure.**
+- `data_export_or_erasure_fulfilled=false` y `privacy_fulfillment_release_ready=false`. Este `shop/redact` requiere clasificación, posible conservación mínima y ejecución/proveedores con evidencia.
+- `internal_review_secret_present=false`. La API protegida por `DIAGLOB_INTERNAL_SECRET` no puede servir de consola de revisión con la configuración observada. La vigilancia lo considera un bloqueo crítico cuando hay recibos. No imprime ni modifica el secret ni abre ese acceso por defecto.
+
+**Acción del operador autorizada pendiente:** establecer un secreto interno
+largo en el archivo protegido, definir los operadores aprobados y comprobar
+el acceso por un canal autenticado sin publicar el secreto en GitHub Actions
+ni en chat. No desbloquear exportación o borrado real sin las autorizaciones
+jurídicas y técnicas enumeradas arriba.
