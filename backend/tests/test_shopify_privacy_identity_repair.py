@@ -168,3 +168,53 @@ def test_no_tenant_guess_when_history_missing(sandbox):
         repair_signed_shopify_privacy_receipt_identity(db, request_id=RID)
     db.refresh(receipt)
     assert receipt.store_id is None
+
+
+def test_dry_run_identity_does_not_change_receipt(sandbox):
+    db, _, _, _, receipt = sandbox
+    before = db.query(ShopifyPrivacyAuditEvent).count()
+    answer = repair_signed_shopify_privacy_receipt_identity(
+        db, request_id=RID, dry_run=True,
+    )
+    assert answer["repair_eligible"] is True
+    assert answer["fulfillment_complete"] is False
+    db.expire_all()
+    db.refresh(receipt)
+    assert receipt.store_id is None
+    assert db.query(ShopifyPrivacyAuditEvent).count() == before
+
+
+def test_repair_rejects_redact_before_48_hours_after_uninstall(sandbox):
+    db, _, _, history, receipt = sandbox
+    history.uninstalled_at = NOW - timedelta(hours=47)
+    db.commit()
+    with pytest.raises(ShopifyPrivacyIdentityRepairError):
+        repair_signed_shopify_privacy_receipt_identity(
+            db, request_id=RID, dry_run=True,
+        )
+    db.refresh(receipt)
+    assert receipt.organization_id is None
+
+
+def test_live_diagnostic_classifies_exact_history_without_logging_identifiers(sandbox):
+    import json
+    from datetime import timezone
+    from app.shopify_privacy_case_live_diagnostic import diagnose_shopify_privacy_cases
+
+    db, _, _, history, receipt = sandbox
+    report = diagnose_shopify_privacy_cases(
+        db, now=NOW.replace(tzinfo=timezone.utc), environment={},
+    )
+    assert report["classification_counts"]["eligible_for_controlled_identity_repair"] == 1
+    assert not report["internal_operator_auth_configured"]
+    assert not report["erasure_authorized"]
+    assert RID not in json.dumps(report)
+    assert SHOP not in json.dumps(report)
+    db.delete(history)
+    db.commit()
+    blocked = diagnose_shopify_privacy_cases(
+        db, now=NOW.replace(tzinfo=timezone.utc), environment={},
+    )
+    assert blocked["classification_counts"]["SIGNED_SHOP_HISTORY_MISSING"] == 1
+    db.refresh(receipt)
+    assert receipt.store_id is None

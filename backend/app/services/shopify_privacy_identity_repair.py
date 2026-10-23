@@ -9,7 +9,7 @@ import re
 from datetime import datetime
 
 from sqlalchemy import and_, exists, or_
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 
 from ..models import (
     ShopifyPrivacyAuditEvent, ShopifyPrivacyRequest,
@@ -34,7 +34,7 @@ class ShopifyPrivacyIdentityRepairError(ValueError):
 
 
 def repair_signed_shopify_privacy_receipt_identity(
-    db: Session, *, request_id: str,
+    db: Session, *, request_id: str, dry_run: bool = False,
 ) -> dict:
     """Bind ONLY to the exact pre-existing, signed Shopify identity history.
 
@@ -44,12 +44,27 @@ def repair_signed_shopify_privacy_receipt_identity(
     """
     if not isinstance(request_id, str) or not _REQUEST_ID.fullmatch(request_id):
         raise ShopifyPrivacyIdentityRepairError("INVALID_PRIVACY_REQUEST_ID")
-    receipt = (
-        db.query(ShopifyPrivacyRequest)
-        .filter(ShopifyPrivacyRequest.request_id == request_id)
-        .with_for_update()
-        .first()
+    query = db.query(ShopifyPrivacyRequest).filter(
+        ShopifyPrivacyRequest.request_id == request_id
     )
+    # Read-only diagnosis must not read encrypted subject selectors or
+    # acquire writer locks. Production repair still locks the request row.
+    if dry_run:
+        query = query.options(load_only(
+            ShopifyPrivacyRequest.request_id,
+            ShopifyPrivacyRequest.topic,
+            ShopifyPrivacyRequest.shop_id,
+            ShopifyPrivacyRequest.shop_domain,
+            ShopifyPrivacyRequest.organization_id,
+            ShopifyPrivacyRequest.store_id,
+            ShopifyPrivacyRequest.status,
+            ShopifyPrivacyRequest.last_error_code,
+            ShopifyPrivacyRequest.created_at,
+            ShopifyPrivacyRequest.completed_at,
+        ))
+    else:
+        query = query.with_for_update()
+    receipt = query.first()
     if receipt is None:
         raise ShopifyPrivacyIdentityRepairError("PRIVACY_REQUEST_NOT_FOUND")
     if receipt.status == "completed" or receipt.completed_at is not None:
@@ -113,6 +128,8 @@ def repair_signed_shopify_privacy_receipt_identity(
             and (
                 history.uninstalled_at is None
                 or history.uninstalled_at > receipt.created_at
+                or (receipt.created_at - history.uninstalled_at).total_seconds()
+                < 48 * 3600
             )
         )
     ):
@@ -185,6 +202,13 @@ def repair_signed_shopify_privacy_receipt_identity(
         return {
             "scope_recovered": True, "repaired": False,
             "fulfillment_authorized": False, "fulfillment_complete": False,
+        }
+
+    if dry_run:
+        return {
+            "scope_recovered": False, "repair_eligible": True,
+            "repaired": False, "fulfillment_authorized": False,
+            "fulfillment_complete": False,
         }
 
     receipt.organization_id = candidate.organization_id
