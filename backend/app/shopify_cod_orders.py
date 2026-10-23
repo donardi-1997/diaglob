@@ -81,7 +81,15 @@ def create_shopify_cod_order(
     note: str,
     idempotency_key: str,
 ) -> dict:
-    """Create one actual pending-payment Shopify order idempotently."""
+    """Disallow off-checkout buyer orders created from conversational sales.
+
+    Shopify App Store requirement 1.1.2 forbids registering buyer transactions
+    that bypass Shopify Checkout. Keep this legacy entry point explicitly closed
+    even if a caller or feature flag accidentally reaches it. Use
+    create_shopify_draft_order() and the Shopify-hosted invoiceUrl instead.
+    """
+    raise ShopifyUserError("SHOPIFY_CHECKOUT_REQUIRED")
+
     privacy_block = evaluate_shopify_local_privacy(
         db, organization_id=store.organization_id, store_id=store.id,
         local_customer_id=customer_id, customer_email=customer_email,
