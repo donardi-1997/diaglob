@@ -20,7 +20,6 @@ import {
 import {
   connectNuvemshop,
   connectPayment,
-  connectShopify,
   connectWhatsApp,
   disconnectNuvemshop,
   disconnectPayment,
@@ -121,9 +120,6 @@ export default function StoreIntegrations({
 
   const [whatsappToken, setWhatsAppToken] =
     useState("");
-
-  const [connectingShopify, setConnectingShopify] =
-    useState(false);
 
   const [disconnectingShopify, setDisconnectingShopify] =
     useState(false);
@@ -234,35 +230,11 @@ export default function StoreIntegrations({
   }
 
 
-  async function handleConnectShopify() {
-    clearMessages();
-
-    try {
-      setConnectingShopify(true);
-
-      const result =
-        await connectShopify(
-          storeId,
-          shopDomain || "",
-        );
-
-      window.open(
-        result.authorization_url,
-        "_blank",
-        "noopener,noreferrer",
-      );
-    } catch (err: any) {
-      console.error(err);
-
-      setError(
-        formatError(err)
-        || t("integrationsShopifyConnectError"),
-      );
-    } finally {
-      setConnectingShopify(false);
-    }
+  function handleConnectShopify() {
+    // Installation starts in Shopify Admin. Only a verified managed-install
+    // code can authorize DIAGLOB to claim this shop.
+    window.location.assign("/shopify/install?managed=1");
   }
-
 
   async function handleDisconnectShopify() {
     clearMessages();
@@ -796,6 +768,13 @@ export default function StoreIntegrations({
           }
         </div>
 
+        {!commerce?.connected && !(commerce?.provider === "shopify" && commerce.status === "error") && (
+          <p className="store-integration-test-result" role="status">
+            Instala o abre DIAGLOB desde Shopify Admin y genera allí un código temporal.
+            Después vuelve aquí para vincular la tienda; no necesitas escribir su dominio.
+          </p>
+        )}
+
         {commerce?.connected && (
           <div className="store-integration-shopify-actions">
             <button
@@ -892,13 +871,9 @@ export default function StoreIntegrations({
                 type="button"
                 className="store-integration-button primary"
                 onClick={handleConnectShopify}
-                disabled={connectingShopify}
               >
-                {connectingShopify
-                  ? <Loader2 className="spin" size={15} />
-                  : <Plug size={15} />}
-
-                {t("integrationsConnect")}
+                <Plug size={15} />
+                Vincular con código de Shopify
               </button>
             )}
           </div>
