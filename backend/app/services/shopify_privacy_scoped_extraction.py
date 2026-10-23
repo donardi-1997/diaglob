@@ -111,10 +111,12 @@ def build_encrypted_shopify_fixture_extraction(
         CustomerStoreProfile.store_id == store,
         CustomerStoreProfile.external_customer_id == external_id,
     ).order_by(CustomerStoreProfile.id))
-    customer_ids = {p.customer_id for p in profiles}
-    if len(customer_ids) != 1:
+    # Require exactly one per-store profile, not merely one distinct customer
+    # behind multiple conflicting mappings. Assessment has already checked
+    # that the customer itself belongs to this organization.
+    if len(profiles) != 1 or profiles[0].customer_id is None:
         raise ShopifyPrivacyExtractionError("AMBIGUOUS_OR_MISSING_CUSTOMER_LINK")
-    customer_id = next(iter(customer_ids))
+    customer_id = profiles[0].customer_id
 
     orders = _bounded_rows(db.query(Order).filter(
         Order.organization_id == org,
