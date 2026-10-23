@@ -88,6 +88,10 @@ def audit_shopify_privacy_sla(
         "unverified_work_item_completion": baseline[
             "work_items_with_unverified_completion_state"
         ],
+        "review_api_unavailable_with_open_receipts": int(
+            baseline["receipt_total"] > 0
+            and not baseline["internal_review_secret_present"]
+        ),
     }
     urgent = (
         counts["at_or_past_30_day_target"] > 0
@@ -98,6 +102,7 @@ def audit_shopify_privacy_sla(
         or counts["future_or_missing_received_timestamp"] > 0
         or counts["incomplete_work_item_queue"] > 0
         or counts["unverified_work_item_completion"] > 0
+        or counts["review_api_unavailable_with_open_receipts"] > 0
         or not baseline["hmac_secret_present"]
         or not baseline["selector_encryption_key_present"]
     )
