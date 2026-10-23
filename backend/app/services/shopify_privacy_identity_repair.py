@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from ..models import (
     ShopifyPrivacyAuditEvent, ShopifyPrivacyRequest,
-    ShopifyPrivacyShopIdentity, Store,
+    ShopifyPrivacyShopIdentity, ShopifyPrivacyWorkItem, Store,
 )
 from ..shopify_oauth import normalize_shop_domain
 from .shopify_privacy_installation_identity import (
@@ -65,6 +65,17 @@ def repair_signed_shopify_privacy_receipt_identity(
     if signed is None:
         raise ShopifyPrivacyIdentityRepairError("SIGNED_INTAKE_EVIDENCE_MISSING")
 
+    prepared = db.query(ShopifyPrivacyAuditEvent.id).filter(
+        ShopifyPrivacyAuditEvent.request_id == request_id,
+        ShopifyPrivacyAuditEvent.event_type == "processing_prepared",
+        ShopifyPrivacyAuditEvent.actor_type == "internal_privacy_processor",
+    ).first()
+    work_items = db.query(ShopifyPrivacyWorkItem.id).filter(
+        ShopifyPrivacyWorkItem.request_id == request_id,
+    ).count()
+    if prepared is None or work_items != 10:
+        raise ShopifyPrivacyIdentityRepairError("PRIVACY_PROCESSING_QUEUE_UNVERIFIED")
+
     if (receipt.organization_id is None) != (receipt.store_id is None):
         raise ShopifyPrivacyIdentityRepairError("PARTIAL_TENANT_BINDING_UNSAFE")
 
@@ -105,11 +116,17 @@ def repair_signed_shopify_privacy_receipt_identity(
         Store.id == candidate.store_id,
         Store.organization_id == candidate.organization_id,
     ).first()
-    if store is None or (
-        store.shopify_domain
-        and normalize_shop_domain(store.shopify_domain) != domain
-    ):
+    if store is None:
         raise ShopifyPrivacyIdentityRepairError("HISTORICAL_STORE_UNVERIFIED")
+    if store.shopify_domain:
+        try:
+            stored_domain = normalize_shop_domain(store.shopify_domain)
+        except (ValueError, AttributeError, TypeError) as exc:
+            raise ShopifyPrivacyIdentityRepairError(
+                "HISTORICAL_STORE_UNVERIFIED"
+            ) from exc
+        if stored_domain != domain:
+            raise ShopifyPrivacyIdentityRepairError("HISTORICAL_STORE_UNVERIFIED")
 
     # A separately HMAC-audited receipt cannot move the same Shopify shop
     # ID/domain to another tenant. Missing bindings do not count as approval.
