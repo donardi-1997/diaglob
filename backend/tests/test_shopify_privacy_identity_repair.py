@@ -109,6 +109,7 @@ def test_exact_signed_history_can_recover_identity_idempotently(sandbox):
     ("missing_queue", "PRIVACY_PROCESSING_QUEUE_UNVERIFIED"),
     ("unsigned", "SIGNED_INTAKE_EVIDENCE_MISSING"),
     ("historical_conflict", "SIGNED_SHOP_HISTORY_CONFLICT"),
+    ("forged_completion", "UNVERIFIED_PRIVACY_COMPLETION"),
 ])
 def test_repair_refuses_uncorroborated_or_partial_history(sandbox, change, reason):
     db, org, store, history, receipt = sandbox
@@ -131,6 +132,10 @@ def test_repair_refuses_uncorroborated_or_partial_history(sandbox, change, reaso
     elif change == "historical_conflict":
         receipt.last_error_code = "SIGNED_SHOP_IDENTITY_CONFLICT"
         reason = "SIGNED_SHOP_HISTORY_CONFLICT"
+    elif change == "forged_completion":
+        db.query(ShopifyPrivacyWorkItem).filter(
+            ShopifyPrivacyWorkItem.request_id == RID
+        ).first().status = "completed"
     db.commit()
     with pytest.raises(ShopifyPrivacyIdentityRepairError, match=reason):
         repair_signed_shopify_privacy_receipt_identity(db, request_id=RID)
