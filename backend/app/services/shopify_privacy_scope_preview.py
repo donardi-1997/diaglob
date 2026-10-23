@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from ..models import (
     CommerceConnection,
     Conversation,
+    Customer,
     CustomerStoreProfile,
     Order,
     ShopifyPrivacyAuditEvent,
@@ -161,8 +162,19 @@ def preview_shopify_privacy_scope(
             CustomerStoreProfile.external_customer_id == external_id,
         ).limit(2).all()
         if len(profiles) == 1 and profiles[0][0] is not None:
-            customer_ids = [profiles[0][0]]
-            scope = "customer_scope_preview_only"
+            # A per-store profile is not itself proof that the underlying
+            # customer belongs to the same tenant. Reject orphan/cross-tenant
+            # links before reading subject-related order counts.
+            customer = db.query(Customer.id).filter(
+                Customer.id == profiles[0][0],
+                Customer.organization_id == receipt.organization_id,
+            ).first()
+            if customer is not None:
+                customer_ids = [customer[0]]
+                scope = "customer_scope_preview_only"
+            else:
+                customer_ids = []
+                scope = "subject_unresolved"
         else:
             customer_ids = []
             scope = "subject_unresolved"
