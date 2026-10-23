@@ -25,6 +25,8 @@ from app.services.conversational_checkout_service import (
     process_conversational_checkout_turn,
 )
 from app.shopify_cod_orders import create_shopify_cod_order
+from app.shopify_orders import create_shopify_draft_order, build_draft_order_input
+from app.shopify_client import ShopifyUserError
 
 SQLALCHEMY_TEST_DATABASE_URL = "sqlite:///./test_conversational_cod_checkout.db"
 engine = create_engine(
@@ -393,3 +395,127 @@ def test_shopify_cod_order_sends_confirmed_shipping_data(db, monkeypatch):
     assert order.payment_status == "pending"
     assert order.lifecycle_status == "confirmed"
     assert order.customer_id == customer.id
+
+
+def test_chat_checkout_draft_has_shipping_link_without_premature_order_event(db, monkeypatch):
+    """Buyer has a Shopify checkout link; no Shopify Order exists yet."""
+    _, store, customer, _, _, variant, _, connection = _scenario(db)
+    captured = {"calls": 0, "events": []}
+
+    class FakeClient:
+        def __init__(self, shop_domain, access_token):
+            assert shop_domain == "diaglob-poc.myshopify.com"
+
+        def query(self, query, variables):
+            captured["calls"] += 1
+            captured["input"] = variables["input"]
+            assert "draftOrderCreate" in query
+            return {
+                "draftOrderCreate": {
+                    "draftOrder": {
+                        "id": "gid://shopify/DraftOrder/987",
+                        "name": "#D987",
+                        "invoiceUrl": "https://diaglob-poc.myshopify.com/checkouts/draft/987",
+                        "totalPriceSet": {"shopMoney": {"amount": "100.00", "currencyCode": "COP"}},
+                    },
+                    "userErrors": [],
+                }
+            }
+
+    monkeypatch.setattr("app.shopify_orders.decrypt_shopify_secret", lambda value: "synthetic")
+    monkeypatch.setattr("app.shopify_orders.ShopifyGraphQLClient", FakeClient)
+    monkeypatch.setattr(
+        "app.shopify_orders.safe_emit_event",
+        lambda **kwargs: captured["events"].append(kwargs["event_type"]),
+    )
+    shipping = {
+        "firstName": "Cliente",
+        "lastName": "Sintético",
+        "address1": "Calle 80 # 15-24",
+        "address2": "Apto 302",
+        "city": "Bogota",
+        "countryCode": "CO",
+        "phone": customer.phone,
+    }
+    params = {
+        "db": db,
+        "store": store,
+        "connection": connection,
+        "items_payload": [{"variant_local_id": variant.id, "quantity": 1}],
+        "customer_email": customer.email,
+        "customer_name": customer.name,
+        "customer_phone": customer.phone,
+        "customer_id": customer.id,
+        "shipping_address": shipping,
+        "note": "Synthetic conversational checkout",
+        "idempotency_key": "chat-checkout:synthetic:987",
+        "source": "shopify_chat_checkout",
+    }
+    result = create_shopify_draft_order(**params)
+    assert result["invoice_url"].startswith("https://diaglob-poc.myshopify.com/")
+    assert result["shopify_draft_order_id"] == "gid://shopify/DraftOrder/987"
+    assert result["status"] == "pending"
+    assert captured["input"]["shippingAddress"] == shipping
+    assert captured["input"]["phone"] == customer.phone
+    assert "name" not in captured["input"]
+    assert captured["events"] == []
+    order = db.query(Order).filter(Order.id == result["order_id"]).one()
+    assert order.shopify_order_id is None
+    assert order.source == "shopify_chat_checkout"
+    assert order.payment_status == "pending"
+    assert order.customer_id == customer.id
+
+    replay = create_shopify_draft_order(**params)
+    assert replay["idempotent"] is True
+    assert captured["calls"] == 1
+    assert db.query(Order).count() == 1
+
+
+def test_chat_checkout_draft_rejects_insecure_link_without_duplicate_order(db, monkeypatch):
+    _, store, customer, _, _, variant, _, connection = _scenario(db)
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            pass
+
+        def query(self, query, variables):
+            return {
+                "draftOrderCreate": {
+                    "draftOrder": {
+                        "id": "gid://shopify/DraftOrder/55",
+                        "invoiceUrl": "http://unsafe.example.invalid/checkout",
+                        "totalPriceSet": {"shopMoney": {"amount": "100.00", "currencyCode": "COP"}},
+                    },
+                    "userErrors": [],
+                }
+            }
+
+    monkeypatch.setattr("app.shopify_orders.decrypt_shopify_secret", lambda value: "synthetic")
+    monkeypatch.setattr("app.shopify_orders.ShopifyGraphQLClient", FakeClient)
+    monkeypatch.setattr("app.shopify_orders.safe_emit_event", lambda **kwargs: None)
+    with pytest.raises(ShopifyUserError, match="SHOPIFY_CHECKOUT_LINK_UNAVAILABLE"):
+        create_shopify_draft_order(
+            db=db, store=store, connection=connection,
+            items_payload=[{"variant_local_id": variant.id, "quantity": 1}],
+            customer_id=customer.id,
+            customer_email=customer.email,
+            idempotency_key="chat-checkout:bad-link",
+            source="shopify_chat_checkout",
+        )
+    order = db.query(Order).one()
+    assert order.external_creation_status == "unknown"
+    assert order.shopify_order_id is None
+
+
+def test_draft_shipping_input_rejects_unsupported_shopify_fields():
+    with pytest.raises(ValueError, match="SHOPIFY_DRAFT_SHIPPING_ADDRESS_INVALID"):
+        build_draft_order_input(
+            line_items=[],
+            note=None,
+            customer_email=None,
+            customer_name=None,
+            shipping_address={
+                "address1": "Calle 80 # 15-24", "countryCode": "CO",
+                "province": "Cundinamarca",
+            },
+        )
