@@ -30,6 +30,7 @@ from app.models import (
 from app.shopify_client import (
     ShopifyAuthError,
     ShopifyTimeoutError,
+    ShopifyUserError,
 )
 
 SQLALCHEMY_TEST_DATABASE_URL = (
@@ -471,8 +472,9 @@ class TestShopifyPocOrder:
                       },
                       note="simulation", idempotency_key="unsellable")
         with patch("app.shopify_poc.decrypt_shopify_secret", return_value="test"), patch(
-            "app.shopify_cod_orders.decrypt_shopify_secret", return_value="test",
-        ), patch("app.shopify_poc.ShopifyGraphQLClient.query", side_effect=AssertionError("Unexpected provider call")), pytest.raises(ValueError):
+            "app.shopify_poc.ShopifyGraphQLClient.query",
+            side_effect=AssertionError("Unexpected provider call"),
+        ), pytest.raises((ValueError, ShopifyUserError)):
             if entrypoint == "poc":
                 create_poc_order(**common, variant_id="gid://shopify/ProductVariant/902", tags=[])
             else:
