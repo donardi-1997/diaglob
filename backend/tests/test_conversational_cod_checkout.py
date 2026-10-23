@@ -862,7 +862,8 @@ def test_checkout_rollout_does_not_activate_another_store(db, monkeypatch):
     monkeypatch.setenv("SHOPIFY_CHAT_CHECKOUT_POC_ORGANIZATION_ID", str(org.id))
     monkeypatch.setenv("SHOPIFY_CHAT_CHECKOUT_POC_STORE_ID", str(store.id + 55))
     summary = _advance_to_final_confirmation(db, conversation, agent)
-    assert "Shopify Checkout" not in summary
+    assert "Shopify purchase assistance:" not in summary
+    assert "No se creará ningún pedido en este chat" in summary
     assert "No se creará ningún pedido en este chat" in summary
 
 
