@@ -228,15 +228,11 @@ def test_ambiguous_final_reply_never_creates_order(db, monkeypatch):
     summary = _advance_to_final_confirmation(db, conversation, agent)
     assert "CONFIRMO" in summary
 
-    calls = []
-    monkeypatch.setattr(
-        "app.services.conversational_checkout_service.create_attributed_shopify_cod_order",
-        lambda *args, **kwargs: calls.append((args, kwargs)),
-    )
+
     answer = _turn(db, conversation, agent, "dale")
     checkout = db.query(ConversationalCheckout).one()
 
-    assert calls == []
+    assert db.query(Order).count() == 0
     assert checkout.status == "awaiting_order_confirmation"
     assert checkout.customer_confirmed is False
     assert "ambigua" in answer
@@ -246,29 +242,26 @@ def test_live_price_change_forces_second_final_confirmation(db, monkeypatch):
     _, _, _, agent, _, variant, conversation, _ = _scenario(db)
     _advance_to_final_confirmation(db, conversation, agent)
 
-    calls = []
-    monkeypatch.setattr(
-        "app.services.conversational_checkout_service.create_attributed_shopify_cod_order",
-        lambda *args, **kwargs: calls.append((args, kwargs)) or {"ok": True, "order_id": 999, "order_number": "#999"},
-    )
+
     variant.price = 120
     db.commit()
 
     changed = _turn(db, conversation, agent, "CONFIRMO")
     checkout = db.query(ConversationalCheckout).one()
-    assert calls == []
+    assert db.query(Order).count() == 0
     assert checkout.status == "awaiting_order_confirmation"
     assert checkout.customer_confirmed is False
     assert float(checkout.total) == 120.0
     assert "precio cambió" in changed
     assert "COP 120.00" in changed
 
-    created = _turn(db, conversation, agent, "CONFIRMO")
+    answer = _turn(db, conversation, agent, "CONFIRMO")
     db.refresh(checkout)
-    assert len(calls) == 1
-    assert checkout.status == "order_created"
-    assert checkout.created_order_id == 999
-    assert "#999" in created
+    assert db.query(Order).count() == 0
+    assert checkout.status == "failed"
+    assert checkout.failure_reason == "SHOPIFY_CHECKOUT_REQUIRED"
+    assert checkout.created_order_id is None
+    assert "No se creó ningún pedido" in answer
 
 
 def test_zero_price_is_not_offered_for_conversational_checkout(db):
@@ -282,127 +275,82 @@ def test_zero_price_is_not_offered_for_conversational_checkout(db):
 def test_price_becoming_zero_blocks_final_confirmation(db, monkeypatch):
     _, _, _, agent, _, variant, conversation, _ = _scenario(db)
     _advance_to_final_confirmation(db, conversation, agent)
-    calls = []
-    monkeypatch.setattr(
-        "app.services.conversational_checkout_service.create_attributed_shopify_cod_order",
-        lambda *args, **kwargs: calls.append(kwargs),
-    )
+
     variant.price = 0
     db.commit()
     _turn(db, conversation, agent, "CONFIRMO")
     checkout = db.query(ConversationalCheckout).one()
-    assert calls == []
+    assert db.query(Order).count() == 0
     assert checkout.status == "failed"
     assert checkout.customer_confirmed is False
 
 
-def test_attributed_cod_wrapper_records_ai_closer(db, monkeypatch):
+def test_attributed_cod_wrapper_rejects_off_checkout_order_creation(db, monkeypatch):
     org, store, customer, agent, _, variant, conversation, _ = _scenario(db)
-
-    def fake_create(**kwargs):
-        order = Order(
-            organization_id=store.organization_id,
-            store_id=store.id,
+    with pytest.raises(ShopifyUserError, match="SHOPIFY_CHECKOUT_REQUIRED"):
+        create_attributed_shopify_cod_order(
+            db,
+            org.id,
+            store.id,
             customer_id=customer.id,
-            order_number="#COD1",
-            total_amount=100,
-            currency="COP",
-            financial_status="pending",
-            payment_method="cash_on_delivery",
-            payment_status="pending",
-            lifecycle_status="confirmed",
-            source="shopify_chat_cod",
+            variant_local_id=variant.id,
+            quantity=1,
+            customer_email=customer.email,
+            customer_phone=customer.phone,
+            shipping_address={
+                "first_name": "Prueba", "address1": "Calle 80 # 15-24",
+                "city": "Bogotá", "country_code": "CO",
+            },
+            note="synthetic",
             idempotency_key="chat-cod:wrapper",
-            external_creation_status="created",
+            ai_agent_id=agent.id,
+            conversation_id=conversation.id,
         )
-        db.add(order)
-        db.commit()
-        return {"ok": True, "order_id": order.id, "order_number": order.order_number}
-
-    monkeypatch.setattr(
-        "app.services.attributed_order_service.create_shopify_cod_order",
-        fake_create,
-    )
-    result = create_attributed_shopify_cod_order(
-        db,
-        org.id,
-        store.id,
-        customer_id=customer.id,
-        variant_local_id=variant.id,
-        quantity=1,
-        customer_email=customer.email,
-        customer_phone=customer.phone,
-        shipping_address={"first_name": "Juan", "address1": "Calle 80 # 15-24", "city": "Bogota", "country_code": "CO"},
-        note="COD",
-        idempotency_key="chat-cod:wrapper",
-        ai_agent_id=agent.id,
-        conversation_id=conversation.id,
-    )
-
-    attribution = db.query(OrderSalesAttribution).filter(OrderSalesAttribution.order_id == result["order_id"]).one()
-    assert attribution.actor_type == "ai"
-    assert attribution.ai_agent_id == agent.id
-    assert attribution.conversation_id == conversation.id
-    assert attribution.source == "ai_conversational_checkout"
+    assert db.query(Order).count() == 0
+    assert db.query(OrderSalesAttribution).count() == 0
 
 
-def test_shopify_cod_order_sends_confirmed_shipping_data(db, monkeypatch):
+def test_provider_legacy_cod_path_fails_before_draft_or_shopify_order(db):
     _, store, customer, _, _, variant, _, connection = _scenario(db)
-    captured = {}
+    with pytest.raises(ShopifyUserError, match="SHOPIFY_CHECKOUT_REQUIRED"):
+        create_shopify_cod_order(
+            db=db,
+            store=store,
+            connection=connection,
+            customer_id=customer.id,
+            variant_local_id=variant.id,
+            quantity=1,
+            customer_email=customer.email,
+            customer_phone=customer.phone,
+            shipping_address={
+                "first_name": "Prueba", "address1": "Calle 80 # 15-24",
+                "city": "Bogotá", "country_code": "CO",
+            },
+            note="synthetic",
+            idempotency_key="chat-cod:provider",
+        )
+    assert db.query(Order).count() == 0
+    assert db.query(OrderItem).count() == 0
 
-    class FakeClient:
-        def __init__(self, shop_domain, access_token):
-            captured["domain"] = shop_domain
-            captured["token"] = access_token
 
-        def query(self, query, variables):
-            captured["variables"] = variables
-            return {
-                "orderCreate": {
-                    "order": {"id": "gid://shopify/Order/123", "name": "#123"},
-                    "userErrors": [],
-                }
-            }
-
-    monkeypatch.setattr("app.shopify_cod_orders.decrypt_shopify_secret", lambda value: "token")
-    monkeypatch.setattr("app.shopify_cod_orders.ShopifyGraphQLClient", FakeClient)
-    monkeypatch.setattr("app.shopify_cod_orders.safe_emit_event", lambda **kwargs: None)
-
-    result = create_shopify_cod_order(
-        db=db,
-        store=store,
-        connection=connection,
-        customer_id=customer.id,
-        variant_local_id=variant.id,
-        quantity=1,
-        customer_email=customer.email,
-        customer_phone=customer.phone,
-        shipping_address={
-            "first_name": "Juan",
-            "last_name": "Perez",
-            "address1": "Calle 80 # 15-24",
-            "address2": "Apto 302 · Barrio El Lago",
-            "city": "Bogota",
-            "province": "Cundinamarca",
-            "country_code": "CO",
-            "phone": customer.phone,
-        },
-        note="Confirmed address",
-        idempotency_key="chat-cod:provider",
-    )
-
-    payload = captured["variables"]["order"]
-    assert payload["shippingAddress"]["address1"] == "Calle 80 # 15-24"
-    assert payload["shippingAddress"]["address2"] == "Apto 302 · Barrio El Lago"
-    assert payload["shippingAddress"]["province"] == "Cundinamarca"
-    assert payload["shippingAddress"]["countryCode"] == "CO"
-    assert payload["tags"] == ["DIAGLOB_CHAT", "DIAGLOB_COD"]
-
-    order = db.query(Order).filter(Order.id == result["order_id"]).one()
-    assert order.payment_method == "cash_on_delivery"
-    assert order.payment_status == "pending"
-    assert order.lifecycle_status == "confirmed"
-    assert order.customer_id == customer.id
+def test_non_poc_chat_checkout_hands_off_without_buyer_order(db, monkeypatch):
+    _, _, _, agent, _, _, conversation, _ = _scenario(db)
+    # The developer POC flag never authorizes a different tenant/store.
+    monkeypatch.setenv("SHOPIFY_CHAT_CHECKOUT_VIA_DRAFT", "true")
+    monkeypatch.setenv("SHOPIFY_CHAT_CHECKOUT_POC_ORGANIZATION_ID", "9999")
+    monkeypatch.setenv("SHOPIFY_CHAT_CHECKOUT_POC_STORE_ID", "9999")
+    prompt = _advance_to_final_confirmation(db, conversation, agent)
+    assert "Shopify Checkout" in prompt
+    assert "No se creará ningún pedido" in prompt
+    answer = _turn(db, conversation, agent, "CONFIRMO")
+    checkout = db.query(ConversationalCheckout).one()
+    assert checkout.status == "failed"
+    assert checkout.failure_reason == "SHOPIFY_CHECKOUT_REQUIRED"
+    assert checkout.created_order_id is None
+    assert conversation.mode == "human"
+    assert "No se creó ningún pedido" in answer
+    assert db.query(Order).count() == 0
+    assert db.query(OrderSalesAttribution).count() == 0
 
 
 def test_chat_checkout_draft_has_shipping_link_without_premature_order_event(db, monkeypatch):
@@ -914,8 +862,9 @@ def test_checkout_rollout_does_not_activate_another_store(db, monkeypatch):
     monkeypatch.setenv("SHOPIFY_CHAT_CHECKOUT_POC_ORGANIZATION_ID", str(org.id))
     monkeypatch.setenv("SHOPIFY_CHAT_CHECKOUT_POC_STORE_ID", str(store.id + 55))
     summary = _advance_to_final_confirmation(db, conversation, agent)
-    assert "Shopify Checkout" not in summary
-    assert "Pagarás al recibir" in summary
+    assert "Shopify purchase assistance:" not in summary
+    assert "No se creará ningún pedido en este chat" in summary
+    assert "No se creará ningún pedido en este chat" in summary
 
 
 def test_poc_rollout_audit_reports_only_safe_statuses(db, monkeypatch):

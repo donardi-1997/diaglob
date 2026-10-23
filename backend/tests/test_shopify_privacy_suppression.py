@@ -367,7 +367,10 @@ def test_manual_draft_and_cod_cannot_reintroduce_suppressed_buyer(
             db=db, store=stores[0], connection=connections[0],
             items_payload=[], customer_email="private@example.com",
         )
-    with pytest.raises(ValueError, match="SHOPIFY_PRIVACY_SUPPRESSED"):
+    # The retired COD entrypoint rejects before any provider or DB side effect,
+    # independently of the privacy tombstone.
+    from app.shopify_client import ShopifyUserError
+    with pytest.raises(ShopifyUserError, match="SHOPIFY_CHECKOUT_REQUIRED"):
         create_shopify_cod_order(
             db=db, store=stores[0], connection=connections[0],
             customer_id=customer.id, variant_local_id=123, quantity=1,

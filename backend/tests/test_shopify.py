@@ -30,6 +30,7 @@ from app.models import (
 from app.shopify_client import (
     ShopifyAuthError,
     ShopifyTimeoutError,
+    ShopifyUserError,
 )
 
 SQLALCHEMY_TEST_DATABASE_URL = (
@@ -471,8 +472,9 @@ class TestShopifyPocOrder:
                       },
                       note="simulation", idempotency_key="unsellable")
         with patch("app.shopify_poc.decrypt_shopify_secret", return_value="test"), patch(
-            "app.shopify_cod_orders.decrypt_shopify_secret", return_value="test",
-        ), patch("app.shopify_poc.ShopifyGraphQLClient.query", side_effect=AssertionError("Unexpected provider call")), pytest.raises(ValueError):
+            "app.shopify_poc.ShopifyGraphQLClient.query",
+            side_effect=AssertionError("Unexpected provider call"),
+        ), pytest.raises((ValueError, ShopifyUserError)):
             if entrypoint == "poc":
                 create_poc_order(**common, variant_id="gid://shopify/ProductVariant/902", tags=[])
             else:
@@ -525,25 +527,11 @@ class TestShopifyPocOrder:
         payload.update(changes)
         return payload
 
-    def test_success_and_idempotency(
-        self, client, db, org, store, shopify_connection
-    ):
+    def test_public_poc_order_endpoint_is_retired(self, client, db, org, store, shopify_connection):
         variant = self._variant(db, org, store)
-        shopify_response = {
-            "orderCreate": {
-                "order": {
-                    "id": "gid://shopify/Order/700",
-                    "name": "#1007",
-                },
-                "userErrors": [],
-            }
-        }
         with patch(
-            "app.shopify_poc.decrypt_shopify_secret",
-            return_value="secret",
-        ), patch(
             "app.shopify_poc.ShopifyGraphQLClient.query",
-            return_value=shopify_response,
+            side_effect=AssertionError("No Shopify request should be made"),
         ) as query:
             first = client.post(
                 f"/api/stores/{store.id}/shopify/poc/order",
@@ -553,13 +541,11 @@ class TestShopifyPocOrder:
                 f"/api/stores/{store.id}/shopify/poc/order",
                 json=self._payload(variant.shopify_variant_id),
             )
-        assert first.status_code == 200
-        assert second.json()["idempotent"] is True
-        query.assert_called_once()
-        variables = query.call_args.args[1]["order"]
-        assert variables["email"] == "poc@example.com"
-        assert variables["phone"] == "+573001234567"
-        assert "DIAGLOB_POC" in variables["tags"]
+        assert first.status_code == 410
+        assert second.status_code == 410
+        assert first.json()["detail"]["code"] == "SHOPIFY_CHECKOUT_REQUIRED"
+        query.assert_not_called()
+        assert db.query(Order).count() == 0
 
     @pytest.mark.parametrize(
         "changes",
@@ -584,72 +570,27 @@ class TestShopifyPocOrder:
         )
         assert response.status_code == 422
 
-    def test_invalid_variant_rejected(
-        self, client, store, shopify_connection
-    ):
+    def test_invalid_variant_still_uses_retired_endpoint(self, client, store, shopify_connection):
         response = client.post(
             f"/api/stores/{store.id}/shopify/poc/order",
             json=self._payload("999"),
         )
-        assert response.status_code == 400
+        assert response.status_code == 410
+        assert response.json()["detail"]["code"] == "SHOPIFY_CHECKOUT_REQUIRED"
 
-    def test_user_error_is_normalized(
-        self, client, db, org, store, shopify_connection
-    ):
+    def test_public_poc_order_route_never_queries_shopify(self, client, db, org, store, shopify_connection):
         variant = self._variant(db, org, store)
         with patch(
-            "app.shopify_poc.decrypt_shopify_secret",
-            return_value="secret",
-        ), patch(
             "app.shopify_poc.ShopifyGraphQLClient.query",
-            return_value={
-                "orderCreate": {
-                    "order": None,
-                    "userErrors": [{"message": "invalid variant"}],
-                }
-            },
-        ):
+            side_effect=AssertionError("Legacy provider mutation was called"),
+        ) as query:
             response = client.post(
                 f"/api/stores/{store.id}/shopify/poc/order",
                 json=self._payload(variant.shopify_variant_id),
             )
-        assert response.status_code == 422
-        assert "invalid variant" in response.json()["detail"]["error"]
-
-    @pytest.mark.parametrize(
-        "error,status",
-        [
-            (ShopifyTimeoutError("timed out"), 504),
-            (ShopifyAuthError("invalid token"), 401),
-        ],
-    )
-    def test_shopify_errors_do_not_expose_secret(
-        self,
-        client,
-        db,
-        org,
-        store,
-        shopify_connection,
-        error,
-        status,
-    ):
-        variant = self._variant(db, org, store)
-        with patch(
-            "app.shopify_poc.decrypt_shopify_secret",
-            return_value="secret",
-        ), patch(
-            "app.shopify_poc.ShopifyGraphQLClient.query",
-            side_effect=error,
-        ):
-            response = client.post(
-                f"/api/stores/{store.id}/shopify/poc/order",
-                json=self._payload(
-                    variant.shopify_variant_id,
-                    idempotency_key="poc-error",
-                ),
-            )
-        assert response.status_code == status
+        assert response.status_code == 410
         assert "secret" not in response.text
+        query.assert_not_called()
 
     def test_expired_token_handled(
         self,
