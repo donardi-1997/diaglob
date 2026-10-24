@@ -388,6 +388,84 @@ def test_extraction_does_not_include_other_customer_in_same_store(sandbox):
     assert "SENSITIVE_NOTE" in decoded
 
 
+def test_customer_link_rejects_cross_tenant_customer(sandbox):
+    from app.services.shopify_privacy_case_assessment import (
+        assess_shopify_privacy_case,
+        prepare_shopify_privacy_export_manifest,
+        ShopifyPrivacyAssessmentError,
+    )
+    from app.services.shopify_privacy_scoped_extraction import (
+        ShopifyPrivacyExtractionError,
+        build_encrypted_shopify_fixture_extraction,
+    )
+
+    db, receipt = sandbox
+    other_org = Organization(
+        name="Unrelated tenant", slug="unrelated-privacy-tenant", plan="starter",
+    )
+    db.add(other_org)
+    db.flush()
+    other_customer = Customer(
+        organization_id=other_org.id, name="OTHER_TENANT_CUSTOMER", phone="888",
+    )
+    db.add(other_customer)
+    db.flush()
+    profile = db.query(CustomerStoreProfile).filter(
+        CustomerStoreProfile.organization_id == receipt.organization_id,
+        CustomerStoreProfile.store_id == receipt.store_id,
+        CustomerStoreProfile.external_customer_id == "700",
+    ).one()
+    profile.customer_id = other_customer.id
+    db.commit()
+
+    assessment = assess_shopify_privacy_case(db, request_id=REQUEST_ID)
+    assert assessment.verified_shop_scope is False
+    assert assessment.scope_status == "subject_unresolved"
+    assert assessment.matched_store_orders == 0
+    assert "SHOPIFY_SUBJECT_UNRESOLVED" in assessment.blockers
+    with pytest.raises(
+        ShopifyPrivacyAssessmentError, match="SHOPIFY_SUBJECT_UNRESOLVED",
+    ):
+        prepare_shopify_privacy_export_manifest(db, request_id=REQUEST_ID)
+    with pytest.raises(
+        ShopifyPrivacyExtractionError, match="UNVERIFIED_CUSTOMER_EXPORT_SCOPE",
+    ):
+        build_encrypted_shopify_fixture_extraction(
+            db, request_id=REQUEST_ID, encryption_key=Fernet.generate_key(),
+            fixture_authorized=True,
+        )
+    assert receipt.completed_at is None
+    assert db.query(Customer).filter(
+        Customer.organization_id == other_org.id,
+    ).count() == 1
+
+
+def test_same_customer_duplicate_profile_rejected_by_database(sandbox):
+    from sqlalchemy.exc import IntegrityError
+
+    db, receipt = sandbox
+    original = db.query(CustomerStoreProfile).filter(
+        CustomerStoreProfile.organization_id == receipt.organization_id,
+        CustomerStoreProfile.store_id == receipt.store_id,
+        CustomerStoreProfile.external_customer_id == "700",
+    ).one()
+    db.add(CustomerStoreProfile(
+        organization_id=receipt.organization_id,
+        store_id=receipt.store_id,
+        customer_id=original.customer_id,
+        external_customer_id="700", currency="COP",
+    ))
+    with pytest.raises(IntegrityError):
+        db.commit()
+    db.rollback()
+    assert db.query(CustomerStoreProfile).filter(
+        CustomerStoreProfile.organization_id == receipt.organization_id,
+        CustomerStoreProfile.store_id == receipt.store_id,
+        CustomerStoreProfile.external_customer_id == "700",
+    ).count() == 1
+    assert receipt.completed_at is None
+
+
 def test_extraction_rejects_duplicate_shopify_customer_links(sandbox):
     from app.services.shopify_privacy_scoped_extraction import (
         ShopifyPrivacyExtractionError,
