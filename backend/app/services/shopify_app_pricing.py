@@ -302,6 +302,12 @@ def get_active_shopify_subscription(
     linked_shop = subscription.get("shop")
     if not isinstance(linked_shop, dict) or linked_shop.get("id") != shop_gid:
         raise ShopifyAppPricingError("SHOPIFY_SUBSCRIPTION_SHOP_MISMATCH")
+    # Do not treat malformed cancellation state as an active renewable plan.
+    # Partner API returns a boolean; string/number coercion can silently hide
+    # a scheduled cancellation during a merchant billing review.
+    cancel_at_end = subscription.get("cancelAtEndOfCycle")
+    if cancel_at_end is not None and type(cancel_at_end) is not bool:
+        raise ShopifyAppPricingError("SHOPIFY_PARTNER_API_INVALID_RESPONSE")
     items = subscription.get("items")
     if not isinstance(items, list):
         raise ShopifyAppPricingError("SHOPIFY_PARTNER_API_INVALID_RESPONSE")
@@ -318,6 +324,16 @@ def get_active_shopify_subscription(
         pending_items = pending_update.get("items")
         if not isinstance(pending_items, list) or any(
             not isinstance(item, dict) for item in pending_items
+        ):
+            raise ShopifyAppPricingError("SHOPIFY_PARTNER_API_INVALID_RESPONSE")
+        pending_period = pending_update.get("billingPeriod")
+        if pending_period is not None and pending_period not in SHOPIFY_APP_PRICING_INTERVAL_TO_MONTHS:
+            raise ShopifyAppPricingError("SHOPIFY_PARTNER_API_INVALID_RESPONSE")
+        # Pending items may not replace the active contract for entitlement
+        # decisions. Each reported handle must at least be well formed.
+        if any(
+            not isinstance(item.get("handle"), str) or not item["handle"].strip()
+            for item in pending_items
         ):
             raise ShopifyAppPricingError("SHOPIFY_PARTNER_API_INVALID_RESPONSE")
     handles = tuple(
@@ -354,7 +370,7 @@ def get_active_shopify_subscription(
         eligible_amounts=eligible_amounts,
         trial_ends_at=subscription.get("trialEndsAt"),
         current_cycle_end=cycle.get("endTime") if cycle else None,
-        cancel_at_end_of_cycle=subscription.get("cancelAtEndOfCycle") is True,
+        cancel_at_end_of_cycle=cancel_at_end is True,
         has_pending_update=pending_update is not None,
     )
 
