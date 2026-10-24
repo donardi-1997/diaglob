@@ -406,7 +406,7 @@ def test_customer_link_rejects_cross_tenant_customer(sandbox):
     db.add(other_org)
     db.flush()
     other_customer = Customer(
-        organization_id=other_org.id, name="OTHER_TENANT_CUSTOMER",
+        organization_id=other_org.id, name="OTHER_TENANT_CUSTOMER", phone="888",
     )
     db.add(other_customer)
     db.flush()
@@ -440,14 +440,8 @@ def test_customer_link_rejects_cross_tenant_customer(sandbox):
     ).count() == 1
 
 
-def test_duplicate_same_customer_profile_is_unresolved(sandbox):
-    from app.services.shopify_privacy_case_assessment import (
-        assess_shopify_privacy_case,
-    )
-    from app.services.shopify_privacy_scoped_extraction import (
-        ShopifyPrivacyExtractionError,
-        build_encrypted_shopify_fixture_extraction,
-    )
+def test_same_customer_duplicate_profile_rejected_by_database(sandbox):
+    from sqlalchemy.exc import IntegrityError
 
     db, receipt = sandbox
     original = db.query(CustomerStoreProfile).filter(
@@ -461,17 +455,14 @@ def test_duplicate_same_customer_profile_is_unresolved(sandbox):
         customer_id=original.customer_id,
         external_customer_id="700", currency="COP",
     ))
-    db.commit()
-    assessment = assess_shopify_privacy_case(db, request_id=REQUEST_ID)
-    assert assessment.verified_shop_scope is False
-    assert assessment.scope_status == "subject_unresolved"
-    with pytest.raises(
-        ShopifyPrivacyExtractionError, match="UNVERIFIED_CUSTOMER_EXPORT_SCOPE",
-    ):
-        build_encrypted_shopify_fixture_extraction(
-            db, request_id=REQUEST_ID, encryption_key=Fernet.generate_key(),
-            fixture_authorized=True,
-        )
+    with pytest.raises(IntegrityError):
+        db.commit()
+    db.rollback()
+    assert db.query(CustomerStoreProfile).filter(
+        CustomerStoreProfile.organization_id == receipt.organization_id,
+        CustomerStoreProfile.store_id == receipt.store_id,
+        CustomerStoreProfile.external_customer_id == "700",
+    ).count() == 1
     assert receipt.completed_at is None
 
 
