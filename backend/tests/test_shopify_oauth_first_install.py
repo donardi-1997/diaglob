@@ -15,6 +15,7 @@ from app.services.shopify_public_install import (
     begin_public_install, finish_public_install, claim_install,
     pending_install_status, ShopifyOAuthError, _eligible_shopify_claim_billing,
 )
+from app.shopify_oauth import ShopifyExpiringOfflineGrant
 from app.services.shopify_service import ShopifyConnectionError
 
 
@@ -45,7 +46,11 @@ def _finish(db, state, provider_shop="dev-shop.myshopify.com"):
         "app.services.shopify_public_install.verify_shopify_hmac", return_value=True
     ), patch(
         "app.services.shopify_public_install.exchange_access_token",
-        return_value="synthetic-token",
+        return_value=ShopifyExpiringOfflineGrant(
+            access_token="synthetic-token", refresh_token="synthetic-refresh",
+            access_token_expires_at=datetime.utcnow() + timedelta(minutes=55),
+            refresh_token_expires_at=datetime.utcnow() + timedelta(days=89),
+        ),
     ) as exchange, patch(
         "app.services.shopify_public_install.ShopifyGraphQLClient"
     ) as client, patch(
@@ -144,6 +149,9 @@ def test_claim_binds_once_only_to_explicit_authorized_store(database):
     connection = database.query(CommerceConnection).one()
     assert connection.store_id == 7 and connection.organization_id == 31
     assert connection.access_token_encrypted == "encrypted-fixture"
+    assert connection.refresh_token_encrypted == "encrypted-fixture"
+    assert connection.access_token_expires_at > datetime.utcnow()
+    assert connection.refresh_token_expires_at > datetime.utcnow()
     assert organization.subscription_status == "trial_pending"  # No 7-day off-platform trial
     assert pending_install_status(database, cookie)["pending"] is False
     with pytest.raises(ShopifyOAuthError, match="EXPIRED"):

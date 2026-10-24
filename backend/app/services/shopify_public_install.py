@@ -121,22 +121,26 @@ def finish_public_install(db: Session, params: dict) -> str:
     db.commit()
 
     try:
-        token = exchange_access_token(shop, code)
-        identity = ShopifyGraphQLClient(shop_domain=shop, access_token=token).query(
-            SHOPIFY_TEST_QUERY
-        )
+        token_grant = exchange_access_token(shop, code)
+        identity = ShopifyGraphQLClient(
+            shop_domain=shop, access_token=token_grant.access_token,
+        ).query(SHOPIFY_TEST_QUERY)
         provider_shop = (identity or {}).get("shop")
         if not isinstance(provider_shop, dict):
             raise ShopifyAPIError("SHOPIFY_SHOP_IDENTITY_UNVERIFIED")
         provider_domain = provider_shop.get("myshopifyDomain")
         if not isinstance(provider_domain, str) or normalize_shop_domain(provider_domain) != shop:
             raise ShopifyAuthError("SHOPIFY_SHOP_IDENTITY_MISMATCH")
-        ciphertext = encrypt_shopify_secret(token)
+        ciphertext = encrypt_shopify_secret(token_grant.access_token)
+        encrypted_refresh = encrypt_shopify_secret(token_grant.refresh_token)
     except (RuntimeError, ShopifyAPIError, ShopifyAuthError, ValueError, TypeError) as exc:
         raise ShopifyProviderError("SHOPIFY_INSTALL_VERIFICATION_FAILED") from exc
 
     secret = secrets.token_urlsafe(32)
     grant.token_encrypted = ciphertext
+    grant.refresh_token_encrypted = encrypted_refresh
+    grant.access_token_expires_at = token_grant.access_token_expires_at
+    grant.refresh_token_expires_at = token_grant.refresh_token_expires_at
     grant.claim_hash = _digest(secret)
     grant.claim_expires_at = datetime.utcnow() + CLAIM_TTL
     db.commit()
@@ -200,17 +204,16 @@ def claim_install(
     grant = _pending_for_cookie(db, secret)
     if grant is None:
         raise ShopifyOAuthError("SHOPIFY_INSTALL_GRANT_EXPIRED")
-    if grant.grant_method == "managed":
-        # A managed token must not be installed close to expiry. A refresh
-        # credential is mandatory for background operations.
-        if (
-            not grant.refresh_token_encrypted
-            or not grant.access_token_expires_at
-            or grant.access_token_expires_at <= datetime.utcnow() + timedelta(minutes=2)
-            or not grant.refresh_token_expires_at
-            or grant.refresh_token_expires_at <= datetime.utcnow() + timedelta(minutes=2)
-        ):
-            raise ShopifyOAuthError("SHOPIFY_MANAGED_INSTALL_EXPIRED")
+    # All newly claimed public or managed installs require a refreshable
+    # offline pair. Never attach an old unbound access-only OAuth grant.
+    if (
+        not grant.refresh_token_encrypted
+        or not grant.access_token_expires_at
+        or grant.access_token_expires_at <= datetime.utcnow() + timedelta(minutes=2)
+        or not grant.refresh_token_expires_at
+        or grant.refresh_token_expires_at <= datetime.utcnow() + timedelta(minutes=2)
+    ):
+        raise ShopifyOAuthError("SHOPIFY_EXPIRING_INSTALL_GRANT_REQUIRED")
     if (
         store.organization_id != membership.organization_id
         or store.deleted or not store.active
