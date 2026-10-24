@@ -335,11 +335,11 @@ def process_oauth_callback(db: Session, query_params: dict) -> str:
     )
 
     try:
-        access_token = exchange_access_token(normalized_shop, code)
+        token_grant = exchange_access_token(normalized_shop, code)
+        encrypted_token = encrypt_shopify_secret(token_grant.access_token)
+        encrypted_refresh = encrypt_shopify_secret(token_grant.refresh_token)
     except RuntimeError as exc:
         raise ShopifyProviderError(str(exc)) from exc
-
-    encrypted_token = encrypt_shopify_secret(access_token)
 
     existing_connection = (
         db.query(CommerceConnection)
@@ -361,6 +361,9 @@ def process_oauth_callback(db: Session, query_params: dict) -> str:
             return _shopify_connect_frontend_url(connected=False)
 
         existing_connection.access_token_encrypted = encrypted_token
+        existing_connection.refresh_token_encrypted = encrypted_refresh
+        existing_connection.access_token_expires_at = token_grant.access_token_expires_at
+        existing_connection.refresh_token_expires_at = token_grant.refresh_token_expires_at
         existing_connection.scopes = SHOPIFY_SCOPES
         existing_connection.status = "connected"
         existing_connection.last_error = None
@@ -437,6 +440,9 @@ def process_oauth_callback(db: Session, query_params: dict) -> str:
         provider="shopify",
         external_store_url=normalized_shop,
         access_token_encrypted=encrypted_token,
+        refresh_token_encrypted=encrypted_refresh,
+        access_token_expires_at=token_grant.access_token_expires_at,
+        refresh_token_expires_at=token_grant.refresh_token_expires_at,
         scopes=SHOPIFY_SCOPES,
         status="connected",
         connected_at=now,
