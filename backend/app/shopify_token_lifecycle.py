@@ -14,7 +14,9 @@ from sqlalchemy.orm import object_session
 
 from .models import CommerceConnection
 from .shopify_security import decrypt_shopify_secret, encrypt_shopify_secret
-from .shopify_oauth import SHOPIFY_SCOPES, normalize_shop_domain
+from .shopify_oauth import (
+    SHOPIFY_SCOPES, effective_shopify_scopes, normalize_shop_domain,
+)
 
 
 class ShopifyTokenRefreshError(RuntimeError):
@@ -89,7 +91,7 @@ def connection_access_token(connection: CommerceConnection, *, decrypt_legacy=No
             or type(expires) is not int or expires < 300
             or type(refresh_expires) is not int or refresh_expires < 900
             or not isinstance(scopes, str)
-            or not set(SHOPIFY_SCOPES.split(",")).issubset(set(scopes.split(",")))
+            or not set(SHOPIFY_SCOPES.split(",")).issubset(effective_shopify_scopes(scopes))
         ):
             raise ShopifyTokenRefreshError("SHOPIFY_REFRESH_RESPONSE_INVALID")
         now = datetime.utcnow()

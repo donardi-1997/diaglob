@@ -186,6 +186,19 @@ _IMPLIED_READ_SCOPES = {
 }
 
 
+def effective_shopify_scopes(scope_list: str) -> set[str]:
+    """Compute effective API rights from the actual token's Shopify scopes.
+
+    Shopify omits some implicit read handles when granting write scopes.
+    Never infer access beyond these explicit write->read pairs.
+    """
+    granted = {part.strip() for part in scope_list.split(",") if part.strip()}
+    return granted | {
+        read for write, read in _IMPLIED_READ_SCOPES.items()
+        if write in granted
+    }
+
+
 def exchange_access_token(shop: str, code: str) -> ShopifyExpiringOfflineGrant:
     """Exchange a signed OAuth code for an expiring, refreshable offline pair.
 
@@ -229,11 +242,7 @@ def exchange_access_token(shop: str, code: str) -> ShopifyExpiringOfflineGrant:
     raw_scopes = data.get("scope")
     if not isinstance(raw_scopes, str):
         raise RuntimeError("SHOPIFY_OAUTH_REQUIRED_SCOPES_MISSING")
-    granted_scopes = {part.strip() for part in raw_scopes.split(",") if part.strip()}
-    effective_scopes = granted_scopes | {
-        implied for write, implied in _IMPLIED_READ_SCOPES.items()
-        if write in granted_scopes
-    }
+    effective_scopes = effective_shopify_scopes(raw_scopes)
     if not set(SHOPIFY_SCOPES.split(",")).issubset(effective_scopes):
         raise RuntimeError("SHOPIFY_OAUTH_REQUIRED_SCOPES_MISSING")
 
