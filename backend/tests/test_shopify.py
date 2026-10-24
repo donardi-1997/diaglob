@@ -1,3 +1,4 @@
+from app.shopify_oauth import ShopifyExpiringOfflineGrant
 import os
 from copy import deepcopy
 from unittest.mock import patch
@@ -724,7 +725,11 @@ class TestBakataOAuth:
         params = {"state": state.state, "code": "test-code", "shop": state.shop_domain}
         message = "&".join(f"{key}={params[key]}" for key in sorted(params))
         params["hmac"] = hmac.new(b"test-secret", message.encode(), hashlib.sha256).hexdigest()
-        with patch("app.services.shopify_service.exchange_access_token", return_value="test-access"), patch(
+        with patch("app.services.shopify_service.exchange_access_token", return_value=ShopifyExpiringOfflineGrant(
+            access_token="test-access", refresh_token="test-refresh",
+            access_token_expires_at=datetime.utcnow() + timedelta(minutes=55),
+            refresh_token_expires_at=datetime.utcnow() + timedelta(days=89),
+        )), patch(
             "app.services.shopify_service.ensure_shopify_order_webhooks", return_value={"ok": True},
         ):
             assert "shopify=connected" in process_oauth_callback(db, params)
@@ -734,6 +739,9 @@ class TestBakataOAuth:
             assert connection.external_store_url == "0djnem-9x.myshopify.com"
             assert connection.access_token_encrypted != "test-access"
             assert decrypt_shopify_secret(connection.access_token_encrypted) == "test-access"
+            assert decrypt_shopify_secret(connection.refresh_token_encrypted) == "test-refresh"
+            assert connection.access_token_expires_at > datetime.utcnow()
+            assert connection.refresh_token_expires_at > datetime.utcnow()
             db.refresh(state)
             assert state.used is True
             with pytest.raises(ShopifyOAuthError):
@@ -5167,7 +5175,11 @@ class TestShopifyUninstallLifecycle:
             "app.services.shopify_service.verify_shopify_hmac", return_value=True
         ), patch(
             "app.services.shopify_service.exchange_access_token",
-            return_value="new-synthetic-token",
+            return_value=ShopifyExpiringOfflineGrant(
+                access_token="new-synthetic-token", refresh_token="new-refresh",
+                access_token_expires_at=datetime.utcnow() + timedelta(minutes=55),
+                refresh_token_expires_at=datetime.utcnow() + timedelta(days=89),
+            ),
         ), patch(
             "app.services.shopify_service.encrypt_shopify_secret",
             return_value="new-encrypted-token",
