@@ -327,7 +327,10 @@ def get_active_shopify_subscription(
         ):
             raise ShopifyAppPricingError("SHOPIFY_PARTNER_API_INVALID_RESPONSE")
         pending_period = pending_update.get("billingPeriod")
-        if pending_period is not None and pending_period not in SHOPIFY_APP_PRICING_INTERVAL_TO_MONTHS:
+        if pending_period is not None and (
+            not isinstance(pending_period, str)
+            or pending_period not in SHOPIFY_APP_PRICING_INTERVAL_TO_MONTHS
+        ):
             raise ShopifyAppPricingError("SHOPIFY_PARTNER_API_INVALID_RESPONSE")
         # Pending items may not replace the active contract for entitlement
         # decisions. Each reported handle must at least be well formed.
