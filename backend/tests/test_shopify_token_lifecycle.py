@@ -59,6 +59,46 @@ def test_refresh_rotates_both_tokens_and_persists(client, decrypt, encrypt, samp
     assert provider.post.call_args.kwargs["data"]["grant_type"] == "refresh_token"
 
 
+@patch("app.shopify_token_lifecycle.encrypt_shopify_secret", side_effect=lambda s: "encrypt:" + s)
+@patch("app.shopify_token_lifecycle.decrypt_shopify_secret", side_effect=lambda s: s)
+@patch("app.shopify_token_lifecycle.httpx.Client")
+def test_refresh_accepts_write_scopes_with_implicit_read_rights(client, decrypt, encrypt, sample):
+    db, connection = sample
+    provider = client.return_value.__enter__.return_value
+    provider.post.return_value.json.return_value = {
+        "access_token": "next-access", "refresh_token": "next-refresh",
+        "expires_in": 3600, "refresh_token_expires_in": 7776000,
+        # Shopify may omit read_orders/read_fulfillment from token response:
+        "scope": (
+            "read_products,read_inventory,write_orders,write_draft_orders,"
+            "write_merchant_managed_fulfillment_orders"
+        ),
+    }
+    assert connection_access_token(connection) == "next-access"
+    db.refresh(connection)
+    assert connection.access_token_encrypted == "encrypt:next-access"
+    assert connection.refresh_token_encrypted == "encrypt:next-refresh"
+
+
+@patch("app.shopify_token_lifecycle.decrypt_shopify_secret", side_effect=lambda s: s)
+@patch("app.shopify_token_lifecycle.httpx.Client")
+def test_refresh_still_rejects_genuinely_missing_read_scope(client, decrypt, sample):
+    db, connection = sample
+    provider = client.return_value.__enter__.return_value
+    provider.post.return_value.json.return_value = {
+        "access_token": "next-access", "refresh_token": "next-refresh",
+        "expires_in": 3600, "refresh_token_expires_in": 7776000,
+        "scope": "read_products,write_orders,write_draft_orders,write_merchant_managed_fulfillment_orders",
+        # read_inventory was NOT granted; no corresponding write_inventory either.
+    }
+    with pytest.raises(ShopifyTokenRefreshError, match="SHOPIFY_REFRESH_RESPONSE_INVALID"):
+        connection_access_token(connection)
+    db.rollback()
+    db.refresh(connection)
+    assert connection.access_token_encrypted == "old-access"
+    assert connection.refresh_token_encrypted == "old-refresh"
+
+
 @patch("app.shopify_token_lifecycle.httpx.Client")
 def test_expired_refresh_denies_without_network(client, sample):
     db, connection = sample
