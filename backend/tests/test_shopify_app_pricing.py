@@ -85,6 +85,93 @@ def test_active_subscription_is_verified_by_partner_api(monkeypatch):
     }
 
 
+def _partner_billing_lifecycle_payload(**overrides):
+    subscription = {
+        "shop": {"id": "gid://shopify/Shop/12345"},
+        "billingPeriod": "EVERY_30_DAYS",
+        "cancelAtEndOfCycle": False,
+        "items": [{
+            "handle": "starter-plan",
+            "price": {
+                "__typename": "FlatRatePrice",
+                "active": True, "currency": "USD", "amount": "19.00",
+            },
+        }],
+    }
+    subscription.update(overrides)
+    return {"data": {"activeSubscription": subscription}}
+
+
+@pytest.mark.parametrize(
+    ("updates", "expected"),
+    [
+        ({"cancelAtEndOfCycle": "false"}, "SHOPIFY_PARTNER_API_INVALID_RESPONSE"),
+        ({"cancelAtEndOfCycle": 1}, "SHOPIFY_PARTNER_API_INVALID_RESPONSE"),
+        ({"pendingUpdate": {"billingPeriod": "HOURLY", "items": [
+            {"handle": "pro-plan"},
+        ]}}, "SHOPIFY_PARTNER_API_INVALID_RESPONSE"),
+        ({"pendingUpdate": {"billingPeriod": [], "items": [
+            {"handle": "pro-plan"},
+        ]}}, "SHOPIFY_PARTNER_API_INVALID_RESPONSE"),
+        ({"pendingUpdate": {"billingPeriod": "ANNUAL", "items": [
+            {"handle": ""},
+        ]}}, "SHOPIFY_PARTNER_API_INVALID_RESPONSE"),
+    ],
+)
+def test_partner_lifecycle_rejects_invalid_cancel_or_pending_update(
+    monkeypatch, updates, expected,
+):
+    _env(monkeypatch)
+    with _client(_partner_billing_lifecycle_payload(**updates)) as client:
+        with pytest.raises(ShopifyAppPricingError, match=expected):
+            get_active_shopify_subscription(
+                "gid://shopify/Shop/12345", http_client=client,
+            )
+
+
+def test_partner_pending_upgrade_does_not_reassign_active_plan(monkeypatch):
+    _env(monkeypatch)
+    payload = _partner_billing_lifecycle_payload(
+        pendingUpdate={
+            "billingPeriod": "ANNUAL",
+            "items": [{"handle": "pro-plan"}],
+        },
+    )
+    with _client(payload) as client:
+        snapshot = get_active_shopify_subscription(
+            "gid://shopify/Shop/12345", http_client=client,
+        )
+    assert snapshot.active is True
+    assert snapshot.has_pending_update is True
+    assert snapshot.item_handles == ("starter-plan",)
+    result = resolve_verified_shopify_plan(
+        snapshot, handle_catalog={
+            "starter-plan": {
+                "plan": "starter",
+                "prices": {"EVERY_30_DAYS": "19.00", "ANNUAL": "190.00"},
+            },
+            "pro-plan": {
+                "plan": "pro",
+                "prices": {"EVERY_30_DAYS": "99.00", "ANNUAL": "990.00"},
+            },
+        },
+    )
+    assert result.plan == "starter"
+    assert result.billing_period_months == 1
+
+
+def test_partner_scheduled_cancellation_is_explicit(monkeypatch):
+    _env(monkeypatch)
+    with _client(_partner_billing_lifecycle_payload(
+        cancelAtEndOfCycle=True,
+    )) as client:
+        snapshot = get_active_shopify_subscription(
+            "gid://shopify/Shop/12345", http_client=client,
+        )
+    assert snapshot.active is True
+    assert snapshot.cancel_at_end_of_cycle is True
+
+
 def test_missing_subscription_fails_closed_as_inactive(monkeypatch):
     _env(monkeypatch)
     with _client({"data": {"activeSubscription": None}}) as client:
