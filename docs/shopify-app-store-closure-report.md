@@ -142,6 +142,6 @@ Se añadieron regresiones sintéticas en `backend/tests/test_auto_fulfillment.py
 ## 7. PR y release
 
 - Se preparó la rama `feat/shopify-app-store-closure-2026-10` y un **PR draft #318** contra `main`: https://github.com/donardi-1997/diaglob/pull/318.
-- Commits de implementación/test/report del PR incluyen `836494c` (guard pago/privacidad), `e112b35` (regresiones) y `57b543a` (trazabilidad de cierre). La rama partió del `fe31eda` local previo y apunta a `origin/main` `63a110e`; consultar el PR para el head actual.
-- Run `40415324954` sobre `57b543a` pasó los dos backend shards (**2994 passed, 20 warnings**), Ruff, preflight y agregador; frontend/mobile se omitieron por alcance. El run intermedio `40415062046` fue cancelado por concurrencia al encolarse el de mayor prioridad `40415324954`; no fue un fallo de tests ni se modificó ningún gate.
+- Commits del PR incluyen `836494c` (guard pago/privacidad), `e112b35` (regresiones), `57b543a` y `0a3c6b3` (documentación/evidencia). La rama partió del `fe31eda` local previo y apunta a `origin/main` `63a110e`; consultar el PR para el head actual.
+- Run `40415324954` pasó los dos backend shards (**2994 passed, 20 warnings**), Ruff, preflight y agregador. El run documental posterior `40416135543` también pasó. Frontend/mobile se omitieron por alcance. El run intermedio `40415062046` fue cancelado por concurrencia al encolarse un run de mayor prioridad; no fue un fallo de tests ni se modificó ningún gate.
 - **No se fusionó el PR, no se empujó a `main`, no se desplegó a producción y no se presentó la app ni PCD a Shopify.** El último deploy conocido sigue siendo el run `40407310191` sobre `63a110e`.
