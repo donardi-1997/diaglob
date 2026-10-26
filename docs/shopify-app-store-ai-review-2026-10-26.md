@@ -2,7 +2,7 @@
 
 **Resultado: NO-GO; no se puede confirmar que se cumplan todos los requisitos.** Esta es una evaluación previa al envío, no una revisión/aprobación de Shopify. No se enviaron formularios, no se marcó la autoevaluación como completada y no se ejecutaron operaciones sobre clientes, proveedores, instalaciones o producción.
 
-**Alcance y fuentes:** Shopify CLI 4.9.4 obtuvo los requisitos canónicos de App Store y PCD el 2026-10-26. El Partner Dashboard se revisó en modo de solo lectura. El código local se contrastó con `shopify.app.toml`, los webhooks y las rutas/servicios relacionados. No se inspeccionó la configuración de AWS/Cognito de producción ni un repositorio externo de evidencias durante esta revisión.
+**Alcance y fuentes:** Shopify CLI 4.9.4 obtuvo los requisitos canónicos de App Store y PCD el 2026-10-26. El Partner Dashboard se revisó en modo de solo lectura. El código local se contrastó con `shopify.app.toml`, los webhooks y las rutas/servicios relacionados. Se intentó SSH de solo lectura; no se pudo verificar la identidad Diaglob del host ni acceder a la configuración AWS/Cognito de producción o a un repositorio externo de evidencias.
 
 ## Resumen de criterios de App Store
 
@@ -84,7 +84,7 @@ Fuentes de código/evidencia relevantes: [retención y ejecución fail-closed](.
 - `tools.shopify_scope_release_preflight`: candidato local seguro para preparar sin liberar; `new_version_created=false`, `existing_app_version_released=false`, `protected_customer_data_approval_verified=false`, `merchant_installation_e2e_verified=false`.
 - Validación focalizada posterior al cambio: `tests/test_auto_fulfillment.py` + `tests/test_dropi_adapter_readiness.py` + `tests/test_shopify_fulfillment.py` — **19 passed**; Ruff limpio.
 - CI del PR, run **40415324954** sobre el head `57b543a`: backend shard 0 **1391 passed** + shard 1 **1603 passed** = **2994 passed, 20 warnings, cero fallos**. También pasaron Ruff, preflight y agregador. Frontend/mobile se omitieron por alcance. La suite backend local lanzada en paralelo sigue pendiente al redactar.
-- Auditoría AWS PCD de solo lectura: credenciales configuradas rechazadas (`InvalidAccessKeyId` en S3; `UnrecognizedClientException` en Lightsail/AWS Backup/Bedrock). No se modificó AWS; cifrado de backup, snapshots y restore permanecen `unverified`.
+- La salida anterior `InvalidAccessKeyId`/`UnrecognizedClientException` procedía de un audit local ejecutado con las credenciales dummy `testing`; no es evidencia del estado AWS de producción. La PEM indicada existe. SSH al host inicial `3.23.27.223` llegó a un servidor sin `/opt/diaglob/app` ni servicio `diaglob`; la IP corregida `3.19.202.232` rechazó la clave con `Permission denied (publickey)`. No se usó sudo, no se leyeron secretos y no se ejecutó AWS audit remoto. Backups/cifrado/restore siguen sin verificar.
 
 ## Bloqueos y siguientes pasos seguros
 

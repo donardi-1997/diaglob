@@ -27,7 +27,7 @@ El commit local `fe31eda` y los documentos existentes **no se asumen publicados 
 - Entre dos lecturas de la página de distribución, la UI cambió de “No necesita acceso PCD” a “Solicitud de acceso PCD completada”. El agente no guardó ni cambió nada. Se debe confirmar con el propietario qué estado se guardó realmente; “solicitud completada” no equivale a aprobación.
 - Se corrigió código local en la última frontera de publicación de fulfillment: ahora se vuelven a validar pago/estado, privacidad y vínculo organization/store justo antes de llamar a Shopify. No se añadieron scopes ni llamadas reales.
 - El product sourcing declarado sigue bloqueado por dos requisitos: Shopify documenta `fulfillmentOrderSubmitFulfillmentRequest` con `write_third_party_fulfillment_orders` y un fulfillment service asignado; el código actual usa fulfillment merchant-managed. Tampoco hay flujo que publique COGS a Shopify; `inventoryItemUpdate` requiere `write_inventory`, no solicitado. No es seguro añadir estos scopes/funciones sin decidir una arquitectura y su necesidad.
-- El auditor AWS de solo lectura no pudo autenticar las credenciales configuradas (`InvalidAccessKeyId`/`UnrecognizedClientException`); backups, cifrado y restore permanecen sin verificar.
+- La ejecución local anterior del auditor AWS usó `AWS_ACCESS_KEY_ID=testing` y `AWS_SECRET_ACCESS_KEY=testing`; sus errores de autenticación **no** describen producción. SSH conectó al host inicial `3.23.27.223`, pero no se encontró la instalación Diaglob. La IP corregida `3.19.202.232` rechazó la clave con `Permission denied (publickey)`. No se ejecutó la auditoría AWS sobre un host Diaglob confirmado; backups, cifrado y restore siguen sin verificar.
 - No se puede confirmar que todas las respuestas afirmativas de PCD sean verdaderas. Retención, cifrado integral, backups, separación de entornos, DLP, accesos, contraseñas, logs e incidentes requieren evidencia adicional o intervención externa/humana.
 
 ## 3. Matriz de requisitos y brechas
@@ -66,7 +66,7 @@ Shopify exige Level 1 y Level 2 para usar esos campos en una app pública. El es
 | 7 — Decisiones automatizadas significativas | Existen scoring/riesgo y AI | Análisis del efecto legal/significativo y opt-out/manual si aplica | **REQUIERE DECISIÓN HUMANA** |
 | 8 — Retención efectiva | Política local es propuesta; ejecución de privacidad fail-closed/deshabilitada por defecto | Calendario legal aprobado, jobs efectivos, borrado/expiración y reconciliación | **BLOQUEADO EXTERNAMENTE** |
 | 9 — Cifrado en reposo y tránsito | HTTPS público y Fernet para secretos Shopify | Cifrado de datos PCD en DB/disco/servicios, claves, enlaces internos/externos | **BLOQUEADO EXTERNAMENTE** |
-| 10 — Backups cifrados | Auditor read-only ejecutado; todas las APIs AWS rechazaron las credenciales actuales | Configuración real de cifrado, claves, retención y restore | **BLOQUEADO EXTERNAMENTE** |
+| 10 — Backups cifrados | La auditoría local usó credenciales dummy; no hay resultado AWS de producción | Identificar el host/rol autorizado y verificar configuración real de cifrado, claves, retención y restore | **BLOQUEADO EXTERNAMENTE** |
 | 11 — Separación prueba/producción | La tienda POC de desarrollo usa el App Home del backend `api.diaglob.tech` | Backend/BD/credenciales aislados y prueba de ausencia de PII prod en staging/test | **BLOQUEADO EXTERNAMENTE** |
 | 12 — DLP | No hay evidencia de DLP integral de endpoint/egress/monitoring en el repo | Controles organizacionales e infraestructura, owner y pruebas | **BLOQUEADO EXTERNAMENTE** |
 | 13 — Acceso de staff limitado | Rutas de clientes tienen permission + filtros org/store; pruebas sintéticas | Auditoría de todas las rutas PCD, IAM/operaciones y E2E | **CORREGIDO, PENDIENTE DE VALIDACIÓN** |
@@ -83,7 +83,7 @@ El acceso PCD seleccionado incluye nombre, email, teléfono y dirección; el có
 | Recepción segura de `customers/data_request`, `customers/redact`, `shop/redact` | Validación HMAC, persistencia/idempotencia y tareas de revisión implementadas localmente | `shopify.app.toml`, `shopify_compliance_webhooks.py`, tests de compliance/webhook | Entrega real firmada y subscription en versión activa no confirmadas en esta sesión | **CORREGIDO, PENDIENTE DE VALIDACIÓN** |
 | Exportación/redacción real | Hay implementación local con permisos/ancoras, pero permanece desactivada por defecto | Suite sintética de privacidad | No correr PII real ni activar ejecución sin permiso por caso y autoridad | **PENDIENTE** |
 | Alcance de eliminación | Inventario por tienda, controles y supresiones locales; bloqueos de atribución permanecen | Tests `test*shopify*.py` y flujo fail-closed | No se demuestra borrado completo en proveedores, archivos, logs y datos reales | **PENDIENTE** |
-| Backups/restore | Herramienta de auditoría explicitamente read-only; resultado AWS actual `unverified` | `tools.diaglob_aws_privacy_audit` | Credenciales no válidas; restore, cifrado y caducidad no acreditados | **BLOQUEADO EXTERNAMENTE** |
+| Backups/restore | No hay auditoría autenticada del entorno Diaglob | `tools.diaglob_aws_privacy_audit` es read-only; acceso SSH a `3.19.202.232` rechazó publickey | No se inspeccionaron secretos ni recursos; cifrado, restore y caducidad sin acreditar | **BLOQUEADO EXTERNAMENTE** |
 | Proveedores/subprocesadores | Manifiesto local de 16 candidatos, todos no verificados | `shopify_privacy_subprocessors.py` y paquete de evidencia | Lista legal real, contratos, uso efectivo, retención y respuestas de proveedores | **BLOQUEADO EXTERNAMENTE** |
 
 ### 3.4 Product sourcing / fulfillment
@@ -104,8 +104,8 @@ El acceso PCD seleccionado incluye nombre, email, teléfono y dirección; el có
 | `shopify_scope_release_preflight` | candidato local consistente; no versión creada/liberada, grants y PCD no verificados | **VERIFICADO (source only)** |
 | `tests/test_auto_fulfillment.py`, `test_dropi_adapter_readiness.py`, `test_shopify_fulfillment.py` | **19 passed** en SQLite/proveedores sintéticos | **VERIFICADO (focalizado)** |
 | Ruff, archivos modificados | Ruff limpio | **VERIFICADO** |
-| Suite backend completa en CI (PR `40415324954`, head `57b543a`) | Shard 0: 1391 passed; shard 1: 1603 passed; **2994 passed, 20 warnings, cero fallos**. Ruff, source preflight y agregador pasaron. Frontend/mobile se omitieron por alcance. La suite backend local sigue ejecutándose al momento de este informe. | **VERIFICADO (CI)** |
-| AWS audit PCD | `mode=read_only`, `production_changes=false`; S3 `InvalidAccessKeyId`, Lightsail/AWS Backup/Bedrock `UnrecognizedClientException`; Q10/restore false | **BLOQUEADO EXTERNAMENTE** |
+| Suite backend completa en CI (PR `40415324954`, head de código `57b543a`) | Shard 0: 1391 passed; shard 1: 1603 passed; **2994 passed, 20 warnings, cero fallos**. Ruff, source preflight y agregador pasaron. La validación posterior `40416556048` también pasó. Frontend/mobile se omitieron por alcance. La suite backend local sigue ejecutándose al momento de este informe. | **VERIFICADO (CI)** |
+| AWS/SSH PCD | La ruta local de la PEM existe; SSH a `3.23.27.223` llegó a un host sin `/opt/diaglob/app`; la IP corregida `3.19.202.232` devolvió `Permission denied (publickey)` | No se confirmó la identidad del host correcto; la auditoría local previa usó credenciales dummy. No se corrió AWS audit remoto, no se usó sudo ni se leyeron secretos | **BLOQUEADO EXTERNAMENTE** |
 | Pull requests | No había PR abierto al inspeccionar | **VERIFICADO (GitHub read-only)** |
 | Branch/commit/deploy | Rama local `main`, `fe31eda`; `origin/main=63a110e`, un commit local adelante. Último deploy conocido Run `40407310191` en `63a110e`; este parche aún no desplegado | **PENDIENTE DE PR; no desplegado** |
 
@@ -124,7 +124,7 @@ Se añadieron regresiones sintéticas en `backend/tests/test_auto_fulfillment.py
 
 1. Confirmar en Partner qué estado de la solicitud PCD está guardado; nunca inferir aprobación de “paso completado”.
 2. Un responsable de seguridad/legal debe revisar y corregir las 16 respuestas; hay varias “Sí” no sustentadas. No guardar cambios sin autorización del propietario.
-3. AWS: reemplazar/renovar credenciales a través del mecanismo seguro y volver a correr el auditor read-only. No pegar credenciales en chat o repo.
+3. AWS: confirmar por un canal autorizado la clave/usuario/instancia correctos para `3.19.202.232`; la PEM local existe pero el servidor respondió `Permission denied (publickey)`. No volver a probar el host distinto ni leer `.aws`/`.env`; cuando el acceso esté autorizado, ejecutar solo el auditor read-only. No pegar secretos en chat o repo.
 4. Cognito: confirmar la política activa de contraseña/MFA con la cuenta autorizada y guardar evidencia saneada.
 5. Producción/test: decidir y aprovisionar un backend/BD/credenciales aislados para la tienda POC antes de atestar separación.
 6. Producto: decidir si DIAGLOB realmente ofrece product sourcing compatible con el flujo Shopify. Si sí, diseñar la fulfillment service y coste/catálogo junto con los scopes mínimos; si no, el dueño deberá cambiar la capacidad del listing (el agente no lo hizo).
@@ -142,6 +142,6 @@ Se añadieron regresiones sintéticas en `backend/tests/test_auto_fulfillment.py
 ## 7. PR y release
 
 - Se preparó la rama `feat/shopify-app-store-closure-2026-10` y un **PR draft #318** contra `main`: https://github.com/donardi-1997/diaglob/pull/318.
-- Commits del PR incluyen `836494c` (guard pago/privacidad), `e112b35` (regresiones), `57b543a` y `0a3c6b3` (documentación/evidencia). La rama partió del `fe31eda` local previo y apunta a `origin/main` `63a110e`; consultar el PR para el head actual.
-- Run `40415324954` pasó los dos backend shards (**2994 passed, 20 warnings**), Ruff, preflight y agregador. El run documental posterior `40416135543` también pasó. Frontend/mobile se omitieron por alcance. El run intermedio `40415062046` fue cancelado por concurrencia al encolarse un run de mayor prioridad; no fue un fallo de tests ni se modificó ningún gate.
+- Commits del PR incluyen `836494c` (guard pago/privacidad), `e112b35` (regresiones), `57b543a`, `0a3c6b3` y `6bf2a10` (documentación/evidencia). La rama partió del `fe31eda` local previo y apunta a `origin/main` `63a110e`; consultar el PR para el head actual.
+- Run `40415324954` pasó los dos backend shards (**2994 passed, 20 warnings**), Ruff, preflight y agregador. Los runs documentales posteriores `40416135543` y `40416556048` también pasaron; frontend/mobile se omitieron por alcance. El run intermedio `40415062046` fue cancelado por concurrencia al encolarse un run de mayor prioridad; no fue un fallo de tests ni se modificó ningún gate.
 - **No se fusionó el PR, no se empujó a `main`, no se desplegó a producción y no se presentó la app ni PCD a Shopify.** El último deploy conocido sigue siendo el run `40407310191` sobre `63a110e`.
