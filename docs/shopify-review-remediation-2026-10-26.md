@@ -72,7 +72,9 @@ Cierra la brecha **local** del bloqueo P0 de privacidad integral: las seis super
 
 **Lo que esta fase NO cierra (sigue bloqueado a propósito):** verificación independiente de cada control; aprobación legal del calendario de retención y legal holds; existencia, caducidad y reconciliación de los backups reales (viven fuera de la aplicación); borrado verificado en procesadores externos; activación de la ejecución real (deshabilitada por defecto por política + permiso firmado); y la aprobación PCD. Los bloqueadores `RECORD_PROVENANCE_INCOMPLETE`, `UNSTRUCTURED_SUBJECT_LINKAGE_UNVERIFIED`, `QUEUED_PAYLOAD_COVERAGE_UNVERIFIED`, `EXTERNAL_PROCESSOR_COVERAGE_UNVERIFIED`, `LEGAL_RETENTION_POLICY_NOT_APPROVED` y `BACKUP_RESTORE_COVERAGE_UNVERIFIED` **permanecen** en todo resultado.
 
-## Resumen de los requisitos locales seleccionados por Shopify
+## Resumen base de 31 requisitos generales (complementado por autoevaluación vigente)
+
+Este resumen conserva el primer pase de criterios generales. La revisión posterior está en [AI self-review vigente](shopify-app-store-ai-review-2026-10-26.md): añadió los tres requisitos del grupo **5.5 Product sourcing**, aplicable porque Partner muestra esa capacidad, y actualizó el resultado agregado a **24 likely passing, 2 likely failing, 8 needs review y 66 omitidos**. Para el estado actual debe prevalecer ese addendum.
 
 - ✅ **Likely passing: 23**.
 - ❌ **Likely failing: 0** entre estos 31 criterios, después de las correcciones.
@@ -119,7 +121,7 @@ Estos IDs suman los **23** criterios favorables; no son certificaciones funciona
 | 5.2 Payment | Sin extensión `payment` ni `write_payment_gateway`. | 8 |
 | 5.3 Payment facilitator | Opt-in no solicitado. | 1 |
 | 5.4 Purchase option | Sin scopes de métodos de pago/contratos de suscripción ni payment mandate. | 16 |
-| 5.5 Product sourcing | Opt-in no solicitado expresamente; no se certifica esta categoría por omitirla. | 3 |
+| 5.5 Product sourcing | Opt-in en el pase base; **evaluado en la autoevaluación vigente** por capacidad seleccionada en Partner. Ver 5.5.1/5.5.2 en el addendum. | 3 |
 | 5.6 Checkout customization | Sin extensión UI con targets checkout. | 6 |
 | 5.7 Sales channel | Sin extensión `channel_config`. No seleccionar Sales Channel solo para rellenar un campo del listing. | 14 |
 | 5.8 Post purchase | Sin extensión `checkout_post_purchase`. | 10 |

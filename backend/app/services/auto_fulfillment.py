@@ -640,13 +640,26 @@ def sync_shopify_from_shipment(
     db: Session,
     shipment_id: int,
 ) -> dict | None:
-    shipment = db.query(Shipment).filter(Shipment.id == shipment_id).first()
+    shipment = (
+        db.query(Shipment)
+        .filter(
+            Shipment.id == shipment_id,
+            Shipment.provider == CJ_PROVIDER,
+        )
+        .first()
+    )
     if shipment is None:
         return None
 
     supplier_order = (
         db.query(SupplierOrder)
-        .filter(SupplierOrder.id == shipment.supplier_order_id)
+        .filter(
+            SupplierOrder.id == shipment.supplier_order_id,
+            SupplierOrder.organization_id == shipment.organization_id,
+            SupplierOrder.store_id == shipment.store_id,
+            SupplierOrder.provider == CJ_PROVIDER,
+            SupplierOrder.order_id == shipment.order_id,
+        )
         .first()
     )
     if supplier_order is None:
@@ -657,6 +670,9 @@ def sync_shopify_from_shipment(
         .filter(
             AutoFulfillmentJob.supplier_order_id == supplier_order.id,
             AutoFulfillmentJob.provider == CJ_PROVIDER,
+            AutoFulfillmentJob.organization_id == supplier_order.organization_id,
+            AutoFulfillmentJob.store_id == supplier_order.store_id,
+            AutoFulfillmentJob.order_id == supplier_order.order_id,
         )
         .first()
     )
@@ -664,6 +680,49 @@ def sync_shopify_from_shipment(
         return None
     if job.status == "shopify_fulfilled":
         return _serialize_job(job)
+
+    order = (
+        db.query(Order)
+        .filter(
+            Order.id == job.order_id,
+            Order.organization_id == job.organization_id,
+            Order.store_id == job.store_id,
+            Order.id == supplier_order.order_id,
+        )
+        .first()
+    )
+    if order is None:
+        return _mark_failure(
+            db,
+            job,
+            status="skipped",
+            error="ORDER_NOT_FOUND",
+        )
+    if not _eligible_order(order):
+        return _mark_failure(
+            db,
+            job,
+            status="skipped",
+            error="ORDER_NOT_ELIGIBLE",
+        )
+
+    # A supplier order can outlive a Shopify cancellation/refund or a privacy
+    # suppression. Recheck both immediately before publishing tracking or
+    # notifying the customer through Shopify.
+    privacy_block = evaluate_shopify_local_privacy(
+        db,
+        organization_id=job.organization_id,
+        store_id=job.store_id,
+        local_customer_id=order.customer_id,
+        shopify_order_id=order.shopify_order_id,
+    )
+    if privacy_block:
+        return _mark_failure(
+            db,
+            job,
+            status="skipped",
+            error="PRIVACY_SUPPRESSED",
+        )
 
     connection = _cj_connection(
         db,
@@ -707,11 +766,9 @@ def sync_shopify_from_shipment(
     job.completed_at = datetime.utcnow()
     job.updated_at = datetime.utcnow()
 
-    order = db.query(Order).filter(Order.id == job.order_id).first()
-    if order is not None:
-        order.fulfillment_status = "fulfilled"
-        order.lifecycle_status = "fulfilled"
-        order.lifecycle_synced_at = datetime.utcnow()
+    order.fulfillment_status = "fulfilled"
+    order.lifecycle_status = "fulfilled"
+    order.lifecycle_synced_at = datetime.utcnow()
 
     db.commit()
     db.refresh(job)
