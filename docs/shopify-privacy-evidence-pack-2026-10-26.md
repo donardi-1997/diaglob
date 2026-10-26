@@ -1,6 +1,6 @@
 # Shopify privacy — evidence pack and independent review checklist
 
-**Status:** operational draft; **not** legal approval, independent verification, proof of provider deletion, or Shopify/PCD approval.  
+**Status:** operational draft; **not** legal approval, independent verification, proof of provider deletion, or Shopify/PCD approval. See the [traceability review](shopify-privacy-traceability-review-2026-10-26.md) for per-control status and evidence gaps.
 **Scope:** advance the evidence work for phase 3 without enabling real export, erasure, delivery, backup mutation, or production restore operations.
 
 This pack maps the existing backend control registry to evidence that an authorized reviewer can collect and assess. A control stays open until the evidence is independently reviewed through an approved process. A document hash proves only that a particular file has a particular digest; it does not prove that the document is true, complete, current, or accepted by a provider.

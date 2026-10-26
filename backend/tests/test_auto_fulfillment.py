@@ -9,7 +9,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.db import Base
 from app.model_domains.fulfillment_automation import AutoFulfillmentJob
-from app.model_domains.shipments import Shipment  # noqa: F401
+from app.model_domains.shipments import Shipment
 from app.model_domains.supplier_integrations import SupplierConnection
 from app.model_domains.supplier_orders import SupplierOrder  # noqa: F401
 from app.model_domains.supplier_variant_mappings import SupplierVariantMapping
@@ -188,6 +188,51 @@ def seed(db, *, mapped=True, fulfillment_scopes=True):
     return org, store, order, item
 
 
+def seed_supplier_shipment(db, org, store, order):
+    supplier_order = SupplierOrder(
+        organization_id=org.id,
+        store_id=store.id,
+        order_id=order.id,
+        provider="cj",
+        provider_order_number=f"CJ-{order.id}",
+        external_order_id=f"CJ-EXT-{order.id}",
+        creation_status="created",
+        idempotency_key=f"auto-cj-{order.id}",
+        currency="USD",
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
+    db.add(supplier_order)
+    db.flush()
+    shipment = Shipment(
+        organization_id=org.id,
+        store_id=store.id,
+        order_id=order.id,
+        supplier_order_id=supplier_order.id,
+        provider="cj",
+        tracking_number=f"TRACK-{order.id}",
+        normalized_status="IN_TRANSIT",
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
+    db.add(shipment)
+    job = AutoFulfillmentJob(
+        organization_id=org.id,
+        store_id=store.id,
+        order_id=order.id,
+        supplier_order_id=supplier_order.id,
+        provider="cj",
+        status="supplier_created",
+        attempts=1,
+        origin_country_code="CN",
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
+    db.add(job)
+    db.commit()
+    return supplier_order, shipment, job
+
+
 def test_paid_mapped_order_creates_supplier_order_with_cheapest_logistics(
     db,
     monkeypatch,
@@ -270,3 +315,146 @@ def test_enable_requires_shopify_fulfillment_scopes(db):
         )
 
     assert db.query(AutoFulfillmentJob).count() == 0
+
+
+def test_shipment_sync_rechecks_payment_and_order_state_before_fulfillment(
+    db, monkeypatch,
+):
+    org, store, order, _item = seed(db)
+    _supplier_order, shipment, job = seed_supplier_shipment(
+        db, org, store, order,
+    )
+    order.payment_status = "refunded"
+    order.lifecycle_status = "refunded"
+    db.commit()
+
+    monkeypatch.setattr(
+        service,
+        "create_shopify_fulfillment_from_shipment",
+        lambda *_args, **_kwargs: pytest.fail(
+            "must not publish fulfillment for a refunded order"
+        ),
+    )
+
+    result = service.sync_shopify_from_shipment(db, shipment.id)
+
+    assert result["id"] == job.id
+    assert result["status"] == "skipped"
+    assert result["last_error"] == "ORDER_NOT_ELIGIBLE"
+    assert order.fulfillment_status == "unfulfilled"
+    assert order.lifecycle_status == "refunded"
+
+
+def test_eligible_paid_supplier_shipment_still_syncs_fulfillment(db, monkeypatch):
+    org, store, order, _item = seed(db)
+    _supplier_order, shipment, job = seed_supplier_shipment(
+        db, org, store, order,
+    )
+    calls = []
+
+    def publish(_db, *, supplier_order, shipment, notify_customer):
+        calls.append((supplier_order.id, shipment.id, notify_customer))
+        return {
+            "ok": True,
+            "idempotent": False,
+            "fulfillment_id": "gid://shopify/Fulfillment/99",
+            "status": "SUCCESS",
+        }
+
+    monkeypatch.setattr(
+        service, "create_shopify_fulfillment_from_shipment", publish,
+    )
+
+    result = service.sync_shopify_from_shipment(db, shipment.id)
+
+    assert result["id"] == job.id
+    assert result["status"] == "shopify_fulfilled"
+    assert result["shopify_fulfillment_id"] == "gid://shopify/Fulfillment/99"
+    assert calls == [(_supplier_order.id, shipment.id, True)]
+    assert order.fulfillment_status == "fulfilled"
+    assert order.lifecycle_status == "fulfilled"
+
+
+def test_shipment_sync_rechecks_privacy_suppression_before_fulfillment(
+    db, monkeypatch,
+):
+    org, store, order, _item = seed(db)
+    _supplier_order, shipment, job = seed_supplier_shipment(
+        db, org, store, order,
+    )
+    monkeypatch.setattr(
+        service,
+        "evaluate_shopify_local_privacy",
+        lambda *_args, **_kwargs: "customer_suppressed",
+    )
+    monkeypatch.setattr(
+        service,
+        "create_shopify_fulfillment_from_shipment",
+        lambda *_args, **_kwargs: pytest.fail(
+            "must not publish fulfillment after a privacy suppression"
+        ),
+    )
+
+    result = service.sync_shopify_from_shipment(db, shipment.id)
+
+    assert result["id"] == job.id
+    assert result["status"] == "skipped"
+    assert result["last_error"] == "PRIVACY_SUPPRESSED"
+    assert order.fulfillment_status == "unfulfilled"
+    assert order.lifecycle_status == "paid"
+
+
+def test_shipment_sync_rejects_cross_store_supplier_order(db, monkeypatch):
+    org, store, order, _item = seed(db)
+    foreign_store = Store(
+        organization_id=org.id,
+        name="Other Store",
+        slug="other-auto-store",
+        country_code="US",
+        currency="USD",
+        timezone="UTC",
+        default_language="en",
+        active=True,
+        deleted=False,
+    )
+    db.add(foreign_store)
+    db.flush()
+    foreign_supplier_order = SupplierOrder(
+        organization_id=org.id,
+        store_id=foreign_store.id,
+        order_id=order.id,
+        provider="cj",
+        provider_order_number="CJ-FOREIGN",
+        external_order_id="CJ-EXT-FOREIGN",
+        creation_status="created",
+        idempotency_key="auto-cj-foreign",
+        currency="USD",
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
+    db.add(foreign_supplier_order)
+    db.flush()
+    shipment = Shipment(
+        organization_id=org.id,
+        store_id=store.id,
+        order_id=order.id,
+        supplier_order_id=foreign_supplier_order.id,
+        provider="cj",
+        tracking_number="TRACK-CROSS-STORE",
+        normalized_status="IN_TRANSIT",
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
+    db.add(shipment)
+    db.commit()
+
+    monkeypatch.setattr(
+        service,
+        "create_shopify_fulfillment_from_shipment",
+        lambda *_args, **_kwargs: pytest.fail(
+            "cross-store supplier order must not reach Shopify"
+        ),
+    )
+
+    assert service.sync_shopify_from_shipment(db, shipment.id) is None
+    assert order.fulfillment_status == "unfulfilled"
