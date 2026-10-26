@@ -458,3 +458,69 @@ def test_shipment_sync_rejects_cross_store_supplier_order(db, monkeypatch):
 
     assert service.sync_shopify_from_shipment(db, shipment.id) is None
     assert order.fulfillment_status == "unfulfilled"
+
+
+def test_shipment_sync_rejects_cross_organization_supplier_order(db, monkeypatch):
+    org, store, order, _item = seed(db)
+    foreign_org = Organization(
+        name="Foreign Auto Fulfillment Org",
+        slug="foreign-auto-fulfillment-org",
+        plan="growth",
+        subscription_status="active",
+        active=True,
+    )
+    db.add(foreign_org)
+    db.flush()
+    foreign_store = Store(
+        organization_id=foreign_org.id,
+        name="Foreign Auto Store",
+        slug="foreign-auto-store",
+        country_code="US",
+        currency="USD",
+        timezone="UTC",
+        default_language="en",
+        active=True,
+        deleted=False,
+    )
+    db.add(foreign_store)
+    db.flush()
+    foreign_supplier_order = SupplierOrder(
+        organization_id=foreign_org.id,
+        store_id=foreign_store.id,
+        # Deliberately mismatched row lineage to characterize fail-closed joins.
+        order_id=order.id,
+        provider="cj",
+        provider_order_number="CJ-FOREIGN-ORG",
+        external_order_id="CJ-EXT-FOREIGN-ORG",
+        creation_status="created",
+        idempotency_key="auto-cj-foreign-org",
+        currency="USD",
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
+    db.add(foreign_supplier_order)
+    db.flush()
+    shipment = Shipment(
+        organization_id=org.id,
+        store_id=store.id,
+        order_id=order.id,
+        supplier_order_id=foreign_supplier_order.id,
+        provider="cj",
+        tracking_number="TRACK-CROSS-ORG",
+        normalized_status="IN_TRANSIT",
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
+    db.add(shipment)
+    db.commit()
+
+    monkeypatch.setattr(
+        service,
+        "create_shopify_fulfillment_from_shipment",
+        lambda *_args, **_kwargs: pytest.fail(
+            "cross-organization supplier order must not reach Shopify"
+        ),
+    )
+
+    assert service.sync_shopify_from_shipment(db, shipment.id) is None
+    assert order.fulfillment_status == "unfulfilled"

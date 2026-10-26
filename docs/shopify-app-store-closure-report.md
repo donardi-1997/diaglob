@@ -93,7 +93,7 @@ El acceso PCD seleccionado incluye nombre, email, teléfono y dirección; el có
 | No publicar fulfillment tras reembolso/cancelación o supresión PCD | Revalidación agregada en `sync_shopify_from_shipment` antes de mutar Shopify; shipment, supplier order, job y order vinculados por org/store/provider/order | Tests sintéticos bloquean llamada a Shopify y mantienen order no fulfilled | **CORREGIDO, PENDIENTE DE VALIDACIÓN** |
 | 5.5.1 Solicitud al fulfillment service | Admin GraphQL 2026-07 exige `write_third_party_fulfillment_orders` y FulfillmentOrder asignado a un fulfillment service; DIAGLOB usa scopes merchant-managed y `fulfillmentCreate` | Requiere decisión de producto/arquitectura, registro de service/location, scopes y flujo de aceptación/rechazo. No se añade scope en esta entrega | **BLOQUEADO / DECISIÓN HUMANA** |
 | 5.5.2 Cost of goods sold en Shopify | `inventoryItemUpdate` requiere `write_inventory`; no hay escritura de productos/costos en la integración Shopify actual | Determinar si DIAGLOB debe publicar catálogo/costos y justificar scope adicional antes de implementar | **BLOQUEADO / DECISIÓN HUMANA** |
-| 5.5.5 Pago antes del fulfillment | Guard paid/confirmed COD y nueva verificación justo antes del fulfillment desde shipment | 18 pruebas focalizadas pasan; falta E2E real | **CORREGIDO, PENDIENTE DE VALIDACIÓN** |
+| 5.5.5 Pago antes del fulfillment | Guard paid/confirmed COD y nueva verificación justo antes del fulfillment desde shipment | 19 pruebas focalizadas pasan; falta E2E real | **CORREGIDO, PENDIENTE DE VALIDACIÓN** |
 
 ### 3.5 Scopes/configuración, CI, pruebas y GitHub
 
@@ -102,7 +102,7 @@ El acceso PCD seleccionado incluye nombre, email, teléfono y dirección; el có
 | `shopify app config validate --path . --json` | `valid=true`, `issues=[]` | **VERIFICADO (config local)** |
 | `shopify_review_source_preflight` | Source consistent, no scope drift; `release_authorized=false`, PCD no verificado | **VERIFICADO (source only)** |
 | `shopify_scope_release_preflight` | candidato local consistente; no versión creada/liberada, grants y PCD no verificados | **VERIFICADO (source only)** |
-| `tests/test_auto_fulfillment.py`, `test_dropi_adapter_readiness.py`, `test_shopify_fulfillment.py` | **18 passed** en SQLite/proveedores sintéticos | **VERIFICADO (focalizado)** |
+| `tests/test_auto_fulfillment.py`, `test_dropi_adapter_readiness.py`, `test_shopify_fulfillment.py` | **19 passed** en SQLite/proveedores sintéticos | **VERIFICADO (focalizado)** |
 | Ruff, archivos modificados | Ruff limpio | **VERIFICADO** |
 | Suite backend completa | En ejecución al redactar este informe; actualizar con el resultado final antes de enviar PR | **PENDIENTE** |
 | AWS audit PCD | `mode=read_only`, `production_changes=false`; S3 `InvalidAccessKeyId`, Lightsail/AWS Backup/Bedrock `UnrecognizedClientException`; Q10/restore false | **BLOQUEADO EXTERNAMENTE** |
@@ -138,3 +138,10 @@ Se añadieron regresiones sintéticas en `backend/tests/test_auto_fulfillment.py
 - [Paquete operativo de evidencias PCD](shopify-privacy-evidence-pack-2026-10-26.md)
 - [Revisión/remediación previa](shopify-review-remediation-2026-10-26.md)
 - Shopify Admin GraphQL 2026-07: [`fulfillmentOrderSubmitFulfillmentRequest`](https://shopify.dev/docs/api/admin-graphql/2026-07/mutations/fulfillmentOrderSubmitFulfillmentRequest) y [`inventoryItemUpdate`](https://shopify.dev/docs/api/admin-graphql/2026-07/mutations/inventoryItemUpdate).
+
+## 7. PR y release
+
+- Se preparó la rama `feat/shopify-app-store-closure-2026-10` y un **PR draft #318** contra `main`: https://github.com/donardi-1997/diaglob/pull/318.
+- HEAD del PR: commit `836494c` (`fix(shopify): recheck payment and privacy before fulfillment`). La rama parte del `fe31eda` local anterior y apunta a `origin/main` `63a110e`; el PR agrupa la evidencia local de privacidad y el cierre técnico relacionado.
+- Run de validación del PR observado al redactar: `40414659417`; `Detect changed scopes` pasó, backend shards estaban pendientes y frontend/mobile se omitieron porque el cambio no los afecta.
+- **No se fusionó el PR, no se empujó a `main`, no se desplegó a producción y no se presentó la app ni PCD a Shopify.** El último deploy conocido sigue siendo el run `40407310191` sobre `63a110e`.
