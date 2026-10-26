@@ -20,6 +20,7 @@ from sqlalchemy.orm import sessionmaker
 from app.db import Base
 from app.main import app
 from app.models import (
+    CommerceConnection,
     Order,
     Organization,
     OrganizationMembership,
@@ -976,3 +977,172 @@ class TestWebhookHardening:
             headers={"Content-Type": "application/json"},
         )
         assert response.status_code == 400
+
+
+class TestShopifyCheckoutBoundary:
+    """General payment routes must not become an off-platform Shopify checkout."""
+
+    @pytest.mark.parametrize("provider,origin", [
+        ("shopify", "direct"), ("paddle", "shopify_install"), (None, "shopify_install"),
+    ])
+    def test_shopify_acquisition_cannot_bypass_checkout_without_a_connection(
+        self, db, org, store_co, nequi_connection, provider, origin,
+    ):
+        org.billing_provider = provider
+        org.billing_onboarding_channel = origin
+        db.commit()
+        assert payment_service.get_available_store_providers(db, org.id, store_co.id) == []
+        with pytest.raises(payment_service.PaymentError) as exc:
+            payment_service.create_payment(
+                db, org.id, store_co.id, "nequi", "100", "COP", "+573000000000", "shopify-origin",
+            )
+        assert exc.value.code == "SHOPIFY_CHECKOUT_REQUIRED"
+
+    @pytest.mark.parametrize("connection_status", ["connected", "disconnected", "revoked", "error"])
+    def test_shopify_stores_do_not_advertise_external_payment_providers(
+        self, db, org, store_co, app_client, connection_status,
+    ):
+        db.add(CommerceConnection(
+            organization_id=org.id, store_id=store_co.id, provider="shopify",
+            status=connection_status, external_store_url="synthetic.myshopify.com",
+        ))
+        db.commit()
+        response = app_client.get(f"/api/stores/{store_co.id}/payments/providers")
+        assert response.status_code == 200
+        assert response.json()["providers"] == []
+
+    @pytest.mark.parametrize("market,provider", [("store_co", "nequi"), ("store_br", "mercado_pago")])
+    def test_cannot_configure_external_payments_for_shopify_store(
+        self, db, org, request, market, provider,
+    ):
+        store = request.getfixturevalue(market)
+        db.add(CommerceConnection(
+            organization_id=org.id, store_id=store.id, provider="shopify",
+            status="connected", external_store_url="synthetic.myshopify.com",
+        ))
+        db.commit()
+        with pytest.raises(payment_service.PaymentError) as exc:
+            payment_service.configure_connection(db, org.id, store.id, provider, "sandbox", "id", "secret")
+        assert exc.value.code == "SHOPIFY_CHECKOUT_REQUIRED"
+        assert db.query(PaymentConnection).count() == 0
+
+    @pytest.mark.parametrize("with_order", [False, True])
+    def test_shopify_store_cannot_create_external_charge(
+        self, db, org, store_co, order, nequi_connection, with_order,
+    ):
+        db.add(CommerceConnection(
+            organization_id=org.id, store_id=store_co.id, provider="shopify",
+            status="connected", external_store_url="synthetic.myshopify.com",
+        ))
+        db.commit()
+        with pytest.raises(payment_service.PaymentError) as exc:
+            payment_service.create_payment(
+                db, org.id, store_co.id, "nequi", "100", "COP", "+573000000000", "shopify-external",
+                order_id=order.id if with_order else None,
+            )
+        assert exc.value.code == "SHOPIFY_CHECKOUT_REQUIRED"
+        assert db.query(PaymentTransaction).count() == 0
+
+    @pytest.mark.parametrize("source_field,value", [
+        ("source", "shopify"), ("source", "shopify_chat_checkout"), ("source", "shopify_poc"),
+        ("shopify_order_id", "123"), ("shopify_draft_order_id", "123"),
+    ])
+    def test_shopify_order_stays_protected_without_connection_record(
+        self, db, org, store_co, order, nequi_connection, source_field, value,
+    ):
+        setattr(order, source_field, value)
+        db.commit()
+        with pytest.raises(payment_service.PaymentError) as exc:
+            payment_service.create_payment(
+                db, org.id, store_co.id, "nequi", "100", "COP", "+573000000000", "orphan-shopify-order",
+                order_id=order.id,
+            )
+        assert exc.value.code == "SHOPIFY_CHECKOUT_REQUIRED"
+
+    def test_legacy_shopify_domain_blocks_external_checkout_without_connection(
+        self, db, org, store_co, nequi_connection,
+    ):
+        store_co.shopify_domain = "synthetic.myshopify.com"
+        db.commit()
+        assert payment_service.get_available_store_providers(db, org.id, store_co.id) == []
+        with pytest.raises(payment_service.PaymentCheckoutRequiredError):
+            payment_service.configure_connection(db, org.id, store_co.id, "nequi", "sandbox", "id", "secret")
+        with pytest.raises(payment_service.PaymentCheckoutRequiredError):
+            payment_service.create_payment(
+                db, org.id, store_co.id, "nequi", "100", "COP", "+573000000000", "legacy-shopify-domain",
+            )
+
+    @pytest.mark.parametrize("provider", ["nequi", "mercado_pago"])
+    def test_http_configuration_rejected_for_shopify_origin(
+        self, db, org, store_co, app_client, provider,
+    ):
+        org.billing_onboarding_channel = "shopify_install"
+        db.commit()
+        response = app_client.post(f"/api/stores/{store_co.id}/payments/{provider}/connect", json={
+            "provider": provider, "environment": "sandbox", "client_id": "synthetic", "client_secret": "synthetic",
+        })
+        assert response.status_code == 409
+        assert response.json()["detail"]["code"] == "SHOPIFY_CHECKOUT_REQUIRED"
+        assert db.query(PaymentConnection).count() == 0
+
+    def test_pending_charge_is_rechecked_before_provider_execution(
+        self, db, org, store_co, pending_payment, provider_stub,
+    ):
+        import asyncio
+
+        db.add(CommerceConnection(
+            organization_id=org.id, store_id=store_co.id, provider="shopify",
+            status="connected", external_store_url="synthetic.myshopify.com",
+        ))
+        db.commit()
+        with pytest.raises(payment_service.PaymentError) as exc:
+            asyncio.run(payment_service.execute_payment(db, org.id, store_co.id, pending_payment.id))
+        assert exc.value.code == "SHOPIFY_CHECKOUT_REQUIRED"
+        provider_stub.create_payment.assert_not_awaited()
+
+    def test_other_store_shopify_connection_does_not_block_independent_payments(
+        self, db, org, store_co, store_br, nequi_connection,
+    ):
+        db.add(CommerceConnection(
+            organization_id=org.id, store_id=store_br.id, provider="shopify",
+            status="connected", external_store_url="other.myshopify.com",
+        ))
+        db.commit()
+        txn = payment_service.create_payment(
+            db, org.id, store_co.id, "nequi", "100", "COP", "+573000000000", "independent-store",
+        )
+        assert txn.store_id == store_co.id
+
+    def test_http_rejection_never_reaches_external_provider(
+        self, db, org, store_co, nequi_connection, provider_stub, app_client,
+    ):
+        db.add(CommerceConnection(
+            organization_id=org.id, store_id=store_co.id, provider="shopify",
+            status="connected", external_store_url="synthetic.myshopify.com",
+        ))
+        db.commit()
+        response = app_client.post(f"/api/stores/{store_co.id}/payments", json={
+            "provider": "nequi", "amount": "100", "currency": "COP", "customer_phone": "+573000000000",
+        })
+        assert response.status_code == 409
+        assert response.json()["detail"]["code"] == "SHOPIFY_CHECKOUT_REQUIRED"
+        provider_stub.create_payment.assert_not_awaited()
+
+    def test_legacy_refunds_keep_the_original_processor(
+        self, db, org, store_co, pending_payment, provider_stub,
+    ):
+        import asyncio
+
+        pending_payment.status = "paid"
+        pending_payment.provider_transaction_id = "original-nequi-receipt"
+        db.add(CommerceConnection(
+            organization_id=org.id, store_id=store_co.id, provider="shopify",
+            status="connected", external_store_url="synthetic.myshopify.com",
+        ))
+        db.commit()
+        result = asyncio.run(payment_service.reverse_payment(db, org.id, store_co.id, pending_payment.id))
+        assert result.status == "reversed"
+        provider_stub.reverse_payment.assert_awaited_once()
+        assert provider_stub.reverse_payment.await_args.kwargs["provider_transaction_id"] == "original-nequi-receipt"
+        assert provider_stub.reverse_payment.await_args.kwargs["amount"] == pending_payment.amount
+        provider_stub.create_payment.assert_not_awaited()

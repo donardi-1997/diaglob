@@ -30,9 +30,12 @@ RETENTION_CONTROLS = (
     ("logs_and_audit", "security_legal", "minimal_access_controlled_retention"),
 )
 PROCESSOR_CONTROLS = (
-    "whatsapp_provider", "instagram_messaging", "email_delivery",
-    "cj_supplier", "dropi_supplier", "advertising_meta",
-    "aws_bedrock", "files_and_object_storage",
+    "whatsapp_provider", "instagram_messaging", "telegram_messaging",
+    "email_delivery", "shopify_admin_api", "nuvemshop_admin_api",
+    "cj_supplier", "dropi_supplier", "google_workspace_apis",
+    "advertising_meta", "aws_bedrock", "files_and_object_storage",
+    "mercado_pago_payments", "nequi_payments", "paddle_billing",
+    "carrier_logistics",
 )
 RESTORE_CONTROLS = (
     "async_automation_queues", "provider_replay", "database_backups",

@@ -71,8 +71,12 @@ jobs:
 
           while IFS= read -r file; do
             case "$file" in
-              backend/*|scripts/check-api-readiness.sh|scripts/restart-api-verified.sh|scripts/tests/*)
+              backend/*|scripts/check-api-readiness.sh|scripts/restart-api-verified.sh|scripts/tests/*|scripts/*shopify*.py)
                 backend=true
+                ;;
+              shopify.app.toml|shopify/*)
+                backend=true
+                frontend=true
                 ;;
               frontend/*)
                 frontend=true
@@ -134,6 +138,11 @@ jobs:
         if: matrix.shard == 0
         working-directory: backend
         run: ruff check app/ tests/ tools/
+
+      - name: Shopify review source preflight
+        if: matrix.shard == 0
+        working-directory: backend
+        run: python -m tools.shopify_review_source_preflight --config ../shopify.app.toml
 
       - name: Select backend test shard
         working-directory: backend

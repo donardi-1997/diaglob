@@ -16,7 +16,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..models import (
+    CommerceConnection,
     Order,
+    Organization,
     PaymentConnection,
     PaymentTransaction,
     Store,
@@ -116,6 +118,14 @@ class PaymentCurrencyError(PaymentError):
         )
 
 
+class PaymentCheckoutRequiredError(PaymentError):
+    def __init__(self):
+        super().__init__(
+            "SHOPIFY_CHECKOUT_REQUIRED",
+            "Shopify purchases must use Shopify Checkout, not an external payment provider",
+        )
+
+
 # ============================================================
 # PROVIDER AVAILABILITY
 # ============================================================
@@ -155,6 +165,52 @@ def get_available_providers(
         }
         for p in providers
     ]
+
+
+def _requires_shopify_checkout(
+    db: Session, organization_id: int, store_id: int, order: Order | None = None,
+) -> bool:
+    organization = db.get(Organization, organization_id)
+    if organization is not None and (
+        (organization.billing_provider or "").strip().lower() == "shopify"
+        or (organization.billing_onboarding_channel or "").strip().lower() == "shopify_install"
+    ):
+        return True
+    if order is not None and (
+        (order.source or "").strip().lower() == "shopify"
+        or (order.source or "").strip().lower().startswith("shopify_")
+        or order.shopify_order_id or order.shopify_draft_order_id
+    ):
+        return True
+    store = db.get(Store, store_id)
+    if store is not None and store.organization_id == organization_id and store.shopify_domain:
+        return True
+    # Revoking credentials must not turn a Shopify store into an off-platform
+    # checkout. Include historical connection incarnations, not only active ones.
+    return db.query(CommerceConnection.id).filter(
+        CommerceConnection.organization_id == organization_id,
+        CommerceConnection.store_id == store_id,
+        CommerceConnection.provider == "shopify",
+    ).first() is not None
+
+
+def _ensure_external_checkout_allowed(
+    db: Session, organization_id: int, store_id: int, order: Order | None = None,
+) -> None:
+    if _requires_shopify_checkout(db, organization_id, store_id, order):
+        raise PaymentCheckoutRequiredError()
+
+
+def get_available_store_providers(
+    db: Session, organization_id: int, store_id: int,
+) -> list[dict[str, Any]]:
+    """Market availability is not permission to bypass a platform checkout."""
+    store = db.get(Store, store_id)
+    if store is None or store.organization_id != organization_id:
+        raise PaymentError("PAYMENT_STORE_NOT_FOUND", "Store not found")
+    if _requires_shopify_checkout(db, organization_id, store_id):
+        return []
+    return get_available_providers(store.country_code, store.currency)
 
 
 # ============================================================
@@ -239,6 +295,8 @@ def configure_connection(
             "PAYMENT_STORE_NOT_FOUND",
             "Store not found",
         )
+
+    _ensure_external_checkout_allowed(db, organization_id, store_id)
 
     provider = get_provider(provider_code)
     if not provider:
@@ -386,6 +444,7 @@ def create_payment(
         )
 
     # Validate order if provided
+    order = None
     if order_id:
         order = db.get(Order, order_id)
         if (
@@ -400,6 +459,8 @@ def create_payment(
         # Use order's authoritative amount and currency
         amount = order.total_amount
         currency = order.currency
+
+    _ensure_external_checkout_allowed(db, organization_id, store_id, order)
 
     # Validate currency
     if currency != store.currency:
@@ -573,6 +634,17 @@ async def execute_payment(
         # A pending provider response is still an executed payment. HTTP retries
         # must return that transaction instead of creating another external one.
         return txn
+
+    order = None
+    if txn.order_id is not None:
+        order = db.query(Order).filter(
+            Order.id == txn.order_id,
+            Order.organization_id == organization_id,
+            Order.store_id == store_id,
+        ).first()
+        if order is None:
+            raise PaymentError("PAYMENT_ORDER_NOT_FOUND", "Order not found or access denied")
+    _ensure_external_checkout_allowed(db, organization_id, store_id, order)
 
     if txn.status != PaymentStatus.PENDING.value:
         if txn.status == PaymentStatus.PAID.value:

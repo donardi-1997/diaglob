@@ -13,6 +13,7 @@ from ..services.shopify_embedded_identity import verify_shopify_id_token, Shopif
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 from ..db import get_db
+from ..shopify_app_config_audit import DIAGLOB_SHOPIFY_CLIENT_ID
 from ..services.shopify_embedded_link import installed_shop_status
 from ..services.shopify_embedded_membership import authorize_embedded_identity
 from ..services.shopify_managed_installation import (
@@ -26,14 +27,14 @@ router = APIRouter()
 def shopify_embedded_home() -> HTMLResponse:
     client_id = os.getenv("SHOPIFY_CLIENT_ID", "").strip()
     # Fail closed if the runtime is not bound to the configured Shopify app.
-    if client_id != "c5fc9aed710462d41767477fa9e595c0":
+    if client_id != DIAGLOB_SHOPIFY_CLIENT_ID:
         raise HTTPException(status_code=503, detail="Shopify embedded app is not configured")
     html = """<!doctype html>
 <html lang="es">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="shopify-api-key" content="c5fc9aed710462d41767477fa9e595c0">
+  <meta name="shopify-api-key" content="__SHOPIFY_CLIENT_ID__">
   <title>DIAGLOB — Shopify</title>
   <style>
   *{box-sizing:border-box}body{margin:0;background:#f3f7fc;color:#152e50;font:15px system-ui,sans-serif}
@@ -365,7 +366,10 @@ def shopify_embedded_home() -> HTMLResponse:
   </main>
 </body>
 </html>"""
-    return HTMLResponse(html, headers={"Cache-Control": "no-store"})
+    return HTMLResponse(
+        html.replace("__SHOPIFY_CLIENT_ID__", DIAGLOB_SHOPIFY_CLIENT_ID),
+        headers={"Cache-Control": "no-store"},
+    )
 
 # An ID token proves Shopify identity only; it is NOT a Diaglob tenant grant.
 _embedded_bearer = HTTPBearer(auto_error=False)

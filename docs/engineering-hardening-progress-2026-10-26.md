@@ -59,7 +59,7 @@ Se conserva la lectura de conocimiento compartido y de ámbito organizacional. U
 | Frontend: `npm test` | 141 pruebas correctas. |
 | Frontend: `npm run build` | Correcto; conserva advertencias de tamaño de bundle e importación dinámica inefectiva. |
 | Frontend: `npm run lint` | Cero errores; 172 advertencias preexistentes. No se cambiaron reglas. |
-| Suite completa de backend | En ejecución; se añadirá el resultado definitivo. |
+| Suite completa de backend | Terminada: **2892 correctas, 2 fallos** en 2144,14 s. Ambos fallos Windows corresponden al bootstrap de secretos Shopify (`os.fchmod` no disponible y symlink sin privilegios). Se corrigieron en la revisión Shopify posterior y pasaron en la selección enfocada; no se repitió toda la suite después. |
 
 Las pruebas usan SQLite de prueba/en memoria, credenciales AWS ficticias, reconciliación de inicio desactivada y proveedores simulados. El intérprete aislado tiene instaladas las versiones de `backend/requirements.txt`; no se sustituyó el entorno virtual local del usuario. Entorno local: Windows, Python 3.12.10 y Node 24.20.0; CI utiliza Ubuntu y Python 3.11, por lo que esta validación no equivale a una ejecución de CI.
 
@@ -74,6 +74,8 @@ python -m pytest -q --tb=short --disable-warnings
 ```
 
 La suite completa se lanzó con `python -m pytest -q --tb=short --disable-warnings` y un reporte JUnit fuera del repositorio, en `C:\Users\adria\AppData\Local\Temp\opencode\diaglob-backend-full.xml`.
+
+Las correcciones de este reporte quedaron incorporadas posteriormente en `3930472`. La revisión específica de Shopify y sus cambios locales posteriores se documentan por separado en [Shopify: revisión y correcciones — 2026-10-26](shopify-review-remediation-2026-10-26.md); no confundir sus selecciones enfocadas con una repetición completa de todos los dominios.
 
 ## Pendientes y límites
 

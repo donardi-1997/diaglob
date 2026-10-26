@@ -76,11 +76,13 @@ class ShopifyPrivacyShopIdentity(Base):
 
 
 class ShopifyPrivacyDeliveryArtifact(Base):
-    """Synthetic, encrypted, recipient-bound one-time delivery ticket.
+    """Encrypted, recipient-bound one-time delivery ticket.
 
     No personal data in searchable fields. The sole encrypted ciphertext
     column is purged on redemption, revocation or expiry. This model does not
-    authorize any live customer export or actual Shopify fulfillment.
+    authorize export or actual Shopify fulfillment. Synthetic rows are handled
+    only by the fixture service; real partial exports require independent
+    execution permits and use a separate transport service.
     """
 
     __tablename__ = "shopify_privacy_delivery_artifacts"

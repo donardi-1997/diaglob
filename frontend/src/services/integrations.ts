@@ -986,6 +986,14 @@ export async function reversePayment(
 
 
 /** OAuth-first Shopify handoff: cookie remains HttpOnly on the backend. */
+export interface ShopifyInstallClaimResult {
+  connected: boolean;
+  store_id: number;
+  shop_domain: string;
+  shopify_admin_url: string;
+  webhooks_ready: boolean;
+}
+
 export async function getPendingShopifyInstall() {
   const response = await api.get<{
     pending: boolean;
@@ -995,11 +1003,7 @@ export async function getPendingShopifyInstall() {
 }
 
 export async function claimPendingShopifyInstall(storeId: number) {
-  const response = await api.post<{
-    connected: boolean;
-    store_id: number;
-    shop_domain: string;
-  }>(
+  const response = await api.post<ShopifyInstallClaimResult>(
     `/api/stores/${storeId}/shopify/install/claim`,
     {},
     { withCredentials: true },
@@ -1019,7 +1023,7 @@ export async function verifyManagedShopifyClaimCode(claimCode: string) {
 }
 
 export async function claimManagedShopifyInstall(storeId: number, claimCode: string) {
-  const response = await api.post<{connected: boolean; store_id: number; shop_domain: string}>(
+  const response = await api.post<ShopifyInstallClaimResult>(
     `/api/stores/${storeId}/shopify/install/claim-code`,
     { claim_code: claimCode },
   );

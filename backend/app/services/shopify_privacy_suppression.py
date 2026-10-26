@@ -22,6 +22,7 @@ from ..models import (ShopifyPrivacyAuditEvent, ShopifyPrivacyRequest,
                       ShopifyPrivacySuppression, Store, Customer, CustomerStoreProfile)
 from ..shopify_oauth import normalize_shop_domain
 from ..shopify_security import decrypt_shopify_secret
+from .shopify_privacy_lock import lock_shopify_privacy_scope
 
 _VALID_RECEIPT = re.compile(r"^[0-9a-f]{64}$")
 _VALID_RESOURCE = re.compile(r"^(?:gid://shopify/(Customer|Order)/)?([0-9]{1,30})$")
@@ -295,6 +296,7 @@ def evaluate_shopify_privacy_suppression(
     customer ID when a customer tombstone exists, fail closed rather than
     recovering customer identity from email or phone. This gate is read-only.
     """
+    lock_shopify_privacy_scope(db, organization_id, store_id)
     _check_restore_gate(db)
     rows = db.query(ShopifyPrivacySuppression).filter(
         ShopifyPrivacySuppression.organization_id == organization_id,
@@ -387,6 +389,7 @@ def evaluate_shopify_local_privacy(
     identity from a different store. Absent profile ID is permitted only when
     contact is known and does not match any active keyed tombstone.
     """
+    lock_shopify_privacy_scope(db, organization_id, store_id)
     _check_restore_gate(db)
     active = db.query(ShopifyPrivacySuppression.id).filter(
         ShopifyPrivacySuppression.organization_id == organization_id,

@@ -4,11 +4,12 @@ import { ArrowRight, LockKeyhole, ShieldCheck, Store } from "lucide-react";
 import { getMarkets, type Market } from "../services/markets";
 
 import { getPendingShopifyInstall, claimPendingShopifyInstall, verifyManagedShopifyClaimCode, claimManagedShopifyInstall } from "../services/integrations";
-import { createStore, getStoresForManagement, type Store as DiaglobStore } from "../services/stores";
+import { createStore, getStoresForManagement, issueShopifyEmbeddedLinkCode, type Store as DiaglobStore } from "../services/stores";
 import {
   eligibleShopifyInstallStores,
   buildPostOAuthStorePayload,
   parseShopifyInstallMode,
+  validatedShopifyInstallCompletion,
 } from "../shopifyInstall";
 import "../shopify-install.css";
 
@@ -42,6 +43,30 @@ export default function ShopifyInstallPage({ canWrite, onStoresChanged }: Props)
   const [marketsError, setMarketsError] = useState(false);
   const [newStoreName, setNewStoreName] = useState("");
   const [newCountry, setNewCountry] = useState("");
+  const [completion, setCompletion] = useState<{ storeId: number; url: string; webhooksReady: boolean } | null>(null);
+  const [linkCode, setLinkCode] = useState("");
+  const [issuingLink, setIssuingLink] = useState(false);
+
+  useEffect(() => {
+    if (!linkCode) return;
+    const timer = window.setTimeout(() => setLinkCode(""), 300_000);
+    return () => window.clearTimeout(timer);
+  }, [linkCode]);
+
+  async function generateEmbeddedLink() {
+    if (!completion || !canWrite || issuingLink) return;
+    setIssuingLink(true);
+    setError("");
+    setLinkCode("");
+    try {
+      const result = await issueShopifyEmbeddedLinkCode(completion.storeId);
+      setLinkCode(result.link_code);
+    } catch {
+      setError("No pudimos generar el código. La conexión sigue guardada; puedes reintentarlo.");
+    } finally {
+      setIssuingLink(false);
+    }
+  }
 
   useEffect(() => {
     if (!oauthCompleted || !canWrite) {
@@ -151,10 +176,13 @@ export default function ShopifyInstallPage({ canWrite, onStoresChanged }: Props)
       setStores((current) => [...current, created]);
       setSelected(String(created.id));
       onStoresChanged?.();
-      if (managedInstall) await claimManagedShopifyInstall(created.id, claimCode.trim());
-      else await claimPendingShopifyInstall(created.id);
+      const result = managedInstall
+        ? await claimManagedShopifyInstall(created.id, claimCode.trim())
+        : await claimPendingShopifyInstall(created.id);
+      const url = validatedShopifyInstallCompletion(result, created.id, authorizedShop);
       setClaimCode("");
-      navigate("/app/stores?shopify=connected", { replace: true });
+      setCompletion({ storeId: created.id, url, webhooksReady: result.webhooks_ready });
+      onStoresChanged?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : "No fue posible finalizar la conexión con Shopify.");
     } finally {
@@ -179,15 +207,36 @@ export default function ShopifyInstallPage({ canWrite, onStoresChanged }: Props)
     try {
       // A verified managed claim code or HttpOnly OAuth claim is bound only
       // after a separately authenticated, store-authorized DIAGLOB login.
-      if (managedInstall) await claimManagedShopifyInstall(chosen.id, claimCode.trim());
-      else await claimPendingShopifyInstall(chosen.id);
+      const result = managedInstall
+        ? await claimManagedShopifyInstall(chosen.id, claimCode.trim())
+        : await claimPendingShopifyInstall(chosen.id);
+      const url = validatedShopifyInstallCompletion(result, chosen.id, shop);
       setClaimCode("");
-      navigate("/app/stores?shopify=connected", { replace: true });
+      setCompletion({ storeId: chosen.id, url, webhooksReady: result.webhooks_ready });
+      onStoresChanged?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : "No fue posible conectar Shopify.");
       setConnecting(false);
     }
   }
+
+  if (completion) return (
+    <main className="shopify-install-page">
+      <section className="shopify-install-card" aria-labelledby="shopify-connected-title">
+        <h1 id="shopify-connected-title">Conexión con Shopify guardada</h1>
+        <p>No se ha contratado un plan ni se ha generado ningún cargo.</p>
+        {!completion.webhooksReady && <p role="alert">Los webhooks necesitan un reintento desde las integraciones de la tienda. La conexión no se ha perdido.</p>}
+        <p>Para acceder dentro de Shopify, genera un código de un solo uso para tu usuario. Cópialo y vuelve a App Home para vincularlo; caduca en 5 minutos.</p>
+        <button className="shopify-install-primary" type="button" disabled={!canWrite || issuingLink} onClick={() => { void generateEmbeddedLink(); }}>
+          {issuingLink ? "Generando…" : "Generar código para mi usuario Shopify"}
+        </button>
+        {linkCode && <p role="status"><code style={{ overflowWrap: "anywhere" }}>{linkCode}</code></p>}
+        {error && <p role="alert" className="shopify-install-error">{error}</p>}
+        <p><a className="shopify-install-primary" href={completion.url} rel="noreferrer">Volver a DIAGLOB en Shopify</a></p>
+        <button className="shopify-install-secondary" type="button" onClick={() => navigate("/app/stores")}>Administrar tiendas en Diaglob</button>
+      </section>
+    </main>
+  );
 
   return (
     <main className="shopify-install-page">

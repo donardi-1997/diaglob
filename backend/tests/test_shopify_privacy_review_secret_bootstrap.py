@@ -1,5 +1,6 @@
 """No secrets in logs, no surprise rotations, no unsafe global enablement."""
 import os
+import importlib.util
 from pathlib import Path
 import re
 import stat
@@ -21,12 +22,20 @@ def run(path: Path):
     )
 
 
-def test_bootstrap_creates_random_internal_secret_without_logging_it(tmp_path):
+def test_bootstrap_creates_secret_only_with_secure_permissions(tmp_path):
     file = tmp_path / "diaglob.env"
     file.write_text("DB_PASSWORD=do-not-leak\n", encoding="utf-8")
     os.chmod(file, 0o640)
+    original = file.read_bytes()
 
     result = run(file)
+    if not callable(getattr(os, "fchmod", None)):
+        assert result.returncode == 2
+        assert result.stdout == ""
+        assert result.stderr.strip() == "REVIEW_SECRET_BOOTSTRAP_FAILED"
+        assert file.read_bytes() == original
+        assert list(tmp_path.glob(".diaglob-review-secret-*")) == []
+        return
     assert result.returncode == 0
     assert result.stdout.strip() == "REVIEW_SECRET_STATUS=created"
     assert result.stderr == ""
@@ -65,15 +74,49 @@ def test_invalid_existing_secret_fails_without_modifying_file(tmp_path, contents
     assert file.read_text() == contents
 
 
-def test_bootstrap_refuses_symlink_to_sensitive_file(tmp_path):
+def test_bootstrap_refuses_symlink_to_sensitive_file(tmp_path, monkeypatch):
     real = tmp_path / "real.env"
     real.write_text("DB_PASSWORD=separate-private\n")
     link = tmp_path / "link.env"
-    link.symlink_to(real)
-    result = run(link)
-    assert result.returncode != 0
+    try:
+        link.symlink_to(real)
+    except OSError as exc:
+        if getattr(exc, "winerror", None) != 1314:
+            raise
+        # Windows may deny symlink creation without Developer Mode. Exercise
+        # the same rejection branch in-process, not by skipping its assertions
+        # or requiring elevated test privileges.
+        spec = importlib.util.spec_from_file_location("review_secret", SCRIPT)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        original_is_symlink = Path.is_symlink
+        monkeypatch.setattr(Path, "is_symlink", lambda path: path == link or original_is_symlink(path))
+        with pytest.raises(ValueError, match="REVIEW_ENV_FILE_INVALID"):
+            module.bootstrap_secret(link)
+    else:
+        result = run(link)
+        assert result.returncode != 0
+        assert "separate-private" not in result.stderr
     assert real.read_text() == "DB_PASSWORD=separate-private\n"
-    assert "separate-private" not in result.stderr
+
+
+def test_no_secret_generated_when_secure_permissions_are_unavailable(tmp_path, monkeypatch):
+    spec = importlib.util.spec_from_file_location("review_secret", SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    file = tmp_path / "diaglob.env"
+    file.write_text("DB_PASSWORD=do-not-leak\n", encoding="utf-8")
+    original = file.read_bytes()
+    monkeypatch.setattr(module.os, "fchmod", None, raising=False)
+
+    def forbidden_secret(*args, **kwargs):
+        raise AssertionError("Secret generated without secure permissions")
+
+    monkeypatch.setattr(module.secrets, "token_urlsafe", forbidden_secret)
+    with pytest.raises(ValueError, match="REVIEW_SECURE_PERMISSIONS_UNAVAILABLE"):
+        module.bootstrap_secret(file)
+    assert file.read_bytes() == original
+    assert list(tmp_path.glob(".diaglob-review-secret-*")) == []
 
 
 def test_wrapper_never_prints_secret_and_preserves_manual_deletion_gate():

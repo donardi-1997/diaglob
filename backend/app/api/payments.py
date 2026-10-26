@@ -89,10 +89,10 @@ def list_payment_providers(
     db: Session = Depends(get_db),
 ):
     """List available payment providers for a store."""
-    store = _get_store(store_id, membership, db)
+    _get_store(store_id, membership, db)
 
-    providers = payment_service.get_available_providers(
-        store.country_code, store.currency
+    providers = payment_service.get_available_store_providers(
+        db, membership.organization_id, store_id,
     )
 
     return {
@@ -159,7 +159,7 @@ def configure_payment_connection(
         db.commit()
     except payment_service.PaymentError as exc:
         raise HTTPException(
-            status_code=400,
+            status_code=409 if isinstance(exc, payment_service.PaymentCheckoutRequiredError) else 400,
             detail={
                 "code": exc.code,
                 "message": exc.message,
@@ -271,7 +271,7 @@ async def create_payment(
     except payment_service.PaymentError as exc:
         db.rollback()
         raise HTTPException(
-            status_code=400,
+            status_code=409 if isinstance(exc, payment_service.PaymentCheckoutRequiredError) else 400,
             detail={
                 "code": exc.code,
                 "message": exc.message,

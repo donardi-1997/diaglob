@@ -26,6 +26,7 @@ from ..shopify_security import encrypt_shopify_secret
 from ..shopify_sync import SHOPIFY_TEST_QUERY
 from ..shopify_webhook_subscriptions import ensure_shopify_order_webhooks
 from .billing_onboarding import confirm_shopify_install_billing
+from .shopify_navigation import shopify_app_home_url
 from .shopify_service import ShopifyConnectionError, ShopifyOAuthError, ShopifyProviderError
 
 COOKIE_NAME = "__Secure-diaglob-shopify-install"
@@ -283,6 +284,7 @@ def claim_install(
         )
         db.add(connection)
     # Exactly-once claim; do not retain an unused token after binding.
+    store.shopify_domain = grant.shop_domain
     updated = db.query(ShopifyPendingInstall).filter(
         ShopifyPendingInstall.id == grant.id,
         ShopifyPendingInstall.claimed_at.is_(None),
@@ -326,4 +328,5 @@ def claim_install(
         "store_id": store.id,
         "shop_domain": grant.shop_domain,
         "webhooks_ready": webhooks_ready,
+        "shopify_admin_url": shopify_app_home_url(grant.shop_domain),
     }

@@ -35,6 +35,12 @@ def bootstrap_secret(path: Path) -> str:
         # Existing configured secrets must NOT be printed or rotated.
         return "present"
 
+    # chmod on Windows does not enforce POSIX owner-only access. Do not write
+    # a new secret with weaker ACLs, or crash after generating it, on platforms
+    # without secure descriptor permissions. The production wrapper is POSIX.
+    if not callable(getattr(os, "fchmod", None)):
+        raise ValueError("REVIEW_SECURE_PERMISSIONS_UNAVAILABLE")
+
     new_secret = secrets.token_urlsafe(48)
     data = original.rstrip("\n") + "\n" + KEY + "=" + new_secret + "\n"
     fd, temp_path = tempfile.mkstemp(

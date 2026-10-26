@@ -1,5 +1,7 @@
 # DIAGLOB — Shopify App Store pre-submission assessment (2026-10-20)
 
+> **Revisión posterior — 2026-10-26:** véase [la revisión y correcciones actuales](shopify-review-remediation-2026-10-26.md). Esta es una instantánea histórica: la fuente actual pide siete scopes, sin `read_customers`; los helpers COD/PoC y sus rutas antiguas ya no permiten crear compras fuera de checkout. Esto no elimina el uso de datos protegidos de pedidos/webhooks ni cierra la brecha de privacidad. El estado actual de Partner no se infiere de las capturas antiguas.
+
 > **Decision: NO-GO for App Store submission.** This is an evidence-based review of GitHub `main` at `fc8baf1a402fbc2aa6d50b331e168c30a820fce7`, **not** a run of the official Shopify AI Toolkit, a Partner Dashboard verification, or a live merchant E2E test.
 >
 > No Shopify Partner settings, API permissions, merchant data, production infrastructure, billing plans or deployment were changed by this assessment.

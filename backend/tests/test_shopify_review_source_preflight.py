@@ -3,11 +3,12 @@ from pathlib import Path
 
 from app.shopify_oauth import SHOPIFY_SCOPES
 from tools.shopify_review_source_preflight import (
+    CONFIGURED_CLIENT_ID,
     REQUIRES_INDEPENDENT_EVIDENCE,
     inspect_review_source,
 )
 
-CLIENT = "a" * 32
+CLIENT = CONFIGURED_CLIENT_ID
 APP_HOME = "https://api.diaglob.tech/api/shopify/embedded"
 
 
@@ -118,3 +119,17 @@ def test_diagnostics_do_not_return_app_client_id_or_customer_data():
     assert CLIENT not in data
     assert "diaglob-poc.myshopify.com" not in data
     assert review.as_dict()["release_authorized"] is False
+
+
+def test_valid_but_unrelated_app_id_does_not_self_certify():
+    changed = config().replace(CLIENT, "b" * 32)
+    review = inspect_review_source(changed, backend_scopes=SHOPIFY_SCOPES)
+    assert review.source_consistent is False
+    assert "APP_CLIENT_ID_MISMATCH" in review.blockers
+
+
+def test_webhook_api_version_must_match_the_backend():
+    changed = config().replace('api_version = "2026-07"', 'api_version = "2025-01"')
+    review = inspect_review_source(changed, backend_scopes=SHOPIFY_SCOPES)
+    assert review.source_consistent is False
+    assert "SHOPIFY_API_VERSION_MISMATCH" in review.blockers

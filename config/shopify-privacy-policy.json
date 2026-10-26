@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "policy_id": "diaglob-shopify-privacy-2026-10-26",
+  "response_deadline_days": 30,
+  "export_ticket_ttl_seconds": 900,
+  "export_max_bytes": 1000000,
+  "source_max_rows": 250,
+  "backup_expiry_target_days": 35,
+  "closure_audit_retention_target_days": 365,
+  "default_disposition": "erase_local_personal_copy",
+  "legal_hold_default": "requires_case_clearance",
+  "external_processors_default": "unverified",
+  "shared_customer_default": "protect_other_store_data",
+  "automatic_global_completion": false
+}

@@ -58,8 +58,32 @@ from ..services.shopify_privacy_processing import (
     prepare_shopify_privacy_processing_case,
     prepare_pending_shopify_privacy_processing_cases,
 )
+from ..services.shopify_privacy_shop_inventory import (
+    ShopifyPrivacyInventoryError,
+    build_shopify_privacy_shop_inventory,
+)
+from ..services.shopify_privacy_subprocessors import (
+    ShopifyPrivacySubprocessorError,
+    inspect_shopify_privacy_case_subprocessors,
+)
+from ..services.shopify_privacy_backup_coverage import (
+    ShopifyPrivacyBackupCoverageError,
+    run_shopify_privacy_restore_drill,
+)
+from ..services.shopify_privacy_restore import ShopifyRestoreVerificationError
+from ..services.shopify_privacy_legacy_ai_attribution import (
+    ShopifyLegacyAttributionError,
+)
+from ..services.shopify_privacy_scope_preview import ShopifyPrivacyScopeError
 
 router = APIRouter()
+
+
+def _privacy_read_error(exc: Exception) -> HTTPException:
+    """Map stable domain codes to status codes without echoing selectors."""
+    if str(exc) == "PRIVACY_REQUEST_NOT_FOUND":
+        return HTTPException(status_code=404, detail="Privacy request not found")
+    return HTTPException(status_code=400, detail=str(exc))
 
 
 def _require_internal_secret(value: str | None) -> None:
@@ -393,3 +417,73 @@ def get_shopify_privacy_delivery_readiness(
         return inspect_shopify_privacy_delivery_readiness(db, request_id=request_id)
     except ShopifyPrivacyControlError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/api/internal/shopify/privacy/cases/{request_id}/shop-inventory")
+def get_shopify_privacy_shop_inventory(
+    request_id: str,
+    x_internal_secret: str | None = Header(None, alias="X-Internal-Secret"),
+    db: Session = Depends(get_db),
+):
+    """Counts, coverage labels and blockers for the verified shop only.
+
+    Signed intake and shop identity are verified before any count runs; the
+    result never contains personal data and never authorizes live processing.
+    """
+    _require_internal_secret(x_internal_secret)
+    try:
+        return build_shopify_privacy_shop_inventory(db, request_id=request_id)
+    except (
+        ShopifyPrivacyControlError,
+        ShopifyPrivacyInventoryError,
+        ShopifyPrivacyScopeError,
+        ShopifyLegacyAttributionError,
+        ShopifyPrivacySubprocessorError,
+        ShopifyPrivacyBackupCoverageError,
+    ) as exc:
+        raise _privacy_read_error(exc) from None
+
+
+@router.get("/api/internal/shopify/privacy/cases/{request_id}/subprocessors")
+def get_shopify_privacy_case_subprocessors(
+    request_id: str,
+    x_internal_secret: str | None = Header(None, alias="X-Internal-Secret"),
+    db: Session = Depends(get_db),
+):
+    """Activation row counts per external processor; no tokens or identifiers."""
+    _require_internal_secret(x_internal_secret)
+    try:
+        return inspect_shopify_privacy_case_subprocessors(db, request_id=request_id)
+    except (
+        ShopifyPrivacyControlError,
+        ShopifyPrivacyScopeError,
+        ShopifyPrivacySubprocessorError,
+    ) as exc:
+        raise _privacy_read_error(exc) from None
+
+
+class RestoreDrillSubmission(BaseModel):
+    external_hmac: str
+    minimum_records: int
+
+
+@router.post("/api/internal/shopify/privacy/restore-drill")
+def post_shopify_privacy_restore_drill(
+    body: RestoreDrillSubmission,
+    x_internal_secret: str | None = Header(None, alias="X-Internal-Secret"),
+    db: Session = Depends(get_db),
+):
+    """Reconcile restored suppression ledger against an external checkpoint.
+
+    Read-only verification: it never ingests webhooks, clears blockers or
+    reports completed fulfillment.
+    """
+    _require_internal_secret(x_internal_secret)
+    try:
+        return run_shopify_privacy_restore_drill(
+            db,
+            externally_stored_hmac=body.external_hmac,
+            minimum_records=body.minimum_records,
+        )
+    except (ShopifyRestoreVerificationError, ShopifyPrivacyBackupCoverageError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None

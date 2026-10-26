@@ -37,6 +37,10 @@ jobs:
           cd backend
           ruff check app/ tests/
 
+      - name: Shopify review source preflight
+        working-directory: backend
+        run: python -m tools.shopify_review_source_preflight --config ../shopify.app.toml
+
       - name: Validate readiness gate without network access
         run: |
           bash -n scripts/check-api-readiness.sh scripts/restart-api-verified.sh

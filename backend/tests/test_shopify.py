@@ -472,8 +472,8 @@ class TestShopifyPocOrder:
                           "address1": "Test", "city": "Bogota", "country_code": "CO", "zip": "110111",
                       },
                       note="simulation", idempotency_key="unsellable")
-        with patch("app.shopify_poc.decrypt_shopify_secret", return_value="test"), patch(
-            "app.shopify_poc.ShopifyGraphQLClient.query",
+        with patch(
+            "app.shopify_client.ShopifyGraphQLClient.query",
             side_effect=AssertionError("Unexpected provider call"),
         ), pytest.raises((ValueError, ShopifyUserError)):
             if entrypoint == "poc":
@@ -481,6 +481,25 @@ class TestShopifyPocOrder:
             else:
                 create_shopify_cod_order(**common, customer_id=0, variant_local_id=variant.id)
         assert db.query(Order).count() == 0
+
+    @pytest.mark.parametrize("entrypoint", ["helper", "service"])
+    def test_internal_poc_creation_is_retired_even_for_sellable_catalog(
+        self, db, org, store, shopify_connection, entrypoint,
+    ):
+        from app.shopify_poc import create_poc_order
+        from app.services.shopify_service import create_poc
+
+        variant = self._variant(db, org, store)
+        payload = self._payload(variant.shopify_variant_id, tags=[], note="synthetic")
+        with patch("app.shopify_client.ShopifyGraphQLClient.query") as query:
+            with pytest.raises(ShopifyUserError, match="^SHOPIFY_CHECKOUT_REQUIRED$"):
+                if entrypoint == "helper":
+                    create_poc_order(db=db, store=store, connection=shopify_connection, **payload)
+                else:
+                    create_poc(db, org.id, store.id, **payload)
+        query.assert_not_called()
+        assert db.query(Order).count() == 0
+        assert db.query(OrderItem).count() == 0
 
     def _variant(self, db, org, store):
         product = Product(
@@ -531,7 +550,7 @@ class TestShopifyPocOrder:
     def test_public_poc_order_endpoint_is_retired(self, client, db, org, store, shopify_connection):
         variant = self._variant(db, org, store)
         with patch(
-            "app.shopify_poc.ShopifyGraphQLClient.query",
+            "app.shopify_client.ShopifyGraphQLClient.query",
             side_effect=AssertionError("No Shopify request should be made"),
         ) as query:
             first = client.post(
@@ -582,7 +601,7 @@ class TestShopifyPocOrder:
     def test_public_poc_order_route_never_queries_shopify(self, client, db, org, store, shopify_connection):
         variant = self._variant(db, org, store)
         with patch(
-            "app.shopify_poc.ShopifyGraphQLClient.query",
+            "app.shopify_client.ShopifyGraphQLClient.query",
             side_effect=AssertionError("Legacy provider mutation was called"),
         ) as query:
             response = client.post(

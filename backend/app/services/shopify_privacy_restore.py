@@ -35,6 +35,18 @@ def create_shopify_suppression_checkpoint(db: Session) -> dict:
         ShopifyPrivacySuppression.kind,
         ShopifyPrivacySuppression.selector_digest,
     ).all()
+    return checkpoint_for_suppression_rows(rows, key=key)
+
+
+def checkpoint_for_suppression_rows(rows, *, key: bytes) -> dict:
+    """Pure checkpoint calculation, also usable for a non-mutating plan.
+
+    A computed checkpoint is NOT evidence that it has been stored offsite.
+    Its independently authenticated origin is still required on restore.
+    """
+    rows = sorted(rows, key=lambda r: (
+        r.organization_id, r.store_id, r.kind, r.selector_digest,
+    ))
     fingerprint = _key_fingerprint(key)
     if any(not hmac.compare_digest(row.key_fingerprint, fingerprint) for row in rows):
         raise ShopifyRestoreVerificationError("SUPPRESSION_KEY_MISMATCH")

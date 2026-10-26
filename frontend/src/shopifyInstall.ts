@@ -20,6 +20,22 @@ export function parseShopifyInstallMode(search: string): "managed" | "authorized
 
 /** Only a merchant-facing hint; never evidence of Shopify ownership. */
 const SHOP_DOMAIN = /^[a-z0-9][a-z0-9-]*\.myshopify\.com$/;
+// Public app identity, not a secret. Must match the linked app's TOML/backend.
+export const DIAGLOB_SHOPIFY_CLIENT_ID = "c5fc9aed710462d41767477fa9e595c0";
+
+export function validatedShopifyInstallCompletion(
+  result: { connected: boolean; store_id: number; shop_domain: string; shopify_admin_url: string },
+  storeId: number,
+  verifiedShop: string,
+): string {
+  if (
+    result.connected !== true || result.store_id !== storeId ||
+    result.shop_domain !== verifiedShop || !SHOP_DOMAIN.test(verifiedShop) ||
+    verifiedShop.length > 255 ||
+    result.shopify_admin_url !== `https://${verifiedShop}/admin/apps/${DIAGLOB_SHOPIFY_CLIENT_ID}`
+  ) throw new Error("No se pudo confirmar el retorno seguro a Shopify.");
+  return result.shopify_admin_url;
+}
 
 export function parseShopifyInstallHint(search: string): string | null {
   if (search.length > 1024) return null;

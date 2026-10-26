@@ -1,5 +1,7 @@
 # DIAGLOB — Shopify App Store AI self-review (2026-10-23)
 
+> **Revisión posterior — 2026-10-26:** este documento es histórico. Véase [la revisión y correcciones actuales](shopify-review-remediation-2026-10-26.md). La evaluación anterior de checkout no cubría las rutas generales Nequi/Mercado Pago ni la función PoC interna; se corrigieron posteriormente. Las referencias a importes en la implementación COD retirada no describen el código activo. La privacidad efectiva sigue incompleta y la aprobación de Shopify continúa sin verificar.
+
 ## Alcance y método
 
 - Requisitos oficiales obtenidos en esta revisión con `shopify doc fetch --url https://shopify.dev/docs/apps/launch/app-store-review/app-store-ai-self-review-requirements`; copia de trabajo: `%TEMP%/diaglob-shopify-requirements-2026-10-23.md`. La fuente canónica enumera 100 IDs.

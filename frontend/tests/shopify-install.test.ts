@@ -8,6 +8,8 @@ import {
   parseShopifyInstallHint,
   parseShopifyInstallMode,
   validatedShopifyAuthorizationUrl,
+  validatedShopifyInstallCompletion,
+  DIAGLOB_SHOPIFY_CLIENT_ID,
 } from "../src/shopifyInstall.ts";
 
 test("only a single Shopify domain is accepted as an untrusted install hint", () => {
@@ -21,6 +23,27 @@ test("only a single Shopify domain is accepted as an untrusted install hint", ()
   assert.equal(parseShopifyInstallHint("?shop=demo.myshopify.com.evil.com"), null);
   assert.equal(parseShopifyInstallHint("?shop=demo.myshopify.com%2Fadmin"), null);
   assert.equal(parseShopifyInstallHint("?shop="), null);
+});
+
+test("installation returns to the verified shop and this app without leaking a claim code", () => {
+  const shop = "synthetic.myshopify.com";
+  const result = {
+    connected: true, store_id: 42, shop_domain: shop,
+    shopify_admin_url: `https://${shop}/admin/apps/${DIAGLOB_SHOPIFY_CLIENT_ID}`,
+  };
+  assert.equal(validatedShopifyInstallCompletion(result, 42, shop), result.shopify_admin_url);
+  for (const changed of [
+    { connected: false }, { store_id: 43 }, { shop_domain: "other.myshopify.com" },
+    { shopify_admin_url: result.shopify_admin_url + "?code=private" },
+    { shopify_admin_url: result.shopify_admin_url + "#private" },
+    { shopify_admin_url: "https://evil.example/" },
+    { shopify_admin_url: `https://${shop}/admin/apps/${"a".repeat(32)}` },
+  ]) assert.throws(() => validatedShopifyInstallCompletion({ ...result, ...changed }, 42, shop));
+});
+
+test("the public frontend app identity stays aligned with Shopify TOML", () => {
+  const toml = readFileSync(new URL("../../shopify.app.toml", import.meta.url), "utf8");
+  assert.ok(toml.includes(`client_id = "${DIAGLOB_SHOPIFY_CLIENT_ID}"`));
 });
 
 test("merchant must select their eligible preexisting DIAGLOB store", () => {

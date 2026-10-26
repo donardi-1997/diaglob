@@ -13,7 +13,8 @@ from pathlib import Path
 
 import tomli
 
-from app.shopify_app_config_audit import audit_shopify_app_config
+from app.shopify_app_config_audit import DIAGLOB_SHOPIFY_CLIENT_ID, audit_shopify_app_config
+from app.shopify_client import SHOPIFY_GRAPHQL_VERSION
 
 # These checks are external to the repository and cannot be passed by CI.
 REQUIRES_INDEPENDENT_EVIDENCE = (
@@ -27,6 +28,7 @@ REQUIRES_INDEPENDENT_EVIDENCE = (
     "LISTING_FIELDS_SUPPORT_CONTACTS_AND_REVIEW_INSTRUCTIONS",
 )
 CONFIGURED_APP_HOME = "https://api.diaglob.tech/api/shopify/embedded"
+CONFIGURED_CLIENT_ID = DIAGLOB_SHOPIFY_CLIENT_ID
 MAX_FILE_BYTES = 256 * 1024
 
 
@@ -101,12 +103,16 @@ def inspect_review_source(raw_toml: str, *, backend_scopes: str) -> ReviewPrefli
     if source_only or config_only:
         errors.append("SHOPIFY_OAUTH_SCOPE_DRIFT")
 
+    webhooks = app.get("webhooks")
+    if not isinstance(webhooks, dict) or webhooks.get("api_version") != SHOPIFY_GRAPHQL_VERSION:
+        errors.append("SHOPIFY_API_VERSION_MISMATCH")
+
     # This invokes the existing strict compliance-topic, callback, API version,
     # app URL and embedded-mode checks. App identity is SOURCE-LOCAL ONLY:
     # passing it does not prove Shopify's active version has the same ID.
     audit = audit_shopify_app_config(
         raw_toml,
-        expected_client_id=client_id if isinstance(client_id, str) else "",
+        expected_client_id=CONFIGURED_CLIENT_ID,
         expected_application_url=CONFIGURED_APP_HOME,
         expected_embedded=True,
         expected_scopes=backend_scopes,

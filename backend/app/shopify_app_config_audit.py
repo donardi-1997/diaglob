@@ -16,6 +16,8 @@ from urllib.parse import urlsplit
 
 import tomli
 
+DIAGLOB_SHOPIFY_CLIENT_ID = "c5fc9aed710462d41767477fa9e595c0"
+
 MANDATORY_TOPICS = frozenset((
     "customers/data_request", "customers/redact", "shop/redact",
 ))
