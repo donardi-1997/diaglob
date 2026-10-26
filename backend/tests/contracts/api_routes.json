@@ -329,6 +329,14 @@
   ],
   [
     "GET",
+    "/api/internal/shopify/privacy/cases/{request_id}/shop-inventory"
+  ],
+  [
+    "GET",
+    "/api/internal/shopify/privacy/cases/{request_id}/subprocessors"
+  ],
+  [
+    "GET",
     "/api/internal/shopify/privacy/cases/{request_id}/suppressions"
   ],
   [
@@ -685,6 +693,10 @@
   ],
   [
     "GET",
+    "/api/stores/{store_id}/shopify/privacy/cases/{request_id}/local-export"
+  ],
+  [
+    "GET",
     "/api/stores/{store_id}/suppliers/cj"
   ],
   [
@@ -977,6 +989,10 @@
   ],
   [
     "POST",
+    "/api/internal/shopify/privacy/restore-drill"
+  ],
+  [
+    "POST",
     "/api/internal/shopify/privacy/retention/assess"
   ],
   [
@@ -1218,6 +1234,14 @@
   [
     "POST",
     "/api/stores/{store_id}/shopify/privacy/cases/{request_id}/delivery/revoke"
+  ],
+  [
+    "POST",
+    "/api/stores/{store_id}/shopify/privacy/cases/{request_id}/local-export"
+  ],
+  [
+    "POST",
+    "/api/stores/{store_id}/shopify/privacy/cases/{request_id}/local-redaction"
   ],
   [
     "POST",
