@@ -82,8 +82,8 @@ Fuentes de código/evidencia relevantes: [retención y ejecución fail-closed](.
 - `shopify app config validate --path . --json`: `valid=true`, `issues=[]` (esquema local solamente).
 - `tools.shopify_review_source_preflight`: `source_consistent=true`, sin deriva de scopes; también declara `release_authorized=false`, `shopify_approval_verified=false` y ocho clases de evidencia independiente requerida.
 - `tools.shopify_scope_release_preflight`: candidato local seguro para preparar sin liberar; `new_version_created=false`, `existing_app_version_released=false`, `protected_customer_data_approval_verified=false`, `merchant_installation_e2e_verified=false`.
-- Validación de bloqueo de pago/fulfillment: `tests/test_auto_fulfillment.py` + `tests/test_dropi_adapter_readiness.py` + `tests/test_shopify_fulfillment.py` — **19 passed** con SQLite y proveedores sintéticos después de la revalidación justo antes de fulfillment.
-- La suite Shopify anterior (`84` archivos, **1159 passed**) y la suite backend anterior (**2989 passed**) precedieron al cambio de guard de tracking. Para este cambio, la selección focalizada actual pasó **17/17** y Ruff pasó; la suite backend completa está ejecutándose en esta sesión y el resultado final se añadirá al informe de cierre.
+- Validación focalizada posterior al cambio: `tests/test_auto_fulfillment.py` + `tests/test_dropi_adapter_readiness.py` + `tests/test_shopify_fulfillment.py` — **19 passed**; Ruff limpio.
+- CI del PR, run **40415324954** sobre el head `57b543a`: backend shard 0 **1391 passed** + shard 1 **1603 passed** = **2994 passed, 20 warnings, cero fallos**. También pasaron Ruff, preflight y agregador. Frontend/mobile se omitieron por alcance. La suite backend local lanzada en paralelo sigue pendiente al redactar.
 - Auditoría AWS PCD de solo lectura: credenciales configuradas rechazadas (`InvalidAccessKeyId` en S3; `UnrecognizedClientException` en Lightsail/AWS Backup/Bedrock). No se modificó AWS; cifrado de backup, snapshots y restore permanecen `unverified`.
 
 ## Bloqueos y siguientes pasos seguros

@@ -104,7 +104,7 @@ El acceso PCD seleccionado incluye nombre, email, teléfono y dirección; el có
 | `shopify_scope_release_preflight` | candidato local consistente; no versión creada/liberada, grants y PCD no verificados | **VERIFICADO (source only)** |
 | `tests/test_auto_fulfillment.py`, `test_dropi_adapter_readiness.py`, `test_shopify_fulfillment.py` | **19 passed** en SQLite/proveedores sintéticos | **VERIFICADO (focalizado)** |
 | Ruff, archivos modificados | Ruff limpio | **VERIFICADO** |
-| Suite backend completa | Ejecutándose con SQLite de prueba y credenciales ficticias; no se declara resultado hasta completar | **PENDIENTE** |
+| Suite backend completa en CI (PR `40415324954`, head `57b543a`) | Shard 0: 1391 passed; shard 1: 1603 passed; **2994 passed, 20 warnings, cero fallos**. Ruff, source preflight y agregador pasaron. Frontend/mobile se omitieron por alcance. La suite backend local sigue ejecutándose al momento de este informe. | **VERIFICADO (CI)** |
 | AWS audit PCD | `mode=read_only`, `production_changes=false`; S3 `InvalidAccessKeyId`, Lightsail/AWS Backup/Bedrock `UnrecognizedClientException`; Q10/restore false | **BLOQUEADO EXTERNAMENTE** |
 | Pull requests | No había PR abierto al inspeccionar | **VERIFICADO (GitHub read-only)** |
 | Branch/commit/deploy | Rama local `main`, `fe31eda`; `origin/main=63a110e`, un commit local adelante. Último deploy conocido Run `40407310191` en `63a110e`; este parche aún no desplegado | **PENDIENTE DE PR; no desplegado** |
@@ -142,6 +142,6 @@ Se añadieron regresiones sintéticas en `backend/tests/test_auto_fulfillment.py
 ## 7. PR y release
 
 - Se preparó la rama `feat/shopify-app-store-closure-2026-10` y un **PR draft #318** contra `main`: https://github.com/donardi-1997/diaglob/pull/318.
-- Commits de implementación/test del PR: `836494c` (`fix(shopify): recheck payment and privacy before fulfillment`) y `e112b35` (`test(shopify): cover fulfillment tenant and privacy gates`). La rama partió del `fe31eda` local previo y apunta a `origin/main` `63a110e`; el estado del head más reciente se consulta en el PR.
-- El primer run `40414659417` pasó backend shards/Ruff/preflight; frontend/mobile se omitieron por alcance. Hay una validación posterior para el commit ampliado; su estado debe leerse en el PR antes de merge.
+- Commits de implementación/test/report del PR incluyen `836494c` (guard pago/privacidad), `e112b35` (regresiones) y `57b543a` (trazabilidad de cierre). La rama partió del `fe31eda` local previo y apunta a `origin/main` `63a110e`; consultar el PR para el head actual.
+- Run `40415324954` sobre `57b543a` pasó los dos backend shards (**2994 passed, 20 warnings**), Ruff, preflight y agregador; frontend/mobile se omitieron por alcance. El run intermedio `40415062046` fue cancelado por concurrencia al encolarse el de mayor prioridad `40415324954`; no fue un fallo de tests ni se modificó ningún gate.
 - **No se fusionó el PR, no se empujó a `main`, no se desplegó a producción y no se presentó la app ni PCD a Shopify.** El último deploy conocido sigue siendo el run `40407310191` sobre `63a110e`.
