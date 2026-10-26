@@ -501,31 +501,17 @@ class NequiPaymentProvider(PaymentProvider):
         body: bytes,
         webhook_secret: str,
     ) -> bool:
-        """Verify Nequi webhook authenticity.
-        
-        CRITICAL SAFETY: Nequi webhooks may not use HMAC signature verification.
-        Instead of marking payment as PAID from the webhook alone, we:
-        1. Parse the webhook event
-        2. Identify the transaction ID
-        3. Call get_payment_status() server-to-server to confirm the actual status
-        4. Only update to PAID based on provider-confirmed status
-        
-        This prevents a malicious webhook from marking a payment as paid
-        without provider verification.
-        
-        Returns True if the webhook should be processed (i.e., the transaction
-        can be identified and verified via server-to-server call).
+        """Check notification shape, not authenticity.
+
+        No supported HMAC contract is assumed here. The payment service must
+        query Nequi server-to-server for EVERY status before changing local
+        state, regardless of whether a webhook secret is configured.
         """
         try:
-            data = json.loads(body)
-            transaction_id = data.get("transactionId")
-            if not transaction_id:
-                logger.warning("nequi_webhook_missing_transaction_id")
-                return False
-            return True
-        except (json.JSONDecodeError, KeyError):
-            logger.warning("nequi_webhook_invalid_payload")
+            self.parse_webhook(headers, body)
+        except ValueError:
             return False
+        return True
 
     def parse_webhook(
         self,
@@ -540,10 +526,17 @@ class NequiPaymentProvider(PaymentProvider):
                 f"Invalid webhook JSON: {exc}"
             ) from exc
 
+        if not isinstance(data, dict):
+            raise ValueError("Webhook payload must be an object")
+        transaction_id = data.get("transactionId")
+        if not isinstance(transaction_id, str) or not transaction_id.strip() or len(transaction_id) > 255:
+            raise ValueError("Invalid transaction ID")
+        event_id = data.get("eventId", "")
+        if not isinstance(event_id, str) or len(event_id) > 255:
+            raise ValueError("Invalid event ID")
+
         return {
-            "provider_transaction_id": data.get(
-                "transactionId", ""
-            ),
+            "provider_transaction_id": transaction_id,
             "status": data.get("status", ""),
             "event_type": data.get("eventType", ""),
             "amount": data.get("value"),

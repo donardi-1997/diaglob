@@ -33,7 +33,7 @@ class InvalidKnowledgeBaseScopeError(Exception):
 
 
 class KnowledgeBaseAccessError(Exception):
-    """Organization-wide KB requires all-store access."""
+    """Membership cannot modify knowledge shared beyond its store scope."""
 
 
 class InvalidStoreSelectionError(Exception):
@@ -48,15 +48,30 @@ class InvalidStoreSelectionError(Exception):
 def list_knowledge_bases(
     db: Session,
     organization_id: int,
+    *,
+    allowed_store_ids: list[int] | None = None,
 ) -> list[KnowledgeBase]:
-    """Return all knowledge bases for the organization, ordered by name."""
-    return (
+    """Return visible knowledge bases for the organization, ordered by name."""
+    knowledge_bases = (
         db.query(KnowledgeBase)
         .filter(
             KnowledgeBase.organization_id == organization_id,
         )
         .order_by(KnowledgeBase.name.asc())
         .all()
+    )
+    return [kb for kb in knowledge_bases if _knowledge_base_visible(kb, allowed_store_ids)]
+
+
+def _knowledge_base_visible(knowledge_base: KnowledgeBase, allowed_store_ids: list[int] | None) -> bool:
+    if allowed_store_ids is None or knowledge_base.scope == "organization":
+        return True
+    allowed = set(allowed_store_ids)
+    return any(
+        store.id in allowed
+        and store.organization_id == knowledge_base.organization_id
+        and store.active and not store.deleted
+        for store in knowledge_base.stores
     )
 
 
@@ -86,6 +101,33 @@ def get_knowledge_base(
         raise KnowledgeBaseNotFoundError(
             "Knowledge base not found",
         )
+    return knowledge_base
+
+
+def get_authorized_knowledge_base(
+    db: Session,
+    organization_id: int,
+    knowledge_base_id: int,
+    *,
+    allowed_store_ids: list[int] | None,
+    write: bool = False,
+    is_owner: bool = False,
+) -> KnowledgeBase:
+    """One access policy for KB metadata, source reads, sync and mutations.
+
+    Shared knowledge remains readable by its intended stores. A restricted
+    member must control every associated store before changing shared content;
+    organization-wide changes retain the existing all-store/owner requirement.
+    """
+    knowledge_base = get_knowledge_base(db, organization_id, knowledge_base_id)
+    if not _knowledge_base_visible(knowledge_base, allowed_store_ids):
+        raise KnowledgeBaseNotFoundError("Knowledge base not found")
+    if write and allowed_store_ids is not None:
+        if knowledge_base.scope == "organization":
+            if not is_owner:
+                raise KnowledgeBaseAccessError("Organization-wide knowledge bases require all-store access")
+        elif not {store.id for store in knowledge_base.stores}.issubset(set(allowed_store_ids)):
+            raise KnowledgeBaseAccessError("Modifying shared knowledge requires access to all associated stores")
     return knowledge_base
 
 

@@ -363,7 +363,7 @@ def create_payment(
     organization_id: int,
     store_id: int,
     provider_code: str,
-    amount: Decimal | float | str,
+    amount: Decimal | float | str | None,
     currency: str,
     customer_phone: str,
     idempotency_key: str,
@@ -398,7 +398,7 @@ def create_payment(
                 "Order not found or access denied",
             )
         # Use order's authoritative amount and currency
-        amount_decimal = Decimal(str(order.total_amount))
+        amount = order.total_amount
         currency = order.currency
 
     # Validate currency
@@ -413,9 +413,9 @@ def create_payment(
             "Amount must be a valid number"
         )
 
-    if amount_decimal <= 0:
+    if not amount_decimal.is_finite() or amount_decimal <= 0:
         raise PaymentInvalidAmountError(
-            "Amount must be greater than zero"
+            "Amount must be finite and greater than zero"
         )
 
     # Validate provider
@@ -453,8 +453,25 @@ def create_payment(
     if not conn or conn.status != "connected":
         raise PaymentConnectionNotFoundError()
 
-    # Check idempotency — if a transaction with this key
-    # already exists, return it
+    def reuse_existing(existing: PaymentTransaction) -> PaymentTransaction:
+        # Keys are unique per organization, not per store. Never let a retry
+        # disclose/reuse another store's transaction or change its charge.
+        if (
+            existing.store_id != store_id
+            or existing.provider != provider_code
+            or existing.order_id != order_id
+            or Decimal(str(existing.amount)) != amount_decimal
+            or existing.currency != currency
+            or existing.customer_phone != customer_phone
+            or existing.payment_method != payment_method
+        ):
+            raise PaymentError(
+                "PAYMENT_IDEMPOTENCY_CONFLICT",
+                "Idempotency key is already bound to another payment request",
+            )
+        return existing
+
+    # Check idempotency before creating another transaction.
     existing = (
         db.execute(
             select(PaymentTransaction).where(
@@ -475,7 +492,7 @@ def create_payment(
             existing.id,
             existing.status,
         )
-        return existing
+        return reuse_existing(existing)
 
     # Create transaction
     txn = PaymentTransaction(
@@ -513,7 +530,7 @@ def create_payment(
             .first()
         )
         if existing:
-            return existing
+            return reuse_existing(existing)
         raise PaymentError(
             "PAYMENT_CREATION_FAILED",
             "Could not create payment",
@@ -551,6 +568,11 @@ async def execute_payment(
     txn = _get_owned_transaction(
         db, organization_id, store_id, payment_id
     )
+
+    if txn.provider_transaction_id:
+        # A pending provider response is still an executed payment. HTTP retries
+        # must return that transaction instead of creating another external one.
+        return txn
 
     if txn.status != PaymentStatus.PENDING.value:
         if txn.status == PaymentStatus.PAID.value:
@@ -602,12 +624,13 @@ async def execute_payment(
             provider_error_message=str(exc)[:500],
         )
         db.flush()
-        raise PaymentProviderError(str(exc)[:200])
+        raise PaymentProviderError("Unable to create payment with provider") from exc
 
     txn.provider_transaction_id = (
         result.provider_transaction_id
     )
     _update_transaction_status(
+        db,
         txn,
         result.status.value,
         provider_status=result.provider_status,
@@ -688,9 +711,10 @@ async def reconcile_payment_status(
             "payment_id=%s",
             txn.id,
         )
-        raise PaymentProviderError(str(exc)[:200])
+        raise PaymentProviderError("Unable to query payment status with provider") from exc
 
     _update_transaction_status(
+        db,
         txn,
         result.status.value,
         provider_status=result.provider_status,
@@ -726,6 +750,9 @@ async def process_webhook(
             "PAYMENT_PROVIDER_NOT_FOUND",
             f"Unknown provider: {provider_code}",
         )
+
+    if not provider.supports_webhooks:
+        raise PaymentError("PAYMENT_WEBHOOK_INVALID", "Provider does not support webhooks")
 
     # Parse the webhook payload
     try:
@@ -771,8 +798,9 @@ async def process_webhook(
             "reason": "unknown_transaction",
         }
 
-    # Verify webhook signature using the connection's
-    # webhook secret
+    # Provider-specific envelope checks do not replace server-side status
+    # verification. In particular, Nequi does not authenticate a notification
+    # merely because it contains a transaction ID.
     conn = get_connection(
         db,
         txn.organization_id,
@@ -792,72 +820,37 @@ async def process_webhook(
                 "Invalid webhook signature",
             )
 
-    # Check for duplicate event
-    event_id = parsed.get("raw", {}).get(
-        "eventId", ""
-    )
-    if event_id and conn:
-        if conn.last_event_id == event_id:
-            logger.info(
-                "webhook_duplicate_event "
-                "event_id=%s",
-                event_id,
-            )
-            return {
-                "status": "duplicate",
-                "payment_id": txn.id,
-            }
+    # Every notification is only a wake-up signal, including rejected, failed,
+    # expired and cancelled events. None of its status/timestamp fields are
+    # authoritative. Fail without changing state or consuming event IDs if the
+    # provider cannot be reached so delivery can be retried safely.
+    creds = get_connection_credentials(db, txn.organization_id, txn.store_id, provider_code)
+    try:
+        status_result = await provider.get_payment_status(
+            credentials=creds,
+            environment=conn.environment,
+            provider_transaction_id=txn.provider_transaction_id,
+        )
+    except Exception as exc:
+        logger.warning("webhook_reconciliation_failed payment_id=%s", txn.id)
+        raise PaymentProviderError("Unable to verify payment status with provider") from exc
 
-    # Map provider status to normalized status
-    nequi_status = parsed.get("status", "")
-    from ..payments.nequi import NEQUI_STATUS_MAP
-
-    normalized = NEQUI_STATUS_MAP.get(
-        nequi_status, PaymentStatus.PENDING
-    )
-
-    # CRITICAL SAFETY: For Nequi webhooks, do NOT mark paid based on
-    # webhook payload alone. Always reconcile with server-to-server
-    # status query to prevent malicious webhook attacks.
-    if normalized == PaymentStatus.PAID:
-        provider = get_provider(txn.provider)
-        if provider:
-            try:
-                conn = get_connection(
-                    db, txn.organization_id, txn.store_id, txn.provider
-                )
-                environment = conn.environment if conn else "sandbox"
-                creds = get_connection_credentials(
-                    db, txn.organization_id, txn.store_id, txn.provider
-                )
-                status_result = await provider.get_payment_status(
-                    creds, environment, txn.provider_transaction_id
-                )
-                if status_result.status != PaymentStatus.PAID:
-                    logger.warning(
-                        "webhook_paid_but_server_confirms_not_paid "
-                        "payment_id=%s server_status=%s",
-                        txn.id,
-                        status_result.status.value,
-                    )
-                    normalized = status_result.status
-                    nequi_status = status_result.provider_status
-            except Exception as exc:
-                logger.error(
-                    "webhook_reconciliation_failed payment_id=%s error=%s",
-                    txn.id,
-                    str(exc),
-                )
-                # If reconciliation fails, do not mark as paid
-                normalized = PaymentStatus.PENDING
+    normalized = status_result.status
+    event_id = parsed.get("raw", {}).get("eventId", "")
+    # Event IDs are untrusted and shared across the merchant connection. Only
+    # suppress a duplicate after verifying the transaction's current status.
+    if event_id and conn.last_event_id == event_id and txn.status == normalized.value:
+        return {"status": "duplicate", "payment_id": txn.id}
 
     # Update transaction
     _update_transaction_status(
         db,
         txn,
         normalized.value,
-        provider_status=nequi_status,
-        paid_at=parsed.get("timestamp") if normalized == PaymentStatus.PAID else None,
+        provider_status=status_result.provider_status,
+        provider_error_code=status_result.provider_error_code,
+        provider_error_message=status_result.provider_error_message,
+        paid_at=status_result.paid_at,
     )
 
     # Update connection event tracking
@@ -871,7 +864,7 @@ async def process_webhook(
         "webhook_processed payment_id=%s "
         "status=%s -> %s",
         txn.id,
-        nequi_status,
+        status_result.provider_status,
         normalized.value,
     )
 
@@ -941,9 +934,10 @@ async def cancel_payment(
             "payment_cancel_failed payment_id=%s",
             txn.id,
         )
-        raise PaymentProviderError(str(exc)[:200])
+        raise PaymentProviderError("Unable to cancel payment with provider") from exc
 
     _update_transaction_status(
+        db,
         txn,
         result.status.value,
         provider_status=result.provider_status,
@@ -1019,9 +1013,10 @@ async def reverse_payment(
             "payment_reversal_failed payment_id=%s",
             txn.id,
         )
-        raise PaymentProviderError(str(exc)[:200])
+        raise PaymentProviderError("Unable to reverse payment with provider") from exc
 
     _update_transaction_status(
+        db,
         txn,
         result.status.value,
         provider_status=result.provider_status,
@@ -1081,10 +1076,9 @@ def _update_transaction_status(
     """Update transaction status with transition validation."""
     current = txn.status
 
-    if current == new_status:
-        return  # No-op
-
-    if not is_valid_transition(current, new_status):
+    # An unchanged state can still carry authoritative provider metadata (for
+    # example the initial PENDING response). Keep that metadata on retries too.
+    if current != new_status and not is_valid_transition(current, new_status):
         logger.warning(
             "payment_invalid_transition "
             "payment_id=%s %s -> %s",
@@ -1128,26 +1122,30 @@ def _update_transaction_status(
                     paid_at
                 )
             except ValueError:
-                txn.paid_at = datetime.now(timezone.utc)
-        else:
+                txn.paid_at = txn.paid_at or datetime.now(timezone.utc)
+        elif txn.paid_at is None:
             txn.paid_at = datetime.now(timezone.utc)
 
         # Update related Order payment status
         if txn.order_id:
-            try:
-                order = db.query(Order).filter(
-                    Order.id == txn.order_id,
-                    Order.organization_id == txn.organization_id,
-                ).first()
-                if order:
-                    order.payment_status = "paid"
-                    order.updated_at = datetime.now(timezone.utc)
-            except Exception as exc:
-                logger.error(
-                    "order_payment_update_failed "
-                    "order_id=%s error=%s",
-                    txn.order_id,
-                    str(exc),
+            order = db.query(Order).filter(
+                Order.id == txn.order_id,
+                Order.organization_id == txn.organization_id,
+                Order.store_id == txn.store_id,
+            ).first()
+            if (
+                order is not None
+                and order.currency == txn.currency
+                and Decimal(str(order.total_amount)) == Decimal(str(txn.amount))
+            ):
+                order.payment_status = "paid"
+                order.updated_at = datetime.now(timezone.utc)
+            else:
+                # A paid receipt is not proof that the full order was settled,
+                # including legacy rows created before authoritative totals.
+                logger.warning(
+                    "order_payment_not_settled payment_id=%s order_id=%s",
+                    txn.id, txn.order_id,
                 )
 
     txn.updated_at = datetime.now(timezone.utc)

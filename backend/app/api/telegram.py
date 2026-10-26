@@ -23,6 +23,7 @@ from ..services.whatsapp_webhooks import schedule_ai_replies
 from ..telegram_models import TelegramConnection
 from ..telegram_security import decrypt_telegram_secret
 from .deps import require_permission
+from .store_access import require_authorized_path_conversation, require_authorized_path_store
 
 router = APIRouter()
 
@@ -67,7 +68,7 @@ def _map_error(exc: Exception) -> None:
     raise exc
 
 
-@router.get("/api/stores/{store_id}/telegram")
+@router.get("/api/stores/{store_id}/telegram", dependencies=[Depends(require_authorized_path_store)])
 def get_telegram_connection(
     store_id: int,
     membership: OrganizationMembership = Depends(require_permission("stores.read")),
@@ -79,7 +80,7 @@ def get_telegram_connection(
         _map_error(exc)
 
 
-@router.post("/api/stores/{store_id}/telegram/connect")
+@router.post("/api/stores/{store_id}/telegram/connect", dependencies=[Depends(require_authorized_path_store)])
 def connect_telegram(
     store_id: int,
     payload: TelegramConnectRequest,
@@ -92,7 +93,7 @@ def connect_telegram(
         _map_error(exc)
 
 
-@router.delete("/api/stores/{store_id}/telegram/disconnect")
+@router.delete("/api/stores/{store_id}/telegram/disconnect", dependencies=[Depends(require_authorized_path_store)])
 def disconnect_telegram(
     store_id: int,
     membership: OrganizationMembership = Depends(require_permission("stores.write")),
@@ -104,7 +105,10 @@ def disconnect_telegram(
         _map_error(exc)
 
 
-@router.post("/api/conversations/{conversation_id}/telegram/send")
+@router.post(
+    "/api/conversations/{conversation_id}/telegram/send",
+    dependencies=[Depends(require_authorized_path_conversation)],
+)
 def send_telegram_message(
     conversation_id: int,
     payload: TelegramMessageCreate,

@@ -36,6 +36,7 @@ from app.payment_security import (
 from app.payments.base import (
     PaymentStatus,
     ProviderPaymentResult,
+    ProviderReversalResult,
     ProviderStatusResult,
     is_valid_transition,
 )
@@ -697,7 +698,7 @@ class TestAmountValidation:
 
 class TestWebhookIdempotency:
     def test_duplicate_webhook_is_idempotent(
-        self, db, org, store_co, nequi_connection
+        self, db, org, store_co, nequi_connection, provider_stub
     ):
         """Test 18: Duplicate webhook is idempotent."""
         # Create a transaction first
@@ -747,3 +748,231 @@ class TestWebhookIdempotency:
 
         assert result1["status"] == "processed"
         assert result2["status"] == "duplicate"
+
+
+@pytest.fixture
+def provider_stub(monkeypatch):
+    """Real notification parser, but no provider network calls."""
+    provider = NequiPaymentProvider()
+    provider.create_payment = AsyncMock(return_value=ProviderPaymentResult(
+        provider_transaction_id="provider-created-1",
+        status=PaymentStatus.PENDING,
+        provider_status="PENDING",
+        payment_method="nequi_push",
+        action_data={"qr_code": "synthetic-qr"},
+    ))
+    provider.get_payment_status = AsyncMock(return_value=ProviderStatusResult(
+        status=PaymentStatus.PENDING, provider_status="PENDING",
+    ))
+    provider.cancel_payment = AsyncMock(return_value=ProviderStatusResult(
+        status=PaymentStatus.CANCELLED, provider_status="CANCELLED",
+    ))
+    provider.reverse_payment = AsyncMock(return_value=ProviderReversalResult(
+        status=PaymentStatus.REVERSED, provider_status="REVERSED",
+    ))
+    monkeypatch.setattr(
+        payment_service, "get_provider", lambda code: provider if code == "nequi" else None,
+    )
+    return provider
+
+
+@pytest.fixture
+def pending_payment(db, org, store_co, nequi_connection):
+    txn = PaymentTransaction(
+        organization_id=org.id, store_id=store_co.id, provider="nequi",
+        idempotency_key="hardening-payment", amount=Decimal("89900"),
+        currency="COP", payment_method="nequi_push", status="pending",
+    )
+    db.add(txn)
+    db.commit()
+    return txn
+
+
+class TestPaymentHardening:
+    def test_execute_persists_successful_provider_result(self, db, pending_payment, provider_stub):
+        import asyncio
+
+        txn = asyncio.run(payment_service.execute_payment(
+            db, pending_payment.organization_id, pending_payment.store_id, pending_payment.id,
+        ))
+        db.commit()
+        db.refresh(txn)
+        assert txn.provider_transaction_id == "provider-created-1"
+        assert txn.status == "pending"
+        assert txn._action_data == {"qr_code": "synthetic-qr"}
+        provider_stub.create_payment.assert_awaited_once()
+
+    def test_reconcile_marks_matching_order_paid(self, db, pending_payment, order, provider_stub):
+        import asyncio
+
+        pending_payment.order_id = order.id
+        pending_payment.provider_transaction_id = "provider-confirmed-1"
+        provider_stub.get_payment_status.return_value = ProviderStatusResult(
+            PaymentStatus.PAID, "APPROVED", paid_at="2026-10-25T10:00:00+00:00",
+        )
+        txn = asyncio.run(payment_service.reconcile_payment_status(
+            db, pending_payment.organization_id, pending_payment.store_id, pending_payment.id,
+        ))
+        db.commit()
+        assert txn.status == "paid"
+        assert txn.paid_at is not None
+        assert order.payment_status == "paid"
+
+    def test_cancel_persists_successful_provider_result(self, db, pending_payment, provider_stub):
+        import asyncio
+
+        pending_payment.provider_transaction_id = "provider-cancel-1"
+        txn = asyncio.run(payment_service.cancel_payment(
+            db, pending_payment.organization_id, pending_payment.store_id, pending_payment.id,
+        ))
+        assert txn.status == "cancelled"
+        provider_stub.cancel_payment.assert_awaited_once()
+
+    def test_reverse_persists_successful_provider_result(self, db, pending_payment, provider_stub):
+        import asyncio
+
+        pending_payment.status = "paid"
+        pending_payment.provider_transaction_id = "provider-refund-1"
+        txn = asyncio.run(payment_service.reverse_payment(
+            db, pending_payment.organization_id, pending_payment.store_id, pending_payment.id,
+        ))
+        assert txn.status == "reversed"
+        assert txn.reversed_at is not None
+        provider_stub.reverse_payment.assert_awaited_once()
+
+    @pytest.mark.parametrize("amount", [Decimal("1"), Decimal("0"), None, "NaN", "Infinity"])
+    def test_order_amount_and_currency_are_authoritative(
+        self, db, org, store_co, order, nequi_connection, amount,
+    ):
+        txn = payment_service.create_payment(
+            db, org.id, store_co.id, "nequi", amount, "USD", "+573000000000",
+            "authoritative-total", order_id=order.id,
+        )
+        assert txn.amount == order.total_amount
+        assert txn.currency == order.currency
+
+    @pytest.mark.parametrize("amount", ["NaN", "sNaN", "Infinity", "-Infinity"])
+    def test_standalone_payment_rejects_non_finite_amounts(
+        self, db, org, store_co, nequi_connection, amount,
+    ):
+        with pytest.raises(payment_service.PaymentInvalidAmountError):
+            payment_service.create_payment(
+                db, org.id, store_co.id, "nequi", amount, "COP", "+573000000000", "non-finite",
+            )
+
+    def test_underpayment_does_not_mark_order_paid(self, db, pending_payment, order, provider_stub):
+        import asyncio
+
+        pending_payment.order_id = order.id
+        pending_payment.amount = Decimal("1")
+        pending_payment.provider_transaction_id = "legacy-underpayment"
+        db.flush()
+        provider_stub.get_payment_status.return_value = ProviderStatusResult(PaymentStatus.PAID, "APPROVED")
+        asyncio.run(payment_service.process_webhook(
+            db, "nequi", {}, json.dumps({"transactionId": "legacy-underpayment", "status": "APPROVED"}).encode(),
+        ))
+        assert pending_payment.status == "paid"  # The receipt itself really is paid.
+        assert order.payment_status != "paid"  # It does not settle the full order.
+
+    @pytest.mark.parametrize("confirmed_status", [PaymentStatus.PENDING, PaymentStatus.PAID])
+    def test_http_retry_does_not_call_provider_again(
+        self, app_client, store_co, nequi_connection, provider_stub, confirmed_status,
+    ):
+        provider_stub.create_payment.return_value.status = confirmed_status
+        body = {
+            "amount": "100", "currency": "COP", "customer_phone": "+573000000000",
+            "idempotency_key": "http-retry",
+        }
+        first = app_client.post(f"/api/stores/{store_co.id}/payments", json=body)
+        second = app_client.post(f"/api/stores/{store_co.id}/payments", json=body)
+        assert first.status_code == second.status_code == 201
+        assert first.json()["id"] == second.json()["id"]
+        provider_stub.create_payment.assert_awaited_once()
+
+    def test_idempotency_key_cannot_be_rebound_to_another_store(
+        self, db, org, store_co, nequi_connection,
+    ):
+        payment_service.create_payment(
+            db, org.id, store_co.id, "nequi", "100", "COP", "+573000000000", "scoped-key",
+        )
+        other = Store(
+            organization_id=org.id, name="Other", slug="other-payment", country_code="CO",
+            currency="COP", timezone="America/Bogota",
+        )
+        db.add(other)
+        db.flush()
+        payment_service.configure_connection(db, org.id, other.id, "nequi", "sandbox", "id", "secret")
+        with pytest.raises(payment_service.PaymentError) as exc:
+            payment_service.create_payment(
+                db, org.id, other.id, "nequi", "100", "COP", "+573000000000", "scoped-key",
+            )
+        assert exc.value.code == "PAYMENT_IDEMPOTENCY_CONFLICT"
+
+
+class TestWebhookHardening:
+    @pytest.mark.parametrize("claimed_status", ["REJECTED", "FAILED", "EXPIRED", "CANCELLED", "APPROVED"])
+    def test_all_statuses_are_confirmed_server_to_server(
+        self, db, pending_payment, provider_stub, nequi_connection, claimed_status,
+    ):
+        import asyncio
+
+        pending_payment.provider_transaction_id = "server-authoritative"
+        nequi_connection.webhook_secret_encrypted = encrypt_payment_secret("configured-secret")
+        db.flush()
+        result = asyncio.run(payment_service.process_webhook(
+            db, "nequi", {}, json.dumps({
+                "transactionId": "server-authoritative", "status": claimed_status, "eventId": "untrusted-event",
+            }).encode(),
+        ))
+        assert result["new_status"] == pending_payment.status == "pending"
+        assert pending_payment.provider_status == "PENDING"
+        provider_stub.get_payment_status.assert_awaited_once()
+
+    def test_provider_failure_is_retryable_and_does_not_consume_event(
+        self, app_client, db, pending_payment, provider_stub, nequi_connection,
+    ):
+        pending_payment.provider_transaction_id = "provider-unavailable"
+        db.commit()
+        provider_stub.get_payment_status.side_effect = RuntimeError("provider unavailable")
+        response = app_client.post("/api/webhooks/payments/nequi", json={
+            "transactionId": "provider-unavailable", "status": "REJECTED", "eventId": "retry-me",
+        })
+        assert response.status_code == 503
+        db.refresh(pending_payment)
+        db.refresh(nequi_connection)
+        assert pending_payment.status == "pending"
+        assert nequi_connection.last_event_id is None
+
+    def test_replayed_event_cannot_hide_new_provider_status(self, db, pending_payment, provider_stub):
+        import asyncio
+
+        pending_payment.provider_transaction_id = "reused-event"
+        db.flush()
+        payload = json.dumps({"transactionId": "reused-event", "status": "REJECTED", "eventId": "same-id"}).encode()
+        asyncio.run(payment_service.process_webhook(db, "nequi", {}, payload))
+        assert pending_payment.status == "pending"
+        provider_stub.get_payment_status.return_value = ProviderStatusResult(PaymentStatus.PAID, "APPROVED")
+        result = asyncio.run(payment_service.process_webhook(db, "nequi", {}, payload))
+        assert result["new_status"] == pending_payment.status == "paid"
+        assert provider_stub.get_payment_status.await_count == 2
+
+    def test_paid_timestamp_comes_from_provider_not_webhook(self, db, pending_payment, provider_stub):
+        import asyncio
+
+        pending_payment.provider_transaction_id = "paid-timestamp"
+        db.flush()
+        provider_stub.get_payment_status.return_value = ProviderStatusResult(
+            PaymentStatus.PAID, "APPROVED", paid_at="2026-10-25T10:00:00+00:00",
+        )
+        asyncio.run(payment_service.process_webhook(db, "nequi", {}, json.dumps({
+            "transactionId": "paid-timestamp", "status": "APPROVED", "timestamp": "1900-01-01T00:00:00Z",
+        }).encode()))
+        assert pending_payment.paid_at.year == 2026
+
+    @pytest.mark.parametrize("payload", [[], None, 1, {"transactionId": []}, {"transactionId": {"id": 1}}])
+    def test_malformed_webhooks_are_rejected(self, app_client, payload):
+        response = app_client.post(
+            "/api/webhooks/payments/nequi", content=json.dumps(payload),
+            headers={"Content-Type": "application/json"},
+        )
+        assert response.status_code == 400

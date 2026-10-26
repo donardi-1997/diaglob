@@ -84,6 +84,7 @@ from ..models import (
 )
 from .deps import get_allowed_store_ids, require_permission
 from .google import _get_valid_google_token, _require_drive_scope
+from .knowledge_access import require_authorized_knowledge_base
 
 router = APIRouter()
 
@@ -363,26 +364,8 @@ def list_knowledge_bases(
 ):
     knowledge_bases = svc_list_knowledge_bases(
         db, membership.organization_id,
+        allowed_store_ids=get_allowed_store_ids(membership),
     )
-
-    allowed_store_ids = get_allowed_store_ids(membership)
-
-    if allowed_store_ids is not None:
-        allowed_set = set(allowed_store_ids)
-
-        knowledge_bases = [
-            knowledge_base
-            for knowledge_base in knowledge_bases
-            if (
-                knowledge_base.scope == "organization"
-                or bool(
-                    {
-                        store.id
-                        for store in knowledge_base.stores
-                    }.intersection(allowed_set)
-                )
-            )
-        ]
 
     return {
         "items": [
@@ -394,7 +377,8 @@ def list_knowledge_bases(
 
 
 @router.get(
-    "/api/knowledge-bases/{knowledge_base_id}"
+    "/api/knowledge-bases/{knowledge_base_id}",
+    dependencies=[Depends(require_authorized_knowledge_base)],
 )
 def get_knowledge_base(
     knowledge_base_id: int,
@@ -414,22 +398,6 @@ def get_knowledge_base(
             status_code=404,
             detail="Knowledge base not found",
         )
-
-    allowed_store_ids = get_allowed_store_ids(membership)
-
-    if (
-        allowed_store_ids is not None
-        and knowledge_base.scope != "organization"
-    ):
-        kb_store_ids = {
-            store.id for store in knowledge_base.stores
-        }
-
-        if not kb_store_ids.intersection(allowed_store_ids):
-            raise HTTPException(
-                status_code=404,
-                detail="Knowledge base not found",
-            )
 
     return serialize_knowledge_base(knowledge_base)
 
@@ -485,7 +453,8 @@ def create_knowledge_base(
 
 
 @router.patch(
-    "/api/knowledge-bases/{knowledge_base_id}"
+    "/api/knowledge-bases/{knowledge_base_id}",
+    dependencies=[Depends(require_authorized_knowledge_base)],
 )
 def update_knowledge_base(
     knowledge_base_id: int,
@@ -546,7 +515,7 @@ def update_knowledge_base(
     return serialize_knowledge_base(knowledge_base)
 
 
-@router.delete("/api/knowledge-bases/{knowledge_base_id}")
+@router.delete("/api/knowledge-bases/{knowledge_base_id}", dependencies=[Depends(require_authorized_knowledge_base)])
 def delete_knowledge_base(
     knowledge_base_id: int,
     membership: OrganizationMembership = Depends(
@@ -584,7 +553,8 @@ def delete_knowledge_base(
 
 
 @router.post(
-    "/api/knowledge-bases/{knowledge_base_id}/retry-provisioning"
+    "/api/knowledge-bases/{knowledge_base_id}/retry-provisioning",
+    dependencies=[Depends(require_authorized_knowledge_base)],
 )
 def retry_knowledge_base_provisioning(
     knowledge_base_id: int,
@@ -647,7 +617,8 @@ def retry_knowledge_base_provisioning(
 
 
 @router.get(
-    "/api/knowledge-bases/{knowledge_base_id}/sources"
+    "/api/knowledge-bases/{knowledge_base_id}/sources",
+    dependencies=[Depends(require_authorized_knowledge_base)],
 )
 def list_knowledge_sources(
     knowledge_base_id: int,
@@ -683,7 +654,8 @@ def list_knowledge_sources(
 
 
 @router.post(
-    "/api/knowledge-bases/{knowledge_base_id}/sources"
+    "/api/knowledge-bases/{knowledge_base_id}/sources",
+    dependencies=[Depends(require_authorized_knowledge_base)],
 )
 async def upload_knowledge_source(
     knowledge_base_id: int,
@@ -752,7 +724,8 @@ async def upload_knowledge_source(
 
 
 @router.delete(
-    "/api/knowledge-bases/{knowledge_base_id}/sources/{source_id}"
+    "/api/knowledge-bases/{knowledge_base_id}/sources/{source_id}",
+    dependencies=[Depends(require_authorized_knowledge_base)],
 )
 def delete_knowledge_source(
     knowledge_base_id: int,
@@ -823,7 +796,8 @@ def delete_knowledge_source(
 @router.post(
     "/api/knowledge-bases/"
     "{knowledge_base_id}/sources/"
-    "google-sheet"
+    "google-sheet",
+    dependencies=[Depends(require_authorized_knowledge_base)],
 )
 async def add_google_sheet_source(
     knowledge_base_id: int,
@@ -940,7 +914,8 @@ async def add_google_sheet_source(
 @router.post(
     "/api/knowledge-bases/"
     "{knowledge_base_id}/sources/"
-    "{source_id}/sync"
+    "{source_id}/sync",
+    dependencies=[Depends(require_authorized_knowledge_base)],
 )
 async def sync_google_sheet_source(
     knowledge_base_id: int,
@@ -1038,7 +1013,8 @@ async def sync_google_sheet_source(
 @router.get(
     "/api/knowledge-bases/"
     "{knowledge_base_id}/sources/"
-    "{source_id}/ingestion-status"
+    "{source_id}/ingestion-status",
+    dependencies=[Depends(require_authorized_knowledge_base)],
 )
 def check_ingestion_status(
     knowledge_base_id: int,
@@ -1075,7 +1051,8 @@ def check_ingestion_status(
 @router.post(
     "/api/knowledge-bases/"
     "{knowledge_base_id}/sources/"
-    "google-doc"
+    "google-doc",
+    dependencies=[Depends(require_authorized_knowledge_base)],
 )
 async def add_google_doc_source(
     knowledge_base_id: int,
@@ -1172,7 +1149,8 @@ async def add_google_doc_source(
 @router.post(
     "/api/knowledge-bases/"
     "{knowledge_base_id}/sources/"
-    "google-drive-file"
+    "google-drive-file",
+    dependencies=[Depends(require_authorized_knowledge_base)],
 )
 async def add_google_drive_file_source(
     knowledge_base_id: int,
@@ -1278,7 +1256,8 @@ async def add_google_drive_file_source(
 @router.post(
     "/api/knowledge-bases/"
     "{knowledge_base_id}/sources/"
-    "google-drive-folder"
+    "google-drive-folder",
+    dependencies=[Depends(require_authorized_knowledge_base)],
 )
 async def add_google_drive_folder_source(
     knowledge_base_id: int,
@@ -1368,7 +1347,8 @@ async def add_google_drive_folder_source(
 @router.post(
     "/api/knowledge-bases/"
     "{knowledge_base_id}/sources/"
-    "{source_id}/sync-folder"
+    "{source_id}/sync-folder",
+    dependencies=[Depends(require_authorized_knowledge_base)],
 )
 async def sync_drive_folder(
     knowledge_base_id: int,
@@ -1476,7 +1456,8 @@ async def sync_drive_folder(
 @router.post(
     "/api/knowledge-bases/"
     "{knowledge_base_id}/sources/"
-    "{source_id}/sync-drive-file"
+    "{source_id}/sync-drive-file",
+    dependencies=[Depends(require_authorized_knowledge_base)],
 )
 async def sync_drive_file_source(
     knowledge_base_id: int,
@@ -1626,7 +1607,8 @@ async def sync_drive_file_source(
 @router.get(
     "/api/knowledge-bases/"
     "{knowledge_base_id}/sources/"
-    "{source_id}/freshness"
+    "{source_id}/freshness",
+    dependencies=[Depends(require_authorized_knowledge_base)],
 )
 def get_source_freshness(
     knowledge_base_id: int,

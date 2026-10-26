@@ -24,6 +24,7 @@ from ..api.deps import (
 )
 from ..models import OrganizationMembership
 from ..services import payment_service
+from .store_access import require_authorized_path_store
 
 logger = logging.getLogger(__name__)
 
@@ -67,20 +68,8 @@ def _get_store(
     membership: OrganizationMembership,
     db: Session,
 ):
-    """Validate store ownership."""
-    from ..models import Store
-
-    store = db.get(Store, store_id)
-    if (
-        not store
-        or store.organization_id
-        != membership.organization_id
-    ):
-        raise HTTPException(
-            status_code=404,
-            detail="Store not found",
-        )
-    return store
+    """Use the same tenant and assigned-store guard as every payment path."""
+    return require_authorized_path_store(store_id, membership, db)
 
 
 # ============================================================
@@ -90,6 +79,7 @@ def _get_store(
 
 @router.get(
     "/api/stores/{store_id}/payments/providers",
+    dependencies=[Depends(require_authorized_path_store)],
 )
 def list_payment_providers(
     store_id: int,
@@ -118,6 +108,7 @@ def list_payment_providers(
 
 @router.get(
     "/api/stores/{store_id}/payments/{provider}/status",
+    dependencies=[Depends(require_authorized_path_store)],
 )
 def get_connection_status(
     store_id: int,
@@ -140,6 +131,7 @@ def get_connection_status(
 
 @router.post(
     "/api/stores/{store_id}/payments/{provider}/connect",
+    dependencies=[Depends(require_authorized_path_store)],
 )
 def configure_payment_connection(
     store_id: int,
@@ -185,6 +177,7 @@ def configure_payment_connection(
 
 @router.delete(
     "/api/stores/{store_id}/payments/{provider}/disconnect",
+    dependencies=[Depends(require_authorized_path_store)],
 )
 def disconnect_payment(
     store_id: int,
@@ -227,6 +220,7 @@ def disconnect_payment(
 @router.post(
     "/api/stores/{store_id}/payments",
     status_code=201,
+    dependencies=[Depends(require_authorized_path_store)],
 )
 async def create_payment(
     store_id: int,
@@ -294,6 +288,7 @@ async def create_payment(
 
 @router.get(
     "/api/stores/{store_id}/payments/{payment_id}",
+    dependencies=[Depends(require_authorized_path_store)],
 )
 def get_payment(
     store_id: int,
@@ -348,6 +343,7 @@ def get_payment(
 
 @router.post(
     "/api/stores/{store_id}/payments/{payment_id}/reconcile",
+    dependencies=[Depends(require_authorized_path_store)],
 )
 async def reconcile_payment(
     store_id: int,
@@ -386,6 +382,7 @@ async def reconcile_payment(
 
 @router.post(
     "/api/stores/{store_id}/payments/{payment_id}/cancel",
+    dependencies=[Depends(require_authorized_path_store)],
 )
 async def cancel_payment(
     store_id: int,
@@ -424,6 +421,7 @@ async def cancel_payment(
 
 @router.post(
     "/api/stores/{store_id}/payments/{payment_id}/reverse",
+    dependencies=[Depends(require_authorized_path_store)],
 )
 async def reverse_payment(
     store_id: int,
@@ -485,7 +483,7 @@ async def payment_webhook(
             exc.code,
         )
         raise HTTPException(
-            status_code=400,
+            status_code=503 if isinstance(exc, payment_service.PaymentProviderError) else 400,
             detail={
                 "code": exc.code,
                 "message": exc.message,

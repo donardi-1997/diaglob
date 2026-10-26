@@ -18,6 +18,7 @@ from ..services.post_sales_service import (
     update_case,
 )
 from .deps import require_permission
+from .store_access import require_authorized_path_store
 
 
 router = APIRouter()
@@ -77,7 +78,7 @@ def _raise_post_sales_error(exc: Exception) -> None:
     raise exc
 
 
-@router.get("/api/stores/{store_id}/post-sales/summary")
+@router.get("/api/stores/{store_id}/post-sales/summary", dependencies=[Depends(require_authorized_path_store)])
 def post_sales_summary(
     store_id: int,
     membership: OrganizationMembership = Depends(require_permission("post_sales.read")),
@@ -89,7 +90,7 @@ def post_sales_summary(
         _raise_post_sales_error(exc)
 
 
-@router.get("/api/stores/{store_id}/post-sales/cases")
+@router.get("/api/stores/{store_id}/post-sales/cases", dependencies=[Depends(require_authorized_path_store)])
 def post_sales_cases(
     store_id: int,
     status: str | None = None,
@@ -114,7 +115,7 @@ def post_sales_cases(
         _raise_post_sales_error(exc)
 
 
-@router.post("/api/stores/{store_id}/post-sales/cases")
+@router.post("/api/stores/{store_id}/post-sales/cases", dependencies=[Depends(require_authorized_path_store)])
 def create_post_sales_case(
     store_id: int,
     payload: PostSalesCaseCreate,
@@ -133,7 +134,7 @@ def create_post_sales_case(
         _raise_post_sales_error(exc)
 
 
-@router.get("/api/stores/{store_id}/post-sales/cases/{case_id}")
+@router.get("/api/stores/{store_id}/post-sales/cases/{case_id}", dependencies=[Depends(require_authorized_path_store)])
 def get_post_sales_case(
     store_id: int,
     case_id: int,
@@ -146,7 +147,7 @@ def get_post_sales_case(
         _raise_post_sales_error(exc)
 
 
-@router.patch("/api/stores/{store_id}/post-sales/cases/{case_id}")
+@router.patch("/api/stores/{store_id}/post-sales/cases/{case_id}", dependencies=[Depends(require_authorized_path_store)])
 def update_post_sales_case(
     store_id: int,
     case_id: int,
@@ -167,7 +168,7 @@ def update_post_sales_case(
         _raise_post_sales_error(exc)
 
 
-@router.post("/api/stores/{store_id}/post-sales/cases/{case_id}/notes")
+@router.post("/api/stores/{store_id}/post-sales/cases/{case_id}/notes", dependencies=[Depends(require_authorized_path_store)])
 def add_post_sales_note(
     store_id: int,
     case_id: int,

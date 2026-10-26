@@ -4,7 +4,7 @@ from fastapi import Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..models import OrganizationMembership
+from ..models import Conversation, OrganizationMembership
 from .deps import get_current_membership
 
 from ..models import Store
@@ -46,3 +46,19 @@ def require_authorized_path_store(
     if store is None:
         raise HTTPException(status_code=404, detail="Store not found")
     return ensure_membership_store_access(membership, store)
+
+
+def require_authorized_path_conversation(
+    conversation_id: int,
+    membership: OrganizationMembership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> Conversation:
+    """Authorize conversation-addressed operations against their actual store."""
+    conversation = db.query(Conversation).filter(
+        Conversation.id == conversation_id,
+        Conversation.organization_id == membership.organization_id,
+    ).first()
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    require_authorized_path_store(conversation.store_id, membership, db)
+    return conversation
