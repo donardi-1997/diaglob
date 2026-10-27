@@ -16,6 +16,7 @@ from ..models import (
     ShopifyBillingVerification,
     Store,
 )
+from .billing_channel_policy import paddle_migration_cancellation_verified
 from .shopify_app_pricing import SHOPIFY_APP_STORE_PLANS
 
 _ALLOWED_STATUSES = frozenset({
@@ -113,8 +114,9 @@ def record_shopify_billing_verification(
     )
     if (
         org is None
-        or (org.billing_provider or "").lower() != "shopify"
+        or (org.billing_provider or "").lower() not in {"shopify", "paddle"}
         or (org.plan or "none").lower() != preview["current_plan"]
+        or (org.billing_provider == "paddle" and not paddle_migration_cancellation_verified(db, org))
         or connection is None
         or connection.status != "connected"
         or connection.connected_at != installation_connected_at

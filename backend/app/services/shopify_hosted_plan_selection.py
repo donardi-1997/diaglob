@@ -12,6 +12,7 @@ from urllib.parse import quote
 from sqlalchemy.orm import Session
 
 from ..models import CommerceConnection, Organization, Store
+from .billing_channel_policy import paddle_migration_cancellation_verified
 from .shopify_app_pricing import (
     ShopifyAppPricingError,
     resolve_trusted_shop_gid,
@@ -26,9 +27,13 @@ def get_hosted_plan_selection(
 ) -> dict:
     """Verify a single Shopify-managed merchant before returning the hosted URL."""
     org = db.query(Organization).filter(Organization.id == organization_id).first()
-    if not org or not org.active or (org.billing_provider or "").lower() != "shopify":
+    migration = bool(org and org.billing_provider == "paddle")
+    if not org or not org.active or ((org.billing_provider or "").lower() != "shopify" and not migration):
         raise ShopifyAppPricingError("SHOPIFY_BILLING_PROVENANCE_REQUIRED")
-    if org.billing_customer_id or org.billing_subscription_id or org.billing_price_id:
+    if migration:
+        if not paddle_migration_cancellation_verified(db, org):
+            raise ShopifyAppPricingError("SHOPIFY_BILLING_PROVENANCE_REQUIRED")
+    elif org.billing_customer_id or org.billing_subscription_id or org.billing_price_id:
         raise ShopifyAppPricingError("SHOPIFY_LEGACY_BILLING_REVIEW_REQUIRED")
     connections = (
         db.query(CommerceConnection)

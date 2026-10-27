@@ -23,14 +23,17 @@ def test_shopify_channel_rejected_before_checkout_transport():
         create_billing_checkout(
             BillingCheckoutRequest(plan="starter", billing_period_months=1),
             membership=membership,
+            db=MagicMock(),
         )
     assert exc.value.status_code == 409
     assert exc.value.detail["code"] == "SHOPIFY_MANAGED_BILLING"
 
 
 def test_legacy_paddle_channel_is_not_blocked():
-    _reject_shopify_managed_billing(SimpleNamespace(billing_provider=None))
-    _reject_shopify_managed_billing(SimpleNamespace(billing_provider="paddle"))
+    db = MagicMock()
+    db.query.return_value.filter.return_value.first.return_value = None
+    _reject_shopify_managed_billing(db, SimpleNamespace(billing_provider=None))
+    _reject_shopify_managed_billing(db, SimpleNamespace(billing_provider="paddle"))
 
 
 @pytest.mark.parametrize("provider", [None, "paddle", "PADDLE"])
@@ -50,11 +53,32 @@ def test_shopify_install_origin_never_falls_back_to_external_checkout(provider):
     assert exc.value.detail["code"] == "SHOPIFY_INSTALL_BILLING_PENDING"
 
 
-def test_direct_signup_with_shopify_store_connection_keeps_paddle_channel():
-    _reject_shopify_managed_billing(SimpleNamespace(
+def test_direct_signup_with_shopify_store_connection_requires_shopify_pricing():
+    db = MagicMock()
+    db.query.return_value.filter.return_value.first.return_value = SimpleNamespace(id=7)
+    organization = SimpleNamespace(
+        id=42,
         billing_provider="paddle",
         billing_onboarding_channel="direct",
-    ))
+    )
+    with pytest.raises(HTTPException) as exc:
+        _reject_shopify_managed_billing(db, organization)
+    assert exc.value.status_code == 409
+    assert exc.value.detail["code"] == "SHOPIFY_APP_PRICING_REQUIRED"
+
+
+def test_shopify_connected_paddle_account_can_schedule_cancellation():
+    db = MagicMock()
+    db.query.return_value.filter.return_value.first.return_value = SimpleNamespace(id=7)
+    organization = SimpleNamespace(
+        id=42,
+        billing_provider="paddle",
+        billing_onboarding_channel="direct",
+    )
+
+    _reject_shopify_managed_billing(
+        db, organization, allow_paddle_cancellation=True,
+    )
 
 
 def _dispatch_for_shopify_org(organization, event):

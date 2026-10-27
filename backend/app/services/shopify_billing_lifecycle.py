@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from ..models import (
     CommerceConnection, Organization, ShopifyBillingVerification, Store,
 )
+from .billing_channel_policy import paddle_migration_cancellation_verified
 from .shopify_app_pricing import ShopifyAppPricingError
 from .shopify_app_pricing_reconciliation import (
     preview_shopify_entitlement_reconciliation,
@@ -37,11 +38,14 @@ def refresh_shopify_billing_status(db: Session, *, organization_id: int) -> dict
         raise ShopifyTransitionReviewError("SHOPIFY_BILLING_INVALID_ORGANIZATION")
 
     org = db.get(Organization, organization_id)
-    if org is None or not org.active or (org.billing_provider or "").lower() != "shopify":
+    if org is None or not org.active or (org.billing_provider or "").lower() not in {"shopify", "paddle"}:
+        raise ShopifyTransitionReviewError("SHOPIFY_BILLING_PROVENANCE_REQUIRED")
+    migration = org.billing_provider == "paddle"
+    if migration and not paddle_migration_cancellation_verified(db, org):
         raise ShopifyTransitionReviewError("SHOPIFY_BILLING_PROVENANCE_REQUIRED")
     if org.plan not in _PAID:
         raise ShopifyTransitionReviewError("SHOPIFY_BILLING_NO_MANAGED_PAID_PLAN")
-    if org.billing_customer_id or org.billing_subscription_id or org.billing_price_id:
+    if not migration and (org.billing_customer_id or org.billing_subscription_id or org.billing_price_id):
         raise ShopifyTransitionReviewError("SHOPIFY_LEGACY_BILLING_REVIEW_REQUIRED")
 
     connections = db.query(CommerceConnection).filter(
@@ -125,11 +129,15 @@ def refresh_shopify_billing_status(db: Session, *, organization_id: int) -> dict
         CommerceConnection.provider == "shopify",
     ).limit(2).all()
     if not (
-        org and org.active and org.billing_provider == "shopify"
+        org and org.active and org.billing_provider in {"shopify", "paddle"}
         and org.plan == baseline_plan
         and org.billing_period_months == baseline_period
-        and not org.billing_customer_id and not org.billing_subscription_id
-        and not org.billing_price_id
+        and (
+            (org.billing_provider == "shopify" and not org.billing_customer_id
+             and not org.billing_subscription_id and not org.billing_price_id)
+            or (migration and org.billing_provider == "paddle"
+                and paddle_migration_cancellation_verified(db, org))
+        )
         and conn and conn.status == "connected"
         and conn.connected_at == installation_epoch
         and store and store.active and not store.deleted
@@ -138,6 +146,12 @@ def refresh_shopify_billing_status(db: Session, *, organization_id: int) -> dict
         raise ShopifyTransitionReviewError("SHOPIFY_BILLING_STATE_CHANGED")
 
     changed = org.subscription_status != new_state
+    if migration:
+        org.billing_provider = "shopify"
+        org.billing_subscription_id = None
+        org.billing_customer_id = None
+        org.billing_price_id = None
+        org.auto_renew_enabled = False
     org.subscription_status = new_state
     record = ShopifyBillingVerification(
         organization_id=organization_id,

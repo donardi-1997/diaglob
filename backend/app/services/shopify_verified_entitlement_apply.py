@@ -18,6 +18,7 @@ from ..models import (
     ShopifyPlanTransitionReview,
     Store,
 )
+from .billing_channel_policy import paddle_migration_cancellation_verified
 from .shopify_app_pricing import (
     ShopifyAppPricingError,
     get_active_shopify_subscription,
@@ -158,11 +159,14 @@ def apply_verified_shopify_transition(
     now = datetime.utcnow()
     safe = (
         org is not None and org.active
-        and (org.billing_provider or "").lower() == "shopify"
+        and (org.billing_provider or "").lower() in {"shopify", "paddle"}
         and org.plan == baseline
         and (target != baseline or org.billing_period_months != months)
-        and not org.billing_customer_id and not org.billing_subscription_id
-        and not org.billing_price_id
+        and (
+            (org.billing_provider == "shopify" and not org.billing_customer_id
+             and not org.billing_subscription_id and not org.billing_price_id)
+            or (org.billing_provider == "paddle" and paddle_migration_cancellation_verified(db, org))
+        )
         and not org.pending_plan
         and locked_review is not None
         and locked_review.status == "pending_review"
@@ -194,6 +198,12 @@ def apply_verified_shopify_transition(
     if not safe:
         raise ShopifyTransitionReviewError("SHOPIFY_TRANSITION_STATE_CHANGED")
 
+    if org.billing_provider == "paddle":
+        org.billing_provider = "shopify"
+        org.billing_subscription_id = None
+        org.billing_customer_id = None
+        org.billing_price_id = None
+        org.auto_renew_enabled = False
     org.plan = target
     org.billing_period_months = months
     org.subscription_status = "active"

@@ -18,6 +18,7 @@ from ..models import (
     ShopifyPlanTransitionReview,
     Store,
 )
+from .billing_channel_policy import paddle_migration_cancellation_verified
 from .shopify_app_pricing import SHOPIFY_APP_STORE_PLANS
 
 REVIEW_TTL = timedelta(minutes=10)
@@ -166,10 +167,12 @@ def prepare_shopify_plan_transition(
     )
     if (
         not organization.active
-        or (organization.billing_provider or "").strip().lower() != "shopify"
+        or (organization.billing_provider or "").strip().lower() not in {"shopify", "paddle"}
         or (organization.plan or "none").strip().lower() != verification.current_plan
-        or organization.billing_subscription_id
-        or organization.billing_customer_id
+        or (organization.billing_provider == "paddle" and not paddle_migration_cancellation_verified(db, organization))
+        or (organization.billing_provider == "shopify" and (
+            organization.billing_subscription_id or organization.billing_customer_id
+        ))
         or connection is None
         or connection.status != "connected"
         or connection.connected_at != verification.installation_connected_at

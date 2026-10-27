@@ -23,7 +23,7 @@ def test_public_checkout_rejects_unsupported_period_before_price_lookup(
     )
     membership = SimpleNamespace(role="owner", organization=org)
     monkeypatch.setattr(
-        billing_api, "_reject_shopify_managed_billing", lambda _org: None
+        billing_api, "_reject_shopify_managed_billing", lambda *_args, **_kwargs: None
     )
 
     def unexpected(*args, **kwargs):
@@ -52,7 +52,7 @@ def test_public_checkout_allows_configured_monthly_annual(monkeypatch, months):
     )
     membership = SimpleNamespace(role="owner", organization=org)
     monkeypatch.setattr(
-        billing_api, "_reject_shopify_managed_billing", lambda _org: None
+        billing_api, "_reject_shopify_managed_billing", lambda *_args, **_kwargs: None
     )
     looked_up = []
     monkeypatch.setattr(

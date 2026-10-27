@@ -19,6 +19,21 @@ export interface PaddleBillingStatus {
   subscription_synchronized: boolean;
   portal_available: boolean;
   plan_changes_available: boolean;
+  migration_required?: boolean;
+  subscription_status?: string | null;
+  auto_renew_enabled?: boolean;
+  next_billed_at?: string | null;
+}
+
+export async function schedulePaddleCancellation(): Promise<{
+  auto_renew_enabled: boolean;
+  effective_at?: string | null;
+}> {
+  const response = await api.patch<{
+    auto_renew_enabled: boolean;
+    effective_at?: string | null;
+  }>("/api/billing/auto-renew", { enabled: false });
+  return response.data;
 }
 
 export async function getPaddleBillingStatus(): Promise<PaddleBillingStatus> {

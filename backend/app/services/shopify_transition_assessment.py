@@ -17,6 +17,7 @@ from ..models import (
     ShopifyPlanTransitionReview,
     Store,
 )
+from .billing_channel_policy import paddle_migration_cancellation_verified
 from .shopify_plan_transition_review import (
     REVIEW_TTL,
     ShopifyTransitionReviewError,
@@ -116,11 +117,16 @@ def assess_shopify_transition_review(
     if organization is None or not organization.active:
         block("ORGANIZATION_INACTIVE")
     else:
-        if (organization.billing_provider or "").strip().lower() != "shopify":
+        if (organization.billing_provider or "").strip().lower() not in {"shopify", "paddle"}:
             block("BILLING_CHANNEL_CHANGED")
         if (organization.plan or "none").strip().lower() != review.baseline_plan:
             block("BASELINE_PLAN_CHANGED")
-        if organization.billing_customer_id or organization.billing_subscription_id:
+        if organization.billing_provider == "paddle" and not paddle_migration_cancellation_verified(db, organization):
+            block("BILLING_CHANNEL_CHANGED")
+            block("PADDLE_CANCELLATION_REQUIRED")
+        elif organization.billing_provider == "shopify" and (
+            organization.billing_customer_id or organization.billing_subscription_id
+        ):
             block("LEGACY_BILLING_REFERENCES")
 
     connections = (
