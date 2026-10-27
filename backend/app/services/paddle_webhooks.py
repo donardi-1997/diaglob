@@ -15,6 +15,7 @@ from ..billing import (
     get_subscription_price_id,
 )
 from ..models import Organization, Store
+from ..model_domains.commerce_integrations import CommerceConnection
 from .marketing_acquisition import record_lifecycle_conversion
 
 logger = logging.getLogger(__name__)
@@ -322,6 +323,15 @@ def process_subscription_event(
     data: dict,
     db: Session,
 ) -> dict:
+    shopify_migration = False
+    organization_id = getattr(organization, "id", None)
+    if type(organization_id) is int and organization_id > 0:
+        shopify_migration = db.query(CommerceConnection.id).filter(
+            CommerceConnection.organization_id == organization_id,
+            CommerceConnection.provider == "shopify",
+            CommerceConnection.status != "revoked",
+        ).first() is not None
+
     if status:
         organization.subscription_status = status
 
@@ -370,7 +380,7 @@ def process_subscription_event(
                 synchronize_session=False,
             )
 
-    if status in {"canceled", "paused"}:
+    if status in {"canceled", "paused"} and not shopify_migration:
         db.query(Store).filter(
             Store.organization_id == organization.id,
             Store.deleted.is_(False),
@@ -380,7 +390,7 @@ def process_subscription_event(
             synchronize_session=False,
         )
 
-    if status == "canceled":
+    if status == "canceled" and not shopify_migration:
         organization.plan = "none"
 
     organization.billing_last_event_id = event_id

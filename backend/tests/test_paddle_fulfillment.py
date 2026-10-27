@@ -122,6 +122,53 @@ def test_scheduled_cancellation_grants_access_until_actual_cancel(db):
     assert not subscription_grants_access(db.get(PaddleBillingSubscription, "sub_1"))
 
 
+def test_shopify_connected_paddle_migration_keeps_paid_access_until_cancel_date(db):
+    from app.models import CommerceConnection, Organization, Store
+
+    organization = Organization(
+        name="Shopify migration", slug="shopify-paddle-migration",
+        plan="starter", billing_provider="paddle",
+        billing_onboarding_channel="direct", billing_customer_id="ctm_migrate",
+        billing_subscription_id="sub_migrate", subscription_status="active",
+    )
+    store = Store(
+        organization=organization, name="Shop", slug="shop",
+        country_code="CO", currency="COP", timezone="America/Bogota",
+    )
+    db.add(organization)
+    db.flush()
+    db.add(CommerceConnection(
+        organization_id=organization.id, store_id=store.id,
+        provider="shopify", external_store_url="migrate.myshopify.com",
+        status="connected",
+    ))
+    db.commit()
+
+    dispatch_verified_notification(_event(
+        "evt_migrate_active", "subscription.updated", {
+            "id": "sub_migrate", "customer_id": "ctm_migrate",
+            "status": "active",
+            "items": [{"price": {"id": "pri_migrate", "product_id": "pro_1"}}],
+            "scheduled_change": {
+                "action": "cancel", "effective_at": "2026-11-16T12:00:00Z",
+            },
+        }, "2026-10-16T12:00:00Z",
+    ), db)
+    assert organization.plan == "starter"
+    assert organization.subscription_status == "active"
+    assert store.active is True
+
+    dispatch_verified_notification(_event(
+        "evt_migrate_canceled", "subscription.canceled", {
+            "id": "sub_migrate", "customer_id": "ctm_migrate",
+            "status": "canceled",
+        }, "2026-11-16T12:00:00Z",
+    ), db)
+    assert organization.plan == "starter"
+    assert organization.subscription_status == "canceled"
+    assert store.active is True
+
+
 @pytest.mark.parametrize("status,access", [
     ("active", True), ("trialing", True), ("past_due", False),
     ("paused", False), ("canceled", False), ("unknown", False),

@@ -78,6 +78,7 @@ from ..services.billing_service import (
     validate_plan_downgrade,
     validate_plan_upgrade,
 )
+from ..services.billing_channel_policy import external_app_billing_block_reason
 from ..services.paddle_webhooks import (
     SUPPORTED_EVENTS,
     SUBSCRIPTION_EVENTS,
@@ -109,31 +110,33 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-def _reject_shopify_managed_billing(organization: Organization) -> None:
-    """Never route Shopify App Store subscriptions through Paddle operations.
+def _reject_shopify_managed_billing(
+    db: Session,
+    organization: Organization,
+    *,
+    allow_paddle_cancellation: bool = False,
+) -> None:
+    """Block off-platform app charges for Shopify-connected organizations.
 
-    The billing-provider flag must be set server-side using verified install
-    provenance. Legacy unassigned organizations keep the Paddle channel.
+    Paddle cancellation is the sole allowed Paddle mutation for a linked
+    Shopify account; it prevents another external renewal while merchants
+    move to Shopify App Pricing.
     """
-    if (organization.billing_provider or "").strip().lower() == "shopify":
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "code": "SHOPIFY_MANAGED_BILLING",
-                "message": "Manage this subscription through Shopify App Pricing.",
-            },
-        )
+    reason = external_app_billing_block_reason(db, organization)
+    if reason is None:
+        return
+    if allow_paddle_cancellation and reason == "SHOPIFY_APP_PRICING_REQUIRED":
+        return
 
-    # Shopify install provenance must block external checkout even if an
-    # inconsistent/migrated record says billing_provider="paddle". The origin
-    # is an independent guard; otherwise stale provider data would bypass
-    # App Store billing enforcement. Direct signup + Shopify store connector
-    # still legitimately uses Paddle (origin="direct").
-    if getattr(organization, "billing_onboarding_channel", None) == "shopify_install":
-        raise HTTPException(
-            status_code=409,
-            detail={"code": "SHOPIFY_INSTALL_BILLING_PENDING"},
-        )
+    messages = {
+        "SHOPIFY_MANAGED_BILLING": "Manage this subscription through Shopify App Pricing.",
+        "SHOPIFY_INSTALL_BILLING_PENDING": "Complete Shopify App Pricing before billing this installation.",
+        "SHOPIFY_APP_PRICING_REQUIRED": "Shopify-connected organizations must use Shopify App Pricing for app charges.",
+    }
+    raise HTTPException(
+        status_code=409,
+        detail={"code": reason, "message": messages[reason]},
+    )
 
 
 
@@ -187,6 +190,7 @@ def _require_synchronized_paddle_subscription(db: Session, organization: Organiz
 @router.get("/api/billing/shopify/capabilities")
 def shopify_billing_capabilities(
     membership: OrganizationMembership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
 ):
     """Expose operational flags only; no provider secrets or customer data."""
     if membership.role not in {"owner", "manager"}:
@@ -200,6 +204,10 @@ def shopify_billing_capabilities(
             os.getenv("SHOPIFY_BILLING_ENTITLEMENTS_ENABLED", "").lower() == "true"
         ),
         "paddle_checkout_available": False,
+        "paddle_migration_required": (
+            external_app_billing_block_reason(db, membership.organization)
+            == "SHOPIFY_APP_PRICING_REQUIRED"
+        ),
         "public_plans": list(SHOPIFY_APP_STORE_PLANS),
         "trial_days": SHOPIFY_APP_STORE_TRIAL_DAYS,
         "billing_period_months": list(SHOPIFY_APP_PRICING_INTERVAL_TO_MONTHS.values()),
@@ -361,11 +369,14 @@ def preview_shopify_billing_reconciliation(
         raise HTTPException(status_code=403, detail="Billing access denied")
 
     organization = membership.organization
-    if (organization.billing_provider or "").strip().lower() != "shopify":
+    migration = (organization.billing_provider or "").strip().lower() == "paddle"
+    if (organization.billing_provider or "").strip().lower() != "shopify" and not migration:
         raise HTTPException(
             status_code=409,
             detail={"code": "SHOPIFY_BILLING_PROVENANCE_REQUIRED"},
         )
+    if migration and (organization.subscription_status != "canceled" or organization.auto_renew_enabled):
+        raise HTTPException(status_code=409, detail={"code": "PADDLE_MIGRATION_CANCELLATION_REQUIRED"})
 
     # Count ALL Shopify bindings in the tenant, including paused/deleted
     # stores and revoked/error connections. Filtering inactive stores first
@@ -516,11 +527,17 @@ def check_shopify_billing_reconciliation(
     """
     if membership.role not in {"owner", "manager"}:
         raise HTTPException(status_code=403, detail="Billing access denied")
-    if (membership.organization.billing_provider or "").strip().lower() != "shopify":
+    migration = (membership.organization.billing_provider or "").strip().lower() == "paddle"
+    if (membership.organization.billing_provider or "").strip().lower() != "shopify" and not migration:
         raise HTTPException(
             status_code=409,
             detail={"code": "SHOPIFY_BILLING_PROVENANCE_REQUIRED"},
         )
+    if migration and (
+        membership.organization.subscription_status != "canceled"
+        or membership.organization.auto_renew_enabled
+    ):
+        raise HTTPException(status_code=409, detail={"code": "PADDLE_MIGRATION_CANCELLATION_REQUIRED"})
 
     installed = (
         db.query(CommerceConnection)
@@ -712,7 +729,10 @@ def update_billing_auto_renew(
     if membership.role not in {"owner", "manager"}:
         raise HTTPException(status_code=403, detail="Billing access denied")
 
-    _reject_shopify_managed_billing(membership.organization)
+    _reject_shopify_managed_billing(
+        db, membership.organization,
+        allow_paddle_cancellation=not payload.enabled,
+    )
 
     organization = membership.organization
     _require_synchronized_paddle_subscription(db, organization)
@@ -753,7 +773,7 @@ def preview_billing_upgrade(
     if membership.role not in {"owner", "manager"}:
         raise HTTPException(status_code=403, detail="Billing access denied")
 
-    _reject_shopify_managed_billing(membership.organization)
+    _reject_shopify_managed_billing(db, membership.organization)
 
     organization = db.query(Organization).filter(
         Organization.id == membership.organization_id
@@ -797,7 +817,7 @@ def apply_billing_upgrade(
     if membership.role not in {"owner", "manager"}:
         raise HTTPException(status_code=403, detail="Billing access denied")
 
-    _reject_shopify_managed_billing(membership.organization)
+    _reject_shopify_managed_billing(db, membership.organization)
 
     organization = db.query(Organization).filter(
         Organization.id == membership.organization_id
@@ -832,7 +852,7 @@ def preview_billing_downgrade(
     if membership.role not in {"owner", "manager"}:
         raise HTTPException(status_code=403, detail="Billing access denied")
 
-    _reject_shopify_managed_billing(membership.organization)
+    _reject_shopify_managed_billing(db, membership.organization)
 
     organization = membership.organization
     _require_synchronized_paddle_subscription(db, organization)
@@ -884,7 +904,7 @@ def apply_billing_downgrade(
     if membership.role not in {"owner", "manager"}:
         raise HTTPException(status_code=403, detail="Billing access denied")
 
-    _reject_shopify_managed_billing(membership.organization)
+    _reject_shopify_managed_billing(db, membership.organization)
 
     organization = membership.organization
     _require_synchronized_paddle_subscription(db, organization)
@@ -937,7 +957,7 @@ def cancel_billing_downgrade(
 ):
     if membership.role not in {"owner", "manager"}:
         raise HTTPException(status_code=403, detail="Billing access denied")
-    _reject_shopify_managed_billing(membership.organization)
+    _reject_shopify_managed_billing(db, membership.organization)
     return cancel_downgrade(membership.organization, db)
 
 
@@ -967,7 +987,21 @@ def get_paddle_synchronization_status(
     if membership.role not in {"owner", "manager"}:
         raise HTTPException(status_code=403, detail="Billing access denied")
     organization = membership.organization
-    _reject_shopify_managed_billing(organization)
+    block_reason = external_app_billing_block_reason(db, organization)
+    if block_reason == "SHOPIFY_APP_PRICING_REQUIRED":
+        return {
+            "customer_synchronized": False,
+            "subscription_synchronized": bool(
+                organization.billing_subscription_id
+            ),
+            "portal_available": False,
+            "plan_changes_available": False,
+            "migration_required": True,
+            "subscription_status": organization.subscription_status,
+            "auto_renew_enabled": bool(organization.auto_renew_enabled),
+            "next_billed_at": None,
+        }
+    _reject_shopify_managed_billing(db, organization)
     return get_paddle_billing_capabilities(db, organization)
 
 
@@ -975,13 +1009,14 @@ def get_paddle_synchronization_status(
 def get_paddle_checkout_catalog(
     request: Request,
     membership: OrganizationMembership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
 ):
     """Expose public Paddle price IDs and edge-detected location to its UI."""
     if membership.role not in {"owner", "manager"}:
         raise HTTPException(status_code=403, detail="Billing access denied")
 
     organization = membership.organization
-    _reject_shopify_managed_billing(organization)
+    _reject_shopify_managed_billing(db, organization)
     provider_name = (organization.billing_provider or "paddle").strip().lower()
     if provider_name != "paddle":
         raise HTTPException(status_code=409, detail="Paddle checkout is unavailable")
@@ -1014,13 +1049,14 @@ def get_paddle_checkout_catalog(
 def create_paddle_checkout_intent(
     payload: PaddleCheckoutIntentRequest,
     membership: OrganizationMembership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
 ):
     """Sign tenant and plan metadata before a Paddle.js price-ID checkout."""
     if membership.role not in {"owner", "manager"}:
         raise HTTPException(status_code=403, detail="Billing access denied")
 
     organization = membership.organization
-    _reject_shopify_managed_billing(organization)
+    _reject_shopify_managed_billing(db, organization)
     provider_name = (organization.billing_provider or "paddle").strip().lower()
     if provider_name != "paddle":
         raise HTTPException(status_code=409, detail="Paddle checkout is unavailable")
@@ -1073,11 +1109,12 @@ def create_paddle_checkout_intent(
 def create_billing_checkout(
     payload: BillingCheckoutRequest,
     membership: OrganizationMembership = Depends(get_current_membership),
+    db: Session = Depends(get_db),
 ):
     if membership.role not in {"owner", "manager"}:
         raise HTTPException(status_code=403, detail="Billing access denied")
 
-    _reject_shopify_managed_billing(membership.organization)
+    _reject_shopify_managed_billing(db, membership.organization)
 
     organization = membership.organization
     if (
@@ -1164,7 +1201,7 @@ def mint_paddle_customer_portal_session(
     if membership.role not in {"owner", "manager"}:
         raise HTTPException(status_code=403, detail="Billing access denied")
     organization = membership.organization
-    _reject_shopify_managed_billing(organization)
+    _reject_shopify_managed_billing(db, organization)
     try:
         url = create_portal_session_url(db, organization)
     except LookupError as exc:

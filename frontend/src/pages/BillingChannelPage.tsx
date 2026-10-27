@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import PlansPage from "./PlansPage";
 import ShopifyBillingWorkspace from "./ShopifyBillingWorkspace";
+import { getShopifyBillingCapabilities } from "../services/shopifyBilling";
 import {
   getCurrentOrganization,
   type Organization,
@@ -22,26 +23,34 @@ export default function BillingChannelPage({
   const [portalLoading, setPortalLoading] = useState(false);
   const [portalError, setPortalError] = useState("");
   const [paddleStatus, setPaddleStatus] = useState<PaddleBillingStatus | null>(null);
+  const [shopifyMigrationRequired, setShopifyMigrationRequired] = useState(false);
 
   const load = useCallback(async (isCurrent: () => boolean = () => true) => {
     setLoading(true);
     setError(false);
     setOrganization(null);
     setPaddleStatus(null);
+    setShopifyMigrationRequired(false);
     try {
       const result = await getCurrentOrganization();
+      let migrationRequired = false;
       let status: PaddleBillingStatus | null = null;
       if (billingChannel(result.billing_provider) === "paddle") {
         try {
           status = await getPaddleBillingStatus();
+          migrationRequired = status.migration_required === true;
         } catch {
-          // Fail closed for existing subscriptions; do not block first checkout.
-          status = null;
+          try {
+            migrationRequired = (await getShopifyBillingCapabilities()).paddle_migration_required;
+          } catch {
+            status = null;
+          }
         }
       }
       if (isCurrent()) {
         setOrganization(result);
         setPaddleStatus(status);
+        setShopifyMigrationRequired(migrationRequired);
       }
     } catch {
       if (isCurrent()) setError(true);
@@ -88,6 +97,15 @@ export default function BillingChannelPage({
     case "shopify":
       return <ShopifyBillingWorkspace organization={organization} />;
     case "paddle":
+      if (shopifyMigrationRequired) {
+        return (
+          <ShopifyBillingWorkspace
+            organization={organization}
+            paddleMigrationStatus={paddleStatus}
+            onPaddleMigrationRefresh={() => { void load(); }}
+          />
+        );
+      }
       return (
         <>
           {paddleStatus?.portal_available && (

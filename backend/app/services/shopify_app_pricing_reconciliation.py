@@ -54,8 +54,16 @@ def preview_shopify_entitlement_reconciliation(
         organization_id, bool
     ):
         raise ShopifyAppPricingError("ORGANIZATION_ID_REQUIRED")
-    if (getattr(organization, "billing_provider", None) or "").strip().lower() != "shopify":
+    migration = (getattr(organization, "billing_provider", None) or "").strip().lower() == "paddle"
+    if (getattr(organization, "billing_provider", None) or "").strip().lower() != "shopify" and not migration:
         raise ShopifyAppPricingError("SHOPIFY_BILLING_PROVENANCE_REQUIRED")
+    if migration and (
+        getattr(organization, "subscription_status", None) != "canceled"
+        or getattr(organization, "auto_renew_enabled", True)
+    ):
+        raise ShopifyAppPricingError("PADDLE_MIGRATION_CANCELLATION_REQUIRED")
+    if migration and not getattr(organization, "billing_subscription_id", None):
+        raise ShopifyAppPricingError("PADDLE_MIGRATION_SUBSCRIPTION_MISSING")
     if (
         getattr(connection, "organization_id", None) != organization_id
         or getattr(connection, "provider", None) != "shopify"
@@ -68,9 +76,9 @@ def preview_shopify_entitlement_reconciliation(
         or connected_shopify_store_count != 1
     ):
         raise ShopifyAppPricingError("SHOPIFY_MULTISTORE_BILLING_REVIEW_REQUIRED")
-    if getattr(organization, "billing_subscription_id", None):
+    if getattr(organization, "billing_subscription_id", None) and not migration:
         raise ShopifyAppPricingError("EXISTING_SUBSCRIPTION_REVIEW_REQUIRED")
-    if getattr(organization, "billing_customer_id", None):
+    if getattr(organization, "billing_customer_id", None) and not migration:
         raise ShopifyAppPricingError("EXISTING_CUSTOMER_BILLING_REVIEW_REQUIRED")
 
     # Authenticated Admin API identity is always verified before Partner API.

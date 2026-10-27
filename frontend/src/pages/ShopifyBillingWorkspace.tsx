@@ -4,6 +4,7 @@ import {
 } from "lucide-react";
 
 import type { Organization } from "../services/organizations";
+import { schedulePaddleCancellation, type PaddleBillingStatus } from "../services/billing";
 import {
   assessShopifyPlanReview,
   applyVerifiedShopifyPlan,
@@ -26,6 +27,8 @@ import { parseShopifyHostedPricingReturn } from "../services/shopifyBillingRetur
 
 interface Props {
   organization: Organization;
+  paddleMigrationStatus?: PaddleBillingStatus | null;
+  onPaddleMigrationRefresh?: () => void;
 }
 
 const explanations: Record<string, string> = {
@@ -103,7 +106,11 @@ function formatDate(value: string) {
     : new Intl.DateTimeFormat("es-CO", { dateStyle: "medium", timeStyle: "short" }).format(date);
 }
 
-export default function ShopifyBillingWorkspace({ organization }: Props) {
+export default function ShopifyBillingWorkspace({
+  organization,
+  paddleMigrationStatus = null,
+  onPaddleMigrationRefresh,
+}: Props) {
   const hasBillingAccess = organization.role === "owner" || organization.role === "manager";
   const isOwner = organization.role === "owner";
 
@@ -119,6 +126,26 @@ export default function ShopifyBillingWorkspace({ organization }: Props) {
   const [busy, setBusy] = useState<"refresh" | "check" | "stage" | "assess" | "hosted" | "apply" | "subscription" | "trial" | "return" | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [migrationBusy, setMigrationBusy] = useState(false);
+
+  async function stopPaddleRenewal() {
+    if (!isOwner || migrationBusy || paddleMigrationStatus?.auto_renew_enabled === false) return;
+    setMigrationBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const result = await schedulePaddleCancellation();
+      if (result.auto_renew_enabled !== false) throw new Error("Renewal remains enabled");
+      setNotice(result.effective_at
+        ? `La renovación de Paddle quedó cancelada para el ${formatDate(result.effective_at)}. Mantendrás el acceso hasta esa fecha.`
+        : "La renovación de Paddle quedó desactivada. El acceso pagado se conserva hasta el fin del periodo vigente.");
+      onPaddleMigrationRefresh?.();
+    } catch {
+      setError("No se pudo programar la cancelación de Paddle. No se modificó el plan Shopify.");
+    } finally {
+      setMigrationBusy(false);
+    }
+  }
 
   const refreshHistory = useCallback(async () => {
     const [checks, proposals] = await Promise.all([
@@ -361,7 +388,9 @@ export default function ShopifyBillingWorkspace({ organization }: Props) {
         <div>
           <p className="shopify-billing-eyebrow">DIAGLOB · SHOPIFY APP PRICING</p>
           <h1>Planes y facturación Shopify</h1>
-          <p>Consulta el estado de la suscripción vinculada a tu tienda y revisa cualquier diferencia antes de modificar el acceso.</p>
+          <p>{paddleMigrationStatus?.migration_required
+            ? "Tu organización ya tiene una tienda Shopify y una suscripción Paddle anterior. Migra los cobros de forma segura, conservando el acceso pagado hasta el vencimiento."
+            : "Consulta el estado de la suscripción vinculada a tu tienda y revisa cualquier diferencia antes de modificar el acceso."}</p>
         </div>
         <span className="shopify-billing-source"><ShieldCheck size={17} /> Gestionado en Shopify</span>
       </header>
@@ -375,6 +404,25 @@ export default function ShopifyBillingWorkspace({ organization }: Props) {
           <p>Shopify administra los cobros. Verificar o preparar una propuesta no cambia el plan; la aplicación, si está habilitada, requiere confirmación activa de Shopify y autorización del propietario.</p>
         </div>
       </div>
+
+      {paddleMigrationStatus?.migration_required && (
+        <section className="shopify-billing-panel" aria-labelledby="paddle-migration-heading">
+          <div className="shopify-billing-panel-title">
+            <div>
+              <h2 id="paddle-migration-heading">Migrar la facturación anterior de Paddle</h2>
+              <p>DIAGLOB debe cobrar la suscripción de la app mediante Shopify App Pricing. Cancela la renovación de Paddle y después elige un plan en Shopify. Paddle mantiene activo el periodo ya pagado; al finalizar, confirma un plan Shopify para reactivar las funciones de pago.</p>
+              <p className="shopify-billing-muted">Estado de Paddle: {paddleMigrationStatus.subscription_status || "revisión necesaria"}{paddleMigrationStatus.auto_renew_enabled === false ? " · renovación desactivada" : " · renovación activa"}</p>
+            </div>
+            <button type="button" className="shopify-billing-primary"
+              disabled={!isOwner || migrationBusy || paddleMigrationStatus.auto_renew_enabled === false}
+              onClick={() => { void stopPaddleRenewal(); }}>
+              {paddleMigrationStatus.auto_renew_enabled === false ? "Renovación de Paddle desactivada" : migrationBusy ? "Cancelando renovación…" : "Cancelar renovación de Paddle"}
+            </button>
+          </div>
+          {error && <p className="shopify-billing-error" role="alert">{error}</p>}
+          {notice && <p className="shopify-billing-notice" role="status">{notice}</p>}
+        </section>
+      )}
 
       <div className="shopify-billing-stats">
         <section>
