@@ -11,7 +11,6 @@ import logging
 import os
 import secrets
 from datetime import datetime, timedelta
-from urllib.parse import urlsplit
 
 from sqlalchemy.orm import Session
 
@@ -51,18 +50,6 @@ def _canonical_public_shop(shop: str) -> str:
 
 def _digest(secret: str) -> str:
     return hashlib.sha256(secret.encode("utf-8")).hexdigest()
-
-
-def _frontend_install_url() -> str:
-    base = os.getenv("FRONTEND_URL", "https://diaglob.tech").strip()
-    parts = urlsplit(base)
-    if (
-        parts.scheme != "https" or parts.hostname != "diaglob.tech"
-        or parts.port not in (None, 443) or parts.username or parts.password
-        or parts.path not in ("", "/") or parts.query or parts.fragment
-    ):
-        raise ShopifyOAuthError("UNSAFE_SHOPIFY_FRONTEND_URL")
-    return "https://diaglob.tech/shopify/install?authorized=1"
 
 
 def begin_public_install(db: Session, shop: str) -> str:

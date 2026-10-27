@@ -363,7 +363,12 @@ def shopify_oauth_callback(
     if shopify_public_install.pending_state_exists(db, query_params.get("state", "")):
         try:
             cookie_secret = shopify_public_install.finish_public_install(db, query_params)
-            redirect_url = shopify_public_install._frontend_install_url()
+            # Shopify requires an embedded public app to return to its Admin
+            # UI after OAuth. The onboarding cookie remains HttpOnly and the
+            # embedded shell links to DIAGLOB's first-party claim page.
+            redirect_url = shopify_public_install.shopify_app_home_url(
+                query_params["shop"]
+            )
         except (ShopifyOAuthError, ShopifyProviderError) as exc:
             _map_oauth_error(exc)
         response = RedirectResponse(

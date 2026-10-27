@@ -1,11 +1,13 @@
 """Shopify callback ambiguity/size guards before authorization-code exchange."""
 from unittest.mock import Mock, patch
+from urllib.parse import urlencode
 
 import pytest
 from fastapi import HTTPException
 from starlette.requests import Request
 
 from app.api.shopify import shopify_oauth_callback
+from app.shopify_app_config_audit import DIAGLOB_SHOPIFY_CLIENT_ID
 from app.services.shopify_oauth_callback_validation import (
     ShopifyCallbackQueryError,
     canonicalize_oauth_callback,
@@ -109,6 +111,24 @@ def test_normal_params_are_forwarded_to_service_for_actual_hmac_verification():
         "state": "s",
         "hmac": "abc",
     }
+
+
+def test_public_install_callback_redirects_to_embedded_shopify_app_home():
+    query = urlencode(_pairs()).encode("ascii")
+    with patch(
+        "app.api.shopify.shopify_public_install.pending_state_exists",
+        return_value=True,
+    ), patch(
+        "app.api.shopify.shopify_public_install.finish_public_install",
+        return_value="synthetic-cookie-secret-that-is-never-in-the-url",
+    ):
+        response = shopify_oauth_callback(_request(query), db=Mock())
+
+    assert response.status_code == 303
+    assert response.headers["location"] == (
+        f"https://test.myshopify.com/admin/apps/{DIAGLOB_SHOPIFY_CLIENT_ID}"
+    )
+    assert "synthetic-cookie-secret-that-is-never-in-the-url" not in response.headers["location"]
 
 
 def test_oversized_raw_query_is_rejected_before_service_lookup():
