@@ -7,10 +7,10 @@ from __future__ import annotations
 
 import os
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from ..services.shopify_embedded_identity import verify_shopify_id_token, ShopifyIdTokenError
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 from ..db import get_db
 from ..shopify_app_config_audit import DIAGLOB_SHOPIFY_CLIENT_ID
@@ -20,8 +20,25 @@ from ..services.shopify_managed_installation import (
     ManagedShopifyInstallationError, verify_managed_installation,
     stage_managed_installation,
 )
+from ..services.shopify_navigation import shopify_app_pricing_welcome_url
 
 router = APIRouter()
+
+
+@router.get("/app/plans", include_in_schema=False)
+def shopify_app_pricing_welcome(request: Request) -> RedirectResponse:
+    """Send Shopify App Pricing returns to the frontend billing workspace."""
+    try:
+        target = shopify_app_pricing_welcome_url(request.url.query)
+    except ValueError as exc:
+        reason = str(exc)
+        if reason == "FRONTEND_URL_NOT_SAFE":
+            raise HTTPException(status_code=503, detail="Billing return is not configured") from exc
+        raise HTTPException(status_code=400, detail="Invalid Shopify billing return") from exc
+    response = RedirectResponse(target, status_code=302)
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
 
 @router.get("/api/shopify/embedded", response_class=HTMLResponse)
 def shopify_embedded_home() -> HTMLResponse:
@@ -73,6 +90,10 @@ def shopify_embedded_home() -> HTMLResponse:
       <code id="managed-claim-code" style="overflow-wrap:anywhere"></code>
       <p><a href="https://diaglob.tech/shopify/install?managed=1" target="_blank" rel="noopener noreferrer">Continuar en Diaglob</a></p>
     </section>
+    <section id="oauth-onboarding" hidden aria-label="Completar instalación Shopify">
+      <p>Shopify confirmó la instalación. Completa la vinculación con una cuenta autorizada de Diaglob.</p>
+      <p><a href="https://diaglob.tech/shopify/install?authorized=1" target="_blank" rel="noopener noreferrer">Continuar configuración en Diaglob</a></p>
+    </section>
     </div><section id="overview" class="card" hidden><h2 id="store-title"></h2><p id="store-domain"></p><div class="grid"><div class="card">Conexión: Shopify</div><div class="card">País: <b id="country"></b></div><div class="card">Moneda: <b id="currency"></b></div><div class="card">Acceso: solo lectura</div></div><nav class="tabbar" aria-label="Módulos de Diaglob">
 <button type="button" data-panel="home">Resumen</button>
 <button type="button" data-panel="products">Productos</button>
@@ -123,6 +144,11 @@ def shopify_embedded_home() -> HTMLResponse:
           });
           if (!session.ok) throw new Error('Sesión Shopify inválida');
           const info = await session.json();
+          if (info.installation_status === 'oauth_pending') {
+            status.textContent = 'Instalación autorizada. Completa la vinculación con tu cuenta de Diaglob.';
+            document.getElementById('oauth-onboarding').hidden = false;
+            return;
+          }
           if (info.installation_status !== 'connected') {
             // Shopify-managed installation proof never grants access to
             // private DIAGLOB tenants and never stores Shopify credentials.
