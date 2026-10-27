@@ -138,6 +138,9 @@ def test_paddle_checkout_intent_is_server_signed_and_rejects_active_subscription
         billing_api, "get_billing_price_id",
         lambda plan, period, provider: price_id,
     )
+    monkeypatch.setattr(
+        billing_api, "external_app_billing_block_reason", lambda *_: None,
+    )
     org = SimpleNamespace(
         id=42,
         billing_provider="paddle",
@@ -152,6 +155,7 @@ def test_paddle_checkout_intent_is_server_signed_and_rejects_active_subscription
             plan="scale", billing_period_months=12,
         ),
         membership,
+        db=object(),
     )
 
     assert result["price_id"] == price_id
@@ -170,5 +174,6 @@ def test_paddle_checkout_intent_is_server_signed_and_rejects_active_subscription
                 plan="scale", billing_period_months=12,
             ),
             membership,
+            db=object(),
         )
     assert exc.value.status_code == 409

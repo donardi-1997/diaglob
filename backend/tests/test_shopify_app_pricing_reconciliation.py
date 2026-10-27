@@ -117,7 +117,10 @@ def test_inactive_shopify_subscription_does_not_deactivate_customer():
     "organization,connection,count,error",
     [
         (_org(billing_provider=None), _connection(), 1, "PROVENANCE_REQUIRED"),
-        (_org(billing_provider="paddle"), _connection(), 1, "PROVENANCE_REQUIRED"),
+        (
+            _org(billing_provider="paddle"), _connection(), 1,
+            "PADDLE_MIGRATION_CANCELLATION_REQUIRED",
+        ),
         (_org(), _connection(organization_id=99), 1, "TENANT_MISMATCH"),
         (_org(), _connection(provider="woocommerce"), 1, "TENANT_MISMATCH"),
         (_org(), _connection(status="disconnected"), 1, "CONNECTION_NOT_ACTIVE"),
