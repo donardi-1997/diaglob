@@ -570,12 +570,19 @@ def test_scale_is_not_a_shopify_app_store_public_plan():
 
 
 def test_shopify_billing_capabilities_publish_review_contract(monkeypatch):
-    from app.api.billing import shopify_billing_capabilities
+    from app.api import billing as billing_api
 
     monkeypatch.setenv("SHOPIFY_APP_STORE_HANDLE", "diaglob-app")
     monkeypatch.delenv("SHOPIFY_BILLING_ENTITLEMENTS_ENABLED", raising=False)
-    result = shopify_billing_capabilities(
-        membership=SimpleNamespace(role="owner", organization_id=77),
+    monkeypatch.setattr(
+        billing_api, "external_app_billing_block_reason", lambda *_: None,
+    )
+    result = billing_api.shopify_billing_capabilities(
+        membership=SimpleNamespace(
+            role="owner", organization_id=77,
+            organization=SimpleNamespace(id=77),
+        ),
+        db=object(),
     )
 
     assert result["shopify_hosted_pricing_configured"] is True

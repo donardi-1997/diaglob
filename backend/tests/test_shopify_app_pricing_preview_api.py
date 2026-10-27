@@ -18,6 +18,8 @@ def _membership(*, role="owner", provider="shopify"):
         billing_provider=provider,
         billing_subscription_id=None,
         billing_customer_id=None,
+        subscription_status="active",
+        auto_renew_enabled=True,
     )
     return SimpleNamespace(
         role=role, organization_id=17, organization=organization
@@ -68,8 +70,15 @@ def test_non_billing_roles_cannot_preview_or_query_provider(role):
         upstream.assert_not_called()
 
 
-@pytest.mark.parametrize("provider", [None, "paddle", ""])
-def test_non_shopify_organization_cannot_invoke_partner_api(provider):
+@pytest.mark.parametrize(
+    "provider,expected_code",
+    [
+        (None, "SHOPIFY_BILLING_PROVENANCE_REQUIRED"),
+        ("", "SHOPIFY_BILLING_PROVENANCE_REQUIRED"),
+        ("paddle", "PADDLE_MIGRATION_CANCELLATION_REQUIRED"),
+    ],
+)
+def test_non_shopify_organization_cannot_invoke_partner_api(provider, expected_code):
     db = _db(_connection())
     with patch("app.api.billing.preview_shopify_entitlement_reconciliation") as upstream:
         with pytest.raises(HTTPException) as exc:
@@ -78,7 +87,7 @@ def test_non_shopify_organization_cannot_invoke_partner_api(provider):
                 db=db,
             )
         assert exc.value.status_code == 409
-        assert exc.value.detail["code"] == "SHOPIFY_BILLING_PROVENANCE_REQUIRED"
+        assert exc.value.detail["code"] == expected_code
         db.query.assert_not_called()
         upstream.assert_not_called()
 
