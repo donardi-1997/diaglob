@@ -852,3 +852,79 @@ def test_privacy_webhook_value_error_is_a_sanitized_machine_code(client):
     assert resp.status_code == 400
     assert resp.json()["detail"] == "INVALID_COMPLIANCE_WEBHOOK_PAYLOAD"
     assert "SECRET_CUSTOMER@example.com" not in resp.text
+
+
+@pytest.mark.parametrize(
+    ("shop_id", "selector_fields"),
+    [
+        (901, {"customer": {"id": {"nested": "not-a-selector"}}}),
+        (902, {"orders_to_redact": [{"id": 789, "email": "not-a-numeric-id"}]}),
+        (903, {"customer": {"email": {"nested": "not-a-string"}}}),
+        (904, {"customer": {"phone": "x" * 51}}),
+        (905, {"data_request": {"id": ["not-a-numeric-id"]}}),
+    ],
+)
+def test_privacy_webhook_rejects_unbounded_or_structured_selectors(
+    client, shop_id, selector_fields,
+):
+    payload = {
+        "shop_id": shop_id,
+        "shop_domain": f"minimize-{shop_id}.myshopify.com",
+        "customer": {"id": 456},
+        **selector_fields,
+    }
+    body = json.dumps(payload).encode("utf-8")
+    secret, headers = _signed_headers(body, "customers/redact")
+    with patch.dict(os.environ, {"SHOPIFY_CLIENT_SECRET": secret}):
+        response = client.post(
+            "/api/webhooks/shopify/compliance",
+            content=body,
+            headers=headers,
+        )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "INVALID_COMPLIANCE_WEBHOOK_PAYLOAD"
+    assert "not-a-selector" not in response.text
+    with TEST_SESSION() as session:
+        assert session.query(ShopifyPrivacyRequest).filter(
+            ShopifyPrivacyRequest.shop_id == str(shop_id),
+        ).count() == 0
+
+
+def test_privacy_webhook_persists_only_allowlisted_customer_selectors(client):
+    payload = {
+        "shop_id": 906,
+        "shop_domain": "minimize-allowlist.myshopify.com",
+        "customer": {
+            "id": 456,
+            "email": "synthetic@example.com",
+            "phone": "+1 555 0100",
+            "address": {"line1": "must-not-be-stored"},
+            "metafields": [{"key": "unrelated", "value": "must-not-be-stored"}],
+        },
+        "orders_to_redact": [789],
+    }
+    body = json.dumps(payload).encode("utf-8")
+    secret, headers = _signed_headers(body, "customers/redact")
+    with patch.dict(os.environ, {"SHOPIFY_CLIENT_SECRET": secret}):
+        response = client.post(
+            "/api/webhooks/shopify/compliance",
+            content=body,
+            headers=headers,
+        )
+
+    assert response.status_code == 200
+    with TEST_SESSION() as session:
+        record = session.query(ShopifyPrivacyRequest).filter(
+            ShopifyPrivacyRequest.shop_id == "906",
+        ).one()
+        selectors = json.loads(decrypt_shopify_secret(record.selector_encrypted))
+    assert selectors == {
+        "customer": {
+            "id": 456,
+            "email": "synthetic@example.com",
+            "phone": "+1 555 0100",
+        },
+        "orders_to_redact": [789],
+    }
+    assert "must-not-be-stored" not in json.dumps(selectors)
