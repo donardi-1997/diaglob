@@ -116,29 +116,70 @@ def _find_existing_delivery(
 
 
 
-def _minimal_selectors(payload: dict[str, Any]) -> dict[str, Any]:
-    """Retain only the selectors a future privacy processor needs.
+def _is_shopify_numeric_id(value: Any) -> bool:
+    """Accept only positive numeric Shopify identifiers, never nested payloads."""
+    if type(value) is int:
+        return value > 0
+    return (
+        isinstance(value, str)
+        and 1 <= len(value) <= 32
+        and value.isascii()
+        and value.isdigit()
+        and int(value) > 0
+    )
 
-    Avoid copying arbitrary Shopify payload fields into our database. This data
-    is encrypted at rest; do not log or include it in API responses.
+
+def _bounded_selector_text(value: Any, *, maximum: int) -> bool:
+    """Bound retained contact selectors and reject control characters."""
+    return (
+        isinstance(value, str)
+        and len(value) <= maximum
+        and not any(ord(char) < 32 or ord(char) == 127 for char in value)
+    )
+
+
+def _minimal_selectors(payload: dict[str, Any]) -> dict[str, Any]:
+    """Retain only bounded selectors required by a future privacy processor.
+
+    Never persist arbitrary nested fields or unbounded contact/order values.
+    The selected identifiers remain encrypted at rest and must not be logged or
+    included in API responses.
     """
     subject = payload.get("customer")
     if subject is not None and not isinstance(subject, dict):
         raise ValueError("INVALID_CUSTOMER")
-    customer = {
-        key: subject[key]
-        for key in ("id", "email", "phone")
-        if isinstance(subject, dict) and subject.get(key) is not None
-    }
+    customer: dict[str, Any] = {}
+    if isinstance(subject, dict):
+        if subject.get("id") is not None:
+            if not _is_shopify_numeric_id(subject["id"]):
+                raise ValueError("INVALID_CUSTOMER_ID")
+            customer["id"] = subject["id"]
+        if subject.get("email") is not None:
+            if not _bounded_selector_text(subject["email"], maximum=320):
+                raise ValueError("INVALID_CUSTOMER_EMAIL")
+            customer["email"] = subject["email"]
+        if subject.get("phone") is not None:
+            if not _bounded_selector_text(subject["phone"], maximum=50):
+                raise ValueError("INVALID_CUSTOMER_PHONE")
+            customer["phone"] = subject["phone"]
+
     selectors: dict[str, Any] = {"customer": customer}
     for key in ("orders_to_redact", "orders_requested"):
         values = payload.get(key)
         if values is not None:
-            if not isinstance(values, list) or len(values) > 500:
+            if (
+                not isinstance(values, list)
+                or len(values) > 500
+                or any(not _is_shopify_numeric_id(value) for value in values)
+            ):
                 raise ValueError("INVALID_ORDER_SELECTORS")
             selectors[key] = values
     data_request = payload.get("data_request")
+    if data_request is not None and not isinstance(data_request, dict):
+        raise ValueError("INVALID_DATA_REQUEST")
     if isinstance(data_request, dict) and data_request.get("id") is not None:
+        if not _is_shopify_numeric_id(data_request["id"]):
+            raise ValueError("INVALID_DATA_REQUEST_ID")
         selectors["data_request_id"] = data_request["id"]
     return selectors
 
