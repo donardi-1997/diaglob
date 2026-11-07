@@ -291,3 +291,23 @@ def test_live_http_delivery_has_no_cache_and_cannot_bypass_authentication(sandbo
     finally:
         app.dependency_overrides.clear()
         app.dependency_overrides.update(original)
+
+
+def test_shop_redact_preview_is_limited_to_originating_store(sandbox):
+    db, owner, _, _, stores, _ = sandbox
+    receipt = db.query(ShopifyPrivacyRequest).filter_by(request_id=ACCESS).one()
+    receipt.topic = "shop/redact"
+    db.commit()
+
+    result = preview_local_privacy_execution(db, request_id=ACCESS, **owner)
+
+    assert result["fulfillment_complete"] is False
+    assert result["external_processors_verified"] is False
+    assert result["source_counts"]["orders"] == 1
+    assert result["source_counts"]["conversations"] == 1
+    assert db.query(Order).filter(Order.store_id == stores[0].id).count() == 1
+    assert db.query(Order).filter(Order.store_id == stores[1].id).count() == 1
+    assert db.query(Order).filter(
+        Order.store_id == stores[1].id, Order.note == "PRIVATE_NOTE_1"
+    ).one()
+    assert db.query(ShopifyPrivacySuppression).count() == 0
