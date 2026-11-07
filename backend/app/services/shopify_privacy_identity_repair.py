@@ -22,6 +22,7 @@ from .shopify_privacy_installation_identity import (
 from .shopify_privacy_processing import (
     ShopifyPrivacyProcessingError, _task_specs, _verify_retry_queue,
 )
+from .shopify_privacy_no_data import NO_DATA_STATUS
 
 _REQUEST_ID = re.compile(r"^[0-9a-f]{64}$")
 _ALLOWED_HISTORY = frozenset({"hmac_uninstall", "hmac_compliance"})
@@ -70,6 +71,12 @@ def repair_signed_shopify_privacy_receipt_identity(
     receipt = query.first()
     if receipt is None:
         raise ShopifyPrivacyIdentityRepairError("PRIVACY_REQUEST_NOT_FOUND")
+    if receipt.status == NO_DATA_STATUS:
+        # Binding a tenant after the terminal determination would create the
+        # exact data the determination says was never attributable.
+        raise ShopifyPrivacyIdentityRepairError(
+            "TERMINAL_DETERMINATION_REQUIRES_REVIEW"
+        )
     if receipt.status == "completed" or receipt.completed_at is not None:
         raise ShopifyPrivacyIdentityRepairError("HISTORICAL_COMPLETION_REQUIRES_REVIEW")
     if receipt.last_error_code in _DENIED_ERROR_CODES:

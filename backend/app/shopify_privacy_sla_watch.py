@@ -9,19 +9,21 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import exists, func, or_
+from sqlalchemy import and_, exists, func, or_
 from sqlalchemy.orm import Session
 
 from .db import SessionLocal
 from .models import ShopifyPrivacyAuditEvent, ShopifyPrivacyRequest
 from .shopify_privacy_operational_audit import summarize_shopify_privacy_operations
+from .services.shopify_privacy_no_data import NO_DATA_EVENT, NO_DATA_STATUS
 from .services.shopify_privacy_triage import SUPPORTED_TOPICS
 
 
-def _count(db: Session, condition) -> int:
+def _count(db: Session, condition, *, open_only) -> int:
     return int(
         db.query(func.count(ShopifyPrivacyRequest.id))
         .filter(condition)
+        .filter(open_only)
         .scalar()
         or 0
     )
@@ -57,6 +59,20 @@ def audit_shopify_privacy_sla(
     ).where(
         audit.actor_type == "internal_privacy_processor"
     )
+    no_data_determined = exists().where(
+        audit.request_id == req.request_id
+    ).where(
+        audit.event_type == NO_DATA_EVENT
+    ).where(
+        audit.actor_type == "internal_privacy_operator"
+    )
+    # A terminal determination only silences the watchdog when both the state
+    # and its audit event exist. A manually edited status alone is not enough.
+    closed_no_data = and_(
+        req.status == NO_DATA_STATUS,
+        no_data_determined,
+    )
+    open_receipt = ~closed_no_data
     unresolved = or_(
         req.organization_id.is_(None), req.store_id.is_(None),
         req.organization_id <= 0, req.store_id <= 0,
@@ -68,19 +84,32 @@ def audit_shopify_privacy_sla(
         "approaching_30_day_target": _count(
             db,
             req.created_at <= utc_now - timedelta(days=23),
+            open_only=open_receipt,
         ),
         "at_or_past_30_day_target": _count(
             db,
             req.created_at <= utc_now - timedelta(days=30),
+            open_only=open_receipt,
         ),
-        "tenant_store_unresolved": _count(db, unresolved),
-        "signed_receipt_evidence_missing": _count(db, ~signed_received),
-        "processing_queue_evidence_missing": _count(db, ~prepared),
+        "tenant_store_unresolved": _count(
+            db, unresolved, open_only=open_receipt,
+        ),
+        "signed_receipt_evidence_missing": _count(
+            db, ~signed_received, open_only=open_receipt,
+        ),
+        "processing_queue_evidence_missing": _count(
+            db, ~prepared, open_only=open_receipt,
+        ),
         "unsupported_topic": _count(
             db, req.topic.notin_(tuple(SUPPORTED_TOPICS)),
+            open_only=open_receipt,
         ),
         "future_or_missing_received_timestamp": _count(
             db, or_(req.created_at > utc_now, req.created_at.is_(None)),
+            open_only=open_receipt,
+        ),
+        "no_data_attributable_determined": _count(
+            db, closed_no_data, open_only=closed_no_data,
         ),
         "incomplete_work_item_queue": baseline[
             "receipts_missing_complete_ten_item_queue"
@@ -89,7 +118,7 @@ def audit_shopify_privacy_sla(
             "work_items_with_unverified_completion_state"
         ],
         "review_api_unavailable_with_open_receipts": int(
-            baseline["receipt_total"] > 0
+            _count(db, req.id.isnot(None), open_only=open_receipt) > 0
             and not baseline["internal_review_secret_present"]
         ),
     }
@@ -113,6 +142,9 @@ def audit_shopify_privacy_sla(
             "+00:00", "Z"
         ),
         "receipt_total": baseline["receipt_total"],
+        "open_receipt_total": _count(
+            db, req.id.isnot(None), open_only=open_receipt,
+        ),
         "counts": counts,
         "hmac_secret_present": baseline["hmac_secret_present"],
         "selector_encryption_key_present": baseline[

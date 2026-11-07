@@ -11,6 +11,7 @@ from app.models import (
     ShopifyPrivacyAuditEvent, ShopifyPrivacyRequest, ShopifyPrivacyWorkItem,
 )
 from app.shopify_privacy_sla_watch import audit_shopify_privacy_sla
+from app.services.shopify_privacy_no_data import NO_DATA_EVENT, NO_DATA_STATUS
 
 NOW = datetime(2026, 10, 23, 18, 0, tzinfo=timezone.utc)
 ENV = {
@@ -147,6 +148,52 @@ def test_watch_rejects_naive_now(db):
         audit_shopify_privacy_sla(
             db, now=datetime(2026, 10, 23, 18, 0), environment=ENV,
         )
+
+
+def _no_data_event(db, n):
+    db.add(ShopifyPrivacyAuditEvent(
+        request_id=f"{n:064x}",
+        event_type=NO_DATA_EVENT,
+        from_status="pending_policy_review",
+        to_status=NO_DATA_STATUS,
+        reason_code="NO_TENANT_DATA_ATTRIBUTABLE",
+        actor_type="internal_privacy_operator",
+        created_at=(NOW - timedelta(days=1)).replace(tzinfo=None),
+    ))
+    db.commit()
+
+
+def test_watch_excludes_evidence_backed_terminal_determination(db):
+    receipt(db, 1, days=31, org=None, store=None, topic="shop/redact",
+            status=NO_DATA_STATUS)
+    _no_data_event(db, 1)
+
+    report = audit_shopify_privacy_sla(db, now=NOW, environment=ENV)
+
+    assert report["receipt_total"] == 1
+    assert report["open_receipt_total"] == 0
+    assert report["counts"]["no_data_attributable_determined"] == 1
+    assert report["counts"]["at_or_past_30_day_target"] == 0
+    assert report["counts"]["tenant_store_unresolved"] == 0
+    assert report["counts"]["review_api_unavailable_with_open_receipts"] == 0
+    assert report["state"] == "normal"
+    assert report["attention_required"] is False
+    # Monitoring only: the determination does not claim fulfillment.
+    assert report["fulfillment_complete"] is False
+    assert report["privacy_release_ready"] is False
+
+
+def test_watch_keeps_terminal_state_without_audit_event_open(db):
+    receipt(db, 2, days=31, org=None, store=None, topic="shop/redact",
+            status=NO_DATA_STATUS)
+
+    report = audit_shopify_privacy_sla(db, now=NOW, environment=ENV)
+
+    assert report["receipt_total"] == 1
+    assert report["open_receipt_total"] == 1
+    assert report["counts"]["no_data_attributable_determined"] == 0
+    assert report["counts"]["at_or_past_30_day_target"] == 1
+    assert report["state"] == "critical"
 
 
 def test_open_signed_request_without_operator_review_api_is_critical(db):
