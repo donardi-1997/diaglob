@@ -5,6 +5,7 @@ Shopify privacy webhooks and reviewed retention requirements remain independent.
 """
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
@@ -15,14 +16,47 @@ from ..models import (
     ShopifyEmbeddedIdentityBinding, ShopifyEmbeddedLinkTicket,
 )
 from ..shopify_oauth import normalize_shop_domain
+from .shopify_pending_install_retention import (
+    purge_unclaimed_pending_installs,
+)
 from .shopify_privacy_installation_identity import (
     ShopifyPrivacyShopIdentityError,
     record_signed_shopify_uninstall_identity,
 )
 
+logger = logging.getLogger(__name__)
+
 
 class ShopifyUninstallError(ValueError):
     """Malformed/untrusted uninstall request; nothing must be changed."""
+
+
+def _purge_unbound_pending_installs(
+    db: Session,
+    *,
+    domain: str,
+    trigger: datetime,
+    now: datetime,
+) -> int:
+    """Remove unclaimed grants that can no longer be claimed.
+
+    A pending install created before the signed uninstall belongs to the
+    installation that was just removed. A grant created after the event may
+    belong to a reinstall and is left alone. The count is logged without the
+    shop domain and is not part of the webhook response contract.
+    """
+    purged = purge_unclaimed_pending_installs(
+        db,
+        shop_domain=domain,
+        not_after=trigger,
+        only_expired=False,
+        now=now,
+    )
+    if purged:
+        logger.info(
+            "shopify.uninstall.pending_installs_purged count=%s", purged,
+        )
+    return purged
 
 
 def _triggered_at(value: str | None, *, now: datetime) -> datetime:
@@ -78,6 +112,7 @@ def process_shopify_uninstall(
 
     now = datetime.utcnow()
     trigger = _triggered_at(triggered_at, now=now)
+
     connections = (
         db.query(CommerceConnection)
         .filter(
@@ -88,16 +123,31 @@ def process_shopify_uninstall(
         .all()
     )
     if not connections:
+        # The shop completed OAuth but never selected a tenant, so no
+        # CommerceConnection exists. The unbound grant may still hold
+        # encrypted tokens; the signed uninstall invalidates them.
+        if _purge_unbound_pending_installs(
+            db, domain=domain, trigger=trigger, now=now,
+        ):
+            db.commit()
         return {"ok": True, "action": "unknown_shop"}
     if len(connections) != 1:
         raise ShopifyUninstallError("SHOPIFY_UNINSTALL_AMBIGUOUS_SHOP")
     connection = connections[0]
 
     if connection.status == "revoked":
+        if _purge_unbound_pending_installs(
+            db, domain=domain, trigger=trigger, now=now,
+        ):
+            db.commit()
         return {"ok": True, "action": "already_revoked"}
     if connection.status not in {"connected", "error"}:
         # A previously disconnected store has no current live installation.
         # An API-error connection may still hold a token and must be revoked.
+        if _purge_unbound_pending_installs(
+            db, domain=domain, trigger=trigger, now=now,
+        ):
+            db.commit()
         return {"ok": True, "action": "not_connected"}
     if trigger < connection.connected_at:
         return {"ok": True, "action": "stale_uninstall"}
@@ -176,6 +226,9 @@ def process_shopify_uninstall(
             },
             synchronize_session=False,
         )
+    )
+    _purge_unbound_pending_installs(
+        db, domain=domain, trigger=trigger, now=now,
     )
     db.commit()
     return {"ok": True, "action": "revoked"}
