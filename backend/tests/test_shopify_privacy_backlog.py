@@ -9,8 +9,9 @@ from sqlalchemy.orm import Session
 
 from app.api.shopify_privacy_backlog import get_shopify_privacy_backlog
 from app.db import Base
-from app.models import ShopifyPrivacyRequest
+from app.models import ShopifyPrivacyAuditEvent, ShopifyPrivacyRequest
 from app.services.shopify_privacy_backlog import summarize_shopify_privacy_backlog
+from app.services.shopify_privacy_no_data import NO_DATA_EVENT, NO_DATA_STATUS
 
 
 @pytest.fixture
@@ -35,6 +36,18 @@ def _receipt(db, *, n, topic, age_days, now, status="pending_policy_review",
         status=status,
         created_at=now - timedelta(days=age_days),
         updated_at=now - timedelta(days=age_days),
+    ))
+
+
+def _no_data_event(db, *, n, now):
+    db.add(ShopifyPrivacyAuditEvent(
+        request_id=f"{n:064x}",
+        event_type=NO_DATA_EVENT,
+        from_status="pending_policy_review",
+        to_status=NO_DATA_STATUS,
+        reason_code="NO_TENANT_DATA_ATTRIBUTABLE",
+        actor_type="internal_privacy_operator",
+        created_at=now,
     ))
 
 
@@ -174,3 +187,37 @@ def test_nonpositive_tenant_ids_are_unresolved(sandbox):
     assert result.outstanding_total == 2
     assert result.tenant_unresolved_total == 2
     assert result.live_processing_ready is False
+
+
+def test_terminal_no_data_receipt_leaves_the_outstanding_backlog(sandbox):
+    now = datetime(2026, 10, 10, 12, 0)
+    _receipt(sandbox, n=10, topic="shop/redact", age_days=40, now=now,
+             status=NO_DATA_STATUS, organization_id=None, store_id=None)
+    _no_data_event(sandbox, n=10, now=now)
+    _receipt(sandbox, n=11, topic="shop/redact", age_days=40, now=now,
+             status="completed")
+    sandbox.commit()
+
+    result = summarize_shopify_privacy_backlog(sandbox, now=now).safe_dict()
+
+    # Only the undetermined receipt stays outstanding. A stored terminal state
+    # backed by its audit event is not outstanding backlog.
+    assert result["outstanding_total"] == 1
+    assert result["overdue_total"] == 1
+    shop = next(
+        item for item in result["topics"] if item["topic"] == "shop/redact"
+    )
+    assert shop["outstanding"] == 1
+
+
+def test_terminal_state_without_audit_event_stays_in_backlog(sandbox):
+    now = datetime(2026, 10, 10, 12, 0)
+    _receipt(sandbox, n=12, topic="shop/redact", age_days=40, now=now,
+             status=NO_DATA_STATUS, organization_id=None, store_id=None)
+    sandbox.commit()
+
+    result = summarize_shopify_privacy_backlog(sandbox, now=now)
+
+    # The status string alone is not evidence; the receipt must stay visible.
+    assert result.outstanding_total == 1
+    assert result.overdue_total == 1

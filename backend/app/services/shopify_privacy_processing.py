@@ -21,6 +21,7 @@ from .shopify_privacy_case_assessment import (
     ShopifyPrivacyAssessmentError,
     assess_shopify_privacy_case,
 )
+from .shopify_privacy_no_data import NO_DATA_STATUS
 
 _REQUEST_ID = re.compile(r"^[0-9a-f]{64}$")
 _COMMON_AREAS = (
@@ -60,9 +61,11 @@ def _serialize(receipt: ShopifyPrivacyRequest, items: list[ShopifyPrivacyWorkIte
             }
             for item in sorted(items, key=lambda x: x.area)
         ],
+        "receipt_status": receipt.status,
+        "terminal_determination": receipt.status == NO_DATA_STATUS,
         "fulfillment_authorized": False,
         "fulfillment_complete": False,
-        "requires_manual_review": True,
+        "requires_manual_review": receipt.status != NO_DATA_STATUS,
     }
 
 
@@ -79,6 +82,13 @@ def get_shopify_privacy_processing_case(
     items = db.query(ShopifyPrivacyWorkItem).filter(
         ShopifyPrivacyWorkItem.request_id == request_id,
     ).all()
+    if receipt.status == NO_DATA_STATUS:
+        # A terminal state is only reportable when its evidence is complete.
+        # A manually edited status must not render as a terminal determination.
+        _verify_retry_queue(
+            db, receipt, items,
+            _task_specs(receipt.topic, verified_scope=False, signed=True),
+        )
     return _serialize(receipt, items, created=False)
 
 
@@ -177,11 +187,35 @@ def _verify_retry_queue(
         raise ShopifyPrivacyProcessingError("PROCESSING_PREPARED_EVIDENCE_MISSING")
     if len(items) != len(specs) or {item.area for item in items} != set(specs):
         raise ShopifyPrivacyProcessingError("INCOMPLETE_PRIVACY_WORK_ITEM_SET")
-    if receipt.completed_at is not None or receipt.status == "completed":
+    no_data = receipt.status == NO_DATA_STATUS
+    if no_data:
+        if not _has_intake_audit(
+            db, request_id=receipt.request_id,
+            event_type="no_data_attributable_determined",
+            actor_type="internal_privacy_operator",
+        ):
+            raise ShopifyPrivacyProcessingError(
+                "NO_DATA_DETERMINATION_EVIDENCE_MISSING"
+            )
+        if receipt.organization_id is not None or receipt.store_id is not None:
+            raise ShopifyPrivacyProcessingError(
+                "NO_DATA_DETERMINATION_TENANT_CONFLICT"
+            )
+        if receipt.completed_at is not None:
+            raise ShopifyPrivacyProcessingError(
+                "HISTORICAL_COMPLETION_REQUIRES_REVIEW"
+            )
+    elif receipt.completed_at is not None or receipt.status == "completed":
         raise ShopifyPrivacyProcessingError("HISTORICAL_COMPLETION_REQUIRES_REVIEW")
     for item in items:
         if item.action != specs[item.area][0]:
             raise ShopifyPrivacyProcessingError("PRIVACY_WORK_ITEM_ACTION_MISMATCH")
+        if item.status == "not_applicable":
+            if not no_data:
+                raise ShopifyPrivacyProcessingError(
+                    "UNEXPECTED_PRIVACY_WORK_ITEM_STATE"
+                )
+            continue
         if item.status in {"completed", "fulfilled", "delivered", "deleted", "erased"}:
             raise ShopifyPrivacyProcessingError("UNVERIFIED_PRIVACY_COMPLETION")
 
@@ -205,6 +239,10 @@ def ensure_shopify_privacy_receipt_work_items(
     existing = db.query(ShopifyPrivacyWorkItem).filter(
         ShopifyPrivacyWorkItem.request_id == receipt.request_id,
     ).all()
+    if not existing and receipt.status == NO_DATA_STATUS:
+        raise ShopifyPrivacyProcessingError(
+            "NO_DATA_DETERMINATION_QUEUE_MISSING"
+        )
     if existing:
         _verify_retry_queue(db, receipt, existing, specs)
         return
@@ -247,6 +285,16 @@ def prepare_shopify_privacy_processing_case(
     ).with_for_update().first()
     if receipt is None:
         return None
+
+    if receipt.status == NO_DATA_STATUS:
+        items = db.query(ShopifyPrivacyWorkItem).filter(
+            ShopifyPrivacyWorkItem.request_id == request_id,
+        ).all()
+        _verify_retry_queue(
+            db, receipt, items,
+            _task_specs(receipt.topic, verified_scope=False, signed=True),
+        )
+        return _serialize(receipt, items, created=False)
 
     try:
         assessment = assess_shopify_privacy_case(db, request_id=request_id)

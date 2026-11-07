@@ -10,10 +10,11 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import and_, case, func, or_
+from sqlalchemy import and_, case, exists, func, or_
 from sqlalchemy.orm import Session
 
-from ..models import ShopifyPrivacyRequest
+from ..models import ShopifyPrivacyAuditEvent, ShopifyPrivacyRequest
+from .shopify_privacy_no_data import NO_DATA_STATUS
 
 
 # No real-data fulfillment workflow is enabled. A status string such as
@@ -76,6 +77,21 @@ def summarize_shopify_privacy_backlog(
 
     # COUNT/SUM/MIN are database aggregates. No raw shop_id, domain, receipt
     # selector, customer ID, or message content crosses the database boundary.
+    audit = ShopifyPrivacyAuditEvent
+    no_data_determined = exists().where(
+        audit.request_id == ShopifyPrivacyRequest.request_id
+    ).where(
+        audit.event_type == "no_data_attributable_determined"
+    ).where(
+        audit.actor_type == "internal_privacy_operator"
+    )
+    # A terminal determination removes a receipt from the outstanding backlog
+    # only when both the terminal state and its audit evidence are present.
+    # A manually edited status alone keeps the receipt in the backlog.
+    closed_no_data = and_(
+        ShopifyPrivacyRequest.status == NO_DATA_STATUS,
+        no_data_determined,
+    )
     rows = (
         db.query(
             ShopifyPrivacyRequest.topic,
@@ -114,6 +130,7 @@ def summarize_shopify_privacy_backlog(
             ).label("unresolved"),
             func.min(ShopifyPrivacyRequest.created_at).label("oldest"),
         )
+        .filter(~closed_no_data)
         .group_by(ShopifyPrivacyRequest.topic)
         .all()
     )
