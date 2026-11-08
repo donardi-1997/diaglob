@@ -9,6 +9,9 @@ import {
   parseShopifyInstallMode,
   validatedShopifyAuthorizationUrl,
   validatedShopifyInstallCompletion,
+  describeShopifyInstallError,
+  shopifyInstallBillingBlocker,
+  shopifyInstallStoreBlocker,
   DIAGLOB_SHOPIFY_CLIENT_ID,
 } from "../src/shopifyInstall.ts";
 
@@ -147,4 +150,126 @@ test("2.3.1: installation requires a verified Shopify grant, not URL hints", () 
   assert.equal(/\bconnectShopify\(/.test(installPage), false);
   assert.equal(/\bconnectShopify\(/.test(integrations), false);
   assert.ok(integrations.includes("/shopify/install?managed=1"));
+});
+
+function httpFailure(status: number, detail: unknown) {
+  return { response: { status, data: { detail } } };
+}
+
+test("2.1.1: install failures never reach the merchant as raw HTTP client text", () => {
+  const failures: unknown[] = [
+    new Error("Request failed with status code 409"),
+    httpFailure(409, "SHOPIFY_BILLING_ORGANIZATION_REQUIRED"),
+    httpFailure(409, "SHOPIFY_STORE_DOMAIN_MISMATCH"),
+    httpFailure(409, "COMMERCE_ALREADY_CONNECTED"),
+    httpFailure(409, "SHOPIFY_STORE_ALREADY_CONNECTED"),
+    httpFailure(409, "UNMAPPED_REASON_CODE"),
+    httpFailure(409, { code: "ACTIVE_STORE_LIMIT_REACHED", message: "Tu plan Growth permite hasta 2 tiendas activas." }),
+    httpFailure(404, "SHOPIFY_INSTALL_GRANT_EXPIRED"),
+    httpFailure(402, { code: "PLAN_REQUIRED", message: "No tienes un plan activo." }),
+    httpFailure(502, "SHOPIFY_INSTALL_VERIFICATION_FAILED"),
+    httpFailure(401, "Authentication required"),
+    {},
+  ];
+
+  for (const failure of failures) {
+    const message = describeShopifyInstallError(failure);
+    assert.ok(message.trim().length > 0, JSON.stringify(failure));
+    assert.equal(message.includes("Request failed with status code"), false, message);
+    assert.equal(message.includes("status code"), false, message);
+  }
+});
+
+test("2.1.1: known reason codes and backend messages are translated, not leaked", () => {
+  assert.match(
+    describeShopifyInstallError(httpFailure(409, "SHOPIFY_BILLING_ORGANIZATION_REQUIRED")),
+    /facturación/,
+  );
+  assert.match(
+    describeShopifyInstallError(httpFailure(409, "SHOPIFY_STORE_DOMAIN_MISMATCH")),
+    /otro dominio de Shopify/,
+  );
+  assert.match(
+    describeShopifyInstallError(httpFailure(404, "SHOPIFY_INSTALL_GRANT_EXPIRED")),
+    /expiró/,
+  );
+  // Backend-provided human messages win over the generic status text.
+  assert.equal(
+    describeShopifyInstallError(
+      httpFailure(409, { code: "ACTIVE_STORE_LIMIT_REACHED", message: "Tu plan permite 2 tiendas." }),
+    ),
+    "Tu plan permite 2 tiendas.",
+  );
+  assert.equal(
+    describeShopifyInstallError(httpFailure(402, { code: "PLAN_REQUIRED", message: "Elige un plan." })),
+    "Elige un plan.",
+  );
+  assert.equal(
+    describeShopifyInstallError(httpFailure(409, "La suscripción no está activa.")),
+    "La suscripción no está activa.",
+  );
+  // A transport failure has no HTTP status and still needs an actionable text.
+  assert.match(describeShopifyInstallError(new Error("Network Error")), /conexión|contactar/i);
+});
+
+test("2.1.1: the install page explains store capacity and billing guards before submitting", () => {
+  const atLimit = { active_stores: 2, active_store_limit: 2 };
+  assert.match(shopifyInstallStoreBlocker(atLimit, false) ?? "", /2 tiendas activas/);
+  assert.equal(shopifyInstallStoreBlocker(atLimit, true), null);
+  assert.equal(
+    shopifyInstallStoreBlocker({ active_stores: 1, active_store_limit: 2 }, false),
+    null,
+  );
+  assert.equal(shopifyInstallStoreBlocker({}, false), null);
+
+  assert.match(
+    shopifyInstallBillingBlocker({
+      billing_provider: "paddle",
+      billing_onboarding_channel: null,
+      plan: "growth",
+      pending_plan: null,
+    }) ?? "",
+    /facturación directa/,
+  );
+  assert.equal(
+    shopifyInstallBillingBlocker({ billing_provider: "shopify", plan: "growth" }),
+    null,
+  );
+  assert.equal(
+    shopifyInstallBillingBlocker({
+      billing_provider: null,
+      billing_onboarding_channel: "shopify_install",
+      plan: "trial",
+      pending_plan: null,
+    }),
+    null,
+  );
+  assert.ok(shopifyInstallBillingBlocker({
+    billing_provider: null,
+    billing_onboarding_channel: "direct",
+    plan: "growth",
+  }));
+  assert.ok(shopifyInstallBillingBlocker({
+    billing_provider: null,
+    billing_onboarding_channel: "shopify_install",
+    plan: "growth",
+  }));
+  assert.ok(shopifyInstallBillingBlocker({
+    billing_provider: null,
+    billing_onboarding_channel: "shopify_install",
+    plan: "trial",
+    pending_plan: "growth",
+  }));
+  // An incomplete snapshot must never block a valid installation.
+  assert.equal(shopifyInstallBillingBlocker({}), null);
+});
+
+test("2.1.1: the install page routes every rejected request through the translator", () => {
+  const installPage = readFileSync(new URL("../src/pages/ShopifyInstallPage.tsx", import.meta.url), "utf8");
+  assert.equal(installPage.includes("err instanceof Error ? err.message"), false);
+  assert.equal(installPage.includes("err.message"), false);
+  const translatorUses = installPage.split("describeShopifyInstallError(err)").length - 1;
+  assert.ok(translatorUses >= 3, `expected at least 3 translated handlers, found ${translatorUses}`);
+  assert.ok(installPage.includes("shopifyInstallStoreBlocker"));
+  assert.ok(installPage.includes("shopifyInstallBillingBlocker"));
 });

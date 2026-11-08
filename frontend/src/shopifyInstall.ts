@@ -111,3 +111,188 @@ export function buildPostOAuthStorePayload(
     active: true as const,
   };
 }
+
+/**
+ * Shopify App Store requirement 2.1.1: an HTTP failure must never reach the
+ * merchant as raw client text such as "Request failed with status code 409".
+ * Only known backend reason codes and HTTP statuses are translated, and the
+ * result is always an actionable message in Spanish.
+ */
+interface InstallFailureResponse {
+  status?: number;
+  data?: { detail?: unknown };
+}
+
+interface InstallFailure {
+  response?: InstallFailureResponse;
+}
+
+const REASON_CODE = /^[A-Z][A-Z0-9_]*$/;
+
+const INSTALL_REASON_MESSAGES: Record<string, string> = {
+  SHOPIFY_BILLING_ORGANIZATION_REQUIRED:
+    "Esta organización no puede reclamar una instalación de Shopify porque su facturación " +
+    "no está en el canal de Shopify. Entra con una cuenta creada desde la instalación de " +
+    "Shopify o contacta a soporte de DIAGLOB.",
+  SHOPIFY_STORE_DOMAIN_MISMATCH:
+    "La tienda seleccionada ya está vinculada a otro dominio de Shopify. Elige otra tienda " +
+    "o desvincula primero ese dominio.",
+  COMMERCE_ALREADY_CONNECTED:
+    "La tienda seleccionada ya tiene otra integración de comercio conectada.",
+  SHOPIFY_STORE_ALREADY_CONNECTED:
+    "Esa tienda de Shopify ya está conectada a DIAGLOB. Abre la app desde Shopify Admin para " +
+    "continuar.",
+  SHOPIFY_INSTALL_GRANT_EXPIRED:
+    "El código de instalación expiró o ya fue utilizado. Genera uno nuevo desde Shopify Admin " +
+    "(caduca en 10 minutos).",
+  SHOPIFY_EXPIRING_INSTALL_GRANT_REQUIRED:
+    "Shopify no devolvió credenciales renovables. Genera el código de instalación de nuevo " +
+    "desde Shopify Admin.",
+  SHOPIFY_INSTALL_STORE_INVALID:
+    "La tienda seleccionada ya no está disponible para esta instalación.",
+  ORGANIZATION_CONTEXT_REQUIRED:
+    "Selecciona una organización antes de continuar.",
+  TRIAL_STORE_ALREADY_USED:
+    "Esta tienda ya utilizó la prueba gratuita de DIAGLOB. Conéctala con un plan de pago.",
+  TRIAL_NOT_AVAILABLE:
+    "Esta cuenta no tiene una prueba gratuita disponible. Elige un plan para continuar.",
+};
+
+function readInstallFailure(error: unknown): {
+  status: number | null;
+  code: string | null;
+  message: string | null;
+} {
+  const response = (error as InstallFailure | null)?.response;
+  const status = typeof response?.status === "number" ? response.status : null;
+  const detail = response?.data?.detail;
+
+  if (typeof detail === "string") {
+    const value = detail.trim();
+    if (!value) return { status, code: null, message: null };
+    return REASON_CODE.test(value)
+      ? { status, code: value, message: null }
+      : { status, code: null, message: value };
+  }
+
+  if (detail && typeof detail === "object") {
+    const record = detail as { code?: unknown; message?: unknown };
+    const code =
+      typeof record.code === "string" && REASON_CODE.test(record.code.trim())
+        ? record.code.trim()
+        : null;
+    const message =
+      typeof record.message === "string" && record.message.trim()
+        ? record.message.trim()
+        : null;
+    return { status, code, message };
+  }
+
+  return { status, code: null, message: null };
+}
+
+/** Translate any rejected install request into a message a merchant can act on. */
+export function describeShopifyInstallError(error: unknown): string {
+  const { status, code, message } = readInstallFailure(error);
+
+  if (code && INSTALL_REASON_MESSAGES[code]) return INSTALL_REASON_MESSAGES[code];
+  if (status === 401) {
+    return "Tu sesión expiró. Inicia sesión de nuevo en DIAGLOB y repite el paso.";
+  }
+  if (message) return message;
+
+  if (status === 402) {
+    return "Se requiere un plan activo para completar esta operación.";
+  }
+  if (status === 403) {
+    return "No tienes permisos para administrar las tiendas de esta organización.";
+  }
+  if (status === 404) {
+    return "El código expiró o ya fue utilizado. Genera uno nuevo desde Shopify Admin.";
+  }
+  if (status === 409) {
+    return "No se pudo completar la conexión con Shopify: hay un conflicto con el estado " +
+      "actual de la tienda. Recarga la página e inténtalo de nuevo; si persiste, contacta " +
+      "a soporte de DIAGLOB.";
+  }
+  if (status === 410) {
+    return "Esta instalación debe iniciarse desde Shopify Admin.";
+  }
+  if (status !== null && status >= 500) {
+    return "DIAGLOB no respondió correctamente. Inténtalo de nuevo en unos minutos.";
+  }
+  if (status === null) {
+    return "No se pudo contactar con DIAGLOB. Revisa tu conexión e inténtalo de nuevo.";
+  }
+  return `No fue posible completar la operación (HTTP ${status}). Inténtalo de nuevo.`;
+}
+
+/** Organization fields the install page uses to explain a guard before it fires. */
+export interface ShopifyInstallOrganization {
+  active?: boolean;
+  billing_provider?: string | null;
+  billing_onboarding_channel?: string | null;
+  plan?: string | null;
+  pending_plan?: string | null;
+  active_stores?: number;
+  active_store_limit?: number;
+}
+
+/**
+ * Client-side mirror of the store-capacity guard. Returns a blocker only when
+ * the create-store request is certain to be rejected; the backend still owns
+ * the decision.
+ */
+export function shopifyInstallStoreBlocker(
+  organization: ShopifyInstallOrganization,
+  hasEligibleStore: boolean,
+): string | null {
+  if (hasEligibleStore) return null;
+  const used = organization.active_stores;
+  const limit = organization.active_store_limit;
+  if (typeof used !== "number" || typeof limit !== "number" || used < limit) return null;
+  return `Tu plan permite hasta ${limit === 1 ? "una tienda activa" : `${limit} tiendas activas`} ` +
+    `y ya tienes ${used}. Libera una tienda o cambia de plan para vincular esta instalación ` +
+    "de Shopify.";
+}
+
+/**
+ * Client-side mirror of `_eligible_shopify_claim_billing`. Reports a blocker
+ * only for combinations that are certain to fail, so a valid installation is
+ * never blocked by an incomplete client-side view.
+ */
+export function shopifyInstallBillingBlocker(
+  organization: ShopifyInstallOrganization,
+): string | null {
+  if (organization.active === false) {
+    return "Esta organización no está activa. Contacta a soporte de DIAGLOB.";
+  }
+
+  const provider = (organization.billing_provider ?? "").trim().toLowerCase();
+  if (provider === "shopify") return null;
+  if (provider) {
+    return "Esta organización tiene facturación directa y no puede vincular una instalación " +
+      "de Shopify. Entra con una cuenta creada desde la instalación de Shopify o contacta " +
+      "a soporte de DIAGLOB.";
+  }
+
+  const plan = (organization.plan ?? "none").trim().toLowerCase();
+  if (organization.pending_plan) {
+    return "Esta organización tiene un cambio de plan pendiente. Contacta a soporte de DIAGLOB " +
+      "para vincular la instalación.";
+  }
+  // An incomplete snapshot must never block a valid installation.
+  if (organization.billing_onboarding_channel === undefined || organization.plan === undefined) {
+    return null;
+  }
+  if ((organization.billing_onboarding_channel ?? "").trim() !== "shopify_install") {
+    return "Esta cuenta no se creó desde la instalación de Shopify, por lo que no puede " +
+      "reclamar esta instalación. Regístrate desde el enlace de instalación o contacta a " +
+      "soporte de DIAGLOB.";
+  }
+  if (plan !== "none" && plan !== "trial") {
+    return "Esta organización tiene un plan que requiere revisión manual antes de vincular " +
+      "Shopify. Contacta a soporte de DIAGLOB.";
+  }
+  return null;
+}

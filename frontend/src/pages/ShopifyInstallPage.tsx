@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { ArrowRight, LockKeyhole, ShieldCheck, Store } from "lucide-react";
 import { getMarkets, type Market } from "../services/markets";
+import { getCurrentOrganization, type Organization } from "../services/organizations";
 
 import { getPendingShopifyInstall, claimPendingShopifyInstall, verifyManagedShopifyClaimCode, claimManagedShopifyInstall } from "../services/integrations";
 import { createStore, getStoresForManagement, issueShopifyEmbeddedLinkCode, type Store as DiaglobStore } from "../services/stores";
@@ -10,6 +11,9 @@ import {
   buildPostOAuthStorePayload,
   parseShopifyInstallMode,
   validatedShopifyInstallCompletion,
+  describeShopifyInstallError,
+  shopifyInstallBillingBlocker,
+  shopifyInstallStoreBlocker,
 } from "../shopifyInstall";
 import "../shopify-install.css";
 
@@ -46,12 +50,24 @@ export default function ShopifyInstallPage({ canWrite, onStoresChanged }: Props)
   const [completion, setCompletion] = useState<{ storeId: number; url: string; webhooksReady: boolean } | null>(null);
   const [linkCode, setLinkCode] = useState("");
   const [issuingLink, setIssuingLink] = useState(false);
+  // Read-only snapshot used to explain a backend guard BEFORE the merchant
+  // submits. A failed lookup never blocks the flow; the backend still decides.
+  const [orgSnapshot, setOrgSnapshot] = useState<Organization | null>(null);
 
   useEffect(() => {
     if (!linkCode) return;
     const timer = window.setTimeout(() => setLinkCode(""), 300_000);
     return () => window.clearTimeout(timer);
   }, [linkCode]);
+
+  useEffect(() => {
+    if (!authorizedGrant || !canWrite) return;
+    let live = true;
+    getCurrentOrganization()
+      .then((organization) => { if (live) setOrgSnapshot(organization); })
+      .catch(() => { if (live) setOrgSnapshot(null); });
+    return () => { live = false; };
+  }, [authorizedGrant, canWrite]);
 
   async function generateEmbeddedLink() {
     if (!completion || !canWrite || issuingLink) return;
@@ -105,7 +121,7 @@ export default function ShopifyInstallPage({ canWrite, onStoresChanged }: Props)
       setAuthorizedShop(status.shop_domain);
       setManagedVerified(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo verificar el código.");
+      setError(describeShopifyInstallError(err));
     } finally {
       setManagedVerifying(false);
     }
@@ -184,7 +200,7 @@ export default function ShopifyInstallPage({ canWrite, onStoresChanged }: Props)
       setCompletion({ storeId: created.id, url, webhooksReady: result.webhooks_ready });
       onStoresChanged?.();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No fue posible finalizar la conexión con Shopify.");
+      setError(describeShopifyInstallError(err));
     } finally {
       setConnecting(false);
     }
@@ -194,6 +210,14 @@ export default function ShopifyInstallPage({ canWrite, onStoresChanged }: Props)
     () => shop ? eligibleShopifyInstallStores(stores, shop) : [],
     [stores, shop],
   );
+
+  // Explained before submission so a guard never surfaces as raw HTTP text.
+  const billingBlocker = orgSnapshot ? shopifyInstallBillingBlocker(orgSnapshot) : null;
+  const storeBlocker =
+    orgSnapshot && shop
+      ? shopifyInstallStoreBlocker(orgSnapshot, eligibleStores.length > 0)
+      : null;
+  const installBlocked = Boolean(billingBlocker || storeBlocker);
 
   async function handleConnect() {
     if (!canWrite || !authorizedGrant || !shop || connecting) return;
@@ -215,7 +239,7 @@ export default function ShopifyInstallPage({ canWrite, onStoresChanged }: Props)
       setCompletion({ storeId: chosen.id, url, webhooksReady: result.webhooks_ready });
       onStoresChanged?.();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No fue posible conectar Shopify.");
+      setError(describeShopifyInstallError(err));
       setConnecting(false);
     }
   }
@@ -323,11 +347,16 @@ export default function ShopifyInstallPage({ canWrite, onStoresChanged }: Props)
                     No pudimos cargar los mercados. Regresa a Tiendas y vuelve a intentar.
                   </p>
                 )}
+                {(storeBlocker || billingBlocker) && (
+                  <p role="alert" className="shopify-install-error">
+                    {storeBlocker || billingBlocker}
+                  </p>
+                )}
                 {error && <p role="alert" className="shopify-install-error">{error}</p>}
                 <button
                   className="shopify-install-primary"
                   type="button"
-                  disabled={connecting || !newStoreName.trim() || !newCountry || marketsLoading || marketsError}
+                  disabled={connecting || installBlocked || !newStoreName.trim() || !newCountry || marketsLoading || marketsError}
                   onClick={() => { void handleCreateAndConnect(); }}
                 >
                   {connecting ? "Creando y conectando…" : "Crear tienda y finalizar conexión"}
@@ -357,12 +386,15 @@ export default function ShopifyInstallPage({ canWrite, onStoresChanged }: Props)
                 </select>
               </label>
             )}
+            {billingBlocker && (
+              <p role="alert" className="shopify-install-error">{billingBlocker}</p>
+            )}
             {error && <p className="shopify-install-error" role="alert">{error}</p>}
             {eligibleStores.length > 0 && (
               <button
                 className="shopify-install-primary"
                 type="button"
-                disabled={!canWrite || !selected || !shop || connecting || loading}
+                disabled={!canWrite || !selected || !shop || connecting || loading || installBlocked}
                 onClick={() => { void handleConnect(); }}
               >
                 {connecting ? "Conectando…" : "Finalizar conexión"}
