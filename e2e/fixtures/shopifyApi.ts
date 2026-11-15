@@ -71,6 +71,14 @@ export async function mockShopifyApp(
     await route.abort();
   });
 
+  // Keep advertising disabled; eliminate consent overlays without external pixels.
+  await page.addInitScript(() => {
+    localStorage.setItem("diaglob-cookie-consent-v1", JSON.stringify({
+      version: 1, necessary: true, advertising: false,
+      decidedAt: "2026-01-01T00:00:00.000Z",
+    }));
+  });
+
   if (authenticated) {
     await page.addInitScript(() => {
       localStorage.setItem("diaglob-access-token", "synthetic-e2e-access");
