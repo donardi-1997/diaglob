@@ -1,0 +1,104 @@
+name: Shopify Playwright Browser E2E
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "e2e/**"
+      - "frontend/**"
+      - ".github/workflows/shopify-playwright.yml"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Synthetic browser tests or explicitly authorized staging read-only smoke"
+        required: true
+        type: choice
+        default: mocked
+        options:
+          - mocked
+          - staging-readonly
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shopify-playwright-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mocked:
+    name: Chromium mocked Shopify journeys
+    if: github.event_name == 'pull_request' || inputs.mode == 'mocked'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install Diaglob frontend from lockfile
+        run: npm ci --prefix frontend
+      - name: Install pinned Playwright test runner
+        run: npm install --prefix e2e --no-package-lock --ignore-scripts --no-audit --no-fund
+      - name: Install Chromium and system dependencies
+        working-directory: e2e
+        run: npx playwright install --with-deps chromium
+      - name: Exercise real React UI with synthetic Shopify API fixtures
+        working-directory: e2e
+        env:
+          CI: "true"
+        run: npx playwright test --project=chromium-mocked
+      - name: Upload synthetic-only browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shopify-playwright-synthetic
+          path: |
+            e2e/playwright-report/
+            e2e/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  staging-readonly:
+    name: Staging reviewer browser smoke (manual only)
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'staging-readonly'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    environment: shopify-staging
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Verify dedicated staging credentials and URL exist
+        shell: bash
+        env:
+          E2E_STAGING_BASE_URL: ${{ vars.E2E_STAGING_BASE_URL }}
+          E2E_STAGING_EMAIL: ${{ secrets.E2E_STAGING_EMAIL }}
+          E2E_STAGING_PASSWORD: ${{ secrets.E2E_STAGING_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$E2E_STAGING_BASE_URL" || -z "$E2E_STAGING_EMAIL" || -z "$E2E_STAGING_PASSWORD" ]]; then
+            echo "::error::Configure E2E_STAGING_BASE_URL and dedicated E2E_STAGING_EMAIL/PASSWORD in shopify-staging environment."
+            exit 1
+          fi
+      - name: Install pinned Playwright without launching frontend locally
+        run: npm install --prefix e2e --no-package-lock --ignore-scripts --no-audit --no-fund
+      - name: Install Chromium and system dependencies
+        working-directory: e2e
+        run: npx playwright install --with-deps chromium
+      - name: Inspect Shopify reviewer pages (GET-only API; no traces/screenshots/artifacts)
+        working-directory: e2e
+        env:
+          CI: "true"
+          E2E_STAGING_ONLY: "1"
+          E2E_STAGING_READONLY_ACK: "yes"
+          E2E_STAGING_BASE_URL: ${{ vars.E2E_STAGING_BASE_URL }}
+          E2E_STAGING_EMAIL: ${{ secrets.E2E_STAGING_EMAIL }}
+          E2E_STAGING_PASSWORD: ${{ secrets.E2E_STAGING_PASSWORD }}
+        run: npx playwright test --project=chromium-staging-readonly
+
+# No Shopify Partner secrets are available to PR jobs.
+# Staging smoke has no browser trace/screenshot upload and blocks mutation APIs.
