@@ -38,6 +38,7 @@ import type { FlowNodeConfig } from "./flowGraphUtils";
 import { validateFlowGraph } from "./flowGraphUtils";
 import "@xyflow/react/dist/style.css";
 import "./flow-builder-v2.css";
+import "./flow-editor-actions.css";
 
 interface Props {
   canWrite: boolean;
@@ -145,9 +146,10 @@ export default function FlowList({ canWrite, storeId, initialFlowId, onInitialFl
         name: t("flowNewName"),
         graph: serializeFlowGraph(createDefaultGraph()),
       });
-      setSelectedFlow(flow);
-      const createdGraph = flow.current_version
-        ? deserializeFlowGraph(flow.current_version.graph)
+      const full = await getFlow(storeId, flow.id);
+      setSelectedFlow(full);
+      const createdGraph = full.current_version
+        ? deserializeFlowGraph(full.current_version.graph)
         : createDefaultGraph();
       setGraph(createdGraph);
       setSavedGraphSignature(JSON.stringify(serializeFlowGraph(createdGraph)));
