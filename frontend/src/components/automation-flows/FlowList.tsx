@@ -44,6 +44,7 @@ interface Props {
   storeId: number;
   initialFlowId?: number | null;
   onInitialFlowHandled?: () => void;
+  onEditorDirtyChange?: (dirty: boolean) => void;
 }
 
 type View = "list" | "builder" | "runs";
@@ -55,7 +56,7 @@ const STATUS_STYLES: Record<string, { bg: string; color: string }> = {
   archived: { bg: "rgba(255,255,255,0.04)", color: "var(--text-muted)" },
 };
 
-export default function FlowList({ canWrite, storeId, initialFlowId, onInitialFlowHandled }: Props) {
+export default function FlowList({ canWrite, storeId, initialFlowId, onInitialFlowHandled, onEditorDirtyChange }: Props) {
   const { t } = useTranslation();
   const [view, setView] = useState<View>("list");
   const [flows, setFlows] = useState<AutomationFlow[]>([]);
@@ -89,6 +90,20 @@ export default function FlowList({ canWrite, storeId, initialFlowId, onInitialFl
   useEffect(() => {
     if (view === "list") void loadFlows();
   }, [view, loadFlows]);
+
+  useEffect(() => {
+    onEditorDirtyChange?.(view === "builder" && dirty);
+  }, [view, dirty, onEditorDirtyChange]);
+
+  useEffect(() => {
+    if (view !== "builder" || !dirty) return;
+    const preventUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", preventUnload);
+    return () => window.removeEventListener("beforeunload", preventUnload);
+  }, [view, dirty]);
 
   useEffect(() => {
     if (!initialFlowId) return;
@@ -333,24 +348,28 @@ export default function FlowList({ canWrite, storeId, initialFlowId, onInitialFl
         <div className="flow-builder-toolbar">
           <button
             className="secondary-button"
+            type="button"
             onClick={() => {
+              if (dirty && !window.confirm(t("flowEditorDiscardChanges"))) return;
               setView("list");
               setSelectedFlow(null);
               setSelectedNodeId(null);
               setShowCopilot(false);
+              setSavedGraphSignature(null);
             }}
           >
             <ArrowLeft size={14} />
             {t("flowBackToList")}
           </button>
-          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <div className="flow-editor-actions">
             <h3 style={{ margin: 0 }}>{selectedFlow.name}</h3>
+            <span className="flow-editor-status">{t(`flowStatus_${selectedFlow.status}`)}</span>
             {canWrite && (
               <>
                 <button
                   className="secondary-button"
                   onClick={() => setShowCopilot((current) => !current)}
-                  disabled={saving}
+                  disabled={saving || publishing || activating || selectedFlow.status === "active"}
                 >
                   <Sparkles size={14} />
                   Diseñar con IA
@@ -358,7 +377,7 @@ export default function FlowList({ canWrite, storeId, initialFlowId, onInitialFl
                 <button
                   className="secondary-button"
                   onClick={() => setShowSimulation(true)}
-                  disabled={saving || validationErrors.length > 0}
+                  disabled={saving || publishing || activating || validationErrors.length > 0}
                 >
                   <Play size={14} />
                   {t("flowSimulate")}
@@ -366,13 +385,53 @@ export default function FlowList({ canWrite, storeId, initialFlowId, onInitialFl
                 <button
                   className="primary-button"
                   onClick={() => void handleSaveGraph()}
-                  disabled={saving || validationErrors.length > 0}
+                  disabled={saving || publishing || activating || !dirty || selectedFlow.status === "active" || validationErrors.length > 0}
                 >
                   {saving ? t("flowSaving") : t("flowSave")}
                 </button>
+                {selectedFlow.status !== "active" && !selectedFlow.current_version?.published_at && (
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => void handlePublish()}
+                    disabled={saving || publishing || activating || dirty || validationErrors.length > 0 || !selectedFlow.current_version}
+                  >
+                    {publishing ? t("flowEditorPublishing") : t("flowEditorPublish")}
+                  </button>
+                )}
+                {selectedFlow.status !== "active" && selectedFlow.current_version?.published_at && (
+                  <button
+                    type="button"
+                    className="primary-button"
+                    onClick={() => void handleActivateSelected()}
+                    disabled={saving || publishing || activating || dirty || validationErrors.length > 0}
+                  >
+                    {activating ? t("flowEditorActivating") : t("flowEditorActivate")}
+                  </button>
+                )}
+                {selectedFlow.status === "active" && (
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => void handlePauseSelected()}
+                    disabled={saving || publishing || activating}
+                  >
+                    <Pause size={14} />
+                    {t("flowPause")}
+                  </button>
+                )}
               </>
             )}
           </div>
+        </div>
+        <div className="flow-editor-guidance" role="status">
+          {selectedFlow.status === "active"
+            ? t("flowEditorActiveNotice")
+            : dirty
+              ? t("flowEditorUnsavedNotice")
+              : selectedFlow.current_version?.published_at
+                ? t("flowEditorReadyToActivate")
+                : t("flowEditorReadyToPublish")}
         </div>
         {error && (
           <p style={{ color: "#ef4444", margin: "8px 0" }}>
@@ -391,7 +450,7 @@ export default function FlowList({ canWrite, storeId, initialFlowId, onInitialFl
             <>
               <AlertTriangle size={15} />
               <span>
-                Completa el flujo antes de guardarlo: {
+                {t("flowEditorCompleteFirst")} {
                   validationErrors
                     .map((key) => t(key))
                     .join(" · ")
@@ -401,7 +460,7 @@ export default function FlowList({ canWrite, storeId, initialFlowId, onInitialFl
           ) : (
             <>
               <CheckCircle2 size={15} />
-              <span>Grafo válido y listo para guardar.</span>
+              <span>{t("flowEditorGraphValid")}</span>
             </>
           )}
         </div>
@@ -411,7 +470,7 @@ export default function FlowList({ canWrite, storeId, initialFlowId, onInitialFl
           onGraphChange={setGraph}
           selectedNodeId={selectedNodeId}
           onNodeSelect={setSelectedNodeId}
-          canWrite={canWrite}
+          canWrite={canWrite && selectedFlow.status !== "active"}
         />
 
         <FlowSidebar
@@ -420,10 +479,10 @@ export default function FlowList({ canWrite, storeId, initialFlowId, onInitialFl
           onDelete={handleNodeDelete}
           onClose={() => setSelectedNodeId(null)}
           t={t}
-          canWrite={canWrite}
+          canWrite={canWrite && selectedFlow.status !== "active"}
         />
 
-        {showCopilot && canWrite && (
+        {showCopilot && canWrite && selectedFlow.status !== "active" && (
           <FlowCopilotPanel
             storeId={storeId}
             flowId={selectedFlow.id}
