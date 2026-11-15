@@ -149,7 +149,10 @@ class ShopifyGraphQLClient:
 
             raise ShopifyGraphQLError("SHOPIFY_GRAPHQL_QUERY_FAILED")
 
-        return data.get("data", {})
+        result = data.get("data", {})
+        if not isinstance(result, dict):
+            raise ShopifyGraphQLError("SHOPIFY_GRAPHQL_QUERY_FAILED")
+        return result
 
 
 class ShopifyAPIError(Exception):
