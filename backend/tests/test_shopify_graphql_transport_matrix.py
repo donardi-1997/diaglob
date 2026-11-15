@@ -158,6 +158,19 @@ def test_http_200_with_graphql_errors_fails_closed_without_partial_data(
     assert "private@example.invalid" not in str(failure.value)
 
 
+@pytest.mark.parametrize("code", ["THROTTLED", "throttled"])
+def test_graphql_http_200_throttling_is_retryable_and_never_returns_partial_data(
+    monkeypatch, code,
+):
+    _stub(monkeypatch, payload={
+        "data": {"customer": {"email": "private@example.invalid"}},
+        "errors": [{"message": "Throttled: private@example.invalid", "extensions": {"code": code}}],
+    })
+    with pytest.raises(ShopifyRateLimitError, match="Shopify rate limit exceeded") as failure:
+        _client().query("query { customer { email } }")
+    assert "private@example.invalid" not in str(failure.value)
+
+
 @pytest.mark.parametrize("errors", [
     [{"message": "unknown error"}],
     {"message": "unknown error"},
