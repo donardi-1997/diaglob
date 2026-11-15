@@ -125,8 +125,12 @@ def _mock_token_response(monkeypatch, payload, status=200):
 
     def fake_post(url, **kwargs):
         calls.append((url, kwargs))
+        response_args = (
+            {"content": b"null"} if payload is None
+            else {"json": payload}
+        )
         return httpx.Response(
-            status, request=httpx.Request("POST", url), json=payload,
+            status, request=httpx.Request("POST", url), **response_args,
         )
 
     monkeypatch.setattr("app.shopify_oauth.httpx.post", fake_post)
