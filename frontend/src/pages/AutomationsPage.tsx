@@ -67,7 +67,7 @@ const TABS: {
     labelKey: "autoTabExecutions",
     icon: History,
   },
- ];
+];
 
 
 export default function AutomationsPage({
