@@ -6,6 +6,7 @@ import {
   PlayCircle,
   GitBranch,
   LayoutTemplate,
+  LayoutDashboard,
   Send,
 } from "lucide-react";
 import AutomationsRules from "../components/AutomationsRules";
@@ -13,6 +14,7 @@ import AutomationsExecutions from "../components/AutomationsExecutions";
 import AutomationCampaigns from "../components/AutomationCampaigns";
 import AutomationRunExplorer from "../components/AutomationRunExplorer";
 import AutomationTemplates from "../components/AutomationTemplates";
+import AutomationsOverview from "./AutomationsOverview";
 
 const FlowList = lazy(() => import("../components/automation-flows/FlowList"));
 
@@ -24,6 +26,7 @@ interface AutomationsPageProps {
 
 
 type AutomationTab =
+  | "overview"
   | "templates"
   | "campaigns"
   | "rules"
@@ -37,6 +40,11 @@ const TABS: {
   labelKey: string;
   icon: typeof Workflow;
 }[] = [
+  {
+    key: "overview",
+    labelKey: "autoTabOverview",
+    icon: LayoutDashboard,
+  },
   {
     key: "flows",
     labelKey: "autoTabFlows",
@@ -77,7 +85,7 @@ export default function AutomationsPage({
   const { t } = useTranslation();
 
   const [activeTab, setActiveTab] =
-    useState<AutomationTab>("flows");
+    useState<AutomationTab>("overview");
 
   return (
     <div className="content">
@@ -117,6 +125,9 @@ export default function AutomationsPage({
       </div>
 
       <div className="commerce-content">
+        {activeTab === "overview" && (
+          <AutomationsOverview storeId={storeId} onNavigate={setActiveTab} />
+        )}
         {activeTab === "campaigns" && (
           <AutomationCampaigns canWrite={canWrite} storeId={storeId} />
         )}
