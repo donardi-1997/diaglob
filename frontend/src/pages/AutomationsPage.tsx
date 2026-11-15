@@ -6,12 +6,15 @@ import {
   PlayCircle,
   GitBranch,
   LayoutTemplate,
+  LayoutDashboard,
+  Send,
 } from "lucide-react";
 import AutomationsRules from "../components/AutomationsRules";
 import AutomationsExecutions from "../components/AutomationsExecutions";
 import AutomationCampaigns from "../components/AutomationCampaigns";
 import AutomationRunExplorer from "../components/AutomationRunExplorer";
 import AutomationTemplates from "../components/AutomationTemplates";
+import AutomationsOverview from "./AutomationsOverview";
 
 const FlowList = lazy(() => import("../components/automation-flows/FlowList"));
 
@@ -23,7 +26,9 @@ interface AutomationsPageProps {
 
 
 type AutomationTab =
+  | "overview"
   | "templates"
+  | "campaigns"
   | "rules"
   | "runs"
   | "executions"
@@ -36,9 +41,24 @@ const TABS: {
   icon: typeof Workflow;
 }[] = [
   {
+    key: "overview",
+    labelKey: "autoTabOverview",
+    icon: LayoutDashboard,
+  },
+  {
+    key: "flows",
+    labelKey: "autoTabFlows",
+    icon: GitBranch,
+  },
+  {
     key: "templates",
     labelKey: "autoTabTemplates",
     icon: LayoutTemplate,
+  },
+  {
+    key: "campaigns",
+    labelKey: "autoCampaigns",
+    icon: Send,
   },
   {
     key: "rules",
@@ -55,11 +75,6 @@ const TABS: {
     labelKey: "autoTabExecutions",
     icon: History,
   },
-  {
-    key: "flows",
-    labelKey: "autoTabFlows",
-    icon: GitBranch,
-  },
 ];
 
 
@@ -70,7 +85,7 @@ export default function AutomationsPage({
   const { t } = useTranslation();
 
   const [activeTab, setActiveTab] =
-    useState<AutomationTab>("templates");
+    useState<AutomationTab>("overview");
 
   return (
     <div className="content">
@@ -90,6 +105,8 @@ export default function AutomationsPage({
           return (
             <button
               key={tab.key}
+              type="button"
+              aria-pressed={activeTab === tab.key}
               className={
                 "commerce-tab"
                 + (activeTab === tab.key
@@ -108,7 +125,12 @@ export default function AutomationsPage({
       </div>
 
       <div className="commerce-content">
-        <AutomationCampaigns canWrite={canWrite} storeId={storeId} />
+        {activeTab === "overview" && (
+          <AutomationsOverview storeId={storeId} onNavigate={setActiveTab} />
+        )}
+        {activeTab === "campaigns" && (
+          <AutomationCampaigns canWrite={canWrite} storeId={storeId} />
+        )}
         {activeTab === "templates" && (
           <AutomationTemplates
             canWrite={canWrite}
