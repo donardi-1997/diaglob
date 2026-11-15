@@ -95,3 +95,11 @@ diaglob-prod-temp-cert.pub
 diaglob-dns.json
 route53-root-www.json
 .venv-ci/
+
+# Playwright browser evidence and local sessions
+e2e/node_modules/
+e2e/playwright-report/
+e2e/test-results/
+e2e/.auth/
+e2e/**/*.storage-state.json
+e2e/**/*.storageState.json
