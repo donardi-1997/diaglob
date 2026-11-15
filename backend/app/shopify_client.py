@@ -132,6 +132,8 @@ class ShopifyGraphQLClient:
                     if isinstance(extensions, dict)
                     else ""
                 )
+                if code == "THROTTLED":
+                    raise ShopifyRateLimitError("Shopify rate limit exceeded")
                 if (
                     "not approved to access" in message
                     or "not approved to use" in message
