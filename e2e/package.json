@@ -1,0 +1,14 @@
+{
+  "name": "diaglob-shopify-browser-tests",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:mock": "playwright test --project=chromium-mocked",
+    "test:staging": "playwright test --project=chromium-staging-readonly"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.1"
+  }
+}
