@@ -19,6 +19,8 @@ import {
   archiveFlow,
   activateFlow,
   deactivateFlow,
+  createFlowVersion,
+  publishFlowVersion,
   type AutomationFlow,
 } from "../../services/automationFlows";
 import {
@@ -40,6 +42,8 @@ import "./flow-builder-v2.css";
 interface Props {
   canWrite: boolean;
   storeId: number;
+  initialFlowId?: number | null;
+  onInitialFlowHandled?: () => void;
 }
 
 type View = "list" | "builder" | "runs";
@@ -51,7 +55,7 @@ const STATUS_STYLES: Record<string, { bg: string; color: string }> = {
   archived: { bg: "rgba(255,255,255,0.04)", color: "var(--text-muted)" },
 };
 
-export default function FlowList({ canWrite, storeId }: Props) {
+export default function FlowList({ canWrite, storeId, initialFlowId, onInitialFlowHandled }: Props) {
   const { t } = useTranslation();
   const [view, setView] = useState<View>("list");
   const [flows, setFlows] = useState<AutomationFlow[]>([]);
@@ -64,6 +68,11 @@ export default function FlowList({ canWrite, storeId }: Props) {
   const [saving, setSaving] = useState(false);
   const [showSimulation, setShowSimulation] = useState(false);
   const [showCopilot, setShowCopilot] = useState(false);
+  const [savedGraphSignature, setSavedGraphSignature] = useState<string | null>(null);
+  const [publishing, setPublishing] = useState(false);
+  const [activating, setActivating] = useState(false);
+  const graphSignature = JSON.stringify(serializeFlowGraph(graph));
+  const dirty = savedGraphSignature !== null && savedGraphSignature !== graphSignature;
 
   const loadFlows = useCallback(async () => {
     setLoading(true);
@@ -81,6 +90,37 @@ export default function FlowList({ canWrite, storeId }: Props) {
     if (view === "list") void loadFlows();
   }, [view, loadFlows]);
 
+  useEffect(() => {
+    if (!initialFlowId) return;
+    let cancelled = false;
+    setLoading(true);
+    setError("");
+    void getFlow(storeId, initialFlowId)
+      .then((flow) => {
+        if (cancelled) return;
+        const loadedGraph = flow.current_version
+          ? deserializeFlowGraph(flow.current_version.graph)
+          : createDefaultGraph();
+        setSelectedFlow(flow);
+        setGraph(loadedGraph);
+        setSavedGraphSignature(JSON.stringify(serializeFlowGraph(loadedGraph)));
+        setSelectedNodeId(null);
+        setShowCopilot(false);
+        setView("builder");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setError(t("flowLoadError"));
+        setView("list");
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setLoading(false);
+        onInitialFlowHandled?.();
+      });
+    return () => { cancelled = true; };
+  }, [initialFlowId, storeId, onInitialFlowHandled, t]);
+
   const handleCreate = async () => {
     if (!canWrite) return;
     setSaving(true);
@@ -91,11 +131,11 @@ export default function FlowList({ canWrite, storeId }: Props) {
         graph: serializeFlowGraph(createDefaultGraph()),
       });
       setSelectedFlow(flow);
-      setGraph(
-        flow.current_version
-          ? deserializeFlowGraph(flow.current_version.graph)
-          : createDefaultGraph(),
-      );
+      const createdGraph = flow.current_version
+        ? deserializeFlowGraph(flow.current_version.graph)
+        : createDefaultGraph();
+      setGraph(createdGraph);
+      setSavedGraphSignature(JSON.stringify(serializeFlowGraph(createdGraph)));
       setSelectedNodeId(null);
       setShowCopilot(false);
       setView("builder");
@@ -112,11 +152,11 @@ export default function FlowList({ canWrite, storeId }: Props) {
     try {
       const full = await getFlow(storeId, flow.id);
       setSelectedFlow(full);
-      setGraph(
-        full.current_version
-          ? deserializeFlowGraph(full.current_version.graph)
-          : createDefaultGraph(),
-      );
+      const loadedGraph = full.current_version
+        ? deserializeFlowGraph(full.current_version.graph)
+        : createDefaultGraph();
+      setGraph(loadedGraph);
+      setSavedGraphSignature(JSON.stringify(serializeFlowGraph(loadedGraph)));
       setSelectedNodeId(null);
       setShowCopilot(false);
       setView("builder");
@@ -133,24 +173,68 @@ export default function FlowList({ canWrite, storeId }: Props) {
   };
 
   const handleSaveGraph = async () => {
-    if (!selectedFlow || !canWrite) return;
+    if (!selectedFlow || !canWrite || selectedFlow.status === "active" || !dirty) return;
+    if (validateFlowGraph(graph).length) return;
+    const serialized = serializeFlowGraph(graph);
+    const signature = JSON.stringify(serialized);
     setSaving(true);
     setError("");
     try {
-      const { listFlowVersions, createFlowVersion } = await import("../../services/automationFlows");
-      const versions = await listFlowVersions(storeId, selectedFlow.id);
-      const draftVersion = versions.find((v) => !v.published_at);
-      if (draftVersion) {
-        await createFlowVersion(storeId, selectedFlow.id, serializeFlowGraph(graph));
-      } else {
-        await createFlowVersion(storeId, selectedFlow.id, serializeFlowGraph(graph));
-      }
+      await createFlowVersion(storeId, selectedFlow.id, serialized);
       const updated = await getFlow(storeId, selectedFlow.id);
       setSelectedFlow(updated);
+      setSavedGraphSignature(signature);
     } catch {
       setError(t("flowSaveError"));
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handlePublish = async () => {
+    const version = selectedFlow?.current_version;
+    if (!selectedFlow || !version || !canWrite || dirty || validateFlowGraph(graph).length ||
+      version.published_at || selectedFlow.status === "active") return;
+    setPublishing(true);
+    setError("");
+    try {
+      await publishFlowVersion(storeId, selectedFlow.id, version.id);
+      setSelectedFlow(await getFlow(storeId, selectedFlow.id));
+    } catch {
+      setError(t("flowEditorPublishError"));
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  const handleActivateSelected = async () => {
+    const version = selectedFlow?.current_version;
+    if (!selectedFlow || !version?.published_at || !canWrite || dirty ||
+      validateFlowGraph(graph).length || selectedFlow.status === "active") return;
+    if (!window.confirm(t("flowEditorConfirmActivate"))) return;
+    setActivating(true);
+    setError("");
+    try {
+      await activateFlow(storeId, selectedFlow.id);
+      setSelectedFlow(await getFlow(storeId, selectedFlow.id));
+    } catch {
+      setError(t("flowActivateError"));
+    } finally {
+      setActivating(false);
+    }
+  };
+
+  const handlePauseSelected = async () => {
+    if (!selectedFlow || !canWrite || selectedFlow.status !== "active") return;
+    setActivating(true);
+    setError("");
+    try {
+      await deactivateFlow(storeId, selectedFlow.id);
+      setSelectedFlow(await getFlow(storeId, selectedFlow.id));
+    } catch {
+      setError(t("flowDeactivateError"));
+    } finally {
+      setActivating(false);
     }
   };
 
@@ -212,11 +296,11 @@ export default function FlowList({ canWrite, storeId }: Props) {
 
     const updated = await getFlow(storeId, selectedFlow.id);
     setSelectedFlow(updated);
-    setGraph(
-      updated.current_version
-        ? deserializeFlowGraph(updated.current_version.graph)
-        : createDefaultGraph(),
-    );
+    const loadedGraph = updated.current_version
+      ? deserializeFlowGraph(updated.current_version.graph)
+      : createDefaultGraph();
+    setGraph(loadedGraph);
+    setSavedGraphSignature(JSON.stringify(serializeFlowGraph(loadedGraph)));
     setSelectedNodeId(null);
   };
 
