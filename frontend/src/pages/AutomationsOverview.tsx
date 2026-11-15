@@ -30,11 +30,13 @@ export default function AutomationsOverview({ storeId, onNavigate }: Props) {
   const { t } = useTranslation();
   const [data, setData] = useState<OverviewData>(EMPTY_DATA);
   const [loading, setLoading] = useState(true);
+  const [loadedStoreId, setLoadedStoreId] = useState<number | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    setLoadedStoreId(null);
     setData(EMPTY_DATA);
 
     // Each endpoint is store-scoped. One unavailable legacy API must not hide
@@ -50,6 +52,7 @@ export default function AutomationsOverview({ storeId, onNavigate }: Props) {
         campaigns: campaignResult.status === "fulfilled" ? campaignResult.value.items : null,
         rules: ruleResult.status === "fulfilled" ? ruleResult.value.items : null,
       });
+      setLoadedStoreId(storeId);
       setLoading(false);
     });
 
@@ -57,9 +60,12 @@ export default function AutomationsOverview({ storeId, onNavigate }: Props) {
     return () => { cancelled = true; };
   }, [storeId, refreshKey]);
 
-  const counts = automationOverviewCounts(data);
-  const recentFlows = recentAutomationFlows(data.flows, 5);
-  const hasPartialFailure = !loading && Object.values(data).some((value) => value === null);
+  // A completed request from another store must not flash during a store switch.
+  const showLoading = loading || loadedStoreId !== storeId;
+  const visibleData = loadedStoreId === storeId ? data : EMPTY_DATA;
+  const counts = automationOverviewCounts(visibleData);
+  const recentFlows = recentAutomationFlows(visibleData.flows, 5);
+  const hasPartialFailure = !showLoading && Object.values(visibleData).some((value) => value === null);
 
   const metrics = [
     { key: "activeFlows", label: t("autoOverviewActiveFlows"), icon: GitBranch },
@@ -69,7 +75,7 @@ export default function AutomationsOverview({ storeId, onNavigate }: Props) {
   ] as const;
 
   return (
-    <section className="auto-overview" aria-busy={loading}>
+    <section className="auto-overview" aria-busy={showLoading}>
       <div className="auto-overview-hero">
         <div>
           <span className="auto-overview-eyebrow">DIAGLOB · AUTOMATIONS</span>
@@ -89,7 +95,7 @@ export default function AutomationsOverview({ storeId, onNavigate }: Props) {
         <button
           className="auto-overview-refresh"
           type="button"
-          disabled={loading}
+          disabled={showLoading}
           onClick={() => setRefreshKey((key) => key + 1)}
         >
           <RefreshCw size={16} aria-hidden="true" />
@@ -108,7 +114,7 @@ export default function AutomationsOverview({ storeId, onNavigate }: Props) {
           <article className="auto-overview-metric" key={key}>
             <span className="auto-overview-metric-icon"><Icon size={20} aria-hidden="true" /></span>
             <strong aria-label={counts[key] === null ? t("autoOverviewUnavailable") : undefined}>
-              {loading || counts[key] === null ? "—" : counts[key]}
+              {showLoading || counts[key] === null ? "—" : counts[key]}
             </strong>
             <span>{label}</span>
           </article>
@@ -126,9 +132,9 @@ export default function AutomationsOverview({ storeId, onNavigate }: Props) {
               {t("autoOverviewViewAll")} <ArrowRight size={16} aria-hidden="true" />
             </button>
           </div>
-          {loading ? (
+          {showLoading ? (
             <p className="auto-overview-empty" role="status">{t("commonLoading")}</p>
-          ) : data.flows === null ? (
+          ) : visibleData.flows === null ? (
             <p className="auto-overview-empty">{t("autoOverviewUnavailable")}</p>
           ) : recentFlows.length === 0 ? (
             <p className="auto-overview-empty">{t("autoOverviewEmpty")}</p>
