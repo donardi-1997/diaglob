@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Check,
@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 
 import { api } from "../services/api";
+import type { AutomationFlow } from "../services/automationFlows";
 
 
 interface AutomationTemplate {
@@ -41,6 +42,7 @@ interface AutomationTemplate {
 interface AutomationTemplatesProps {
   canWrite: boolean;
   storeId: number;
+  onFlowCreated: (flowId: number) => void;
 }
 
 
@@ -71,6 +73,7 @@ const CATEGORY_LABELS: Record<string, string> = {
 export default function AutomationTemplates({
   canWrite,
   storeId,
+  onFlowCreated,
 }: AutomationTemplatesProps) {
   const { t } = useTranslation();
 
@@ -81,6 +84,12 @@ export default function AutomationTemplates({
   const [creating, setCreating] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const mountedStore = useRef({ storeId, active: true });
+
+  useEffect(() => {
+    mountedStore.current = { storeId, active: true };
+    return () => { mountedStore.current.active = false; };
+  }, [storeId]);
 
   useEffect(() => {
     loadTemplates();
@@ -121,12 +130,18 @@ export default function AutomationTemplates({
       setError("");
       setSuccess("");
 
-      await api.post(
-        `/api/stores/${storeId}/automation-flow-templates/${templateId}`
+      const response = await api.post<{ flow: AutomationFlow }>(
+        `/api/stores/${storeId}/automation-flow-templates/${encodeURIComponent(templateId)}`
       );
-
-      setSuccess(t("autoTemplateCreated"));
+      const flowId = response.data?.flow?.id;
+      if (!Number.isSafeInteger(flowId) || flowId <= 0) {
+        throw new Error("Template creation response did not include a valid flow ID");
+      }
+      if (mountedStore.current.active && mountedStore.current.storeId === storeId) {
+        onFlowCreated(flowId);
+      }
     } catch (err: any) {
+      if (!mountedStore.current.active || mountedStore.current.storeId !== storeId) return;
       const detail = err?.response?.data?.detail;
       if (typeof detail === "object" && detail.code === "FLOW_TEMPLATE_INTEGRATION_REQUIRED") {
         setError(
@@ -142,7 +157,9 @@ export default function AutomationTemplates({
         );
       }
     } finally {
-      setCreating(null);
+      if (mountedStore.current.active && mountedStore.current.storeId === storeId) {
+        setCreating(null);
+      }
     }
   }
 
@@ -255,7 +272,7 @@ export default function AutomationTemplates({
                   <button
                     className="template-create-button"
                     onClick={() => handleCreateTemplate(template.id)}
-                    disabled={!isAvailable || isCreating}
+                    disabled={!isAvailable || creating !== null}
                   >
                     {isCreating ? (
                       <Loader2 className="spin" size={14} />
