@@ -134,7 +134,7 @@ export default function AutomationTemplates({
         `/api/stores/${storeId}/automation-flow-templates/${encodeURIComponent(templateId)}`
       );
       const flowId = response.data?.flow?.id;
-      if (!Number.isSafeInteger(flowId) || flowId <= 0) {
+      if (typeof flowId !== "number" || !Number.isSafeInteger(flowId) || flowId <= 0) {
         throw new Error("Template creation response did not include a valid flow ID");
       }
       if (mountedStore.current.active && mountedStore.current.storeId === storeId) {
