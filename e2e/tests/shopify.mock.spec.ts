@@ -54,7 +54,8 @@ test("successful authorization claims only the selected store and returns a safe
   const claimCalls = calls.filter((c) => c.path.endsWith("/shopify/install/claim"));
   expect(claimCalls).toHaveLength(1);
   expect(claimCalls[0].path).toBe("/api/stores/17/shopify/install/claim");
-  expect(claimCalls[0].headers["x-store-id"]).toBeUndefined();
+  expect(claimCalls[0].headers["x-store-id"]).toBe("17");
+  expect(claimCalls[0].headers["x-organization-id"]).toBe("41");
   expect(calls.some((c) => /\/shopify\/orders|\/billing\/.*apply/.test(c.path))).toBe(false);
 });
 
