@@ -64,7 +64,7 @@ test("merchant must select their eligible preexisting DIAGLOB store", () => {
 });
 
 test("Shopify OAuth destination must be same-shop HTTPS and exact authorize path", () => {
-  const url = "https://demo.myshopify.com/admin/oauth/authorize?client_id=test&state=synthetic";
+  const url = `https://demo.myshopify.com/admin/oauth/authorize?client_id=${DIAGLOB_SHOPIFY_CLIENT_ID}&state=synthetic`;
   assert.equal(validatedShopifyAuthorizationUrl(url, "demo.myshopify.com"), url);
   for (const invalid of [
     "https://evil.example/admin/oauth/authorize?client_id=x&state=x",

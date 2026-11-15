@@ -71,8 +71,11 @@ export function validatedShopifyAuthorizationUrl(url: string, shop: string): str
     parsed.port !== "" ||
     parsed.username || parsed.password ||
     parsed.pathname !== "/admin/oauth/authorize" ||
+    parsed.hash !== "" ||
+    parsed.searchParams.getAll("state").length !== 1 ||
     !parsed.searchParams.get("state") ||
-    !parsed.searchParams.get("client_id")
+    parsed.searchParams.getAll("client_id").length !== 1 ||
+    parsed.searchParams.get("client_id") !== DIAGLOB_SHOPIFY_CLIENT_ID
   ) {
     throw new Error("Invalid Shopify authorization redirect");
   }
