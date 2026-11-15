@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import type { Page, Route } from "@playwright/test";
 
 // These are synthetic browser/API fixtures. Never use live access tokens,
 // real customer records or actual Shopify domains in mocked CI.
@@ -100,7 +100,7 @@ export async function mockShopifyApp(
     all_stores: true, permissions,
     ...options.organizationOverride,
   };
-  const respond = async (route: Parameters<Parameters<Page["route"]>[1]>[0],
+  const respond = async (route: Route,
                          body: unknown, status = 200) => {
     await route.fulfill({
       status,
