@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 
 import { api } from "../services/api";
-import type { AutomationFlow } from "../services/automationFlows";
+import { createdTemplateFlowId } from "../utils/automationTemplateFlow";
 
 
 interface AutomationTemplate {
@@ -130,13 +130,10 @@ export default function AutomationTemplates({
       setError("");
       setSuccess("");
 
-      const response = await api.post<{ flow: AutomationFlow }>(
+      const response = await api.post<unknown>(
         `/api/stores/${storeId}/automation-flow-templates/${encodeURIComponent(templateId)}`
       );
-      const flowId = response.data?.flow?.id;
-      if (typeof flowId !== "number" || !Number.isSafeInteger(flowId) || flowId <= 0) {
-        throw new Error("Template creation response did not include a valid flow ID");
-      }
+      const flowId = createdTemplateFlowId(response.data);
       if (mountedStore.current.active && mountedStore.current.storeId === storeId) {
         onFlowCreated(flowId);
       }
