@@ -13,3 +13,24 @@ export function createdTemplateFlowId(response: unknown): number {
   }
   return id;
 }
+
+export type TemplateStepType = "trigger" | "wait" | "condition" | "message" | "call" | "tool" | "end";
+
+const KNOWN_STEPS: ReadonlySet<string> = new Set([
+  "trigger", "wait", "condition", "message", "call", "tool", "end",
+]);
+
+/** Preserve the visible order from the template without exposing config/PII. */
+export function templateGraphSteps(graph: Record<string, unknown>): TemplateStepType[] {
+  const nodes = graph.nodes;
+  if (!Array.isArray(nodes)) return [];
+  const steps: TemplateStepType[] = [];
+  for (const node of nodes) {
+    if (typeof node !== "object" || node === null || !("type" in node)) continue;
+    const type = node.type;
+    if (typeof type === "string" && KNOWN_STEPS.has(type)) {
+      steps.push(type as TemplateStepType);
+    }
+  }
+  return steps;
+}
