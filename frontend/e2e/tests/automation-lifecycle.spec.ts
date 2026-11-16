@@ -176,10 +176,10 @@ test("incomplete draft survives save but cannot be published or activated", asyn
   await page.locator('.react-flow__node[data-id="message"]').click();
   await expect(page.locator(".flow-sidebar textarea")).toBeVisible();
   await page.locator(".flow-sidebar textarea").fill("");
-  await expect(page.getByRole("button", { name: "Guardar" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Guardar", exact: true })).toBeEnabled();
   await expect(page.getByRole("button", { name: "Publicar versión" })).toBeDisabled();
-  await page.getByRole("button", { name: "Guardar" }).click();
-  await expect(page.getByRole("button", { name: "Guardar" })).toBeDisabled();
+  await page.getByRole("button", { name: "Guardar", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Guardar", exact: true })).toBeDisabled();
   expect(state.savedDrafts).toHaveLength(1);
   expect(state.savedDrafts[0].nodes.find((n) => n.id === "message")?.config.message_template).toBe("");
   expect(state.publishAttempts).toBe(0);
