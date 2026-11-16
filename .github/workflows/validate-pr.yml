@@ -231,7 +231,8 @@ jobs:
     name: Automation Playwright E2E (desktop + mobile)
     needs: changes
     if: needs.changes.outputs.automation_e2e == 'true'
-    runs-on: ubuntu-latest
+    # Playwright 1.55 browser dependencies target Ubuntu 24.04, not 26.04.
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
 
     steps:
