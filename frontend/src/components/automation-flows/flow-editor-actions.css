@@ -75,3 +75,12 @@
 @media (max-width: 640px) {
   .flow-canvas-container .react-flow__minimap { display: none; }
 }
+
+/* The inspector is a fixed overlay: offer the same save action in its footer. */
+.flow-sidebar-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--bg);
+}
+.flow-sidebar-save { width: 100%; justify-content: center; min-height: 42px; }
