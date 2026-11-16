@@ -256,7 +256,8 @@ export default function FlowList({ canWrite, storeId, initialFlowId, onInitialFl
   };
 
   const handleActivate = async (flow: AutomationFlow) => {
-    if (!canWrite) return;
+    if (!canWrite || !flow.current_version?.published_at) return;
+    if (!window.confirm(t("flowEditorConfirmActivate"))) return;
     try {
       await activateFlow(storeId, flow.id);
       await loadFlows();
