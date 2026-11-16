@@ -315,6 +315,10 @@ export function validateFlowGraph(graph: FlowGraph): string[] {
       }
     }
 
+    if (node.type === "message" && !node.config.message_template?.trim()) {
+      errors.push("flowValidationMessageMissingTemplate");
+    }
+
     if (node.type === "call") {
       const branches = outgoing.map(edgeBranch);
       const expected = ["confirmed", "rejected", "no_answer", "failed"];

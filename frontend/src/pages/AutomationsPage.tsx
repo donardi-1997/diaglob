@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { useState, lazy, Suspense } from "react";
+import { useCallback, useState, lazy, Suspense } from "react";
 import {
   History,
   Workflow,
@@ -86,6 +86,22 @@ export default function AutomationsPage({
 
   const [activeTab, setActiveTab] =
     useState<AutomationTab>("overview");
+  const [pendingTemplateFlow, setPendingTemplateFlow] = useState<{ storeId: number; flowId: number } | null>(null);
+  const [editorDirty, setEditorDirty] = useState(false);
+  const handleEditorDirtyChange = useCallback((dirty: boolean) => setEditorDirty(dirty), []);
+
+  function handleTabChange(nextTab: AutomationTab) {
+    if (nextTab === activeTab) return;
+    if (editorDirty && !window.confirm(t("flowEditorDiscardChanges"))) return;
+    setEditorDirty(false);
+    setActiveTab(nextTab);
+  }
+  const handleTemplateFlowHandled = useCallback(() => setPendingTemplateFlow(null), []);
+
+  function handleTemplateFlowCreated(flowId: number) {
+    setPendingTemplateFlow({ storeId, flowId });
+    setActiveTab("flows");
+  }
 
   return (
     <div className="content">
@@ -113,9 +129,7 @@ export default function AutomationsPage({
                   ? " active"
                   : "")
               }
-              onClick={() =>
-                setActiveTab(tab.key)
-              }
+              onClick={() => handleTabChange(tab.key)}
             >
               <Icon size={16} />
               {t(tab.labelKey)}
@@ -133,8 +147,10 @@ export default function AutomationsPage({
         )}
         {activeTab === "templates" && (
           <AutomationTemplates
+            key={storeId}
             canWrite={canWrite}
             storeId={storeId}
+            onFlowCreated={handleTemplateFlowCreated}
           />
         )}
 
@@ -161,7 +177,14 @@ export default function AutomationsPage({
 
         {activeTab === "flows" && (
           <Suspense fallback={<div className="page-loading">{t("commonLoading")}</div>}>
-            <FlowList canWrite={canWrite} storeId={storeId} />
+            <FlowList
+              key={storeId}
+              canWrite={canWrite}
+              storeId={storeId}
+              initialFlowId={pendingTemplateFlow?.storeId === storeId ? pendingTemplateFlow.flowId : null}
+              onInitialFlowHandled={handleTemplateFlowHandled}
+              onEditorDirtyChange={handleEditorDirtyChange}
+            />
           </Suspense>
         )}
       </div>

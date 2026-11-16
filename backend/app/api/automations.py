@@ -551,7 +551,7 @@ def list_versions_route(store_id: int, flow_id: int, membership: OrganizationMem
 def create_version_route(store_id: int, flow_id: int, payload: _FlowVersionPublish, membership: OrganizationMembership = Depends(require_permission("automations.write")), db: Session = Depends(get_db)):
     try:
         return create_version(db, membership.organization_id, store_id, flow_id, payload.graph)
-    except (FlowNotFoundError, FlowValidationError) as exc:
+    except (FlowNotFoundError, FlowValidationError, FlowConflictError) as exc:
         raise _map_flow_error(exc)
 
 
@@ -559,7 +559,7 @@ def create_version_route(store_id: int, flow_id: int, payload: _FlowVersionPubli
 def publish_version_route(store_id: int, flow_id: int, version_id: int, membership: OrganizationMembership = Depends(require_permission("automations.write")), db: Session = Depends(get_db)):
     try:
         return publish_version(db, membership.organization_id, store_id, flow_id, version_id)
-    except (FlowNotFoundError, FlowConflictError) as exc:
+    except (FlowNotFoundError, FlowConflictError, FlowValidationError) as exc:
         raise _map_flow_error(exc)
 
 
@@ -567,7 +567,7 @@ def publish_version_route(store_id: int, flow_id: int, version_id: int, membersh
 def activate_flow_route(store_id: int, flow_id: int, membership: OrganizationMembership = Depends(require_permission("automations.write")), db: Session = Depends(get_db)):
     try:
         return activate_flow(db, membership.organization_id, store_id, flow_id)
-    except (FlowNotFoundError, FlowConflictError) as exc:
+    except (FlowNotFoundError, FlowConflictError, FlowValidationError) as exc:
         raise _map_flow_error(exc)
 
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Check,
@@ -17,6 +17,8 @@ import {
 } from "lucide-react";
 
 import { api } from "../services/api";
+import { createdTemplateFlowId, templateGraphSteps } from "../utils/automationTemplateFlow";
+import "./automation-template-preview.css";
 
 
 interface AutomationTemplate {
@@ -41,6 +43,7 @@ interface AutomationTemplate {
 interface AutomationTemplatesProps {
   canWrite: boolean;
   storeId: number;
+  onFlowCreated: (flowId: number) => void;
 }
 
 
@@ -71,6 +74,7 @@ const CATEGORY_LABELS: Record<string, string> = {
 export default function AutomationTemplates({
   canWrite,
   storeId,
+  onFlowCreated,
 }: AutomationTemplatesProps) {
   const { t } = useTranslation();
 
@@ -81,6 +85,13 @@ export default function AutomationTemplates({
   const [creating, setCreating] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [previewId, setPreviewId] = useState<string | null>(null);
+  const mountedStore = useRef({ storeId, active: true });
+
+  useEffect(() => {
+    mountedStore.current = { storeId, active: true };
+    return () => { mountedStore.current.active = false; };
+  }, [storeId]);
 
   useEffect(() => {
     loadTemplates();
@@ -121,12 +132,15 @@ export default function AutomationTemplates({
       setError("");
       setSuccess("");
 
-      await api.post(
-        `/api/stores/${storeId}/automation-flow-templates/${templateId}`
+      const response = await api.post<unknown>(
+        `/api/stores/${storeId}/automation-flow-templates/${encodeURIComponent(templateId)}`
       );
-
-      setSuccess(t("autoTemplateCreated"));
+      const flowId = createdTemplateFlowId(response.data);
+      if (mountedStore.current.active && mountedStore.current.storeId === storeId) {
+        onFlowCreated(flowId);
+      }
     } catch (err: any) {
+      if (!mountedStore.current.active || mountedStore.current.storeId !== storeId) return;
       const detail = err?.response?.data?.detail;
       if (typeof detail === "object" && detail.code === "FLOW_TEMPLATE_INTEGRATION_REQUIRED") {
         setError(
@@ -142,7 +156,9 @@ export default function AutomationTemplates({
         );
       }
     } finally {
-      setCreating(null);
+      if (mountedStore.current.active && mountedStore.current.storeId === storeId) {
+        setCreating(null);
+      }
     }
   }
 
@@ -200,6 +216,8 @@ export default function AutomationTemplates({
             const Icon = ICON_MAP[template.icon] || Workflow;
             const isAvailable = template.availability?.available;
             const isCreating = creating === template.id;
+            const expanded = previewId === template.id;
+            const steps = templateGraphSteps(template.graph);
 
             return (
               <div
@@ -251,11 +269,32 @@ export default function AutomationTemplates({
                   </div>
                 )}
 
+                {steps.length > 0 && (
+                  <>
+                    <button
+                      type="button"
+                      className="template-preview-toggle"
+                      aria-expanded={expanded}
+                      aria-controls={`template-preview-${template.id}`}
+                      onClick={() => setPreviewId(expanded ? null : template.id)}
+                    >
+                      {expanded ? t("autoTemplateHideSteps") : t("autoTemplateShowSteps")}
+                    </button>
+                    {expanded && (
+                      <ol className="template-preview-steps" id={`template-preview-${template.id}`}>
+                        {steps.map((step, index) => (
+                          <li key={`${template.id}-${index}`}>{t(`autoTemplateStep_${step}`)}</li>
+                        ))}
+                      </ol>
+                    )}
+                  </>
+                )}
+
                 {canWrite && (
                   <button
                     className="template-create-button"
                     onClick={() => handleCreateTemplate(template.id)}
-                    disabled={!isAvailable || isCreating}
+                    disabled={!isAvailable || creating !== null}
                   >
                     {isCreating ? (
                       <Loader2 className="spin" size={14} />

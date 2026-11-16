@@ -19,6 +19,7 @@ jobs:
       backend: ${{ steps.scope.outputs.backend }}
       frontend: ${{ steps.scope.outputs.frontend }}
       mobile: ${{ steps.scope.outputs.mobile }}
+      automation_e2e: ${{ steps.scope.outputs.automation_e2e }}
 
     steps:
       - name: Checkout
@@ -68,6 +69,7 @@ jobs:
           backend=false
           frontend=false
           mobile=false
+          automation_e2e=false
 
           while IFS= read -r file; do
             case "$file" in
@@ -92,6 +94,15 @@ jobs:
             esac
           done <<< "$files"
 
+          while IFS= read -r file; do
+            case "$file" in
+              frontend/e2e/*|frontend/src/pages/AutomationsPage.tsx|frontend/src/pages/AutomationsOverview.tsx|frontend/src/components/AutomationTemplates.tsx|frontend/src/components/automation-flows/*|frontend/src/utils/automationTemplateFlow.ts|backend/app/automation_flow_graph.py|backend/app/services/automation_flows_service.py|backend/app/api/automations.py|.github/workflows/validate-pr.yml)
+                automation_e2e=true
+                ;;
+            esac
+          done <<< "$files"
+
+          echo "automation_e2e=$automation_e2e" >> "$GITHUB_OUTPUT"
           echo "backend=$backend" >> "$GITHUB_OUTPUT"
           echo "frontend=$frontend" >> "$GITHUB_OUTPUT"
           echo "mobile=$mobile" >> "$GITHUB_OUTPUT"
@@ -216,6 +227,52 @@ jobs:
         working-directory: frontend
         run: npm run build
 
+  automation_browser:
+    name: Automation Playwright E2E (desktop + mobile)
+    needs: changes
+    if: needs.changes.outputs.automation_e2e == 'true'
+    # Playwright 1.55 browser dependencies target Ubuntu 24.04, not 26.04.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install pinned browser test runner
+        working-directory: frontend/e2e
+        run: npm install --no-audit --no-fund
+
+      - name: Install Chromium
+        working-directory: frontend/e2e
+        run: npx playwright install --with-deps chromium
+
+      - name: Test automation journeys in real browsers
+        working-directory: frontend/e2e
+        run: npm test
+
+      - name: Upload Playwright failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: automation-playwright-evidence
+          path: |
+            frontend/e2e/playwright-report/
+            frontend/e2e/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
+
   mobile:
     name: Mobile validation
     needs: changes
@@ -246,7 +303,7 @@ jobs:
   validate:
     name: Backend + Frontend + Mobile validation
     if: always()
-    needs: [changes, backend, frontend, mobile]
+    needs: [changes, backend, frontend, mobile, automation_browser]
     runs-on: ubuntu-latest
 
     steps:
@@ -257,6 +314,7 @@ jobs:
           BACKEND_RESULT: ${{ needs.backend.result }}
           FRONTEND_RESULT: ${{ needs.frontend.result }}
           MOBILE_RESULT: ${{ needs.mobile.result }}
+          AUTOMATION_E2E_RESULT: ${{ needs.automation_browser.result }}
         run: |
           set -euo pipefail
 
@@ -265,7 +323,7 @@ jobs:
             exit 1
           fi
 
-          for result in "$BACKEND_RESULT" "$FRONTEND_RESULT" "$MOBILE_RESULT"; do
+          for result in "$BACKEND_RESULT" "$FRONTEND_RESULT" "$MOBILE_RESULT" "$AUTOMATION_E2E_RESULT"; do
             if [[ "$result" != "success" && "$result" != "skipped" ]]; then
               echo "Validation job failed or was cancelled: $result"
               exit 1

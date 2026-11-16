@@ -19,6 +19,8 @@ import {
   archiveFlow,
   activateFlow,
   deactivateFlow,
+  createFlowVersion,
+  publishFlowVersion,
   type AutomationFlow,
 } from "../../services/automationFlows";
 import {
@@ -36,10 +38,14 @@ import type { FlowNodeConfig } from "./flowGraphUtils";
 import { validateFlowGraph } from "./flowGraphUtils";
 import "@xyflow/react/dist/style.css";
 import "./flow-builder-v2.css";
+import "./flow-editor-actions.css";
 
 interface Props {
   canWrite: boolean;
   storeId: number;
+  initialFlowId?: number | null;
+  onInitialFlowHandled?: () => void;
+  onEditorDirtyChange?: (dirty: boolean) => void;
 }
 
 type View = "list" | "builder" | "runs";
@@ -51,7 +57,7 @@ const STATUS_STYLES: Record<string, { bg: string; color: string }> = {
   archived: { bg: "rgba(255,255,255,0.04)", color: "var(--text-muted)" },
 };
 
-export default function FlowList({ canWrite, storeId }: Props) {
+export default function FlowList({ canWrite, storeId, initialFlowId, onInitialFlowHandled, onEditorDirtyChange }: Props) {
   const { t } = useTranslation();
   const [view, setView] = useState<View>("list");
   const [flows, setFlows] = useState<AutomationFlow[]>([]);
@@ -64,6 +70,11 @@ export default function FlowList({ canWrite, storeId }: Props) {
   const [saving, setSaving] = useState(false);
   const [showSimulation, setShowSimulation] = useState(false);
   const [showCopilot, setShowCopilot] = useState(false);
+  const [savedGraphSignature, setSavedGraphSignature] = useState<string | null>(null);
+  const [publishing, setPublishing] = useState(false);
+  const [activating, setActivating] = useState(false);
+  const graphSignature = JSON.stringify(serializeFlowGraph(graph));
+  const dirty = savedGraphSignature !== null && savedGraphSignature !== graphSignature;
 
   const loadFlows = useCallback(async () => {
     setLoading(true);
@@ -81,6 +92,51 @@ export default function FlowList({ canWrite, storeId }: Props) {
     if (view === "list") void loadFlows();
   }, [view, loadFlows]);
 
+  useEffect(() => {
+    onEditorDirtyChange?.(view === "builder" && dirty);
+  }, [view, dirty, onEditorDirtyChange]);
+
+  useEffect(() => {
+    if (view !== "builder" || !dirty) return;
+    const preventUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", preventUnload);
+    return () => window.removeEventListener("beforeunload", preventUnload);
+  }, [view, dirty]);
+
+  useEffect(() => {
+    if (!initialFlowId) return;
+    let cancelled = false;
+    setLoading(true);
+    setError("");
+    void getFlow(storeId, initialFlowId)
+      .then((flow) => {
+        if (cancelled) return;
+        const loadedGraph = flow.current_version
+          ? deserializeFlowGraph(flow.current_version.graph)
+          : createDefaultGraph();
+        setSelectedFlow(flow);
+        setGraph(loadedGraph);
+        setSavedGraphSignature(JSON.stringify(serializeFlowGraph(loadedGraph)));
+        setSelectedNodeId(null);
+        setShowCopilot(false);
+        setView("builder");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setError(t("flowLoadError"));
+        setView("list");
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setLoading(false);
+        onInitialFlowHandled?.();
+      });
+    return () => { cancelled = true; };
+  }, [initialFlowId, storeId, onInitialFlowHandled, t]);
+
   const handleCreate = async () => {
     if (!canWrite) return;
     setSaving(true);
@@ -90,12 +146,13 @@ export default function FlowList({ canWrite, storeId }: Props) {
         name: t("flowNewName"),
         graph: serializeFlowGraph(createDefaultGraph()),
       });
-      setSelectedFlow(flow);
-      setGraph(
-        flow.current_version
-          ? deserializeFlowGraph(flow.current_version.graph)
-          : createDefaultGraph(),
-      );
+      const full = await getFlow(storeId, flow.id);
+      setSelectedFlow(full);
+      const createdGraph = full.current_version
+        ? deserializeFlowGraph(full.current_version.graph)
+        : createDefaultGraph();
+      setGraph(createdGraph);
+      setSavedGraphSignature(JSON.stringify(serializeFlowGraph(createdGraph)));
       setSelectedNodeId(null);
       setShowCopilot(false);
       setView("builder");
@@ -112,11 +169,11 @@ export default function FlowList({ canWrite, storeId }: Props) {
     try {
       const full = await getFlow(storeId, flow.id);
       setSelectedFlow(full);
-      setGraph(
-        full.current_version
-          ? deserializeFlowGraph(full.current_version.graph)
-          : createDefaultGraph(),
-      );
+      const loadedGraph = full.current_version
+        ? deserializeFlowGraph(full.current_version.graph)
+        : createDefaultGraph();
+      setGraph(loadedGraph);
+      setSavedGraphSignature(JSON.stringify(serializeFlowGraph(loadedGraph)));
       setSelectedNodeId(null);
       setShowCopilot(false);
       setView("builder");
@@ -133,20 +190,16 @@ export default function FlowList({ canWrite, storeId }: Props) {
   };
 
   const handleSaveGraph = async () => {
-    if (!selectedFlow || !canWrite) return;
+    if (!selectedFlow || !canWrite || selectedFlow.status === "active" || !dirty) return;
+    const serialized = serializeFlowGraph(graph);
+    const signature = JSON.stringify(serialized);
     setSaving(true);
     setError("");
     try {
-      const { listFlowVersions, createFlowVersion } = await import("../../services/automationFlows");
-      const versions = await listFlowVersions(storeId, selectedFlow.id);
-      const draftVersion = versions.find((v) => !v.published_at);
-      if (draftVersion) {
-        await createFlowVersion(storeId, selectedFlow.id, serializeFlowGraph(graph));
-      } else {
-        await createFlowVersion(storeId, selectedFlow.id, serializeFlowGraph(graph));
-      }
+      await createFlowVersion(storeId, selectedFlow.id, serialized);
       const updated = await getFlow(storeId, selectedFlow.id);
       setSelectedFlow(updated);
+      setSavedGraphSignature(signature);
     } catch {
       setError(t("flowSaveError"));
     } finally {
@@ -154,8 +207,56 @@ export default function FlowList({ canWrite, storeId }: Props) {
     }
   };
 
+  const handlePublish = async () => {
+    const version = selectedFlow?.current_version;
+    if (!selectedFlow || !version || !canWrite || dirty || validateFlowGraph(graph).length ||
+      version.published_at || selectedFlow.status === "active") return;
+    setPublishing(true);
+    setError("");
+    try {
+      await publishFlowVersion(storeId, selectedFlow.id, version.id);
+      setSelectedFlow(await getFlow(storeId, selectedFlow.id));
+    } catch {
+      setError(t("flowEditorPublishError"));
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  const handleActivateSelected = async () => {
+    const version = selectedFlow?.current_version;
+    if (!selectedFlow || !version?.published_at || !canWrite || dirty ||
+      validateFlowGraph(graph).length || selectedFlow.status === "active") return;
+    if (!window.confirm(t("flowEditorConfirmActivate"))) return;
+    setActivating(true);
+    setError("");
+    try {
+      await activateFlow(storeId, selectedFlow.id);
+      setSelectedFlow(await getFlow(storeId, selectedFlow.id));
+    } catch {
+      setError(t("flowActivateError"));
+    } finally {
+      setActivating(false);
+    }
+  };
+
+  const handlePauseSelected = async () => {
+    if (!selectedFlow || !canWrite || selectedFlow.status !== "active") return;
+    setActivating(true);
+    setError("");
+    try {
+      await deactivateFlow(storeId, selectedFlow.id);
+      setSelectedFlow(await getFlow(storeId, selectedFlow.id));
+    } catch {
+      setError(t("flowDeactivateError"));
+    } finally {
+      setActivating(false);
+    }
+  };
+
   const handleActivate = async (flow: AutomationFlow) => {
-    if (!canWrite) return;
+    if (!canWrite || !flow.current_version?.published_at) return;
+    if (!window.confirm(t("flowEditorConfirmActivate"))) return;
     try {
       await activateFlow(storeId, flow.id);
       await loadFlows();
@@ -212,11 +313,11 @@ export default function FlowList({ canWrite, storeId }: Props) {
 
     const updated = await getFlow(storeId, selectedFlow.id);
     setSelectedFlow(updated);
-    setGraph(
-      updated.current_version
-        ? deserializeFlowGraph(updated.current_version.graph)
-        : createDefaultGraph(),
-    );
+    const loadedGraph = updated.current_version
+      ? deserializeFlowGraph(updated.current_version.graph)
+      : createDefaultGraph();
+    setGraph(loadedGraph);
+    setSavedGraphSignature(JSON.stringify(serializeFlowGraph(loadedGraph)));
     setSelectedNodeId(null);
   };
 
@@ -249,24 +350,28 @@ export default function FlowList({ canWrite, storeId }: Props) {
         <div className="flow-builder-toolbar">
           <button
             className="secondary-button"
+            type="button"
             onClick={() => {
+              if (dirty && !window.confirm(t("flowEditorDiscardChanges"))) return;
               setView("list");
               setSelectedFlow(null);
               setSelectedNodeId(null);
               setShowCopilot(false);
+              setSavedGraphSignature(null);
             }}
           >
             <ArrowLeft size={14} />
             {t("flowBackToList")}
           </button>
-          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <div className="flow-editor-actions">
             <h3 style={{ margin: 0 }}>{selectedFlow.name}</h3>
+            <span className="flow-editor-status">{t(`flowStatus_${selectedFlow.status}`)}</span>
             {canWrite && (
               <>
                 <button
                   className="secondary-button"
                   onClick={() => setShowCopilot((current) => !current)}
-                  disabled={saving}
+                  disabled={saving || publishing || activating || selectedFlow.status === "active"}
                 >
                   <Sparkles size={14} />
                   Diseñar con IA
@@ -274,7 +379,7 @@ export default function FlowList({ canWrite, storeId }: Props) {
                 <button
                   className="secondary-button"
                   onClick={() => setShowSimulation(true)}
-                  disabled={saving || validationErrors.length > 0}
+                  disabled={saving || publishing || activating || validationErrors.length > 0}
                 >
                   <Play size={14} />
                   {t("flowSimulate")}
@@ -282,13 +387,53 @@ export default function FlowList({ canWrite, storeId }: Props) {
                 <button
                   className="primary-button"
                   onClick={() => void handleSaveGraph()}
-                  disabled={saving || validationErrors.length > 0}
+                  disabled={saving || publishing || activating || !dirty || selectedFlow.status === "active"}
                 >
                   {saving ? t("flowSaving") : t("flowSave")}
                 </button>
+                {selectedFlow.status !== "active" && !selectedFlow.current_version?.published_at && (
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => void handlePublish()}
+                    disabled={saving || publishing || activating || dirty || validationErrors.length > 0 || !selectedFlow.current_version}
+                  >
+                    {publishing ? t("flowEditorPublishing") : t("flowEditorPublish")}
+                  </button>
+                )}
+                {selectedFlow.status !== "active" && selectedFlow.current_version?.published_at && (
+                  <button
+                    type="button"
+                    className="primary-button"
+                    onClick={() => void handleActivateSelected()}
+                    disabled={saving || publishing || activating || dirty || validationErrors.length > 0}
+                  >
+                    {activating ? t("flowEditorActivating") : t("flowEditorActivate")}
+                  </button>
+                )}
+                {selectedFlow.status === "active" && (
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => void handlePauseSelected()}
+                    disabled={saving || publishing || activating}
+                  >
+                    <Pause size={14} />
+                    {t("flowPause")}
+                  </button>
+                )}
               </>
             )}
           </div>
+        </div>
+        <div className="flow-editor-guidance" role="status">
+          {selectedFlow.status === "active"
+            ? t("flowEditorActiveNotice")
+            : dirty
+              ? t("flowEditorUnsavedNotice")
+              : selectedFlow.current_version?.published_at
+                ? t("flowEditorReadyToActivate")
+                : t("flowEditorReadyToPublish")}
         </div>
         {error && (
           <p style={{ color: "#ef4444", margin: "8px 0" }}>
@@ -307,7 +452,7 @@ export default function FlowList({ canWrite, storeId }: Props) {
             <>
               <AlertTriangle size={15} />
               <span>
-                Completa el flujo antes de guardarlo: {
+                {t("flowEditorCompleteFirst")} {
                   validationErrors
                     .map((key) => t(key))
                     .join(" · ")
@@ -317,7 +462,7 @@ export default function FlowList({ canWrite, storeId }: Props) {
           ) : (
             <>
               <CheckCircle2 size={15} />
-              <span>Grafo válido y listo para guardar.</span>
+              <span>{t("flowEditorGraphValid")}</span>
             </>
           )}
         </div>
@@ -327,7 +472,7 @@ export default function FlowList({ canWrite, storeId }: Props) {
           onGraphChange={setGraph}
           selectedNodeId={selectedNodeId}
           onNodeSelect={setSelectedNodeId}
-          canWrite={canWrite}
+          canWrite={canWrite && selectedFlow.status !== "active"}
         />
 
         <FlowSidebar
@@ -336,10 +481,13 @@ export default function FlowList({ canWrite, storeId }: Props) {
           onDelete={handleNodeDelete}
           onClose={() => setSelectedNodeId(null)}
           t={t}
-          canWrite={canWrite}
+          canWrite={canWrite && selectedFlow.status !== "active"}
+          onSaveDraft={() => void handleSaveGraph()}
+          canSaveDraft={dirty && !saving && !publishing && !activating}
+          savingDraft={saving}
         />
 
-        {showCopilot && canWrite && (
+        {showCopilot && canWrite && selectedFlow.status !== "active" && (
           <FlowCopilotPanel
             storeId={storeId}
             flowId={selectedFlow.id}
