@@ -1,6 +1,4 @@
 """Drafts are persistable, but never executable before full validation."""
-from copy import deepcopy
-
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
