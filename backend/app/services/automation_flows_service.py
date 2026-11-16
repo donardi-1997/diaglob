@@ -8,7 +8,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from ..automation_flow_graph import validate_graph
+from ..automation_flow_graph import validate_draft_graph, validate_graph
 from ..automation_flow_engine import materialize_flow_trigger, utcnow
 from ..automation_flow_helpers import (
     serialize_flow as _sf,
@@ -175,8 +175,13 @@ def list_versions(db: Session, organization_id: int, store_id: int, flow_id: int
 
 def create_version(db: Session, organization_id: int, store_id: int, flow_id: int, graph: dict) -> dict:
     flow = _flow_or_404(db, organization_id, store_id, flow_id)
+    if flow.status in {"active", "archived"}:
+        raise FlowConflictError("Pause the flow before editing, or create a new flow")
 
-    errors = validate_graph(graph)
+    # Only syntactic/structural validation applies when saving a draft.
+    # No draft version may execute: publish_version and activate_flow both
+    # enforce the full runtime validator before changing status.
+    errors = validate_draft_graph(graph)
     if errors:
         raise FlowValidationError(str(errors))
 
@@ -203,6 +208,10 @@ def publish_version(db: Session, organization_id: int, store_id: int, flow_id: i
 
     if ver.published_at:
         raise FlowConflictError("Version already published")
+    if flow.status in {"active", "archived"}:
+        raise FlowConflictError("Pause or unarchive the flow before publishing")
+    if flow.current_version_id != version_id:
+        raise FlowConflictError("Only the latest draft version can be published")
 
     # Old or imported versions may have been accepted by weaker validators.
     # Publication is the last chance to avoid ambiguous live execution.
