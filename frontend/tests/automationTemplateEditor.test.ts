@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { createdTemplateFlowId } from "../src/utils/automationTemplateFlow.ts";
+import { createdTemplateFlowId, templateGraphSteps } from "../src/utils/automationTemplateFlow.ts";
 
 const source = (path: string) =>
   readFileSync(new URL(`../src/${path}`, import.meta.url), "utf8");
@@ -24,6 +24,21 @@ test("template-flow response must identify a positive integer flow", () => {
   ]) {
     assert.throws(() => createdTemplateFlowId(malformed));
   }
+});
+
+test("template preview omits malformed nodes and sensitive config values", () => {
+  assert.deepEqual(templateGraphSteps({
+    nodes: [
+      { type: "trigger", config: { secret: "never expose" } },
+      null,
+      { type: "message", config: { message_template: "private data" } },
+      { type: "unknown" },
+      { type: 12 },
+      { type: "end" },
+    ],
+  }), ["trigger", "message", "end"]);
+  assert.deepEqual(templateGraphSteps({ nodes: null }), []);
+  assert.deepEqual(templateGraphSteps({}), []);
 });
 
 test("creating a template navigates to the exact created flow, not the general list", () => {
