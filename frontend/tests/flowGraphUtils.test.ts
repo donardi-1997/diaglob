@@ -10,6 +10,20 @@ import {
   type FlowGraph,
 } from "../src/components/automation-flows/flowGraphUtils.ts";
 
+test("message text is mandatory to publish but editing draft remains possible", () => {
+  const graph: FlowGraph = {
+    nodes: [
+      { id: "trigger", type: "trigger", config: { trigger_type: "manual" }, position: { x: 0, y: 0 } },
+      { id: "message", type: "message", config: { message_mode: "auto", message_template: "   " }, position: { x: 0, y: 100 } },
+      { id: "end", type: "end", config: {}, position: { x: 0, y: 200 } },
+    ],
+    edges: [{ source: "trigger", target: "message" }, { source: "message", target: "end" }],
+  };
+  assert.ok(validateFlowGraph(graph).includes("flowValidationMessageMissingTemplate"));
+  graph.nodes[1].config.message_template = "Hola, bienvenido";
+  assert.deepEqual(validateFlowGraph(graph), []);
+});
+
 test("default visual flow is a valid DAG", () => {
   assert.deepEqual(validateFlowGraph(createDefaultGraph()), []);
 });
