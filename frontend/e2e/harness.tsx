@@ -10,7 +10,7 @@ import "../src/App.css";
 import "../src/design-system.css";
 import AutomationsPage from "../src/pages/AutomationsPage";
 
-function Harness() {
+export function Harness() {
   const [storeId, setStoreId] = useState(101);
   const [canWrite, setCanWrite] = useState(true);
   return (
