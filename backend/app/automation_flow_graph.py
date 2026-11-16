@@ -118,7 +118,7 @@ def validate_draft_graph(graph: dict[str, Any]) -> list[str]:
             name = config.get("tool_name")
             # An empty selection may be saved, but an unsupported capability
             # cannot enter the persisted graph.
-            if name and (not isinstance(name, str) or name not in FLOW_TOOL_NAMES):
+            if name is not None and name != "" and (not isinstance(name, str) or name not in FLOW_TOOL_NAMES):
                 errors.append("Flow draft contains an unsupported tool")
         position = node.get("position")
         if position is not None and (
