@@ -70,3 +70,8 @@
     min-height: 40px;
   }
 }
+
+/* The minimap consumes the tap target of real flow nodes on narrow screens. */
+@media (max-width: 640px) {
+  .flow-canvas-container .react-flow__minimap { display: none; }
+}
