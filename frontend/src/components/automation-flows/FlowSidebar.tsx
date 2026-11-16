@@ -36,6 +36,9 @@ interface FlowSidebarProps {
   onClose: () => void;
   t: (key: string) => string;
   canWrite: boolean;
+  onSaveDraft: () => void;
+  canSaveDraft: boolean;
+  savingDraft: boolean;
 }
 
 const TRIGGER_LABELS: Record<string, string> = {
@@ -134,6 +137,9 @@ export default function FlowSidebar({
   onClose,
   t,
   canWrite,
+  onSaveDraft,
+  canSaveDraft,
+  savingDraft,
 }: FlowSidebarProps) {
   const isOpen = node !== null;
   const Icon = node ? NODE_ICONS[node.type] || Square : Square;
@@ -626,15 +632,26 @@ export default function FlowSidebar({
             )}
           </div>
 
-          {node.type !== "trigger" && canWrite && (
+          {canWrite && (
             <div className="flow-sidebar-footer">
               <button
-                className="secondary-button flow-delete-node"
-                onClick={() => onDelete(node.id)}
+                type="button"
+                className="primary-button flow-sidebar-save"
+                onClick={onSaveDraft}
+                disabled={!canSaveDraft || savingDraft}
               >
-                <Trash2 size={14} />
-                {t("flowDeleteNode")}
+                {savingDraft ? t("flowSaving") : t("flowSave")}
               </button>
+              {node.type !== "trigger" && (
+                <button
+                  type="button"
+                  className="secondary-button flow-delete-node"
+                  onClick={() => onDelete(node.id)}
+                >
+                  <Trash2 size={14} />
+                  {t("flowDeleteNode")}
+                </button>
+              )}
             </div>
           )}
         </>
