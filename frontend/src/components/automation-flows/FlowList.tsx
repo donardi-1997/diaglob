@@ -191,7 +191,6 @@ export default function FlowList({ canWrite, storeId, initialFlowId, onInitialFl
 
   const handleSaveGraph = async () => {
     if (!selectedFlow || !canWrite || selectedFlow.status === "active" || !dirty) return;
-    if (validateFlowGraph(graph).length) return;
     const serialized = serializeFlowGraph(graph);
     const signature = JSON.stringify(serialized);
     setSaving(true);
@@ -388,7 +387,7 @@ export default function FlowList({ canWrite, storeId, initialFlowId, onInitialFl
                 <button
                   className="primary-button"
                   onClick={() => void handleSaveGraph()}
-                  disabled={saving || publishing || activating || !dirty || selectedFlow.status === "active" || validationErrors.length > 0}
+                  disabled={saving || publishing || activating || !dirty || selectedFlow.status === "active"}
                 >
                   {saving ? t("flowSaving") : t("flowSave")}
                 </button>
