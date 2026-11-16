@@ -482,6 +482,9 @@ export default function FlowList({ canWrite, storeId, initialFlowId, onInitialFl
           onClose={() => setSelectedNodeId(null)}
           t={t}
           canWrite={canWrite && selectedFlow.status !== "active"}
+          onSaveDraft={() => void handleSaveGraph()}
+          canSaveDraft={dirty && !saving && !publishing && !activating}
+          savingDraft={saving}
         />
 
         {showCopilot && canWrite && selectedFlow.status !== "active" && (
