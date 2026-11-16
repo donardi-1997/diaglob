@@ -109,7 +109,7 @@ def validate_draft_graph(graph: dict[str, Any]) -> list[str]:
             errors.append("Duplicate node IDs found")
         else:
             ids.add(node_id)
-        if node.get("type") not in NODE_TYPES:
+        if not isinstance(node.get("type"), str) or node["type"] not in NODE_TYPES:
             errors.append("Flow draft node type is unsupported")
         config = node.get("config", {})
         if not isinstance(config, dict):
@@ -118,7 +118,7 @@ def validate_draft_graph(graph: dict[str, Any]) -> list[str]:
             name = config.get("tool_name")
             # An empty selection may be saved, but an unsupported capability
             # cannot enter the persisted graph.
-            if name and name not in FLOW_TOOL_NAMES:
+            if name and (not isinstance(name, str) or name not in FLOW_TOOL_NAMES):
                 errors.append("Flow draft contains an unsupported tool")
         position = node.get("position")
         if position is not None and (
@@ -137,7 +137,8 @@ def validate_draft_graph(graph: dict[str, Any]) -> list[str]:
         if not isinstance(edge, dict):
             errors.append("Flow draft edge must be an object")
             continue
-        if edge.get("source") not in ids or edge.get("target") not in ids:
+        if (not isinstance(edge.get("source"), str) or edge["source"] not in ids
+                or not isinstance(edge.get("target"), str) or edge["target"] not in ids):
             errors.append("Flow draft edge references missing node")
         if edge.get("source") == edge.get("target"):
             errors.append("Flow draft self-loop is not allowed")
