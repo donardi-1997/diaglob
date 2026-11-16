@@ -17,7 +17,8 @@ import {
 } from "lucide-react";
 
 import { api } from "../services/api";
-import { createdTemplateFlowId } from "../utils/automationTemplateFlow";
+import { createdTemplateFlowId, templateGraphSteps } from "../utils/automationTemplateFlow";
+import "./automation-template-preview.css";
 
 
 interface AutomationTemplate {
@@ -84,6 +85,7 @@ export default function AutomationTemplates({
   const [creating, setCreating] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [previewId, setPreviewId] = useState<string | null>(null);
   const mountedStore = useRef({ storeId, active: true });
 
   useEffect(() => {
@@ -214,6 +216,8 @@ export default function AutomationTemplates({
             const Icon = ICON_MAP[template.icon] || Workflow;
             const isAvailable = template.availability?.available;
             const isCreating = creating === template.id;
+            const expanded = previewId === template.id;
+            const steps = templateGraphSteps(template.graph);
 
             return (
               <div
@@ -263,6 +267,27 @@ export default function AutomationTemplates({
                       {template.availability.missing.join(", ")}
                     </span>
                   </div>
+                )}
+
+                {steps.length > 0 && (
+                  <>
+                    <button
+                      type="button"
+                      className="template-preview-toggle"
+                      aria-expanded={expanded}
+                      aria-controls={`template-preview-${template.id}`}
+                      onClick={() => setPreviewId(expanded ? null : template.id)}
+                    >
+                      {expanded ? t("autoTemplateHideSteps") : t("autoTemplateShowSteps")}
+                    </button>
+                    {expanded && (
+                      <ol className="template-preview-steps" id={`template-preview-${template.id}`}>
+                        {steps.map((step, index) => (
+                          <li key={`${template.id}-${index}`}>{t(`autoTemplateStep_${step}`)}</li>
+                        ))}
+                      </ol>
+                    )}
+                  </>
                 )}
 
                 {canWrite && (
