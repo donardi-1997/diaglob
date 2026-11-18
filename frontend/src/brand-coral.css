@@ -255,3 +255,44 @@ body { background-image: none; }
   background: var(--brand-action-hover);
   color: var(--brand-action-fg);
 }
+
+/* Contrast fixes for promotional surfaces and inverse actions. */
+:root[data-theme="light"] .marketing-page .marketing-primary-button.inverse,
+:root[data-theme="dark"] .marketing-page .marketing-primary-button.inverse {
+  background: #FFFFFF;
+  border-color: #FFFFFF;
+  color: #191B19;
+}
+:root[data-theme="light"] .marketing-page .marketing-primary-button.inverse:hover,
+:root[data-theme="dark"] .marketing-page .marketing-primary-button.inverse:hover {
+  background: var(--sand-100);
+  border-color: var(--sand-100);
+  color: #191B19;
+}
+.marketing-recommended,
+.marketing-chat-message.user {
+  background: var(--brand-action);
+  color: var(--brand-action-fg);
+  border-color: var(--brand-action);
+}
+.marketing-price-card.recommended {
+  border-color: var(--brand-border);
+  box-shadow: var(--shadow-card);
+}
+.marketing-final-card {
+  background: linear-gradient(135deg, var(--graphite-900), var(--graphite-700));
+  border: 1px solid var(--brand-border);
+  color: #FFFFFF;
+}
+.marketing-final-glow {
+  background: rgba(240, 107, 69, .16);
+}
+:where(.brand-mark, .marketing-brand-mark, .dg-shell .dg-brand-mark) {
+  background: var(--brand-action);
+  color: var(--brand-action-fg);
+  box-shadow: none;
+}
+:root[data-theme="dark"] .marketing-final-card > p,
+:root[data-theme="light"] .marketing-final-card > p {
+  color: #F7F4EE;
+}
