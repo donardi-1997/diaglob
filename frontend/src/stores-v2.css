@@ -16,14 +16,14 @@
   border: 1px solid var(--border-color, rgba(148, 163, 184, 0.18));
   border-radius: 24px;
   background:
-    radial-gradient(circle at 88% 12%, rgba(99, 102, 241, 0.2), transparent 34%),
+    radial-gradient(circle at 88% 12%, rgba(240, 107, 69, 0.2), transparent 34%),
     linear-gradient(145deg, rgba(15, 23, 42, 0.96), rgba(17, 24, 39, 0.9));
   box-shadow: 0 22px 60px rgba(2, 6, 23, 0.18);
 }
 
 [data-theme="light"] .stores-v2-hero {
   background:
-    radial-gradient(circle at 88% 12%, rgba(99, 102, 241, 0.14), transparent 34%),
+    radial-gradient(circle at 88% 12%, rgba(240, 107, 69, 0.14), transparent 34%),
     linear-gradient(145deg, #ffffff, #f7f8ff);
   box-shadow: 0 18px 45px rgba(15, 23, 42, 0.08);
 }
@@ -43,7 +43,7 @@
   font-weight: 800;
   letter-spacing: 0.13em;
   text-transform: uppercase;
-  color: #a5b4fc;
+  color: var(--brand-text-accent);
 }
 
 [data-theme="light"] .stores-v2-eyebrow {
@@ -92,9 +92,9 @@
 .stores-v2-primary {
   position: relative;
   z-index: 1;
-  color: #fff;
-  background: linear-gradient(135deg, #6366f1, #7c3aed);
-  box-shadow: 0 10px 26px rgba(99, 102, 241, 0.28);
+  color: var(--brand-action-fg);
+  background: var(--brand-action);
+  box-shadow: 0 10px 26px rgba(240, 107, 69, 0.28);
 }
 
 .stores-v2-primary:hover:not(:disabled),
@@ -256,7 +256,7 @@
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #6366f1, #8b5cf6);
+  background: linear-gradient(90deg, var(--brand-action), var(--brand-core));
 }
 
 .stores-v2-plan-meta {
@@ -281,7 +281,7 @@
   padding: 21px;
   border-radius: 18px;
   background:
-    linear-gradient(145deg, rgba(99, 102, 241, 0.11), transparent 68%),
+    linear-gradient(145deg, rgba(240, 107, 69, 0.11), transparent 68%),
     var(--surface-primary, rgba(15, 23, 42, 0.58));
 }
 
@@ -295,8 +295,8 @@
   width: 39px;
   height: 39px;
   border-radius: 12px;
-  color: #c4b5fd;
-  background: rgba(99, 102, 241, 0.17);
+  color: var(--brand-text-accent);
+  background: rgba(240, 107, 69, 0.17);
 }
 
 [data-theme="light"] .stores-v2-integrations-icon {
@@ -315,7 +315,7 @@
   align-items: center;
   gap: 7px;
   margin-top: 15px;
-  color: #a5b4fc;
+  color: var(--brand-text-accent);
   font-size: 0.78rem;
   font-weight: 750;
 }
@@ -352,8 +352,8 @@
   height: 38px;
   flex: 0 0 auto;
   border-radius: 11px;
-  color: #c4b5fd;
-  background: rgba(99, 102, 241, 0.13);
+  color: var(--brand-text-accent);
+  background: rgba(240, 107, 69, 0.13);
 }
 
 [data-theme="light"] .stores-v2-stat-icon {
@@ -400,7 +400,7 @@
   position: absolute;
   inset: 0 auto 0 0;
   width: 3px;
-  background: linear-gradient(180deg, #6366f1, #8b5cf6);
+  background: linear-gradient(180deg, var(--brand-action), var(--brand-core));
   opacity: 0.85;
 }
 
@@ -505,11 +505,11 @@
 .stores-v2-detail svg {
   flex: 0 0 auto;
   margin-top: 1px;
-  color: #a5b4fc;
+  color: var(--brand-text-accent);
 }
 
 [data-theme="light"] .stores-v2-detail svg {
-  color: #6366f1;
+  color: var(--brand-action);
 }
 
 .stores-v2-detail span,
@@ -541,7 +541,7 @@
   border: 1px dashed rgba(129, 140, 248, 0.24);
   border-radius: 12px;
   color: var(--text-secondary, #94a3b8);
-  background: rgba(99, 102, 241, 0.055);
+  background: rgba(240, 107, 69, 0.055);
   font-size: 0.74rem;
 }
 
@@ -582,7 +582,7 @@
 .stores-v2-card-action:hover {
   border-color: rgba(129, 140, 248, 0.42);
   color: var(--text-primary, #fff);
-  background: rgba(99, 102, 241, 0.08);
+  background: rgba(240, 107, 69, 0.08);
 }
 
 .stores-v2-card-action.is-danger:hover {
@@ -614,8 +614,8 @@
   height: 54px;
   margin-bottom: 12px;
   border-radius: 16px;
-  color: #c4b5fd;
-  background: rgba(99, 102, 241, 0.13);
+  color: var(--brand-text-accent);
+  background: rgba(240, 107, 69, 0.13);
 }
 
 .stores-v2-empty p {
@@ -729,8 +729,8 @@
   height: 21px;
   flex: 0 0 auto;
   border-radius: 999px;
-  color: #c4b5fd;
-  background: rgba(99, 102, 241, 0.16);
+  color: var(--brand-text-accent);
+  background: rgba(240, 107, 69, 0.16);
   font-size: 0.67rem;
 }
 
@@ -777,7 +777,7 @@
 .stores-v2-field input:focus,
 .stores-v2-field select:focus {
   border-color: rgba(129, 140, 248, 0.7);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.11);
+  box-shadow: 0 0 0 3px rgba(240, 107, 69, 0.11);
 }
 
 .stores-v2-field input:disabled,
@@ -815,7 +815,7 @@
 }
 
 .stores-v2-toggle-row input {
-  accent-color: #6366f1;
+  accent-color: var(--brand-action);
 }
 
 .stores-v2-market-preview {
@@ -825,7 +825,7 @@
   gap: 12px;
   padding: 13px;
   border-radius: 13px;
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(139, 92, 246, 0.04));
+  background: linear-gradient(135deg, rgba(240, 107, 69, 0.1), rgba(240, 107, 69, 0.04));
 }
 
 .stores-v2-market-preview-flag {
@@ -857,12 +857,12 @@
   padding: 11px 12px;
   border: 1px dashed rgba(129, 140, 248, 0.22);
   border-radius: 11px;
-  background: rgba(99, 102, 241, 0.05);
+  background: rgba(240, 107, 69, 0.05);
 }
 
 .stores-v2-form-note svg {
   flex: 0 0 auto;
-  color: #a5b4fc;
+  color: var(--brand-text-accent);
 }
 
 .stores-v2-modal-actions {

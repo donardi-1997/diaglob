@@ -6,7 +6,7 @@
   padding: 18px;
   border: 1px solid var(--border-color, rgba(148, 163, 184, 0.18));
   border-radius: 16px;
-  background: rgba(99, 102, 241, 0.045);
+  background: rgba(240, 107, 69, 0.045);
 }
 
 [data-theme="light"] .unit-economics-settings {
@@ -34,7 +34,7 @@
 
 .unit-economics-settings-heading > div > span {
   display: block;
-  color: #a5b4fc;
+  color: var(--brand-text-accent);
   font-size: 0.68rem;
   font-weight: 850;
   letter-spacing: 0.12em;
@@ -70,8 +70,8 @@
   flex: 0 0 auto;
   padding: 5px 8px;
   border-radius: 999px;
-  color: #c4b5fd;
-  background: rgba(99, 102, 241, 0.12);
+  color: var(--brand-text-accent);
+  background: rgba(240, 107, 69, 0.12);
   font-size: 0.67rem;
   font-weight: 800;
 }
@@ -161,7 +161,7 @@
 
 .unit-economics-settings input:focus {
   border-color: rgba(129, 140, 248, 0.7);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+  box-shadow: 0 0 0 3px rgba(240, 107, 69, 0.1);
 }
 
 .unit-economics-settings input:disabled {
@@ -193,8 +193,8 @@
   padding: 0 10px;
   border: 1px solid rgba(129, 140, 248, 0.24);
   border-radius: 9px;
-  color: #c4b5fd;
-  background: rgba(99, 102, 241, 0.09);
+  color: var(--brand-text-accent);
+  background: rgba(240, 107, 69, 0.09);
   font-size: 0.72rem;
 }
 
@@ -232,7 +232,7 @@
   width: 18px;
   min-height: 18px;
   margin: 8px 0 7px;
-  accent-color: #6366f1;
+  accent-color: var(--brand-action);
 }
 
 .unit-economics-remove {
@@ -258,9 +258,9 @@
   min-height: 38px;
   padding: 0 13px;
   border-radius: 10px;
-  color: #fff;
-  background: linear-gradient(135deg, #6366f1, #7c3aed);
-  box-shadow: 0 8px 20px rgba(99, 102, 241, 0.2);
+  color: var(--brand-action-fg);
+  background: var(--brand-action);
+  box-shadow: 0 8px 20px rgba(240, 107, 69, 0.2);
   font-size: 0.75rem;
 }
 
