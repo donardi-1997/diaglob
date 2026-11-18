@@ -4,13 +4,13 @@
   --marketing-surface-strong: #111827;
   --marketing-card: rgba(17, 24, 39, 0.82);
   --marketing-border: rgba(148, 163, 184, 0.16);
-  --marketing-border-strong: rgba(99, 102, 241, 0.34);
+  --marketing-border-strong: rgba(240, 107, 69, 0.34);
   --marketing-text: #f8fafc;
   --marketing-muted: #aab7cb;
   --marketing-soft: #7f8ca3;
-  --marketing-accent: #7c3aed;
-  --marketing-accent-2: #4f46e5;
-  --marketing-cyan: #22d3ee;
+  --marketing-accent: var(--brand-text-accent);
+  --marketing-accent-2: var(--brand-action);
+  --marketing-cyan: var(--chart-2);
   --marketing-success: #34d399;
   --marketing-shadow: 0 24px 80px rgba(0, 0, 0, 0.28);
   --marketing-radius: 26px;
@@ -22,7 +22,7 @@
   --marketing-surface-strong: #ffffff;
   --marketing-card: rgba(255, 255, 255, 0.9);
   --marketing-border: rgba(15, 23, 42, 0.09);
-  --marketing-border-strong: rgba(99, 102, 241, 0.22);
+  --marketing-border-strong: rgba(240, 107, 69, 0.22);
   --marketing-text: #111827;
   --marketing-muted: #5f6b7d;
   --marketing-soft: #7b8494;
@@ -101,8 +101,8 @@
   place-items: center;
   border-radius: 12px;
   color: white;
-  background: linear-gradient(135deg, #8b5cf6, #4f46e5 56%, #22d3ee);
-  box-shadow: 0 10px 30px rgba(99, 102, 241, 0.3);
+  background: linear-gradient(135deg, var(--brand-action), var(--brand-action) 56%, var(--chart-2));
+  box-shadow: 0 10px 30px rgba(240, 107, 69, 0.3);
 }
 
 .marketing-brand-copy {
@@ -233,7 +233,7 @@
 .marketing-primary-button {
   color: white;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  background: linear-gradient(135deg, #7c3aed, #4f46e5);
+  background: linear-gradient(135deg, var(--brand-text-accent), var(--brand-action));
   box-shadow: 0 12px 30px rgba(79, 70, 229, 0.24);
 }
 
@@ -316,7 +316,7 @@
   height: 540px;
   top: -260px;
   left: -180px;
-  background: radial-gradient(circle, rgba(124, 58, 237, 0.2), transparent 68%);
+  background: radial-gradient(circle, rgba(240, 107, 69, 0.2), transparent 68%);
 }
 
 .marketing-orb.orb-two {
@@ -336,7 +336,7 @@
 
 .marketing-eyebrow,
 .marketing-kicker {
-  color: #a78bfa;
+  color: var(--brand-text-accent);
   font-size: 12px;
   font-weight: 850;
   letter-spacing: 0.1em;
@@ -349,9 +349,9 @@
   align-items: center;
   gap: 8px;
   padding: 8px 11px;
-  border: 1px solid rgba(124, 58, 237, 0.28);
+  border: 1px solid rgba(240, 107, 69, 0.28);
   border-radius: 999px;
-  background: rgba(124, 58, 237, 0.08);
+  background: rgba(240, 107, 69, 0.08);
 }
 
 .marketing-hero-copy h1 {
@@ -367,7 +367,7 @@
   display: block;
   margin-top: 8px;
   color: transparent;
-  background: linear-gradient(92deg, #a78bfa 4%, #818cf8 48%, #67e8f9 96%);
+  background: linear-gradient(92deg, var(--brand-text-accent) 4%, var(--brand-core) 48%, var(--chart-2) 96%);
   background-clip: text;
   -webkit-background-clip: text;
 }
@@ -426,7 +426,7 @@
   border: 1px solid var(--marketing-border-strong);
   border-radius: 24px;
   overflow: hidden;
-  background: linear-gradient(145deg, color-mix(in srgb, var(--marketing-surface-strong) 92%, #4f46e5 8%), var(--marketing-surface-strong));
+  background: linear-gradient(145deg, color-mix(in srgb, var(--marketing-surface-strong) 92%, var(--brand-action) 8%), var(--marketing-surface-strong));
   box-shadow: 0 40px 120px rgba(15, 23, 42, 0.42), 0 0 0 1px rgba(255, 255, 255, 0.025) inset;
   transform: rotateY(-2.2deg) rotateX(1.4deg);
 }
@@ -530,8 +530,8 @@
 }
 
 .demo-metric.featured {
-  border-color: rgba(124, 58, 237, 0.28);
-  background: linear-gradient(145deg, rgba(124, 58, 237, 0.15), rgba(79, 70, 229, 0.06));
+  border-color: rgba(240, 107, 69, 0.28);
+  background: linear-gradient(145deg, rgba(240, 107, 69, 0.15), rgba(79, 70, 229, 0.06));
 }
 
 .demo-metric strong {
@@ -574,11 +574,11 @@
   width: 24px;
   height: 5px;
   border-radius: 999px;
-  background: #7c3aed;
+  background: var(--brand-text-accent);
 }
 
 .demo-chart-legend span:last-child {
-  background: #22d3ee;
+  background: var(--chart-2);
 }
 
 .demo-chart-bars {
@@ -594,7 +594,7 @@
   flex: 1;
   min-width: 6px;
   border-radius: 5px 5px 2px 2px;
-  background: linear-gradient(to top, #4f46e5, #8b5cf6 65%, #67e8f9);
+  background: linear-gradient(to top, var(--brand-action), var(--brand-action) 65%, var(--chart-2));
   opacity: 0.78;
   animation: marketing-bar-rise 680ms ease both;
 }
@@ -613,7 +613,7 @@
   gap: 10px;
   border: 1px solid var(--marketing-border);
   border-radius: 13px;
-  color: #a78bfa;
+  color: var(--brand-text-accent);
 }
 
 .demo-automation-row > div {
@@ -653,7 +653,7 @@
 }
 
 .demo-floating-card svg:first-child {
-  color: #a78bfa;
+  color: var(--brand-text-accent);
 }
 
 .demo-floating-card svg:last-child {
@@ -697,7 +697,7 @@
 }
 
 .marketing-proof-inner svg {
-  color: #8b5cf6;
+  color: var(--brand-action);
 }
 
 .marketing-section {
@@ -801,9 +801,9 @@
   display: grid;
   place-items: center;
   border-radius: 13px;
-  color: #c4b5fd;
-  background: linear-gradient(145deg, rgba(124, 58, 237, 0.16), rgba(79, 70, 229, 0.06));
-  border: 1px solid rgba(124, 58, 237, 0.18);
+  color: var(--brand-text-accent);
+  background: linear-gradient(145deg, rgba(240, 107, 69, 0.16), rgba(79, 70, 229, 0.06));
+  border: 1px solid rgba(240, 107, 69, 0.18);
 }
 
 .marketing-card-icon.muted {
@@ -875,7 +875,7 @@
   padding: 18px;
   border: 1px solid var(--marketing-border-strong);
   border-radius: 26px;
-  background: linear-gradient(145deg, var(--marketing-card), color-mix(in srgb, var(--marketing-surface-strong) 94%, #4f46e5 6%));
+  background: linear-gradient(145deg, var(--marketing-card), color-mix(in srgb, var(--marketing-surface-strong) 94%, var(--brand-action) 6%));
   box-shadow: var(--marketing-shadow);
 }
 
@@ -913,7 +913,7 @@
 .marketing-chat-message.user {
   justify-self: end;
   color: white;
-  background: linear-gradient(135deg, #6d28d9, #4f46e5);
+  background: linear-gradient(135deg, var(--brand-action), var(--brand-action));
 }
 
 .marketing-chat-message.user > span {
@@ -937,7 +937,7 @@
 }
 
 .marketing-chat-assistant-head svg {
-  color: #a78bfa;
+  color: var(--brand-text-accent);
 }
 
 .marketing-chat-actions {
@@ -949,10 +949,10 @@
 
 .marketing-chat-actions span {
   padding: 7px 9px;
-  border: 1px solid rgba(124, 58, 237, 0.2);
+  border: 1px solid rgba(240, 107, 69, 0.2);
   border-radius: 9px;
-  color: #a78bfa;
-  background: rgba(124, 58, 237, 0.07);
+  color: var(--brand-text-accent);
+  background: rgba(240, 107, 69, 0.07);
   font-size: 9px;
   font-weight: 800;
 }
@@ -969,7 +969,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #a78bfa;
+  color: var(--brand-text-accent);
 }
 
 .marketing-flow-preview-head strong {
@@ -1001,7 +1001,7 @@
 }
 
 .marketing-flow-preview-steps svg {
-  color: #7c3aed;
+  color: var(--brand-text-accent);
 }
 
 .marketing-product {
@@ -1034,7 +1034,7 @@
   right: -90px;
   top: -90px;
   border-radius: 999px;
-  background: radial-gradient(circle, rgba(124, 58, 237, 0.16), transparent 70%);
+  background: radial-gradient(circle, rgba(240, 107, 69, 0.16), transparent 70%);
 }
 
 .marketing-product-card-head {
@@ -1046,8 +1046,8 @@
 
 .marketing-product-tag {
   padding: 6px 8px;
-  color: #a78bfa;
-  background: rgba(124, 58, 237, 0.08);
+  color: var(--brand-text-accent);
+  background: rgba(240, 107, 69, 0.08);
 }
 
 .marketing-product-card ul {
@@ -1092,7 +1092,7 @@
   padding: 27px;
   border: 1px solid var(--marketing-border);
   border-radius: 27px;
-  background: linear-gradient(145deg, var(--marketing-card), color-mix(in srgb, var(--marketing-surface-strong) 92%, #4f46e5 8%));
+  background: linear-gradient(145deg, var(--marketing-card), color-mix(in srgb, var(--marketing-surface-strong) 92%, var(--brand-action) 8%));
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 13px;
@@ -1102,14 +1102,14 @@
 .integration-core {
   grid-column: 1 / -1;
   min-height: 92px;
-  border: 1px solid rgba(124, 58, 237, 0.3);
+  border: 1px solid rgba(240, 107, 69, 0.3);
   border-radius: 18px;
-  background: linear-gradient(135deg, rgba(124, 58, 237, 0.14), rgba(34, 211, 238, 0.06));
+  background: linear-gradient(135deg, rgba(240, 107, 69, 0.14), rgba(34, 211, 238, 0.06));
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 9px;
-  color: #c4b5fd;
+  color: var(--brand-text-accent);
 }
 
 .integration-core strong {
@@ -1137,7 +1137,7 @@
 }
 
 .integration-group-label svg {
-  color: #a78bfa;
+  color: var(--brand-text-accent);
 }
 
 .integration-chips {
@@ -1185,7 +1185,7 @@
   right: -20px;
   top: calc(50% - 11px);
   z-index: 2;
-  color: #7c3aed;
+  color: var(--brand-text-accent);
 }
 
 .marketing-pricing {
@@ -1204,7 +1204,7 @@
 }
 
 .marketing-price-card.recommended {
-  border-color: rgba(124, 58, 237, 0.56);
+  border-color: rgba(240, 107, 69, 0.56);
   box-shadow: 0 22px 55px rgba(79, 70, 229, 0.15);
   transform: translateY(-7px);
 }
@@ -1215,7 +1215,7 @@
   right: 18px;
   padding: 6px 9px;
   color: white;
-  background: linear-gradient(135deg, #7c3aed, #4f46e5);
+  background: linear-gradient(135deg, var(--brand-text-accent), var(--brand-action));
 }
 
 .marketing-price-name {
@@ -1226,7 +1226,7 @@
 }
 
 .marketing-price-name svg {
-  color: #a78bfa;
+  color: var(--brand-text-accent);
 }
 
 .marketing-price {
@@ -1263,7 +1263,7 @@
 }
 
 .marketing-price-feature svg {
-  color: #a78bfa;
+  color: var(--brand-text-accent);
   flex: 0 0 auto;
 }
 
@@ -1274,14 +1274,14 @@
   display: flex;
   gap: 13px;
   align-items: flex-start;
-  border: 1px solid rgba(124, 58, 237, 0.2);
+  border: 1px solid rgba(240, 107, 69, 0.2);
   border-radius: 17px;
-  background: rgba(124, 58, 237, 0.06);
+  background: rgba(240, 107, 69, 0.06);
 }
 
 .marketing-ai-addon > svg {
   flex: 0 0 auto;
-  color: #a78bfa;
+  color: var(--brand-text-accent);
 }
 
 .marketing-ai-addon div {
@@ -1365,7 +1365,7 @@
   padding: 68px 54px;
   border-radius: 30px;
   color: white;
-  background: linear-gradient(135deg, #312e81, #4f46e5 45%, #6d28d9 100%);
+  background: linear-gradient(135deg, var(--graphite-800), var(--brand-action) 45%, var(--brand-action) 100%);
   box-shadow: 0 30px 90px rgba(49, 46, 129, 0.32);
   text-align: center;
 }
@@ -1396,7 +1396,7 @@
 }
 
 .marketing-primary-button.inverse {
-  color: #312e81;
+  color: var(--graphite-800);
   background: white;
   box-shadow: none;
 }
@@ -1492,7 +1492,7 @@
   height: 520px;
   left: -260px;
   bottom: -230px;
-  background: radial-gradient(circle, rgba(124, 58, 237, 0.35), transparent 68%);
+  background: radial-gradient(circle, rgba(240, 107, 69, 0.35), transparent 68%);
 }
 
 .marketing-auth-orb.auth-orb-two {
@@ -1566,8 +1566,8 @@
   display: grid;
   place-items: center;
   border-radius: 9px;
-  color: #c4b5fd;
-  background: rgba(124, 58, 237, 0.15);
+  color: var(--brand-text-accent);
+  background: rgba(240, 107, 69, 0.15);
 }
 
 .marketing-auth-proof-item p {
@@ -1652,7 +1652,7 @@
 }
 
 .marketing-auth-heading > span {
-  color: #8b5cf6;
+  color: var(--brand-action);
   font-size: 10px;
   font-weight: 850;
   letter-spacing: 0.08em;
@@ -1716,9 +1716,9 @@
 }
 
 .marketing-auth-input:focus-within {
-  border-color: rgba(124, 58, 237, 0.55);
+  border-color: rgba(240, 107, 69, 0.55);
   background: var(--marketing-surface-strong);
-  box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.08);
+  box-shadow: 0 0 0 4px rgba(240, 107, 69, 0.08);
 }
 
 .marketing-auth-input > svg {
@@ -1800,7 +1800,7 @@
 .marketing-auth-secondary-actions button {
   padding: 0;
   border: 0;
-  color: #8b5cf6;
+  color: var(--brand-action);
   background: transparent;
   font-size: inherit;
   font-weight: 800;
@@ -1808,7 +1808,7 @@
 
 .marketing-auth-switch button:hover,
 .marketing-auth-secondary-actions button:hover {
-  color: #a78bfa;
+  color: var(--brand-text-accent);
 }
 
 .marketing-auth-legal {
@@ -1960,7 +1960,7 @@
   }
 
   .marketing-mobile-language button.active {
-    color: #a78bfa;
+    color: var(--brand-text-accent);
     border-color: var(--marketing-border-strong);
   }
 
