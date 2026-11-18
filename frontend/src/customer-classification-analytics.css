@@ -66,7 +66,7 @@
 .cca-panel .cvc-classification.is-repeat_customer,
 .cca-panel .cvc-classification.is-high_value { background: rgba(59, 130, 246, 0.13); color: #60a5fa; }
 .cca-panel .cvc-classification.is-recent_buyer,
-.cca-panel .cvc-classification.is-prospect { background: rgba(139, 92, 246, 0.14); color: #a78bfa; }
+.cca-panel .cvc-classification.is-prospect { background: rgba(240, 107, 69, 0.14); color: var(--brand-text-accent); }
 .cca-panel .cvc-classification.is-value_at_risk { background: rgba(245, 158, 11, 0.14); color: #fbbf24; }
 .cca-panel .cvc-classification.is-dormant { background: rgba(239, 68, 68, 0.13); color: #f87171; }
 .cca-panel .cvc-classification.is-lead { color: var(--dg-shell-muted, #94a3b8); }
