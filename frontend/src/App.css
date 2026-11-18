@@ -1326,7 +1326,7 @@
 .ci-color-high-intent { color: #f59e0b; }
 .ci-color-buyer { color: #3ddc97; }
 .ci-color-repeat { color: #10b981; }
-.ci-color-vip { color: #a855f7; }
+.ci-color-vip { color: var(--warning-primary); }
 .ci-color-at-risk { color: #ef4444; }
 .ci-color-inactive { color: #6b7280; }
 

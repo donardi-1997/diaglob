@@ -50,12 +50,12 @@ const SEGMENT_KEYS: Record<string, string> = {
 
 
 const SEGMENT_COLORS: Record<string, string> = {
-  new: "#7c6cff",
+  new: "var(--brand-text-accent)",
   interested: "#3b82f6",
   high_intent: "#f59e0b",
   buyer: "#3ddc97",
   repeat_buyer: "#10b981",
-  vip: "#a855f7",
+  vip: "var(--warning-primary)",
   at_risk: "#ef4444",
   inactive: "#6b7280",
 };
