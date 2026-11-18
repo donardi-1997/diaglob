@@ -322,3 +322,20 @@ body { background-image: none; }
   color: var(--text-primary);
   box-shadow: none;
 }
+
+/* Match the logo's contrast surface across desktop sidebar, marketing and auth.
+   More specific than the legacy gradient rules loaded in feature stylesheets. */
+.dg-shell .dg-brand-mark,
+.marketing-page .marketing-brand-mark,
+.marketing-auth-page .marketing-brand-mark,
+.landing-page .marketing-brand-mark,
+.landing-page .brand-mark {
+  background: var(--bg-surface-secondary);
+  border: 1px solid var(--border-default);
+  box-shadow: none;
+}
+.copilot-floating-button .copilot-floating-button-icon {
+  background: var(--bg-surface-secondary);
+  border: 1px solid var(--border-default);
+  box-shadow: var(--shadow-card);
+}
