@@ -9,6 +9,9 @@ import { initializeFrontendObservability } from './observability'
 import { initializeMarketingTracking } from './services/marketingTracking'
 import './index.css'
 import './conversations-layout-fix.css'
+// Brand layer comes after all feature styles to bridge legacy tokens safely.
+import './brand-tokens.css'
+import './brand-coral.css'
 
 // Set the saved theme before React paints, preventing a dark-to-light flash.
 // Existing choices always take precedence over the new light default.
