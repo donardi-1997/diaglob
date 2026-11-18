@@ -44,3 +44,8 @@ npm run build
 7. No fusionar ni desplegar hasta completar estas comprobaciones y las CI pertinentes.
 
 **Limitación conocida:** el proyecto contiene estilos legacy con colores explícitos. Esta capa concentra la identidad para áreas principales, pero cualquier nueva pantalla debe migrar progresivamente a tokens y probarse en los dos modos.
+
+## Segunda pasada — superficies de comercio y clientes
+Las vistas `stores-v2`, `unit-economics`, `commerce-order-attribution`, `customer-risk` y `customer-classification` conservaron índigos de la implementación anterior. La segunda migración utiliza los tokens `--brand-*` y `--warning-*`, conservando azul informativo cuando tiene significado funcional.
+
+**Nota de lanzamiento:** el merge de GitHub y el despliegue en `diaglob.tech` son pasos independientes. Verificar el workflow **Deploy Production** asociado al commit de `main`, sus smoke tests y la versión visible antes de dar por publicada la identidad.

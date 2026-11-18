@@ -1,8 +1,8 @@
 .risk-moderation-shell {
   margin-bottom: 18px;
-  border: 1px solid rgba(99, 102, 241, 0.22);
+  border: 1px solid rgba(240, 107, 69, 0.22);
   border-radius: 16px;
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.075), rgba(14, 165, 233, 0.035));
+  background: linear-gradient(135deg, rgba(240, 107, 69, 0.075), rgba(14, 165, 233, 0.035));
   color: var(--dg-shell-text, #111827);
   overflow: hidden;
 }
@@ -51,7 +51,7 @@
   gap: 6px;
   min-height: 36px;
   padding: 0 11px;
-  border: 1px solid rgba(99, 102, 241, 0.28);
+  border: 1px solid rgba(240, 107, 69, 0.28);
   border-radius: 9px;
   background: var(--dg-shell-surface, #fff);
   color: var(--dg-shell-text, #111827);
@@ -94,7 +94,7 @@
 }
 
 .risk-moderation-console {
-  border-top: 1px solid rgba(99, 102, 241, 0.16);
+  border-top: 1px solid rgba(240, 107, 69, 0.16);
   background: var(--dg-shell-surface-strong, #fff);
   padding: 14px 16px 16px;
 }
@@ -229,7 +229,7 @@
 
 .risk-queue-item:hover,
 .risk-queue-item.selected {
-  background: rgba(99, 102, 241, 0.075);
+  background: rgba(240, 107, 69, 0.075);
 }
 
 .risk-queue-item.selected {
@@ -284,7 +284,7 @@
 
 .risk-status.status-disputed,
 .risk-status.status-open {
-  background: rgba(99, 102, 241, 0.1);
+  background: rgba(240, 107, 69, 0.1);
   color: #4f46e5;
 }
 
@@ -302,7 +302,7 @@
 
 [data-theme="dark"] .risk-status.status-disputed,
 [data-theme="dark"] .risk-status.status-open {
-  color: #a5b4fc;
+  color: var(--brand-text-accent);
 }
 
 [data-theme="dark"] .risk-status.status-pending {

@@ -410,7 +410,7 @@
 }
 .copilot-floating-button {
   border-radius: 19px;
-  background: linear-gradient(145deg, var(--accent), #4c39d3);
+  background: linear-gradient(145deg, var(--accent), var(--brand-action-hover));
 }
 .copilot-panel-root .copilot-composer-box:focus-within {
   border-color: var(--accent);

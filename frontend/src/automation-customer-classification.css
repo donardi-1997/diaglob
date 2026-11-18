@@ -24,8 +24,8 @@
 
 .automation-classification-badge.is-recent_buyer,
 .automation-classification-badge.is-prospect {
-  background: rgba(139, 92, 246, 0.14);
-  color: #a78bfa;
+  background: rgba(240, 107, 69, 0.14);
+  color: var(--brand-text-accent);
 }
 
 .automation-classification-badge.is-value_at_risk {
