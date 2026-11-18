@@ -7,6 +7,7 @@ import App from './App'
 import i18n from './i18n'
 import { initializeFrontendObservability } from './observability'
 import { initializeMarketingTracking } from './services/marketingTracking'
+import { initializeBrandFavicon } from './services/brandFavicon'
 import './index.css'
 import './conversations-layout-fix.css'
 // Brand layer comes after all feature styles to bridge legacy tokens safely.
@@ -17,6 +18,7 @@ import './brand-coral.css'
 // Existing choices always take precedence over the new light default.
 const storedTheme = localStorage.getItem('diaglob-theme')
 document.documentElement.setAttribute('data-theme', storedTheme === 'dark' ? 'dark' : 'light')
+initializeBrandFavicon()
 
 initializeFrontendObservability(import.meta.env, (options) => Sentry.init(options))
 initializeMarketingTracking()

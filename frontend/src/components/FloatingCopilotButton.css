@@ -7,7 +7,7 @@
   padding: 0;
   display: grid;
   place-items: center;
-  border: 1px solid rgba(22, 90, 245, 0.2);
+  border: 1px solid var(--brand-border);
   border-radius: 18px;
   background: color-mix(in srgb, var(--panel) 94%, #ffffff);
   color: var(--accent);
@@ -26,10 +26,10 @@
 }
 
 .copilot-floating-button:hover {
-  border-color: rgba(22, 90, 245, 0.34);
+  border-color: var(--brand-text-accent);
   box-shadow:
     0 18px 40px rgba(15, 23, 42, 0.2),
-    0 0 0 4px rgba(22, 90, 245, 0.06);
+    0 0 0 4px var(--brand-selected-ring);
   transform: translateY(-2px);
 }
 
@@ -39,7 +39,7 @@
 }
 
 .copilot-floating-button:focus-visible {
-  outline: 3px solid rgba(22, 90, 245, 0.18);
+  outline: 3px solid var(--focus-ring);
   outline-offset: 4px;
 }
 
@@ -60,9 +60,9 @@
   background:
     radial-gradient(
       circle,
-      rgba(22, 90, 245, 0.2) 0%,
-      rgba(9, 188, 235, 0.13) 46%,
-      rgba(0, 230, 199, 0) 74%
+      var(--brand-border) 0%,
+      rgba(240, 107, 69, .13) 46%,
+      rgba(240, 107, 69, 0) 74%
     );
   filter: blur(8px);
   opacity: 0.72;

@@ -1,3 +1,4 @@
+import DiaglobBrandMark from "./DiaglobBrandMark";
 import {
   useEffect,
   useRef,
@@ -155,13 +156,7 @@ export default function FloatingCopilotButton({
         {open ? (
           <X size={21} />
         ) : (
-          <img
-            src="/brand/diaglob-mark.svg"
-            alt=""
-            width={30}
-            height={30}
-            draggable={false}
-          />
+          <DiaglobBrandMark width={30} height={30} />
         )}
       </span>
       {!open && (
