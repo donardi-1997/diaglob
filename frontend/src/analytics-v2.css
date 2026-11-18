@@ -8,9 +8,9 @@
   --analytics-text: #f8fafc;
   --analytics-muted: #94a3b8;
   --analytics-subtle: #64748b;
-  --analytics-accent: #7c3aed;
-  --analytics-accent-soft: rgba(124, 58, 237, 0.14);
-  --analytics-accent-border: rgba(139, 92, 246, 0.34);
+  --analytics-accent: var(--brand-text-accent);
+  --analytics-accent-soft: rgba(240, 107, 69, 0.14);
+  --analytics-accent-border: rgba(240, 107, 69, 0.34);
   --analytics-positive: #22c55e;
   --analytics-positive-soft: rgba(34, 197, 94, 0.12);
   --analytics-warning: #f59e0b;
@@ -36,8 +36,8 @@
   --analytics-text: #0f172a;
   --analytics-muted: #64748b;
   --analytics-subtle: #94a3b8;
-  --analytics-accent-soft: rgba(124, 58, 237, 0.08);
-  --analytics-accent-border: rgba(124, 58, 237, 0.2);
+  --analytics-accent-soft: rgba(240, 107, 69, 0.08);
+  --analytics-accent-border: rgba(240, 107, 69, 0.2);
   --analytics-shadow: 0 24px 55px rgba(15, 23, 42, 0.08);
 }
 
@@ -52,7 +52,7 @@
   border: 1px solid var(--analytics-border);
   border-radius: var(--analytics-radius-lg);
   background:
-    radial-gradient(circle at 92% 10%, rgba(124, 58, 237, 0.2), transparent 34%),
+    radial-gradient(circle at 92% 10%, rgba(240, 107, 69, 0.2), transparent 34%),
     radial-gradient(circle at 70% 110%, rgba(59, 130, 246, 0.12), transparent 34%),
     var(--analytics-surface-strong);
   box-shadow: var(--analytics-shadow);
@@ -85,14 +85,14 @@
   align-items: center;
   gap: 8px;
   margin-bottom: 12px;
-  color: #a78bfa;
+  color: var(--brand-text-accent);
   font-size: 11px;
   font-weight: 800;
   letter-spacing: 0.12em;
 }
 
 [data-theme="light"] .analytics-v2-eyebrow {
-  color: #6d28d9;
+  color: var(--brand-action);
 }
 
 .analytics-v2-hero h1 {
@@ -136,7 +136,7 @@
 
 .analytics-v2-context-card > svg {
   flex: 0 0 auto;
-  color: #a78bfa;
+  color: var(--brand-text-accent);
 }
 
 .analytics-v2-context-card div {
@@ -208,11 +208,11 @@
 .analytics-v2-range.is-active {
   border-color: var(--analytics-accent-border);
   background: var(--analytics-accent-soft);
-  color: #c4b5fd;
+  color: var(--brand-text-accent);
 }
 
 [data-theme="light"] .analytics-v2-range.is-active {
-  color: #6d28d9;
+  color: var(--brand-action);
 }
 
 .analytics-v2-date-range {
@@ -326,7 +326,7 @@
 
 .analytics-v2-tab.is-active {
   border-color: var(--analytics-accent-border);
-  background: linear-gradient(135deg, rgba(124, 58, 237, 0.17), rgba(59, 130, 246, 0.08));
+  background: linear-gradient(135deg, rgba(240, 107, 69, 0.17), rgba(59, 130, 246, 0.08));
   color: var(--analytics-text);
 }
 
@@ -341,8 +341,8 @@
 }
 
 .analytics-v2-tab.is-active .analytics-v2-tab-icon {
-  background: rgba(124, 58, 237, 0.2);
-  color: #c4b5fd;
+  background: rgba(240, 107, 69, 0.2);
+  color: var(--brand-text-accent);
 }
 
 .analytics-v2-section-intro {
@@ -361,7 +361,7 @@
   border: 1px solid var(--analytics-accent-border);
   border-radius: 12px;
   background: var(--analytics-accent-soft);
-  color: #a78bfa;
+  color: var(--brand-text-accent);
 }
 
 .analytics-v2-section-intro > div:last-child {
@@ -437,7 +437,7 @@
   width: 96px;
   height: 96px;
   border-radius: 999px;
-  background: rgba(124, 58, 237, 0.08);
+  background: rgba(240, 107, 69, 0.08);
   pointer-events: none;
 }
 
@@ -450,7 +450,7 @@
   border: 1px solid var(--analytics-border);
   border-radius: 10px;
   background: var(--analytics-surface-soft);
-  color: #a78bfa;
+  color: var(--brand-text-accent);
 }
 
 .analytics-v2 .analytics-stat-info {
@@ -509,7 +509,7 @@
 }
 
 .analytics-v2 .analytics-card h3 svg {
-  color: #a78bfa;
+  color: var(--brand-text-accent);
 }
 
 .analytics-v2 .analytics-metrics-list {
@@ -590,13 +590,13 @@
   width: 100%;
   min-height: 3px;
   border-radius: 6px 6px 3px 3px;
-  background: linear-gradient(to top, #7c3aed, #a78bfa);
-  box-shadow: 0 5px 16px rgba(124, 58, 237, 0.18);
+  background: linear-gradient(to top, var(--brand-text-accent), var(--brand-text-accent));
+  box-shadow: 0 5px 16px rgba(240, 107, 69, 0.18);
 }
 
 .analytics-v2 .analytics-bar.orders {
-  background: linear-gradient(to top, #2563eb, #60a5fa);
-  box-shadow: 0 5px 16px rgba(37, 99, 235, 0.16);
+  background: linear-gradient(to top, var(--chart-2), var(--chart-2));
+  box-shadow: 0 5px 16px rgba(37, 123, 78, 0.16);
 }
 
 .analytics-v2 .analytics-bar-label {
@@ -727,7 +727,7 @@
 
 .analytics-v2 button:focus-visible,
 .analytics-v2 input:focus-visible {
-  outline: 2px solid #8b5cf6;
+  outline: 2px solid var(--brand-action);
   outline-offset: 2px;
 }
 
