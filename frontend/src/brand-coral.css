@@ -40,14 +40,14 @@ body { background-image: none; }
 .dg-shell .dg-metric-card:nth-child(3) .dg-metric-icon { background: var(--warning-soft); color: var(--warning-primary); }
 .dg-shell .dg-metric-card:nth-child(4) .dg-metric-icon { background: var(--info-soft); color: var(--info-primary); }
 
-:where(.primary-button, .dg-shell .dg-dashboard-action.is-primary,
+ :is(.primary-button, .dg-shell .dg-dashboard-action.is-primary,
   .landing-btn-primary, .marketing-primary-button, .flow-sidebar-save) {
   background: var(--brand-action);
   color: var(--brand-action-fg);
   border-color: var(--brand-action);
   box-shadow: none;
 }
-:where(.primary-button, .dg-shell .dg-dashboard-action.is-primary,
+ :is(.primary-button, .dg-shell .dg-dashboard-action.is-primary,
   .landing-btn-primary, .marketing-primary-button, .flow-sidebar-save):hover:not(:disabled) {
   background: var(--brand-action-hover);
   color: var(--brand-action-fg);
@@ -55,16 +55,16 @@ body { background-image: none; }
   box-shadow: var(--shadow-card);
   filter: none;
 }
-:where(.primary-button, .dg-shell .dg-dashboard-action.is-primary,
+ :is(.primary-button, .dg-shell .dg-dashboard-action.is-primary,
   .landing-btn-primary, .marketing-primary-button, .flow-sidebar-save):active:not(:disabled) {
   background: var(--brand-action-active);
 }
-:where(.secondary-button, .landing-btn-outline) {
+:is(.secondary-button, .landing-btn-outline) {
   border-color: var(--border-strong);
   background: var(--bg-surface);
   color: var(--text-primary);
 }
-:where(.secondary-button, .landing-btn-outline):hover:not(:disabled) {
+:is(.secondary-button, .landing-btn-outline):hover:not(:disabled) {
   background: var(--bg-surface-hover);
 }
 :where(.dg-shell, .app-shell, .marketing-page, .landing-page, .flow-builder-v2)
@@ -241,4 +241,17 @@ body { background-image: none; }
     animation-duration: 0.01ms;
     transition-duration: 0.01ms;
   }
+}
+
+/* Final state and contrast guards for component-scoped legacy buttons. */
+:root[data-theme="light"] :is(.dg-shell .dg-dashboard-action.is-primary, .primary-button, .marketing-page .marketing-primary-button, .landing-page .landing-btn-primary),
+:root[data-theme="dark"] :is(.dg-shell .dg-dashboard-action.is-primary, .primary-button, .marketing-page .marketing-primary-button, .landing-page .landing-btn-primary) {
+  background: var(--brand-action);
+  color: var(--brand-action-fg);
+  border-color: var(--brand-action);
+}
+:root[data-theme="light"] :is(.dg-shell .dg-dashboard-action.is-primary, .primary-button, .marketing-page .marketing-primary-button, .landing-page .landing-btn-primary):hover:not(:disabled),
+:root[data-theme="dark"] :is(.dg-shell .dg-dashboard-action.is-primary, .primary-button, .marketing-page .marketing-primary-button, .landing-page .landing-btn-primary):hover:not(:disabled) {
+  background: var(--brand-action-hover);
+  color: var(--brand-action-fg);
 }
