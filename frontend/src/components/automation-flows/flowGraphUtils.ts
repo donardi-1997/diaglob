@@ -90,7 +90,8 @@ export interface FlowNodeConfig {
   call_language?: string;
   call_purpose?: "general" | "order_confirmation";
   timeout_minutes?: number;
-  template_variables?: Record<string, string>;
+  /** Meta template BODY parameters in order: {{1}}, {{2}}, … */
+  template_variables?: { body?: string[] };
   whatsapp_template_id?: number;
   template_provider_name?: string;
   template_language?: string;
@@ -315,8 +316,17 @@ export function validateFlowGraph(graph: FlowGraph): string[] {
       }
     }
 
-    if (node.type === "message" && !node.config.message_template?.trim()) {
-      errors.push("flowValidationMessageMissingTemplate");
+    if (node.type === "message") {
+      // Template mode sends only the approved Meta template; free text is
+      // required for free_form/auto (used inside the 24h service window).
+      const mode = node.config.message_mode || "auto";
+      if (mode === "template") {
+        if (!node.config.whatsapp_template_id) {
+          errors.push("flowValidationMessageMissingTemplate");
+        }
+      } else if (!node.config.message_template?.trim()) {
+        errors.push("flowValidationMessageMissingTemplate");
+      }
     }
 
     if (node.type === "call") {

@@ -149,6 +149,38 @@ def validate_draft_graph(graph: dict[str, Any]) -> list[str]:
     return errors
 
 
+def _validate_message_config(nid: Any, config: dict[str, Any]) -> list[str]:
+    """WhatsApp message node: free text and/or an approved Meta template.
+
+    `template` mode only sends the Meta template, so free text is optional.
+    `free_form` and `auto` need text for the 24h customer-service window.
+    """
+    from .whatsapp_compliance import FLOW_TEMPLATE_VARIABLES
+
+    errors: list[str] = []
+    mode = config.get("message_mode", "")
+    if mode not in MESSAGE_MODES:
+        errors.append(f"Node {nid}: invalid message_mode '{mode}'")
+    template_id = config.get("whatsapp_template_id")
+    has_template = template_id is not None
+    if has_template and (isinstance(template_id, bool) or not isinstance(template_id, int) or template_id < 1):
+        errors.append(f"Node {nid}: invalid whatsapp_template_id")
+    if mode == "template" and not has_template:
+        errors.append(f"Node {nid}: a WhatsApp template is required in template mode")
+    if mode != "template" and not config.get("message_template"):
+        errors.append(f"Node {nid}: message_template is required")
+    variables = config.get("template_variables")
+    if variables not in (None, {}):
+        body = variables.get("body") if isinstance(variables, dict) else None
+        if not isinstance(body, list) or not all(isinstance(item, str) for item in body):
+            errors.append(f"Node {nid}: template_variables.body must be a list of variables")
+        else:
+            unknown = sorted({item for item in body if item not in FLOW_TEMPLATE_VARIABLES})
+            if unknown:
+                errors.append(f"Node {nid}: unsupported template variables {', '.join(unknown)}")
+    return errors
+
+
 def validate_graph(graph: dict[str, Any]) -> list[str]:
     """Validate a flow graph. Returns list of error strings (empty = valid)."""
     errors: list[str] = []
@@ -209,11 +241,7 @@ def validate_graph(graph: dict[str, Any]) -> list[str]:
                 errors.append(f"Node {nid}: wait exceeds maximum of {MAX_WAIT_DAYS} days")
 
         elif ntype == "message":
-            mode = config.get("message_mode", "")
-            if mode not in MESSAGE_MODES:
-                errors.append(f"Node {nid}: invalid message_mode '{mode}'")
-            if not config.get("message_template"):
-                errors.append(f"Node {nid}: message_template is required")
+            errors.extend(_validate_message_config(nid, config))
 
         elif ntype == "call":
             prompt = str(config.get("call_prompt") or "").strip()
