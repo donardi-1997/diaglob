@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   AlertCircle, ArrowRight, CheckCircle2, Clock3, RefreshCw, ShieldCheck,
 } from "lucide-react";
@@ -24,6 +25,12 @@ import {
   type ShopifyTrialVerification,
 } from "../services/shopifyBilling";
 import { parseShopifyHostedPricingReturn } from "../services/shopifyBillingReturn";
+import {
+  BILLING_COPY,
+  BILLING_DATE_LOCALE,
+  normalizeBillingLocale,
+  type BillingCopy,
+} from "./shopifyBillingCopy";
 
 interface Props {
   organization: Organization;
@@ -31,79 +38,19 @@ interface Props {
   onPaddleMigrationRefresh?: () => void;
 }
 
-const explanations: Record<string, string> = {
-  REVIEW_NOT_PENDING: "La propuesta ya no está pendiente.",
-  REVIEW_EXPIRED: "La propuesta superó el tiempo de vigencia.",
-  VERIFICATION_MISSING: "No se encontró la verificación original.",
-  NEWER_VERIFICATION_EXISTS: "Existe una verificación de Shopify más reciente.",
-  VERIFICATION_EXPIRED: "La verificación de Shopify ya caducó.",
-  VERIFICATION_MISMATCH: "Los datos del plan ya no coinciden.",
-  ORGANIZATION_INACTIVE: "La organización está inactiva.",
-  BILLING_CHANNEL_CHANGED: "Cambió el proveedor de facturación.",
-  BASELINE_PLAN_CHANGED: "Cambió el plan actual.",
-  LEGACY_BILLING_REFERENCES: "Hay una suscripción anterior que requiere revisión.",
-  SHOPIFY_BINDINGS_CHANGED: "Cambió la cantidad de tiendas vinculadas.",
-  SHOPIFY_INSTALLATION_CHANGED: "La conexión de Shopify fue reemplazada o desconectada.",
-  STORE_UNAVAILABLE: "La tienda está pausada o eliminada.",
-};
-
-const statusLabels: Record<string, string> = {
-  plan_verified_no_change: "Plan verificado sin cambios",
-  plan_transition_requires_review: "Cambio de plan para revisión",
-  subscription_inactive_requires_review: "Suscripción inactiva: revisión necesaria",
-  pending_review: "Pendiente de revisión",
-  applied: "Plan aplicado y verificado",
-  stale: "Caducada",
-  blocked: "Bloqueada",
-  ready_for_manual_review: "Lista para revisión manual",
-};
-
-const knownErrorCodes: Record<string, string> = {
-  SHOPIFY_BILLING_PROVENANCE_REQUIRED: "La organización no está configurada para facturación Shopify.",
-  SHOPIFY_MULTISTORE_BILLING_REVIEW_REQUIRED: "Hay varias vinculaciones Shopify; se necesita revisión de facturación.",
-  SHOPIFY_BILLING_CONNECTION_REVIEW_REQUIRED: "La conexión Shopify necesita revisión.",
-  SHOPIFY_BILLING_STATE_CHANGED: "Cambió el estado de la conexión durante la verificación.",
-  SHOPIFY_PLAN_PRICE_UNVERIFIED: "Shopify no confirmó un precio verificable.",
-  SHOPIFY_PLAN_PRICE_MISMATCH: "El precio Shopify no coincide con el precio aprobado.",
-  SHOPIFY_PLAN_CATALOG_INVALID: "El catálogo de precios aprobados requiere configuración.",
-  SHOPIFY_TRANSITION_STALE_VERIFICATION: "La verificación caducó o ya no es la más reciente.",
-  SHOPIFY_TRANSITION_REVIEW_ALREADY_PENDING: "Ya hay otra revisión de plan pendiente.",
-  SHOPIFY_TRANSITION_INSTALLATION_OR_PLAN_CHANGED: "La instalación o el plan cambiaron.",
-  SHOPIFY_TRANSITION_CONCURRENT_REVIEW: "Se está procesando otra propuesta. Actualiza el historial.",
-  SHOPIFY_ENTITLEMENT_ACTIVATION_DISABLED: "La aplicación de planes todavía no está autorizada en Diaglob.",
-  SHOPIFY_TRANSITION_PROVIDER_MISMATCH: "Shopify confirmó un plan o periodo diferente al esperado.",
-  SHOPIFY_TRANSITION_STATE_CHANGED: "La instalación o suscripción cambió durante la operación.",
-  SHOPIFY_SUBSCRIPTION_CANCELLATION_SCHEDULED: "Hay una cancelación programada; revisa el contrato en Shopify.",
-  SHOPIFY_HOSTED_PRICING_NOT_CONFIGURED: "Falta configurar el identificador de la app en Shopify.",
-  SHOPIFY_TRIAL_EVIDENCE_NOT_FOUND: "Shopify aún no devolvió evidencia de trial para el plan activo.",
-  SHOPIFY_TRIAL_EVIDENCE_INVALID: "La evidencia de trial devuelta por Shopify no es válida.",
-  SHOPIFY_TRIAL_EVIDENCE_NO_ACTIVE_PLAN: "No hay un plan Shopify activo que permita verificar el trial.",
-};
-
-function billingErrorMessage(error: unknown): string {
+function billingErrorMessage(error: unknown, copy: BillingCopy): string {
   if (error && typeof error === "object" && "response" in error) {
     const response = (error as { response?: { data?: { detail?: { code?: string } | string }; status?: number } }).response;
     const detail = response?.data?.detail;
     const code = typeof detail === "object" && detail ? detail.code : detail;
-    if (typeof code === "string" && Object.prototype.hasOwnProperty.call(knownErrorCodes, code)) {
-      return knownErrorCodes[code];
+    if (typeof code === "string" && Object.prototype.hasOwnProperty.call(copy.knownErrorCodes, code)) {
+      return copy.knownErrorCodes[code];
     }
-    if (response?.status === 403) return "No tienes permisos para esta operación.";
-    if (response?.status === 409) return "No se pudo confirmar el estado actual. Revisa el historial.";
-    if (response?.status === 503) return "La verificación con Shopify no está disponible. Revisa la configuración Partner.";
+    if (response?.status === 403) return copy.errorForbidden;
+    if (response?.status === 409) return copy.errorConflict;
+    if (response?.status === 503) return copy.errorUnavailable;
   }
-  return "No fue posible completar la consulta. Puedes intentarlo nuevamente.";
-}
-
-function labelStatus(value: string) {
-  return statusLabels[value] ?? "Revisión requerida";
-}
-
-function formatDate(value: string) {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? "Fecha no disponible"
-    : new Intl.DateTimeFormat("es-CO", { dateStyle: "medium", timeStyle: "short" }).format(date);
+  return copy.errorGeneric;
 }
 
 export default function ShopifyBillingWorkspace({
@@ -111,6 +58,25 @@ export default function ShopifyBillingWorkspace({
   paddleMigrationStatus = null,
   onPaddleMigrationRefresh,
 }: Props) {
+  const { i18n } = useTranslation();
+  const locale = normalizeBillingLocale(i18n.resolvedLanguage || i18n.language);
+  const copy = BILLING_COPY[locale];
+  // A ref keeps async callbacks in effects on the latest language without
+  // re-triggering billing requests when the locale changes.
+  const copyRef = useRef(copy);
+  useEffect(() => {
+    copyRef.current = copy;
+  }, [copy]);
+
+  const formatDate = useCallback((value: string) => {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime())
+      ? copy.dateUnavailable
+      : new Intl.DateTimeFormat(BILLING_DATE_LOCALE[locale], { dateStyle: "medium", timeStyle: "short" }).format(date);
+  }, [copy, locale]);
+
+  const labelStatus = (value: string) => copy.statusLabels[value] ?? copy.reviewRequired;
+
   const hasBillingAccess = organization.role === "owner" || organization.role === "manager";
   const isOwner = organization.role === "owner";
 
@@ -137,11 +103,11 @@ export default function ShopifyBillingWorkspace({
       const result = await schedulePaddleCancellation();
       if (result.auto_renew_enabled !== false) throw new Error("Renewal remains enabled");
       setNotice(result.effective_at
-        ? `La renovación de Paddle quedó cancelada para el ${formatDate(result.effective_at)}. Mantendrás el acceso hasta esa fecha.`
-        : "La renovación de Paddle quedó desactivada. El acceso pagado se conserva hasta el fin del periodo vigente.");
+        ? copy.paddleCancelledOn(formatDate(result.effective_at))
+        : copy.paddleRenewalDisabled);
       onPaddleMigrationRefresh?.();
     } catch {
-      setError("No se pudo programar la cancelación de Paddle. No se modificó el plan Shopify.");
+      setError(copy.paddleCancelFailed);
     } finally {
       setMigrationBusy(false);
     }
@@ -176,18 +142,18 @@ export default function ShopifyBillingWorkspace({
       .then(([checks, proposals, flags]) => {
         if (!mounted) return;
         if (checks.organization_id !== organization.id || proposals.organization_id !== organization.id) {
-          setError("No se pudo confirmar la organización de facturación.");
+          setError(copyRef.current.orgMismatch);
           return;
         }
         if (flags.organization_id !== organization.id || flags.paddle_checkout_available !== false) {
-          setError("No se pudo validar el canal de facturación.");
+          setError(copyRef.current.channelMismatch);
           return;
         }
         setCapabilities(flags);
         setHistory(checks.items);
         setReviews(proposals.items);
       })
-      .catch((cause: unknown) => { if (mounted) setError(billingErrorMessage(cause)); })
+      .catch((cause: unknown) => { if (mounted) setError(billingErrorMessage(cause, copyRef.current)); })
       .finally(() => { if (mounted) setLoading(false); });
     return () => { mounted = false; };
   }, [hasBillingAccess, organization.id]);
@@ -203,9 +169,7 @@ export default function ShopifyBillingWorkspace({
       !assessment?.ready_for_manual_review ||
       assessment.review_id !== reviewId
     )) return;
-    if (action === "apply" && !window.confirm(
-      "Confirmar: Diaglob volverá a consultar Shopify y solo aplicará el plan si existe una suscripción activa y aprobada. No se efectuará ningún cobro desde Diaglob.",
-    )) return;
+    if (action === "apply" && !window.confirm(copy.applyConfirm)) return;
     setBusy(action);
     setError("");
     setNotice("");
@@ -222,8 +186,13 @@ export default function ShopifyBillingWorkspace({
         setTrialVerification(result);
         setNotice(
           result.matches_expected
-            ? `Shopify confirmó un trial de ${result.observed_trial_days} días para el plan activo.`
-            : `Atención: Shopify reporta ${result.observed_trial_days ?? "sin trial"}; Diaglob espera ${result.expected_trial_days} días.`,
+            ? copy.trialMatches(result.observed_trial_days)
+            : copy.trialMismatch(
+              result.observed_trial_days === null || result.observed_trial_days === undefined
+                ? copy.noTrial
+                : `${result.observed_trial_days}${copy.daysSuffix}`,
+              result.expected_trial_days,
+            ),
         );
       } else if (action === "subscription") {
         const result = await refreshShopifySubscription();
@@ -232,10 +201,10 @@ export default function ShopifyBillingWorkspace({
           throw new Error("Invalid tenant billing state");
         }
         setNotice(result.subscription_status === "active"
-          ? "Suscripción confirmada y activa en Shopify."
+          ? copy.subscriptionActive
           : result.subscription_status === "inactive"
-            ? "Shopify confirmó que no existe una suscripción activa. El acceso de pago se suspendió."
-            : "Shopify confirmó un contrato diferente; las funciones de pago quedan en revisión.");
+            ? copy.subscriptionInactive
+            : copy.subscriptionDifferent);
         setAssessment(null);
         await refreshHistory();
       } else if (action === "hosted") {
@@ -246,15 +215,13 @@ export default function ShopifyBillingWorkspace({
           !result.url.startsWith("https://admin.shopify.com/store/")
         ) throw new Error("Invalid Shopify redirect");
         setHostedPricingUrl(result.url);
-        setNotice("Abre la página de planes de Shopify usando el enlace seguro.");
+        setNotice(copy.openHostedNotice);
       } else if (action === "apply" && reviewId) {
         const result = await applyVerifiedShopifyPlan(reviewId);
         if (result.organization_id !== organization.id) throw new Error("Wrong tenant");
         setAssessment(null);
         await refreshHistory();
-        setNotice(result.applied
-          ? "Shopify confirmó el contrato y el plan fue aplicado. Actualiza la página para ver los límites."
-          : "El plan ya había sido aplicado; no se repitió ninguna operación.");
+        setNotice(result.applied ? copy.planApplied : copy.planAlreadyApplied);
       } else if (action === "check") {
         const result = await checkShopifyBilling();
         if (result.applied !== false || result.requires_review !== true) {
@@ -262,19 +229,19 @@ export default function ShopifyBillingWorkspace({
         }
         setLatestCheck(result);
         setAssessment(null);
-        setNotice("Verificación registrada. Esto no modifica el plan.");
+        setNotice(copy.checkRegistered);
         await refreshHistory();
       } else if (action === "stage") {
         const latest = history[0];
         if (!latest || latest.status !== "plan_transition_requires_review" || !latest.target_plan) {
-          setError("No hay una verificación de cambio de plan disponible.");
+          setError(copy.noTransitionVerification);
           return;
         }
         const result = await stageShopifyPlanReview(latest.id);
         if (result.applied !== false || result.requires_review !== true) {
           throw new Error("Unsafe review response");
         }
-        setNotice("Propuesta preparada para revisión. No activa ni cobra un plan.");
+        setNotice(copy.reviewPrepared);
         setAssessment(null);
         await refreshHistory();
       } else if (action === "assess" && reviewId) {
@@ -286,10 +253,10 @@ export default function ShopifyBillingWorkspace({
       } else {
         await refreshHistory();
         setAssessment(null);
-        setNotice("Historial actualizado.");
+        setNotice(copy.historyUpdated);
       }
     } catch (cause) {
-      setError(billingErrorMessage(cause));
+      setError(billingErrorMessage(cause, copy));
     } finally {
       setBusy(null);
     }
@@ -317,9 +284,10 @@ export default function ShopifyBillingWorkspace({
     );
 
     void (async () => {
+      const text = copyRef.current;
       setBusy("return");
       setError("");
-      setNotice("Shopify devolvió el control a Diaglob. Verificando el contrato activo…");
+      setNotice(text.returnVerifying);
       try {
         const check = await checkShopifyBilling();
         if (check.organization_id !== organization.id || check.applied !== false) {
@@ -329,18 +297,12 @@ export default function ShopifyBillingWorkspace({
         await refreshHistory();
 
         if (check.status !== "plan_transition_requires_review") {
-          setNotice(
-            check.has_pending_update
-              ? "Shopify confirmó un cambio programado para un próximo ciclo. Diaglob mantendrá el plan activo actual hasta que Shopify haga efectivo el cambio."
-              : "Shopify confirmó el plan activo. No hay cambios de acceso pendientes.",
-          );
+          setNotice(check.has_pending_update ? text.returnScheduledChange : text.returnPlanConfirmed);
           return;
         }
 
         if (!isOwner || !capabilities.verified_entitlement_apply_enabled) {
-          setNotice(
-            "Shopify confirmó un cambio de plan. La verificación quedó registrada y requiere la activación segura del propietario.",
-          );
+          setNotice(text.returnOwnerActivation);
           return;
         }
 
@@ -348,7 +310,7 @@ export default function ShopifyBillingWorkspace({
         const freshAssessment = await assessShopifyPlanReview(review.id);
         if (!freshAssessment.ready_for_manual_review) {
           setAssessment(freshAssessment);
-          setNotice("Shopify confirmó el cambio, pero la revisión interna necesita una nueva comprobación.");
+          setNotice(text.returnNeedsRecheck);
           return;
         }
 
@@ -358,13 +320,9 @@ export default function ShopifyBillingWorkspace({
         }
         setAssessment(null);
         await refreshHistory();
-        setNotice(
-          applied.applied
-            ? `Plan ${applied.plan} aplicado después de una segunda verificación con Shopify.`
-            : `El plan ${applied.plan} ya estaba aplicado; no se repitió ninguna operación.`,
-        );
+        setNotice(applied.applied ? text.returnApplied(applied.plan) : text.returnAlreadyApplied(applied.plan));
       } catch (cause) {
-        setError(billingErrorMessage(cause));
+        setError(billingErrorMessage(cause, copyRef.current));
       } finally {
         setBusy(null);
       }
@@ -387,21 +345,19 @@ export default function ShopifyBillingWorkspace({
       <header className="shopify-billing-heading">
         <div>
           <p className="shopify-billing-eyebrow">DIAGLOB · SHOPIFY APP PRICING</p>
-          <h1>Planes y facturación Shopify</h1>
-          <p>{paddleMigrationStatus?.migration_required
-            ? "Tu organización ya tiene una tienda Shopify y una suscripción Paddle anterior. Migra los cobros de forma segura, conservando el acceso pagado hasta el vencimiento."
-            : "Consulta el estado de la suscripción vinculada a tu tienda y revisa cualquier diferencia antes de modificar el acceso."}</p>
+          <h1>{copy.title}</h1>
+          <p>{paddleMigrationStatus?.migration_required ? copy.subtitleMigration : copy.subtitle}</p>
         </div>
-        <span className="shopify-billing-source"><ShieldCheck size={17} /> Gestionado en Shopify</span>
+        <span className="shopify-billing-source"><ShieldCheck size={17} /> {copy.managedInShopify}</span>
       </header>
 
       <div className="shopify-billing-caution" role="note">
         <AlertCircle size={20} aria-hidden="true" />
         <div>
           <strong>{capabilities?.verified_entitlement_apply_enabled
-            ? "Los cambios requieren una confirmación nueva de Shopify."
-            : "La activación de planes aún no está habilitada."}</strong>
-          <p>Shopify administra los cobros. Verificar o preparar una propuesta no cambia el plan; la aplicación, si está habilitada, requiere confirmación activa de Shopify y autorización del propietario.</p>
+            ? copy.cautionApplyEnabled
+            : copy.cautionApplyDisabled}</strong>
+          <p>{copy.cautionBody}</p>
         </div>
       </div>
 
@@ -409,14 +365,14 @@ export default function ShopifyBillingWorkspace({
         <section className="shopify-billing-panel" aria-labelledby="paddle-migration-heading">
           <div className="shopify-billing-panel-title">
             <div>
-              <h2 id="paddle-migration-heading">Migrar la facturación anterior de Paddle</h2>
-              <p>DIAGLOB debe cobrar la suscripción de la app mediante Shopify App Pricing. Cancela la renovación de Paddle y después elige un plan en Shopify. Paddle mantiene activo el periodo ya pagado; al finalizar, confirma un plan Shopify para reactivar las funciones de pago.</p>
-              <p className="shopify-billing-muted">Estado de Paddle: {paddleMigrationStatus.subscription_status || "revisión necesaria"}{paddleMigrationStatus.auto_renew_enabled === false ? " · renovación desactivada" : " · renovación activa"}</p>
+              <h2 id="paddle-migration-heading">{copy.migrationTitle}</h2>
+              <p>{copy.migrationBody}</p>
+              <p className="shopify-billing-muted">{copy.paddleStatus}: {paddleMigrationStatus.subscription_status || copy.reviewNeeded}{paddleMigrationStatus.auto_renew_enabled === false ? copy.renewalDisabledSuffix : copy.renewalActiveSuffix}</p>
             </div>
             <button type="button" className="shopify-billing-primary"
               disabled={!isOwner || migrationBusy || paddleMigrationStatus.auto_renew_enabled === false}
               onClick={() => { void stopPaddleRenewal(); }}>
-              {paddleMigrationStatus.auto_renew_enabled === false ? "Renovación de Paddle desactivada" : migrationBusy ? "Cancelando renovación…" : "Cancelar renovación de Paddle"}
+              {paddleMigrationStatus.auto_renew_enabled === false ? copy.renewalDisabledButton : migrationBusy ? copy.renewalCancelling : copy.renewalCancelButton}
             </button>
           </div>
           {error && <p className="shopify-billing-error" role="alert">{error}</p>}
@@ -426,115 +382,123 @@ export default function ShopifyBillingWorkspace({
 
       <div className="shopify-billing-stats">
         <section>
-          <span>Plan actual en Diaglob</span>
+          <span>{copy.currentPlan}</span>
           <strong>{organization.plan_name || organization.plan}</strong>
         </section>
         <section>
-          <span>Estado actual de la suscripción</span>
-          <strong>{organization.subscription_status || "No confirmado"}</strong>
-          <small>No equivale a una verificación actual en Shopify</small>
+          <span>{copy.currentStatus}</span>
+          <strong>{organization.subscription_status || copy.notConfirmed}</strong>
+          <small>{copy.notCurrentVerification}</small>
         </section>
         <section>
-          <span>Última verificación registrada</span>
-          <strong>{first ? formatDate(first.observed_at) : "Sin verificaciones"}</strong>
+          <span>{copy.lastVerification}</span>
+          <strong>{first ? formatDate(first.observed_at) : copy.noVerifications}</strong>
         </section>
       </div>
 
       {!hasBillingAccess ? (
         <section className="shopify-billing-panel">
-          <h2>Consulta restringida</h2>
-          <p>Solo propietarios y administradores pueden revisar los datos de facturación de la organización.</p>
+          <h2>{copy.restrictedTitle}</h2>
+          <p>{copy.restrictedBody}</p>
         </section>
       ) : (
         <>
           <section className="shopify-billing-panel">
             <div className="shopify-billing-panel-title">
               <div>
-                <h2>Planes alojados en Shopify</h2>
-                <p>Los cambios y los cobros se realizan en Shopify Admin, no en Diaglob.</p>
+                <h2>{copy.hostedTitle}</h2>
+                <p>{copy.hostedBody}</p>
                 {capabilities && (
                   <p className="shopify-billing-muted">
-                    Planes: {capabilities.public_plans.map((plan) => (
+                    {copy.plansLabel}: {capabilities.public_plans.map((plan) => (
                       plan.charAt(0).toUpperCase() + plan.slice(1)
                     )).join(" · ")}
-                    {" · "}prueba gratis de {capabilities.trial_days} días
-                    {" · "}facturación {capabilities.billing_period_months.includes(12) ? "mensual o anual" : "mensual"}.
+                    {" · "}{copy.freeTrial(capabilities.trial_days)}
+                    {" · "}{copy.billingLabel(capabilities.billing_period_months.includes(12) ? copy.billingMonthlyOrAnnual : copy.billingMonthly)}.
                   </p>
                 )}
               </div>
               <button type="button" className="shopify-billing-primary"
                 disabled={Boolean(busy) || loading || !capabilities?.shopify_hosted_pricing_configured}
                 onClick={() => { void run("hosted"); }}>
-                {busy === "hosted" ? "Verificando tienda…" : "Abrir planes de Shopify"}
+                {busy === "hosted" ? copy.verifyingStore : copy.openShopifyPlans}
               </button>
             </div>
             {hostedPricingUrl && (
               <p className="shopify-billing-notice">
                 <a href={hostedPricingUrl} target="_blank" rel="noopener noreferrer">
-                  Ir a la selección de planes en Shopify Admin
+                  {copy.goToShopifyPlans}
                 </a>
               </p>
             )}
             {!capabilities?.shopify_hosted_pricing_configured && (
-              <p className="shopify-billing-muted">Los planes alojados aún requieren la configuración Partner de Diaglob.</p>
+              <p className="shopify-billing-muted">{copy.hostedNotConfigured}</p>
             )}
           </section>
 
           <section className="shopify-billing-panel">
             <div className="shopify-billing-panel-title">
               <div>
-                <h2>Verificación con Shopify</h2>
-                <p>Consulta nuevamente a Shopify únicamente cuando necesites revisar el contrato y sus condiciones.</p>
+                <h2>{copy.verificationTitle}</h2>
+                <p>{copy.verificationBody}</p>
               </div>
               <div className="shopify-billing-actions">
                 <button type="button" className="shopify-billing-secondary" disabled={Boolean(busy) || loading} onClick={() => { void run("refresh"); }}>
-                  <RefreshCw size={16} /> Actualizar historial
+                  <RefreshCw size={16} /> {copy.refreshHistory}
                 </button>
                 {capabilities?.verified_entitlement_apply_enabled && (
                   <button type="button" className="shopify-billing-secondary"
                     disabled={Boolean(busy) || loading || !capabilities?.public_plans.includes(organization.plan)}
                     onClick={() => { void run("subscription"); }}>
                     <RefreshCw size={16} />
-                    {busy === "subscription" ? "Comprobando acceso…" : "Comprobar acceso activo"}
+                    {busy === "subscription" ? copy.checkingAccess : copy.checkAccess}
                   </button>
                 )}
                 <button type="button" className="shopify-billing-secondary" disabled={Boolean(busy) || loading} onClick={() => { void run("trial"); }}>
-                  <Clock3 size={16} /> {busy === "trial" ? "Verificando trial…" : "Verificar trial de 3 días"}
+                  <Clock3 size={16} /> {busy === "trial" ? copy.verifyingTrial : copy.verifyTrial(capabilities?.trial_days ?? 3)}
                 </button>
                 <button type="button" className="shopify-billing-primary" disabled={Boolean(busy) || loading} onClick={() => { void run("check"); }}>
-                  <ShieldCheck size={17} /> {busy === "check" ? "Verificando…" : "Verificar suscripción"}
+                  <ShieldCheck size={17} /> {busy === "check" ? copy.verifying : copy.verifySubscription}
                 </button>
               </div>
             </div>
             {error && <p className="shopify-billing-error" role="alert">{error}</p>}
             {notice && <p className="shopify-billing-notice" role="status">{notice}</p>}
-            {loading ? <p role="status">Consultando historial…</p> : (
+            {loading ? <p role="status">{copy.loadingHistory}</p> : (
               <div className="shopify-billing-list">
-                {history.length === 0 && <p>Aún no hay verificaciones registradas. El estado del plan no se modificará al consultar Shopify.</p>}
+                {history.length === 0 && <p>{copy.noHistory}</p>}
                 {history.map((item) => (
                   <article key={item.id} className="shopify-billing-record">
                     <div>
                       <strong>{labelStatus(item.status)}</strong>
-                      <small>Consulta #{item.id} · {formatDate(item.observed_at)} · Tienda #{item.store_id}</small>
-                      <p>Plan: {item.current_plan} {item.target_plan ? <><ArrowRight size={14} aria-hidden="true" /> {item.target_plan}</> : " · sin plan confirmado"}</p>
+                      <small>{copy.checkLine(item.id, formatDate(item.observed_at), item.store_id)}</small>
+                      <p>{copy.planLabel}: {item.current_plan} {item.target_plan ? <><ArrowRight size={14} aria-hidden="true" /> {item.target_plan}</> : copy.noConfirmedPlan}</p>
                     </div>
-                    <span className="shopify-billing-review-pill">Revisión requerida</span>
+                    <span className="shopify-billing-review-pill">{copy.reviewRequired}</span>
                   </article>
                 ))}
               </div>
             )}
-            {latestCheck && <p className="shopify-billing-muted">Última consulta realizada en esta sesión: #{latestCheck.verification_id} · {formatDate(latestCheck.verified_at)}</p>}
+            {latestCheck && <p className="shopify-billing-muted">{copy.lastSessionCheck(latestCheck.verification_id, formatDate(latestCheck.verified_at))}</p>}
             {trialVerification && (
               <div className="shopify-billing-assessment" role="status">
                 <strong>
-                  Trial Shopify: {trialVerification.matches_expected ? "configuración correcta" : "requiere corrección"}
+                  {copy.trialStatus(Boolean(trialVerification.matches_expected))}
                 </strong>
                 <p>
-                  Esperado: {trialVerification.expected_trial_days} días · observado: {trialVerification.observed_trial_days ?? "sin configurar"}{trialVerification.observed_trial_days !== null ? " días" : ""} · restantes: {trialVerification.trial_days_remaining ?? "—"}.
+                  {copy.trialDetails(
+                    trialVerification.expected_trial_days,
+                    trialVerification.observed_trial_days !== null && trialVerification.observed_trial_days !== undefined
+                      ? `${trialVerification.observed_trial_days}${copy.daysSuffix}`
+                      : copy.notConfigured,
+                    trialVerification.trial_days_remaining !== null && trialVerification.trial_days_remaining !== undefined
+                      ? String(trialVerification.trial_days_remaining)
+                      : "—",
+                  )}
                 </p>
                 <small>
-                  Plan {trialVerification.plan} · {trialVerification.billing_period_months === 12 ? "anual" : "mensual"}
-                  {trialVerification.trial_ends_at ? ` · termina ${formatDate(trialVerification.trial_ends_at)}` : ""}
+                  {copy.planLabel} {trialVerification.plan} · {trialVerification.billing_period_months === 12 ? copy.annual : copy.monthly}
+                  {trialVerification.trial_ends_at ? copy.endsOn(formatDate(trialVerification.trial_ends_at)) : ""}
                 </small>
               </div>
             )}
@@ -543,8 +507,8 @@ export default function ShopifyBillingWorkspace({
           <section className="shopify-billing-panel">
             <div className="shopify-billing-panel-title">
               <div>
-                <h2>Propuestas de cambio</h2>
-                <p>Cada propuesta requiere una verificación reciente y puede caducar o quedar invalidada si cambia la conexión.</p>
+                <h2>{copy.proposalsTitle}</h2>
+                <p>{copy.proposalsBody}</p>
               </div>
               {isOwner && (
                 <button
@@ -553,41 +517,39 @@ export default function ShopifyBillingWorkspace({
                   disabled={Boolean(busy) || loading || !mayStage || Boolean(activeReview)}
                   onClick={() => { void run("stage"); }}
                 >
-                  <Clock3 size={16} /> {busy === "stage" ? "Preparando…" : "Preparar revisión"}
+                  <Clock3 size={16} /> {busy === "stage" ? copy.preparing : copy.prepareReview}
                 </button>
               )}
             </div>
-            {isOwner && !mayStage && <p className="shopify-billing-muted">Para preparar una revisión necesitas una verificación reciente que recomiende revisar un cambio de plan.</p>}
+            {isOwner && !mayStage && <p className="shopify-billing-muted">{copy.prepareHint}</p>}
             <div className="shopify-billing-list">
-              {reviews.length === 0 && <p>No hay propuestas de cambio de plan registradas.</p>}
+              {reviews.length === 0 && <p>{copy.noProposals}</p>}
               {reviews.map((review) => (
                 <article className="shopify-billing-record" key={review.id}>
                   <div>
                     <strong>{labelStatus(review.status)}</strong>
-                    <small>Revisión #{review.id} · caduca {formatDate(review.expires_at)}</small>
-                    <p>{review.baseline_plan} <ArrowRight size={14} aria-hidden="true" /> {review.target_plan} · {review.target_billing_period_months === 12 ? "Anual" : "Mensual"}</p>
+                    <small>{copy.reviewLine(review.id, formatDate(review.expires_at))}</small>
+                    <p>{review.baseline_plan} <ArrowRight size={14} aria-hidden="true" /> {review.target_plan} · {review.target_billing_period_months === 12 ? copy.annualCap : copy.monthlyCap}</p>
                   </div>
                   <button type="button" className="shopify-billing-secondary" disabled={Boolean(busy)} onClick={() => { void run("assess", review.id); }}>
-                    Comprobar vigencia
+                    {copy.checkValidity}
                   </button>
                 </article>
               ))}
             </div>
             {assessment && (
               <div className="shopify-billing-assessment" role="status">
-                <strong>Revisión #{assessment.review_id}: {assessment.ready_for_manual_review ? "Sin bloqueos internos actuales" : "Revisión bloqueada"}</strong>
-                <p>{assessment.ready_for_manual_review
-                  ? "La información interna parece vigente, pero es obligatorio volver a verificar Shopify antes de cualquier activación."
-                  : "La propuesta requiere revisión antes de poder continuar."}</p>
+                <strong>{copy.assessmentTitle(assessment.review_id, Boolean(assessment.ready_for_manual_review))}</strong>
+                <p>{assessment.ready_for_manual_review ? copy.assessmentReady : copy.assessmentBlocked}</p>
                 {assessment.blockers.length > 0 && (
-                  <ul>{assessment.blockers.map((code) => <li key={code}>{explanations[code] ?? "Se requiere una nueva verificación."}</li>)}</ul>
+                  <ul>{assessment.blockers.map((code) => <li key={code}>{copy.explanations[code] ?? copy.newVerificationRequired}</li>)}</ul>
                 )}
-                <small>Comprobado: {formatDate(assessment.checked_at)} · Los contratos se revalidan antes de cualquier cambio.</small>
+                <small>{copy.checkedAt(formatDate(assessment.checked_at))}</small>
                 {isOwner && capabilities?.verified_entitlement_apply_enabled && assessment.ready_for_manual_review && (
                   <button type="button" className="shopify-billing-primary"
                     disabled={Boolean(busy)}
                     onClick={() => { void run("apply", assessment.review_id); }}>
-                    {busy === "apply" ? "Confirmando con Shopify…" : "Aplicar plan verificado"}
+                    {busy === "apply" ? copy.confirmingWithShopify : copy.applyVerifiedPlan}
                   </button>
                 )}
               </div>
@@ -598,7 +560,7 @@ export default function ShopifyBillingWorkspace({
 
       <footer className="shopify-billing-footer">
         <CheckCircle2 size={18} aria-hidden="true" />
-        <span>Las suscripciones se administran desde Shopify. Esta sección no utiliza Paddle ni inicia pagos.</span>
+        <span>{copy.footer}</span>
       </footer>
     </main>
   );
