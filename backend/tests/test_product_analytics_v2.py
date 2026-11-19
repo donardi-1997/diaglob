@@ -4,6 +4,7 @@ from datetime import datetime
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from app.db import Base
 from app.models import (
@@ -19,10 +20,11 @@ from app.services.dropshipping_analytics import (
     get_product_profitability,
 )
 
-SQLALCHEMY_TEST_DATABASE_URL = "sqlite:///./test_product_analytics_v2.db"
+SQLALCHEMY_TEST_DATABASE_URL = "sqlite://"
 
 engine = create_engine(
     SQLALCHEMY_TEST_DATABASE_URL,
+    poolclass=StaticPool,
     connect_args={"check_same_thread": False},
 )
 TestingSessionLocal = sessionmaker(

@@ -254,9 +254,23 @@ jobs:
         working-directory: frontend/e2e
         run: npm install --no-audit --no-fund
 
+      # Browser binaries are pinned by @playwright/test in e2e/package.json.
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('frontend/e2e/package.json') }}
+
       - name: Install Chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         working-directory: frontend/e2e
         run: npx playwright install --with-deps chromium
+
+      - name: Install Chromium system dependencies (cached browser)
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        working-directory: frontend/e2e
+        run: npx playwright install-deps chromium
 
       - name: Test automation journeys in real browsers
         working-directory: frontend/e2e

@@ -20,6 +20,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from app.db import Base, get_db
 from app.main import (
@@ -41,11 +42,12 @@ from app.models import (
 )
 
 SQLALCHEMY_TEST_DATABASE_URL = (
-    "sqlite:///./test_google_sheets.db"
+    "sqlite://"
 )
 
 engine = create_engine(
     SQLALCHEMY_TEST_DATABASE_URL,
+    poolclass=StaticPool,
     connect_args={"check_same_thread": False},
 )
 

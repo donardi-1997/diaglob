@@ -13,6 +13,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
+from sqlalchemy.pool import StaticPool
 
 from app.db import Base, get_db
 from app.main import app, get_current_membership, get_current_user
@@ -26,9 +27,10 @@ SECRET = "synthetic-app-secret-not-for-production"
 
 
 @pytest.fixture
-def scenario(tmp_path, monkeypatch):
-    url = "sqlite:///" + str(tmp_path / "diaglob_signup_e2e.sqlite3")
-    engine = create_engine(url, connect_args={"check_same_thread": False})
+def scenario(monkeypatch):
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool,
+    )
     Base.metadata.create_all(engine)
     monkeypatch.setenv("SHOPIFY_CLIENT_ID", "synthetic-client-id")
     monkeypatch.setenv("SHOPIFY_CLIENT_SECRET", SECRET)

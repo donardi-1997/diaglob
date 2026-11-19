@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from app.db import Base
 from app.model_domains.conversational_checkout import ConversationalCheckout
@@ -36,9 +37,10 @@ from app.services.shopify_chat_draft_reconciliation import (
 )
 from app.services.shopify_webhook_service import process_shopify_order_webhook
 
-SQLALCHEMY_TEST_DATABASE_URL = "sqlite:///./test_conversational_cod_checkout.db"
+SQLALCHEMY_TEST_DATABASE_URL = "sqlite://"
 engine = create_engine(
     SQLALCHEMY_TEST_DATABASE_URL,
+    poolclass=StaticPool,
     connect_args={"check_same_thread": False},
 )
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

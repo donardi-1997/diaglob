@@ -12,6 +12,7 @@ from botocore.exceptions import ClientError
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from app import bedrock_knowledge_base as provisioning
 from app import main as api_main
@@ -43,9 +44,10 @@ BEDROCK_KB_ID = "ABCDEFGHIJ"
 BEDROCK_DS_ID = "KLMNOPQRST"
 NOW = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
-TEST_DATABASE_URL = "sqlite:///./test_bedrock_knowledge_base.db"
+TEST_DATABASE_URL = "sqlite://"
 engine = create_engine(
     TEST_DATABASE_URL,
+    poolclass=StaticPool,
     connect_args={"check_same_thread": False},
 )
 TestingSessionLocal = sessionmaker(

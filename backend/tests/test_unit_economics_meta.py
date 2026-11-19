@@ -7,6 +7,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from app.db import Base
 from app.integrations.meta_ads.client import MetaAdsError
@@ -15,9 +16,10 @@ import app.services.unit_economics_meta as meta_service
 from app.services.unit_economics_meta import resolve_meta_ad_spend
 
 
-SQLALCHEMY_TEST_DATABASE_URL = "sqlite:///./test_unit_economics_meta.db"
+SQLALCHEMY_TEST_DATABASE_URL = "sqlite://"
 engine = create_engine(
     SQLALCHEMY_TEST_DATABASE_URL,
+    poolclass=StaticPool,
     connect_args={"check_same_thread": False},
 )
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

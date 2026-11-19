@@ -4,6 +4,7 @@ import hashlib
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from app.db import Base
 from app.model_domains.marketing import (
@@ -17,9 +18,10 @@ from app.services.marketing_acquisition import (
     record_registration_conversion,
 )
 
-SQLALCHEMY_TEST_DATABASE_URL = "sqlite:///./test_marketing_acquisition.db"
+SQLALCHEMY_TEST_DATABASE_URL = "sqlite://"
 engine = create_engine(
     SQLALCHEMY_TEST_DATABASE_URL,
+    poolclass=StaticPool,
     connect_args={"check_same_thread": False},
 )
 TestingSessionLocal = sessionmaker(

@@ -4,14 +4,16 @@ from datetime import datetime
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from app.db import Base
 from app.models import Organization
 from app.services.paddle_webhooks import process_transaction_event
 
-SQLALCHEMY_TEST_DATABASE_URL = "sqlite:///./test_paddle_acquisition.db"
+SQLALCHEMY_TEST_DATABASE_URL = "sqlite://"
 engine = create_engine(
     SQLALCHEMY_TEST_DATABASE_URL,
+    poolclass=StaticPool,
     connect_args={"check_same_thread": False},
 )
 TestingSessionLocal = sessionmaker(

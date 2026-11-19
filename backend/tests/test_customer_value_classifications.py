@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from app.automation_campaigns import audience_metrics
 from app.db import Base
@@ -15,7 +16,8 @@ from app.services.customer_classification_service import (
 )
 
 engine = create_engine(
-    "sqlite:///./test_customer_value_classifications.db",
+    "sqlite://",
+    poolclass=StaticPool,
     connect_args={"check_same_thread": False},
 )
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
