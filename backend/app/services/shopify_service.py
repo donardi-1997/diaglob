@@ -29,6 +29,7 @@ from ..shopify_token_lifecycle import ShopifyTokenRefreshError
 from ..shopify_webhook_subscriptions import (
     ensure_shopify_order_webhooks,
 )
+from .billing_channel_policy import shopify_paid_access_should_suspend
 from .billing_onboarding import confirm_shopify_install_billing
 from .marketing_acquisition import record_lifecycle_conversion
 from .trial_service import (
@@ -537,11 +538,7 @@ def disconnect(db: Session, organization_id: int, store_id: int) -> dict:
         .with_for_update()
         .first()
     )
-    if (
-        billing_org is not None
-        and billing_org.billing_provider == "shopify"
-        and billing_org.plan in {"starter", "growth", "pro", "scale"}
-    ):
+    if shopify_paid_access_should_suspend(billing_org):
         billing_org.subscription_status = "inactive"
 
     db.delete(connection)
