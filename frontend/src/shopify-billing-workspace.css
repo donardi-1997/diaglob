@@ -45,5 +45,31 @@
 .billing-channel-state{max-width:730px;margin:3rem auto;background:var(--surface-primary,#fff);border:1px solid var(--border-color,#d5dee7);border-radius:18px;padding:2rem}
 .billing-channel-state h1{font-size:1.4rem;margin:0 0 .6rem}
 .billing-channel-state p{line-height:1.6}
+/* Dark theme: the generic surface tokens above are not defined by the app
+   shell, so they fell back to white cards with light text (unreadable). */
+[data-theme="dark"] .shopify-billing-caution,
+[data-theme="dark"] .shopify-billing-stats section,
+[data-theme="dark"] .shopify-billing-panel,
+[data-theme="dark"] .billing-channel-state,
+[data-theme="dark"] .shopify-billing-secondary,
+[data-theme="dark"] .billing-channel-state button{background:var(--dg-shell-surface-strong);border-color:var(--dg-shell-border-strong);color:var(--dg-shell-text)}
+[data-theme="dark"] .shopify-billing-caution{border-left-color:#2bb3b3}
+[data-theme="dark"] .shopify-billing-caution svg,
+[data-theme="dark"] .shopify-billing-eyebrow{color:#5fd0cf}
+[data-theme="dark"] .shopify-billing-secondary:hover:not(:disabled){background:var(--dg-shell-surface)}
+[data-theme="dark"] .shopify-billing-record{border-color:var(--dg-shell-border-strong)}
+[data-theme="dark"] .shopify-billing-review-pill,
+[data-theme="dark"] .shopify-billing-assessment{background:var(--dg-shell-surface);border-color:var(--dg-shell-border-strong)}
+[data-theme="dark"] .shopify-billing-stats section span,
+[data-theme="dark"] .shopify-billing-stats section small,
+[data-theme="dark"] .shopify-billing-panel-title p,
+[data-theme="dark"] .shopify-billing-list>p,
+[data-theme="dark"] .shopify-billing-record small,
+[data-theme="dark"] .shopify-billing-muted,
+[data-theme="dark"] .shopify-billing-assessment small,
+[data-theme="dark"] .shopify-billing-footer{color:var(--dg-shell-muted)}
+[data-theme="dark"] .shopify-billing-source{background:rgba(43,179,179,.12);border-color:rgba(95,208,207,.35);color:#7fdcdb}
+[data-theme="dark"] .shopify-billing-notice{background:rgba(43,179,179,.12);border-color:rgba(95,208,207,.35);color:#9be6e4}
+[data-theme="dark"] .shopify-billing-error{background:rgba(220,38,38,.12);border-color:rgba(248,113,113,.4);color:#fca5a5}
 @media(max-width:790px){.shopify-billing-stats{grid-template-columns:1fr}.shopify-billing-actions{width:100%}.shopify-billing-actions button{flex:1}}
 @media(max-width:460px){.shopify-billing-actions{flex-direction:column}.shopify-billing-record .shopify-billing-secondary{width:100%}.shopify-billing-panel{padding:1rem}}
