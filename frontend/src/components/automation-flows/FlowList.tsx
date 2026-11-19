@@ -476,6 +476,7 @@ export default function FlowList({ canWrite, storeId, initialFlowId, onInitialFl
         />
 
         <FlowSidebar
+          storeId={storeId}
           node={selectedNode}
           onUpdate={handleNodeUpdate}
           onDelete={handleNodeDelete}

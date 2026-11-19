@@ -1,6 +1,7 @@
 """Conservative WhatsApp service-window and template eligibility checks."""
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta
 
 from sqlalchemy import func
@@ -12,6 +13,26 @@ SERVICE_WINDOW = timedelta(hours=24)
 TEMPLATE_STATUSES = {"approved", "pending", "rejected", "disabled"}
 MESSAGE_MODES = {"free_form", "template", "auto"}
 TEMPLATE_VARIABLES = {"customer.name", "store.name", "customer.segment", "customer.health"}
+# Event-driven flows carry order/shipment context, so their approved Meta
+# templates may reference it. Contact details and street addresses are not
+# exposed as template parameters.
+FLOW_TEMPLATE_VARIABLES = frozenset(TEMPLATE_VARIABLES | {
+    "order.number",
+    "order.total",
+    "order.currency",
+    "order.items_summary",
+    "order.payment_method",
+    "order.payment_status",
+    "order.fulfillment_status",
+    "order.shipping.city",
+    "shipment.carrier",
+    "shipment.tracking_number",
+    "shipment.last_mile_tracking_number",
+    "shipment.status",
+    "shipment.delivery_days",
+    "shipment.tracking_url",
+})
+_BODY_PLACEHOLDER_RE = re.compile(r"\{\{\s*(\d+)\s*\}\}")
 
 
 def get_whatsapp_service_window_status(db: Session, organization_id: int, store_id: int, customer_id: int, now: datetime | None = None) -> dict:
@@ -74,13 +95,34 @@ def evaluate_whatsapp_delivery_eligibility(db: Session, campaign, connection: Wh
     return window | {"allowed": True, "mode": "template", "template": template, "reason": "template_approved"}
 
 
-def template_components(template: WhatsAppMessageTemplate, variables: dict, data: dict) -> list[dict]:
-    mapping = variables.get("body", [])
-    values = data
+def template_body_parameter_count(template: WhatsAppMessageTemplate) -> int | None:
+    """Number of distinct {{n}} placeholders in the synced Meta BODY, if known."""
+    items = (template.components or {}).get("items") if isinstance(template.components, dict) else None
+    if not isinstance(items, list):
+        return None
+    for component in items:
+        if isinstance(component, dict) and str(component.get("type", "")).upper() == "BODY":
+            return len(set(_BODY_PLACEHOLDER_RE.findall(str(component.get("text") or ""))))
+    return None
+
+
+def template_components(
+    template: WhatsAppMessageTemplate,
+    variables: dict,
+    data: dict,
+    allowed: frozenset[str] | set[str] = TEMPLATE_VARIABLES,
+) -> list[dict]:
+    mapping = (variables or {}).get("body", []) if isinstance(variables, dict) else []
+    if not isinstance(mapping, list):
+        raise ValueError("invalid_template_data")
+    expected = template_body_parameter_count(template)
+    # Meta permanently rejects a mismatched parameter count; skip instead.
+    if expected is not None and expected != len(mapping):
+        raise ValueError("invalid_template_data")
     parameters = []
     for source in mapping:
-        value = values.get(source)
-        if source not in TEMPLATE_VARIABLES or value is None or value == "":
+        value = data.get(source)
+        if source not in allowed or value is None or value == "":
             raise ValueError("invalid_template_data")
         parameters.append({"type": "text", "text": str(value)})
     return [{"type": "body", "parameters": parameters}] if parameters else []

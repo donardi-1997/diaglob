@@ -25,8 +25,10 @@ import {
   FLOW_TOOL_CATALOG,
   getFlowToolCatalogItem,
 } from "./flowToolCatalog";
+import FlowMessageTemplatePicker from "./FlowMessageTemplatePicker";
 
 interface FlowSidebarProps {
+  storeId: number;
   node: FlowNode | null;
   onUpdate: (
     nodeId: string,
@@ -131,6 +133,7 @@ function updateToolArgument(
 }
 
 export default function FlowSidebar({
+  storeId,
   node,
   onUpdate,
   onDelete,
@@ -393,26 +396,31 @@ export default function FlowSidebar({
                   </select>
                 </label>
 
-                <label>
-                  <span>{t("flowMessageLabel")}</span>
-                  <textarea
-                    rows={5}
-                    value={node.config.message_template || ""}
-                    onChange={(event) =>
-                      canWrite
-                      && onUpdate(node.id, {
-                        message_template: event.target.value,
-                      })}
-                    disabled={!canWrite}
-                    placeholder={t("flowMessagePlaceholder")}
-                  />
-                </label>
-
-                {node.config.message_mode === "template" && (
-                  <small className="flow-field-hint">
-                    {t("flowTemplateHint")}
-                  </small>
+                {(node.config.message_mode || "auto") !== "template" && (
+                  <label>
+                    <span>{t("flowMessageLabel")}</span>
+                    <textarea
+                      rows={5}
+                      value={node.config.message_template || ""}
+                      onChange={(event) =>
+                        canWrite
+                        && onUpdate(node.id, {
+                          message_template: event.target.value,
+                        })}
+                      disabled={!canWrite}
+                      placeholder={t("flowMessagePlaceholder")}
+                    />
+                  </label>
                 )}
+
+                <FlowMessageTemplatePicker
+                  storeId={storeId}
+                  nodeId={node.id}
+                  config={node.config}
+                  canWrite={canWrite}
+                  onUpdate={onUpdate}
+                  t={t}
+                />
               </>
             )}
 
