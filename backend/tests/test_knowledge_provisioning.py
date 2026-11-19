@@ -5,44 +5,40 @@ reconcile_knowledge_base_provisioning() crashed on databases
 missing the knowledge_bases table, cascading failures into
 every test that instantiates TestClient(app).
 """
-import os
-import tempfile
 from unittest.mock import patch, MagicMock
 
 import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from app.db import Base
+
+
+def _memory_engine():
+    # One shared in-memory connection: fast and isolated per test.
+    return create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
 
 
 @pytest.fixture()
 def empty_db_engine():
     """Create a temporary empty SQLite database (no tables)."""
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
-        db_path = f.name
-    engine = create_engine(f"sqlite:///{db_path}")
+    engine = _memory_engine()
     yield engine
     engine.dispose()
-    try:
-        os.unlink(db_path)
-    except OSError:
-        pass
 
 
 @pytest.fixture()
 def kb_table_engine():
     """Create a temporary SQLite database WITH the knowledge_bases table."""
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
-        db_path = f.name
-    engine = create_engine(f"sqlite:///{db_path}")
+    engine = _memory_engine()
     Base.metadata.create_all(bind=engine)
     yield engine
     engine.dispose()
-    try:
-        os.unlink(db_path)
-    except OSError:
-        pass
 
 
 class TestReconcileMissingTable:

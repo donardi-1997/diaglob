@@ -2,6 +2,7 @@ from unittest.mock import MagicMock
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from app.db import Base
 from app.models import User
@@ -11,7 +12,8 @@ from app.services.cognito_identity_recovery import (
 
 
 engine = create_engine(
-    "sqlite:///./test_cognito_identity_recovery.db",
+    "sqlite://",
+    poolclass=StaticPool,
     connect_args={"check_same_thread": False},
 )
 SessionLocal = sessionmaker(

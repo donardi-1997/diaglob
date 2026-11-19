@@ -6,6 +6,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from app.db import Base
 from app.models import Organization, PaymentMethodCostRule, Store, StoreUnitEconomicsConfig
@@ -16,9 +17,10 @@ from app.services.unit_economics_config_service import (
 )
 
 
-SQLALCHEMY_TEST_DATABASE_URL = "sqlite:///./test_unit_economics_config_service.db"
+SQLALCHEMY_TEST_DATABASE_URL = "sqlite://"
 engine = create_engine(
     SQLALCHEMY_TEST_DATABASE_URL,
+    poolclass=StaticPool,
     connect_args={"check_same_thread": False},
 )
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

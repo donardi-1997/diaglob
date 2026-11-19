@@ -4,6 +4,7 @@ from datetime import datetime
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from app.api.dropshipping_analytics import _parse_date
 from app.db import Base
@@ -16,10 +17,11 @@ from app.services.dropshipping_analytics import (
     get_profitability,
 )
 
-SQLALCHEMY_TEST_DATABASE_URL = "sqlite:///./test_dropshipping_analytics.db"
+SQLALCHEMY_TEST_DATABASE_URL = "sqlite://"
 
 engine = create_engine(
     SQLALCHEMY_TEST_DATABASE_URL,
+    poolclass=StaticPool,
     connect_args={"check_same_thread": False},
 )
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
