@@ -25,6 +25,14 @@ from .whatsapp_client import WhatsAppDeliveryError, send_whatsapp_template_messa
 from .whatsapp_compliance import evaluate_whatsapp_delivery_eligibility, get_last_whatsapp_inbound_by_customer
 from .whatsapp_security import decrypt_whatsapp_secret
 from .services.shopify_privacy_suppression import evaluate_shopify_local_privacy
+from .services.whatsapp_channel_health import (
+    CHANNEL_PAUSE,
+    CHANNEL_UNAVAILABLE_CODE,
+    channel_resume_at,
+    clear_channel_pause,
+    mark_channel_paused,
+    should_give_up,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1106,6 +1114,30 @@ def _process_message_node(db: Session, recipient: AutomationFlowRecipientExecuti
         # here silently completed the recipient and dropped later steps.
         _advance_flow(db, recipient, _get_graph_from_version(db, recipient.flow_version_id), node["id"], now)
         return "skipped"
+    resume_at = channel_resume_at(connection, now)
+    if resume_at is not None:
+        # Meta rejected this connection's token/account: wait without calling
+        # Meta or consuming attempts; give up after CHANNEL_GIVE_UP.
+        if should_give_up(recipient.started_at, now):
+            _record_node_execution(
+                db, recipient, node["id"], "message", "failed", now,
+                error_code=CHANNEL_UNAVAILABLE_CODE,
+                message="WhatsApp channel needs attention",
+            )
+            _finish_flow_recipient(
+                db, recipient, "failed", now,
+                code=CHANNEL_UNAVAILABLE_CODE,
+                message="WhatsApp channel needs attention",
+            )
+            return "failed"
+        recipient.status = "active"
+        recipient.next_action_at = resume_at
+        recipient.claim_token = None
+        recipient.claim_expires_at = None
+        recipient.error_code = CHANNEL_UNAVAILABLE_CODE
+        recipient.error_message = "WhatsApp channel needs attention"
+        db.commit()
+        return "channel_paused"
     if not _acquire_rate_slot(db, connection.id, now):
         recipient.status = "active"
         recipient.next_action_at = now.replace(second=0, microsecond=0) + timedelta(minutes=1)
@@ -1156,6 +1188,16 @@ def _process_message_node(db: Session, recipient: AutomationFlowRecipientExecuti
             _finish_node_attempt(db, node_exec, "ambiguous", now, code=exc.code, message=str(exc))
             _finish_flow_recipient(db, recipient, "ambiguous", now, code=exc.code, message=str(exc))
             return "ambiguous"
+        if exc.category == "channel":
+            mark_channel_paused(db.get(WhatsAppConnection, connection.id), exc.code, now)
+            recipient.status = "active"
+            recipient.next_action_at = now + CHANNEL_PAUSE
+            recipient.claim_token = None
+            recipient.claim_expires_at = None
+            recipient.error_code = exc.code
+            recipient.error_message = str(exc)
+            _finish_node_attempt(db, node_exec, "retry_wait", now, code=exc.code, message=str(exc))
+            return "channel_paused"
         if exc.category == "transient" and recipient.attempt_count < MAX_ATTEMPTS:
             backoff = BACKOFF_SECONDS[min(recipient.attempt_count - 1, len(BACKOFF_SECONDS) - 1)]
             recipient.status = "active"
@@ -1174,6 +1216,7 @@ def _process_message_node(db: Session, recipient: AutomationFlowRecipientExecuti
         _advance_flow(db, recipient, _get_graph_from_version(db, recipient.flow_version_id), node["id"], now)
         return "skipped"
     recipient = db.get(AutomationFlowRecipientExecution, recipient.id)
+    clear_channel_pause(db.get(WhatsAppConnection, connection.id), now)
     _finish_node_attempt(db, node_exec, "completed", now, provider_id=result.get("message_id"))
     _advance_flow(db, recipient, _get_graph_from_version(db, recipient.flow_version_id), node["id"], now)
     return "sent"

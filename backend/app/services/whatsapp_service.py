@@ -19,11 +19,17 @@ from ..models import (
     Store,
 )
 from ..whatsapp_client import (
+    WhatsAppDeliveryError,
     list_whatsapp_templates,
     send_whatsapp_text_message,
 )
 from ..whatsapp_compliance import get_whatsapp_service_window_status
 from .shopify_privacy_suppression import evaluate_shopify_local_privacy
+from .whatsapp_channel_health import (
+    channel_pause_code,
+    clear_channel_pause,
+    mark_channel_paused,
+)
 from ..whatsapp_security import (
     decrypt_whatsapp_secret,
     encrypt_whatsapp_secret,
@@ -90,7 +96,10 @@ def get_connection(db: Session, organization_id: int, store_id: int) -> dict:
             "business_account_id": None,
             "connected_at": None,
             "last_error": None,
+            "channel_attention": {"required": False, "reason": None},
         }
+
+    pause_code = channel_pause_code(connection)
 
     return {
         "connected": connection.status == "connected",
@@ -104,6 +113,12 @@ def get_connection(db: Session, organization_id: int, store_id: int) -> dict:
             else None
         ),
         "last_error": connection.last_error,
+        # Meta rejected the token/account: automated sends are paused until a
+        # send succeeds again or the merchant reconnects WhatsApp.
+        "channel_attention": {
+            "required": pause_code is not None,
+            "reason": pause_code,
+        },
     }
 
 
@@ -369,9 +384,17 @@ def send_message(
             text=text,
         )
     except RuntimeError as exc:
-        connection.last_error = str(exc)
+        now = datetime.utcnow()
+        if isinstance(exc, WhatsAppDeliveryError) and exc.category == "channel":
+            mark_channel_paused(connection, exc.code, now)
+        elif channel_pause_code(connection) is None:
+            # Store a stable code, never provider/exception text.
+            connection.last_error = (
+                exc.code if isinstance(exc, WhatsAppDeliveryError) else "WHATSAPP_SEND_FAILED"
+            )
         db.commit()
         raise WhatsAppSendError("WHATSAPP_SEND_FAILED") from exc
+    clear_channel_pause(connection, datetime.utcnow())
 
     external_id = result.get("message_id")
 

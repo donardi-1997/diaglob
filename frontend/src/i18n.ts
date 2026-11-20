@@ -899,6 +899,10 @@ const resources = {
 
       integrationsWhatsAppConnected:
         "WhatsApp conectado.",
+      integrationsWhatsAppAttentionTitle:
+        "WhatsApp necesita tu atención",
+      integrationsWhatsAppAttentionBody:
+        "Meta rechazó la conexión (token vencido o revocado, permisos o cuenta bloqueada). Los envíos automáticos están en pausa y se reanudarán solos cuando vuelva a funcionar. Los mensajes de tus clientes siguen llegando. Para resolverlo, desconecta y vuelve a conectar WhatsApp con un token válido.",
       integrationsWhatsAppDisconnected:
         "WhatsApp se desconectó.",
       integrationsWhatsAppConnectError:
@@ -3229,6 +3233,10 @@ const resources = {
 
       integrationsWhatsAppConnected:
         "WhatsApp connected.",
+      integrationsWhatsAppAttentionTitle:
+        "WhatsApp needs your attention",
+      integrationsWhatsAppAttentionBody:
+        "Meta rejected the connection (expired or revoked token, permissions or a locked account). Automated sends are paused and will resume on their own once it works again. Customer messages keep arriving. To fix it, disconnect and reconnect WhatsApp with a valid token.",
       integrationsWhatsAppDisconnected:
         "WhatsApp disconnected.",
       integrationsWhatsAppConnectError:
@@ -4898,6 +4906,10 @@ const resources = {
       integrationsLoading: "Carregando integrações...",
       integrationsConnected: "Conectado",
       integrationsDisconnected: "Desconectado",
+      integrationsWhatsAppAttentionTitle:
+        "O WhatsApp precisa da sua atenção",
+      integrationsWhatsAppAttentionBody:
+        "A Meta rejeitou a conexão (token expirado ou revogado, permissões ou conta bloqueada). Os envios automáticos estão pausados e serão retomados sozinhos quando voltar a funcionar. As mensagens dos clientes continuam chegando. Para resolver, desconecte e reconecte o WhatsApp com um token válido.",
       integrationsConnect: "Conectar",
       integrationsDisconnect: "Desconectar",
       integrationsCopyWebhook: "Copiar webhook",

@@ -5,6 +5,7 @@ import {
 } from "react";
 
 import {
+  AlertTriangle,
   Check,
   Copy,
   CreditCard,
@@ -1206,6 +1207,16 @@ export default function StoreIntegrations({
             </span>
           </div>
         </div>
+
+        {whatsapp?.connected && whatsapp.channel_attention?.required && (
+          <div className="stores-alert error" role="alert">
+            <AlertTriangle size={15} aria-hidden="true" />
+            <div>
+              <strong>{t("integrationsWhatsAppAttentionTitle")}</strong>
+              <p>{t("integrationsWhatsAppAttentionBody")}</p>
+            </div>
+          </div>
+        )}
 
         {whatsapp?.connected && whatsapp.phone_number_id ? (
           <>
