@@ -24,6 +24,7 @@ from .services.whatsapp_channel_health import (
     mark_channel_paused,
     should_give_up,
 )
+from .services.whatsapp_delivery_tracking import record_campaign_delivery
 from .whatsapp_security import decrypt_whatsapp_secret
 from .whatsapp_compliance import evaluate_whatsapp_delivery_eligibility, get_last_whatsapp_inbound_by_customer, template_components
 
@@ -281,6 +282,10 @@ def process_recipient(db: Session, recipient_id: int, now: datetime | None = Non
         _finish_attempt(db, recipient, "failed", now, code=exc.code, message=str(exc)); return "failed"
     recipient = db.get(AutomationRecipientExecution, recipient_id)
     clear_channel_pause(db.get(WhatsAppConnection, connection.id), now)
+    record_campaign_delivery(
+        db, organization_id=campaign.organization_id, store_id=campaign.store_id,
+        recipient_id=recipient.id, provider_message_id=result.get("message_id"), sent_at=now,
+    )
     _finish_attempt(db, recipient, "sent", now, provider_id=result.get("message_id"))
     return "sent"
 

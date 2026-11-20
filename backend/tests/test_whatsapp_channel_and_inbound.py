@@ -35,6 +35,9 @@ from app.models import (
     Store,
     WhatsAppConnection,
 )
+from app.model_domains.whatsapp_delivery import WhatsAppAutomationDelivery
+from app.services.automation_campaigns_service import get_campaign_run
+from app.services.automation_flows_service import get_flow_run
 from app.services.whatsapp_channel_health import (
     CHANNEL_GIVE_UP,
     CHANNEL_PAUSE,
@@ -405,3 +408,82 @@ def test_manual_send_channel_error_pauses_automations(db, monkeypatch):
         service.send_message(session, org.id, conversation.id, "hola")
     session.expire_all()
     assert channel_pause_code(session.get(WhatsAppConnection, connection.id)) == "meta_190"
+
+
+# ── Delivery and read receipts for automation sends ──────────────────────
+
+def _status_webhook(message_id, status, errors=None):
+    item = {"id": message_id, "status": status}
+    if errors is not None:
+        item["errors"] = errors
+    return {"entry": [{"changes": [{"field": "messages", "value": {
+        "metadata": {"phone_number_id": "phone-1"}, "statuses": [item],
+    }}]}]}
+
+
+def test_campaign_delivery_receipts_update_metrics_and_never_regress(db, monkeypatch):
+    session, org, store, _ = db
+    add_customer(session, org, store)
+    campaign = make_campaign(session, org, store)
+    monkeypatch.setattr("app.automation_execution_engine.decrypt_whatsapp_secret", lambda _: "token")
+    materialize_due_campaigns(session)
+    (recipient_id,) = claim_recipients(session)
+    assert process_recipient(session, recipient_id, sender=lambda *_: {"message_id": "wamid.campaign"}) == "sent"
+
+    receipt = session.query(WhatsAppAutomationDelivery).one()
+    assert receipt.status == "sent"
+    process_webhook_payload(session, _status_webhook("wamid.campaign", "delivered"))
+    process_webhook_payload(session, _status_webhook("wamid.campaign", "read"))
+    # A late duplicate callback must not downgrade a read receipt.
+    process_webhook_payload(session, _status_webhook("wamid.campaign", "delivered"))
+    receipt = session.query(WhatsAppAutomationDelivery).one()
+    assert receipt.status == "read"
+    assert receipt.delivered_at is not None and receipt.read_at is not None
+
+    recipient = session.get(AutomationRecipientExecution, receipt.campaign_recipient_execution_id)
+    summary = get_campaign_run(session, org.id, store.id, campaign.id, recipient.run_id)
+    assert summary["delivery_metrics"] == {
+        "sent": 1, "delivered": 1, "read": 1, "failed": 0,
+        "delivery_rate": 1.0, "read_rate": 1.0,
+    }
+
+
+def test_failed_callback_stores_only_meta_code_and_is_terminal(db, monkeypatch):
+    session, org, store, _ = db
+    add_customer(session, org, store)
+    make_campaign(session, org, store)
+    monkeypatch.setattr("app.automation_execution_engine.decrypt_whatsapp_secret", lambda _: "token")
+    materialize_due_campaigns(session)
+    (recipient_id,) = claim_recipients(session)
+    process_recipient(session, recipient_id, sender=lambda *_: {"message_id": "wamid.failed"})
+    process_webhook_payload(session, _status_webhook(
+        "wamid.failed", "failed", [{"code": 131047, "title": "Contains customer phone +573001234567"}],
+    ))
+    process_webhook_payload(session, _status_webhook("wamid.failed", "read"))
+    receipt = session.query(WhatsAppAutomationDelivery).one()
+    assert receipt.status == "failed"
+    assert receipt.error_code == "131047"
+    assert receipt.failed_at is not None
+
+
+def test_flow_delivery_receipts_update_run_metrics(db, monkeypatch):
+    session, org, store, _ = db
+    import app.automation_flow_engine as flow_engine
+    monkeypatch.setattr(flow_engine, "evaluate_whatsapp_delivery_eligibility", lambda *args, **kwargs: {"allowed": True, "mode": "free_form"})
+    monkeypatch.setattr(flow_engine, "_acquire_rate_slot", lambda *args: True)
+    monkeypatch.setattr(flow_engine, "decrypt_whatsapp_secret", lambda _: "token")
+    flow = _published_flow(session, org, store, _message_only_graph())
+    customer = _flow_customers(session, org, store, 1)[0]
+    run = materialize_flow_trigger(session, flow, [customer.id])
+    recipient = session.query(AutomationFlowRecipientExecution).filter_by(flow_run_id=run.id).one()
+    recipient.current_node_id = "msg"
+    session.commit()
+    (recipient_id, claim_token), = claim_flow_recipients(session, include_tokens=True)
+    assert process_flow_recipient(session, recipient_id, claim_token=claim_token, sender=lambda *_: {"message_id": "wamid.flow"}) == "sent"
+    process_webhook_payload(session, _status_webhook("wamid.flow", "delivered"))
+
+    summary = get_flow_run(session, org.id, store.id, flow.id, run.id)
+    assert summary["delivery_metrics"] == {
+        "sent": 1, "delivered": 1, "read": 0, "failed": 0,
+        "delivery_rate": 1.0, "read_rate": 0.0,
+    }
