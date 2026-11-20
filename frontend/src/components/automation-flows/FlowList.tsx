@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useReducer } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Plus,
@@ -8,6 +8,9 @@ import {
   Archive,
   Eye,
   Edit3,
+  Undo2,
+  Redo2,
+  History,
   Sparkles,
   AlertTriangle,
   CheckCircle2,
@@ -22,6 +25,7 @@ import {
   createFlowVersion,
   publishFlowVersion,
   type AutomationFlow,
+  type AutomationFlowVersion,
 } from "../../services/automationFlows";
 import {
   type FlowGraph,
@@ -34,6 +38,8 @@ import FlowRuns from "./FlowRuns";
 import FlowSidebar from "./FlowSidebar";
 import FlowSimulation from "./FlowSimulation";
 import FlowCopilotPanel from "./FlowCopilotPanel";
+import FlowVersionHistory from "./FlowVersionHistory";
+import { createFlowEditHistory, flowEditHistoryReducer } from "./flowEditHistory";
 import type { FlowNodeConfig } from "./flowGraphUtils";
 import { validateFlowGraph } from "./flowGraphUtils";
 import "@xyflow/react/dist/style.css";
@@ -65,16 +71,62 @@ export default function FlowList({ canWrite, storeId, initialFlowId, onInitialFl
   const [error, setError] = useState("");
 
   const [selectedFlow, setSelectedFlow] = useState<AutomationFlow | null>(null);
-  const [graph, setGraph] = useState<FlowGraph>(createDefaultGraph());
+  const [editHistory, dispatchGraph] = useReducer(
+    flowEditHistoryReducer,
+    createFlowEditHistory(createDefaultGraph()),
+  );
+  const graph = editHistory.graph;
+  const setGraph = useCallback((next: FlowGraph) => dispatchGraph({ type: "edit", graph: next }), []);
+  const resetGraph = useCallback((next: FlowGraph) => dispatchGraph({ type: "reset", graph: next }), []);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [showSimulation, setShowSimulation] = useState(false);
   const [showCopilot, setShowCopilot] = useState(false);
+  const [showVersions, setShowVersions] = useState(false);
   const [savedGraphSignature, setSavedGraphSignature] = useState<string | null>(null);
   const [publishing, setPublishing] = useState(false);
   const [activating, setActivating] = useState(false);
   const graphSignature = JSON.stringify(serializeFlowGraph(graph));
   const dirty = savedGraphSignature !== null && savedGraphSignature !== graphSignature;
+  const canEditGraph = canWrite && selectedFlow?.status !== "active" && selectedFlow?.status !== "archived";
+
+  const handleUndo = useCallback(() => {
+    dispatchGraph({ type: "undo" });
+    setSelectedNodeId(null);
+  }, []);
+  const handleRedo = useCallback(() => {
+    dispatchGraph({ type: "redo" });
+    setSelectedNodeId(null);
+  }, []);
+
+  useEffect(() => {
+    if (view !== "builder" || !canEditGraph || saving || publishing || activating
+      || showSimulation || showCopilot || showVersions || editHistory.gestureStart) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
+      const target = event.target;
+      if (target instanceof Element && target.closest(
+        'input, textarea, select, [contenteditable="true"], [role="textbox"]',
+      )) return;
+      const key = event.key.toLowerCase();
+      const undo = key === "z" && !event.shiftKey;
+      const redo = (key === "z" && event.shiftKey) || key === "y";
+      if (undo && editHistory.past.length) {
+        event.preventDefault();
+        handleUndo();
+      } else if (redo && editHistory.future.length) {
+        event.preventDefault();
+        handleRedo();
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [
+    view, canEditGraph, saving, publishing, activating,
+    showSimulation, showCopilot, showVersions, editHistory.gestureStart,
+    editHistory.past.length, editHistory.future.length,
+    handleUndo, handleRedo,
+  ]);
 
   const loadFlows = useCallback(async () => {
     setLoading(true);
@@ -118,7 +170,7 @@ export default function FlowList({ canWrite, storeId, initialFlowId, onInitialFl
           ? deserializeFlowGraph(flow.current_version.graph)
           : createDefaultGraph();
         setSelectedFlow(flow);
-        setGraph(loadedGraph);
+        resetGraph(loadedGraph);
         setSavedGraphSignature(JSON.stringify(serializeFlowGraph(loadedGraph)));
         setSelectedNodeId(null);
         setShowCopilot(false);
@@ -135,23 +187,25 @@ export default function FlowList({ canWrite, storeId, initialFlowId, onInitialFl
         onInitialFlowHandled?.();
       });
     return () => { cancelled = true; };
-  }, [initialFlowId, storeId, onInitialFlowHandled, t]);
+  }, [initialFlowId, storeId, onInitialFlowHandled, t, resetGraph]);
 
   const handleCreate = async () => {
     if (!canWrite) return;
     setSaving(true);
     setError("");
     try {
+      setShowVersions(false);
       const flow = await createFlow(storeId, {
         name: t("flowNewName"),
         graph: serializeFlowGraph(createDefaultGraph()),
       });
       const full = await getFlow(storeId, flow.id);
+      setShowVersions(false);
       setSelectedFlow(full);
       const createdGraph = full.current_version
         ? deserializeFlowGraph(full.current_version.graph)
         : createDefaultGraph();
-      setGraph(createdGraph);
+      resetGraph(createdGraph);
       setSavedGraphSignature(JSON.stringify(serializeFlowGraph(createdGraph)));
       setSelectedNodeId(null);
       setShowCopilot(false);
@@ -168,11 +222,12 @@ export default function FlowList({ canWrite, storeId, initialFlowId, onInitialFl
     setError("");
     try {
       const full = await getFlow(storeId, flow.id);
+      setShowVersions(false);
       setSelectedFlow(full);
       const loadedGraph = full.current_version
         ? deserializeFlowGraph(full.current_version.graph)
         : createDefaultGraph();
-      setGraph(loadedGraph);
+      resetGraph(loadedGraph);
       setSavedGraphSignature(JSON.stringify(serializeFlowGraph(loadedGraph)));
       setSelectedNodeId(null);
       setShowCopilot(false);
@@ -285,6 +340,15 @@ export default function FlowList({ canWrite, storeId, initialFlowId, onInitialFl
     }
   };
 
+  const handleRestoreVersion = (version: AutomationFlowVersion) => {
+    if (!canEditGraph || saving || publishing || activating) return;
+    if (dirty && !window.confirm("¿Cargar esta versión? Los cambios locales actuales se podrán recuperar con Deshacer.")) return;
+    if (!Array.isArray(version.graph?.nodes) || !Array.isArray(version.graph?.edges)) return;
+    setGraph(deserializeFlowGraph(version.graph));
+    setSelectedNodeId(null);
+    setShowVersions(false);
+  };
+
   const handleNodeUpdate = (nodeId: string, config: Partial<FlowNodeConfig>) => {
     const updated = {
       ...graph,
@@ -316,7 +380,7 @@ export default function FlowList({ canWrite, storeId, initialFlowId, onInitialFl
     const loadedGraph = updated.current_version
       ? deserializeFlowGraph(updated.current_version.graph)
       : createDefaultGraph();
-    setGraph(loadedGraph);
+    resetGraph(loadedGraph);
     setSavedGraphSignature(JSON.stringify(serializeFlowGraph(loadedGraph)));
     setSelectedNodeId(null);
   };
@@ -366,6 +430,24 @@ export default function FlowList({ canWrite, storeId, initialFlowId, onInitialFl
           <div className="flow-editor-actions">
             <h3 style={{ margin: 0 }}>{selectedFlow.name}</h3>
             <span className="flow-editor-status">{t(`flowStatus_${selectedFlow.status}`)}</span>
+            <button type="button" className="secondary-button" onClick={() => setShowVersions((value) => !value)}
+              aria-expanded={showVersions} aria-label="Historial de versiones">
+              <History size={14} /> Versiones
+            </button>
+            {canEditGraph && (
+              <>
+                <button type="button" className="secondary-button flow-history-button" onClick={handleUndo}
+                  disabled={!editHistory.past.length || saving || publishing || activating || editHistory.gestureStart !== null}
+                  title="Deshacer (Ctrl/Cmd + Z)" aria-label="Deshacer cambio">
+                  <Undo2 size={14} /> Deshacer
+                </button>
+                <button type="button" className="secondary-button flow-history-button" onClick={handleRedo}
+                  disabled={!editHistory.future.length || saving || publishing || activating || editHistory.gestureStart !== null}
+                  title="Rehacer (Ctrl/Cmd + Shift + Z)" aria-label="Rehacer cambio">
+                  <Redo2 size={14} /> Rehacer
+                </button>
+              </>
+            )}
             {canWrite && (
               <>
                 <button
@@ -426,6 +508,18 @@ export default function FlowList({ canWrite, storeId, initialFlowId, onInitialFl
             )}
           </div>
         </div>
+        {showVersions && (
+          <FlowVersionHistory
+            key={selectedFlow.id}
+            storeId={storeId}
+            flowId={selectedFlow.id}
+            currentVersionId={selectedFlow.current_version_id}
+            activeVersionId={selectedFlow.active_version_id}
+            canRestore={canEditGraph && !saving && !publishing && !activating}
+            onRestore={handleRestoreVersion}
+            onClose={() => setShowVersions(false)}
+          />
+        )}
         <div className="flow-editor-guidance" role="status">
           {selectedFlow.status === "active"
             ? t("flowEditorActiveNotice")
@@ -472,7 +566,9 @@ export default function FlowList({ canWrite, storeId, initialFlowId, onInitialFl
           onGraphChange={setGraph}
           selectedNodeId={selectedNodeId}
           onNodeSelect={setSelectedNodeId}
-          canWrite={canWrite && selectedFlow.status !== "active"}
+          canWrite={canEditGraph}
+          onGestureStart={() => dispatchGraph({ type: "gesture-start" })}
+          onGestureEnd={() => dispatchGraph({ type: "gesture-end" })}
         />
 
         <FlowSidebar
