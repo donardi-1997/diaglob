@@ -612,7 +612,7 @@
 }
 
 .flow-palette-icon.type-tool {
-  color: #8b5cf6;
+  color: var(--flow-ai);
 }
 
 .flow-tool-description {

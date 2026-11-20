@@ -214,7 +214,7 @@
 
 .risk-chart-legend .reports,
 .risk-chart-bars .reports {
-  background: #6366f1;
+  background: var(--brand-action);
 }
 
 .risk-chart-legend .moderated,
@@ -363,9 +363,9 @@
   gap: 6px;
   margin: 0;
   padding: 9px 10px;
-  border: 1px solid rgba(99, 102, 241, 0.13);
+  border: 1px solid rgba(240, 107, 69, 0.13);
   border-radius: 9px;
-  background: rgba(99, 102, 241, 0.045);
+  background: rgba(240, 107, 69, 0.045);
   color: var(--dg-shell-muted, #6b7280);
   font-size: 0.65rem;
   line-height: 1.45;

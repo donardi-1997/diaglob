@@ -1,10 +1,34 @@
 """Billing-channel policy shared by authenticated billing operations."""
 from __future__ import annotations
 
+import os
+
 from sqlalchemy.orm import Session
 
 from ..models import CommerceConnection, Organization
 from ..model_domains.paddle_billing import PaddleBillingSubscription
+
+
+SHOPIFY_PAID_PLANS = frozenset({"starter", "growth", "pro", "scale"})
+
+
+def shopify_paid_access_should_suspend(organization: Organization | None) -> bool:
+    """Whether losing the Shopify installation must suspend paid access.
+
+    Paid Shopify access can only be backed by Shopify App Pricing once
+    verified entitlements are enabled. While that flag is off, a paid plan on
+    a Shopify-provenance tenant was granted manually by an operator (e.g. a
+    review or partner account) and no Shopify charge exists to protect, so an
+    uninstall/disconnect must not leave the tenant with zero capacity.
+    """
+    if organization is None:
+        return False
+    if os.getenv("SHOPIFY_BILLING_ENTITLEMENTS_ENABLED", "").lower() != "true":
+        return False
+    return (
+        (organization.billing_provider or "").strip().lower() == "shopify"
+        and (organization.plan or "").strip().lower() in SHOPIFY_PAID_PLANS
+    )
 
 
 def paddle_migration_cancellation_verified(db: Session, organization: Organization) -> bool:

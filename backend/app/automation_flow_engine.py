@@ -1077,7 +1077,9 @@ def _process_message_node(db: Session, recipient: AutomationFlowRecipientExecuti
     if not compliance["allowed"]:
         _record_node_execution(db, recipient, node["id"], "message", "skipped", now,
                                outcome=compliance["reason"], error_code=compliance["reason"])
-        _advance_flow(db, recipient, config.get("_graph", {}), node["id"], now)
+        # A skipped message must continue to the next node; an empty graph
+        # here silently completed the recipient and dropped later steps.
+        _advance_flow(db, recipient, _get_graph_from_version(db, recipient.flow_version_id), node["id"], now)
         return "skipped"
     if not _acquire_rate_slot(db, connection.id, now):
         recipient.status = "active"
@@ -1093,13 +1095,17 @@ def _process_message_node(db: Session, recipient: AutomationFlowRecipientExecuti
     token = decrypt_whatsapp_secret(connection.access_token_encrypted)
     try:
         if compliance["mode"] == "template":
-            from .whatsapp_compliance import template_components
+            from .whatsapp_compliance import FLOW_TEMPLATE_VARIABLES, template_components
             template = compliance["template"]
-            components = template_components(template, config.get("template_variables", {}), {
-                "customer.name": customer.name, "store.name": store.name,
-                "customer.segment": getattr(customer, "primary_segment", None),
-                "customer.health": getattr(customer, "customer_health", None),
-            })
+            template_data = _runtime_context(customer, store, run)
+            template_data.setdefault("customer.segment", getattr(customer, "primary_segment", None))
+            template_data.setdefault("customer.health", getattr(customer, "customer_health", None))
+            components = template_components(
+                template,
+                config.get("template_variables", {}),
+                template_data,
+                allowed=FLOW_TEMPLATE_VARIABLES,
+            )
             result = send_whatsapp_template_message(connection.phone_number_id, token, customer.phone, template.provider_template_name, template.language_code, components)
         else:
             result = sender(connection.phone_number_id, token, customer.phone, rendered or "")

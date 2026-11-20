@@ -56,11 +56,154 @@ const EMPTY_FORM: AgentFormState = {
 };
 
 
+type LocaleKey = "es" | "en" | "pt-BR";
+
+function normalizeLocale(language: string): LocaleKey {
+  const value = (language || "").toLowerCase();
+  if (value.startsWith("pt")) return "pt-BR";
+  if (value.startsWith("en")) return "en";
+  return "es";
+}
+
+const COPY: Record<LocaleKey, {
+  title: string;
+  newAgent: string;
+  retry: string;
+  loadError: (sections: string) => string;
+  sectionAgents: string;
+  sectionKnowledge: string;
+  sectionRoles: string;
+  storeRequired: string;
+  storeUnavailable: string;
+  noStoresTitle: string;
+  noStoresBody: string;
+  goToStores: string;
+  workforceTitle: string;
+  workforceBody: string;
+  roles: (count: number) => string;
+  customerFacing: string;
+  internal: string;
+  configured: (count: number) => string;
+  createFromRole: string;
+  knowledgeBases: string;
+  noSources: string;
+  emptyTitle: string;
+  roleLabel: string;
+}> = {
+  es: {
+    title: "Agentes IA",
+    newAgent: "Nuevo agente",
+    retry: "Reintentar",
+    loadError: (sections) => `No se pudo cargar: ${sections}. Inténtalo de nuevo.`,
+    sectionAgents: "agentes",
+    sectionKnowledge: "bases de conocimiento",
+    sectionRoles: "roles de IA",
+    storeRequired: "Selecciona al menos una tienda activa antes de activar el agente.",
+    storeUnavailable: "Una tienda asignada ya no está disponible. Actualiza la selección.",
+    noStoresTitle: "No hay tiendas disponibles para los agentes.",
+    noStoresBody: "Agrega o conecta una tienda para asignar agentes de IA.",
+    goToStores: "Ir a Tiendas",
+    workforceTitle: "Tu equipo operativo de IA",
+    workforceBody:
+      "Roles predefinidos sobre la misma capa de Knowledge, comercio, tracking, automatizaciones y permisos de Diaglob.",
+    roles: (count) => `${count} roles`,
+    customerFacing: "Cliente",
+    internal: "Operación interna",
+    configured: (count) => `${count} configurado${count > 1 ? "s" : ""}`,
+    createFromRole: "Crear desde rol",
+    knowledgeBases: "Bases de conocimiento",
+    noSources: "Sin fuentes asignadas",
+    emptyTitle: "No hay agentes",
+    roleLabel: "Rol del agente",
+  },
+  en: {
+    title: "AI Agents",
+    newAgent: "New agent",
+    retry: "Retry",
+    loadError: (sections) => `Could not load: ${sections}. Please retry.`,
+    sectionAgents: "agents",
+    sectionKnowledge: "knowledge bases",
+    sectionRoles: "AI roles",
+    storeRequired: "Select at least one active store before activating the agent.",
+    storeUnavailable: "An assigned store is no longer available. Update the selection.",
+    noStoresTitle: "No stores are available for agents.",
+    noStoresBody: "Add or connect a store to assign AI agents.",
+    goToStores: "Go to Stores",
+    workforceTitle: "Your AI operations team",
+    workforceBody:
+      "Predefined roles built on the same Diaglob layer of knowledge, commerce, tracking, automations and permissions.",
+    roles: (count) => `${count} roles`,
+    customerFacing: "Customer-facing",
+    internal: "Internal operations",
+    configured: (count) => `${count} configured`,
+    createFromRole: "Create from role",
+    knowledgeBases: "Knowledge bases",
+    noSources: "No sources assigned",
+    emptyTitle: "No agents yet",
+    roleLabel: "Agent role",
+  },
+  "pt-BR": {
+    title: "Agentes de IA",
+    newAgent: "Novo agente",
+    retry: "Tentar novamente",
+    loadError: (sections) => `Não foi possível carregar: ${sections}. Tente novamente.`,
+    sectionAgents: "agentes",
+    sectionKnowledge: "bases de conhecimento",
+    sectionRoles: "funções de IA",
+    storeRequired: "Selecione pelo menos uma loja ativa antes de ativar o agente.",
+    storeUnavailable: "Uma loja atribuída não está mais disponível. Atualize a seleção.",
+    noStoresTitle: "Não há lojas disponíveis para os agentes.",
+    noStoresBody: "Adicione ou conecte uma loja para atribuir agentes de IA.",
+    goToStores: "Ir para Lojas",
+    workforceTitle: "Sua equipe operacional de IA",
+    workforceBody:
+      "Funções predefinidas sobre a mesma camada de conhecimento, comércio, rastreamento, automações e permissões da Diaglob.",
+    roles: (count) => `${count} funções`,
+    customerFacing: "Cliente",
+    internal: "Operação interna",
+    configured: (count) => `${count} configurado${count > 1 ? "s" : ""}`,
+    createFromRole: "Criar a partir da função",
+    knowledgeBases: "Bases de conhecimento",
+    noSources: "Sem fontes atribuídas",
+    emptyTitle: "Nenhum agente",
+    roleLabel: "Função do agente",
+  },
+};
+
+// The workforce catalog API returns Spanish copy; localize the known role ids
+// on the client and fall back to the API text for any role added later.
+const ROLE_COPY: Record<Exclude<LocaleKey, "es">, Record<string, { name: string; purpose: string }>> = {
+  en: {
+    sales: { name: "Sales Agent", purpose: "Turn conversations into purchases without inventing catalog data." },
+    support: { name: "Support Agent", purpose: "Answer order, policy and tracking questions with real context." },
+    logistics: { name: "Logistics Agent", purpose: "Monitor fulfillment, tracking and delivery issues." },
+    retention: { name: "Retention Agent", purpose: "Re-engage customers and grow repeat purchases using segments and context." },
+    analyst: { name: "Analyst Agent", purpose: "Turn operations, margin and performance into explainable decisions." },
+    post_sales: { name: "Post-sales Agent", purpose: "Handle warranties, returns, refunds and delivery problems." },
+  },
+  "pt-BR": {
+    sales: { name: "Agente de Vendas", purpose: "Converter conversas em compras sem inventar dados do catálogo." },
+    support: { name: "Agente de Suporte", purpose: "Resolver dúvidas de pedido, políticas e rastreamento com contexto real." },
+    logistics: { name: "Agente Logístico", purpose: "Monitorar fulfillment, rastreamento e ocorrências de entrega." },
+    retention: { name: "Agente de Retenção", purpose: "Reativar clientes e aumentar a recompra usando segmentos e contexto." },
+    analyst: { name: "Agente Analista", purpose: "Transformar operação, margem e desempenho em decisões explicáveis." },
+    post_sales: { name: "Agente de Pós-venda", purpose: "Acompanhar garantias, devoluções, reembolsos e problemas de entrega." },
+  },
+};
+
+function localizeRole(role: WorkforceRole, locale: LocaleKey): { name: string; purpose: string } {
+  if (locale === "es") return { name: role.name, purpose: role.purpose };
+  return ROLE_COPY[locale][role.id] ?? { name: role.name, purpose: role.purpose };
+}
+
+
 export default function AgentsPage({
   stores,
   canWrite,
 }: AgentsPageProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale = normalizeLocale(i18n.resolvedLanguage || i18n.language || "es");
+  const copy = COPY[locale];
   const [agents, setAgents] =
     useState<Agent[]>([]);
 
@@ -117,25 +260,25 @@ export default function AgentsPage({
         setAgents(agentsResult.value.items);
       } else {
         console.error("Failed to load AI agents", agentsResult.reason);
-        failedSections.push("agents");
+        failedSections.push(copy.sectionAgents);
       }
 
       if (knowledgeResult.status === "fulfilled") {
         setKnowledgeBases(knowledgeResult.value.items);
       } else {
         console.error("Failed to load knowledge bases", knowledgeResult.reason);
-        failedSections.push("knowledge bases");
+        failedSections.push(copy.sectionKnowledge);
       }
 
       if (workforceResult.status === "fulfilled") {
         setWorkforceRoles(workforceResult.value.roles);
       } else {
         console.error("Failed to load workforce roles", workforceResult.reason);
-        failedSections.push("workforce roles");
+        failedSections.push(copy.sectionRoles);
       }
 
       if (failedSections.length > 0) {
-        setError(`Could not load: ${failedSections.join(", ")}. Please retry.`);
+        setError(copy.loadError(failedSections.join(", ")));
       }
     } catch (err) {
       console.error(err);
@@ -294,8 +437,8 @@ export default function AgentsPage({
     if (storeValidation) {
       setError(
         storeValidation === "STORE_REQUIRED"
-          ? "Selecciona al menos una tienda activa antes de activar el agente."
-          : "Una tienda asignada ya no está disponible. Actualiza la selección.",
+          ? copy.storeRequired
+          : copy.storeUnavailable,
       );
       return;
     }
@@ -386,7 +529,7 @@ export default function AgentsPage({
           </span>
 
           <h1>
-            Agentes IA
+            {copy.title}
           </h1>
 
           <p>
@@ -400,7 +543,7 @@ export default function AgentsPage({
             onClick={openCreate}
           >
             <Plus size={17} />
-            Nuevo agente
+            {copy.newAgent}
           </button>
         )}
       </section>
@@ -410,15 +553,15 @@ export default function AgentsPage({
         <div className="api-error" role="alert">
           {error}
           <button type="button" className="secondary-button" onClick={() => void loadData()} disabled={loading || saving}>
-            Reintentar
+            {copy.retry}
           </button>
         </div>
       )}
       {stores.length === 0 && !loading && (
         <div className="panel" role="status">
-          <strong>No hay tiendas disponibles para los agentes.</strong>
-          <p>Agrega o conecta una tienda para asignar agentes de IA.</p>
-          <Link to="/app/stores" className="secondary-button">Ir a Tiendas</Link>
+          <strong>{copy.noStoresTitle}</strong>
+          <p>{copy.noStoresBody}</p>
+          <Link to="/app/stores" className="secondary-button">{copy.goToStores}</Link>
         </div>
       )}
 
@@ -426,14 +569,13 @@ export default function AgentsPage({
         <div className="workforce-heading">
           <div>
             <span className="eyebrow">AI WORKFORCE</span>
-            <h2>Tu equipo operativo de IA</h2>
+            <h2>{copy.workforceTitle}</h2>
             <p>
-              Roles predefinidos sobre la misma capa de Knowledge, comercio,
-              tracking, automatizaciones y permisos de Diaglob.
+              {copy.workforceBody}
             </p>
           </div>
           <span className="workforce-count">
-            {workforceRoles.length} roles
+            {copy.roles(workforceRoles.length)}
           </span>
         </div>
 
@@ -442,6 +584,7 @@ export default function AgentsPage({
             const configured = agents.filter(
               (agent) => agent.role === role.id,
             ).length;
+            const roleCopy = localizeRole(role, locale);
 
             return (
               <article className="workforce-card" key={role.id}>
@@ -450,21 +593,21 @@ export default function AgentsPage({
                     <Bot size={19} />
                   </span>
                   <div>
-                    <strong>{role.name}</strong>
+                    <strong>{roleCopy.name}</strong>
                     <span>
                       {role.customer_facing
-                        ? "Cliente"
-                        : "Operación interna"}
+                        ? copy.customerFacing
+                        : copy.internal}
                     </span>
                   </div>
                   {configured > 0 && (
                     <span className="status-pill active">
-                      {configured} configurado{configured > 1 ? "s" : ""}
+                      {copy.configured(configured)}
                     </span>
                   )}
                 </div>
 
-                <p>{role.purpose}</p>
+                <p>{roleCopy.purpose}</p>
 
                 <div className="workforce-capabilities">
                   {role.capabilities.slice(0, 4).map(
@@ -482,7 +625,7 @@ export default function AgentsPage({
                     onClick={() => openPreset(role)}
                   >
                     <Plus size={15} />
-                    Crear desde rol
+                    {copy.createFromRole}
                   </button>
                 )}
               </article>
@@ -564,7 +707,7 @@ export default function AgentsPage({
               <div className="management-section">
                 <strong>
                   <BrainCircuit size={15} />
-                  Knowledge Bases
+                  {copy.knowledgeBases}
                 </strong>
 
                 <div className="tag-list">
@@ -584,7 +727,7 @@ export default function AgentsPage({
                       )
                     : (
                       <span>
-                        Sin fuentes asignadas
+                        {copy.noSources}
                       </span>
                     )}
                 </div>
@@ -624,7 +767,7 @@ export default function AgentsPage({
               <Bot size={28} />
 
               <strong>
-                No hay agentes
+                {copy.emptyTitle}
               </strong>
 
               <span>
@@ -693,7 +836,7 @@ export default function AgentsPage({
 
               <label>
                 <span>
-                  Rol del agente
+                  {copy.roleLabel}
                 </span>
 
                 <input
@@ -758,7 +901,7 @@ export default function AgentsPage({
 
               <div className="management-form-section">
                 <strong>
-                  Knowledge Bases
+                  {copy.knowledgeBases}
                 </strong>
 
                 <div className="selection-grid">

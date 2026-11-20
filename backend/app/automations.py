@@ -464,6 +464,20 @@ def execute_send_whatsapp_message(
             "reason": "Resolved message is empty",
         }
 
+    # Legacy rules only send free text, which WhatsApp accepts solely inside
+    # the 24h customer-service window. Outside it Meta rejects the message;
+    # skip explicitly instead (use a flow with an approved template).
+    from .whatsapp_compliance import get_whatsapp_service_window_status
+    window = get_whatsapp_service_window_status(
+        db, organization_id, conversation.store_id, customer.id,
+    )
+    if not window["inside_window"]:
+        return {
+            "action": "send_whatsapp_message",
+            "status": "skipped",
+            "reason": window["reason"],
+        }
+
     try:
         token = decrypt_whatsapp_secret(connection.access_token_encrypted)
 

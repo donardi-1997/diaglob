@@ -17,7 +17,7 @@
   --ds-space-6: 24px;
   --ds-space-8: 32px;
   --ds-space-12: 48px;
-  --ds-focus: #6553eb;
+  --ds-focus: var(--brand-text-accent);
   --ds-shadow-card: 0 1px 2px rgba(21, 24, 39, .035), 0 10px 28px rgba(21, 24, 39, .035);
 }
 
@@ -32,7 +32,7 @@
   --text: #212231;
   --text-secondary: #5d6271;
   --text-muted: #667084;
-  --accent: #6553eb;
+  --accent: var(--brand-text-accent);
   --accent-soft: #edeafe;
   --control-bg: #f6f6f7;
   --control-hover: #f0effc;
@@ -47,8 +47,8 @@
   --dg-shell-text: #212231;
   --dg-shell-muted: #616778;
   --dg-shell-subtle: #666f7e;
-  --dg-shell-accent: #6553eb;
-  --dg-shell-accent-2: #8d79f4;
+  --dg-shell-accent: var(--brand-text-accent);
+  --dg-shell-accent-2: var(--brand-core);
   --dg-shell-accent-soft: #edeafe;
   --dg-shell-shadow: 0 8px 32px rgba(22, 24, 39, .05);
   --dg-shell-shadow-soft: var(--ds-shadow-card);
@@ -56,9 +56,9 @@
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --ds-focus: #b4a9ff;
+  --ds-focus: var(--brand-text-accent);
   --ds-shadow-card: 0 2px 18px rgba(0, 0, 0, .16);
-  --dg-shell-accent: #a497ff;
+  --dg-shell-accent: var(--brand-text-accent);
   --dg-shell-accent-soft: rgba(164, 151, 255, .13);
   --text-muted: #8e99ad;
 }
@@ -260,7 +260,7 @@
     radial-gradient(circle at 8% 80%, #dceee0 0, transparent 27%);
 }
 [data-theme="dark"] .landing-page .landing-hero {
-  background: radial-gradient(circle at 82% 25%, rgba(124,108,255,.15), transparent 38%);
+  background: radial-gradient(circle at 82% 25%, rgba(240, 107, 69,.15), transparent 38%);
 }
 .landing-page .landing-hero .landing-container {
   gap: clamp(32px, 4vw, 64px);
@@ -323,7 +323,7 @@
 }
 .landing-page .landing-innovation-grid .landing-innovation-card:nth-child(3n + 1) .landing-innovation-icon {
   background: #edeafe;
-  color: #6553eb;
+  color: var(--brand-text-accent);
 }
 .landing-page .landing-innovation-grid .landing-innovation-card:nth-child(3n + 2) .landing-innovation-icon {
   background: #e5f7eb;
@@ -410,7 +410,7 @@
 }
 .copilot-floating-button {
   border-radius: 19px;
-  background: linear-gradient(145deg, var(--accent), #4c39d3);
+  background: linear-gradient(145deg, var(--accent), var(--brand-action-hover));
 }
 .copilot-panel-root .copilot-composer-box:focus-within {
   border-color: var(--accent);
@@ -488,8 +488,8 @@
   --marketing-text: #212231;
   --marketing-muted: #5d6271;
   --marketing-soft: #646b79;
-  --marketing-accent: #6553eb;
-  --marketing-accent-2: #8d79f4;
+  --marketing-accent: var(--brand-text-accent);
+  --marketing-accent-2: var(--brand-core);
   --marketing-shadow: 0 14px 45px rgba(25, 25, 47, .07);
 }
 .marketing-page {
@@ -528,7 +528,7 @@
   margin: 22px 0 18px;
 }
 .marketing-page .marketing-hero-copy h1 span {
-  background-image: linear-gradient(93deg, #6553eb, #907ff1);
+  background-image: linear-gradient(93deg, var(--brand-text-accent), #907ff1);
 }
 [data-theme="dark"] .marketing-page .marketing-hero-copy h1 span {
   background-image: linear-gradient(93deg, #b2a8ff, #80c6ff);
@@ -563,7 +563,7 @@
   box-shadow: 0 13px 28px rgba(101,83,235,.25);
 }
 .marketing-page .marketing-primary-button.inverse {
-  color: #312e81;
+  color: var(--graphite-800);
   background: #ffffff;
   box-shadow: none;
 }

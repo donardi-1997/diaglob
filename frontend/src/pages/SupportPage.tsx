@@ -1,3 +1,4 @@
+import DiaglobBrandMark from "../components/DiaglobBrandMark";
 import { useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -118,7 +119,7 @@ export default function SupportPage() {
         <div className="landing-container">
           <div className="landing-navbar-inner">
             <Link className="landing-brand" to="/" aria-label="Diaglob home">
-              <span className="marketing-brand-mark"><img src="/brand/diaglob-mark.svg" alt="" width={32} height={32} /></span>
+              <span className="marketing-brand-mark"><DiaglobBrandMark width={32} height={32} /></span>
               <span className="brand-name">DIAGLOB</span>
             </Link>
             <div className="landing-controls" aria-label="Language">

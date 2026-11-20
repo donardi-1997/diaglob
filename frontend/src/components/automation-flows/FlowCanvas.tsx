@@ -59,7 +59,7 @@ function toReactFlowEdges(edges: FlowEdge[]): Edge[] {
     type: "smoothstep",
     animated: false,
     style: {
-      stroke: "var(--text-muted)",
+      stroke: "var(--flow-connector)",
       strokeWidth: 1.5,
     },
   }));
@@ -162,13 +162,13 @@ export default function FlowCanvas({
         defaultEdgeOptions={{
           type: "smoothstep",
           style: {
-            stroke: "var(--text-muted)",
+            stroke: "var(--flow-connector)",
             strokeWidth: 1.5,
           },
         }}
       >
         <Background
-          color="var(--text-muted)"
+          color="var(--flow-grid)"
           gap={20}
           size={1}
         />
@@ -177,13 +177,15 @@ export default function FlowCanvas({
           nodeColor={(node: Node) => {
             const data = node.data as unknown as FlowNodeData;
             const colors: Record<string, string> = {
-              trigger: "#7c5cff",
-              wait: "#e6a817",
-              condition: "#4a9eff",
-              message: "#22c55e",
-              end: "#6b7280",
+              trigger: "var(--flow-trigger)",
+              wait: "var(--flow-wait)",
+              condition: "var(--flow-condition)",
+              message: "var(--flow-action)",
+              call: "var(--flow-human)",
+              tool: "var(--flow-ai)",
+              end: "var(--flow-neutral)",
             };
-            return colors[data?.type] || "#6b7280";
+            return colors[data?.type] || "var(--flow-neutral)";
           }}
           maskColor="rgba(0,0,0,0.35)"
         />

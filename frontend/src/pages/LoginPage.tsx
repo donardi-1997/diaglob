@@ -1,3 +1,4 @@
+import DiaglobBrandMark from "../components/DiaglobBrandMark";
 import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { useTranslation } from "react-i18next";
@@ -411,7 +412,7 @@ export default function LoginPage({
         <div className="marketing-auth-orb auth-orb-two" />
         <div className="marketing-auth-story-inner">
           <button className="marketing-brand auth-brand" onClick={onNavigateHome} type="button">
-            <span className="marketing-brand-mark"><img src="/brand/diaglob-mark.svg" alt="" width={25} height={25} /></span>
+            <span className="marketing-brand-mark"><DiaglobBrandMark width={25} height={25} /></span>
             <span className="marketing-brand-copy"><strong>DIAGLOB</strong><small>AI COMMERCE OS</small></span>
           </button>
 
@@ -474,7 +475,7 @@ export default function LoginPage({
 
         <div className="marketing-auth-card">
           <div className="marketing-auth-mobile-brand">
-            <span className="marketing-brand-mark"><img src="/brand/diaglob-mark.svg" alt="" width={24} height={24} /></span>
+            <span className="marketing-brand-mark"><DiaglobBrandMark width={24} height={24} /></span>
             <strong>DIAGLOB</strong>
           </div>
 

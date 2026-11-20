@@ -16,6 +16,7 @@ from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from app.db import Base
 from app.main import app
@@ -50,9 +51,10 @@ from app.services import payment_service
 # FIXTURES
 # ============================================================
 
-SQLALCHEMY_DATABASE_URL = "sqlite:///./test_payments.db"
+SQLALCHEMY_DATABASE_URL = "sqlite://"
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
+    poolclass=StaticPool,
     connect_args={"check_same_thread": False},
 )
 TestingSessionLocal = sessionmaker(

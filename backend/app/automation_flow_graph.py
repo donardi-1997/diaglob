@@ -71,6 +71,116 @@ FLOW_TOOL_NAMES = {
 }
 
 
+
+def validate_draft_graph(graph: dict[str, Any]) -> list[str]:
+    """Validate safe storage of an *unpublished* graph, not readiness to execute.
+
+    A draft may have unfinished nodes, missing connections, or incomplete
+    configuration. Publishing and activation MUST still call validate_graph().
+    """
+    import json
+    import math
+
+    if not isinstance(graph, dict):
+        return ["Flow draft must be an object"]
+    try:
+        encoded = json.dumps(graph, allow_nan=False).encode("utf-8")
+    except (TypeError, ValueError, OverflowError):
+        return ["Flow draft must contain JSON-safe values"]
+    if len(encoded) > 128_000:
+        return ["Flow draft exceeds maximum size"]
+
+    nodes = graph.get("nodes")
+    edges = graph.get("edges")
+    if not isinstance(nodes, list) or not isinstance(edges, list):
+        return ["Flow draft nodes and edges must be arrays"]
+    if len(nodes) > MAX_NODES or len(edges) > 250:
+        return ["Flow draft exceeds graph limits"]
+
+    errors: list[str] = []
+    ids: set[str] = set()
+    for node in nodes:
+        if not isinstance(node, dict):
+            return ["Flow draft node must be an object"]
+        node_id = node.get("id")
+        if not isinstance(node_id, str) or not 0 < len(node_id) <= 128:
+            errors.append("Flow draft node ID is invalid")
+        elif node_id in ids:
+            errors.append("Duplicate node IDs found")
+        else:
+            ids.add(node_id)
+        if not isinstance(node.get("type"), str) or node["type"] not in NODE_TYPES:
+            errors.append("Flow draft node type is unsupported")
+        config = node.get("config", {})
+        if not isinstance(config, dict):
+            errors.append("Flow draft node config must be an object")
+        elif node.get("type") == "tool":
+            name = config.get("tool_name")
+            # An empty selection may be saved, but an unsupported capability
+            # cannot enter the persisted graph.
+            if name is not None and name != "" and (not isinstance(name, str) or name not in FLOW_TOOL_NAMES):
+                errors.append("Flow draft contains an unsupported tool")
+        position = node.get("position")
+        if position is not None and (
+            not isinstance(position, dict)
+            or any(
+                not isinstance(position.get(axis), (int, float))
+                or not math.isfinite(position[axis])
+                for axis in ("x", "y")
+            )
+        ):
+            errors.append("Flow draft node position is invalid")
+
+    if errors:
+        return errors
+    for edge in edges:
+        if not isinstance(edge, dict):
+            errors.append("Flow draft edge must be an object")
+            continue
+        if (not isinstance(edge.get("source"), str) or edge["source"] not in ids
+                or not isinstance(edge.get("target"), str) or edge["target"] not in ids):
+            errors.append("Flow draft edge references missing node")
+        if edge.get("source") == edge.get("target"):
+            errors.append("Flow draft self-loop is not allowed")
+        if edge.get("label") is not None and not isinstance(edge["label"], str):
+            errors.append("Flow draft edge label must be a string")
+    if not errors and not _is_dag(nodes, edges):
+        errors.append("Flow draft cannot contain a cycle")
+    return errors
+
+
+def _validate_message_config(nid: Any, config: dict[str, Any]) -> list[str]:
+    """WhatsApp message node: free text and/or an approved Meta template.
+
+    `template` mode only sends the Meta template, so free text is optional.
+    `free_form` and `auto` need text for the 24h customer-service window.
+    """
+    from .whatsapp_compliance import FLOW_TEMPLATE_VARIABLES
+
+    errors: list[str] = []
+    mode = config.get("message_mode", "")
+    if mode not in MESSAGE_MODES:
+        errors.append(f"Node {nid}: invalid message_mode '{mode}'")
+    template_id = config.get("whatsapp_template_id")
+    has_template = template_id is not None
+    if has_template and (isinstance(template_id, bool) or not isinstance(template_id, int) or template_id < 1):
+        errors.append(f"Node {nid}: invalid whatsapp_template_id")
+    if mode == "template" and not has_template:
+        errors.append(f"Node {nid}: a WhatsApp template is required in template mode")
+    if mode != "template" and not config.get("message_template"):
+        errors.append(f"Node {nid}: message_template is required")
+    variables = config.get("template_variables")
+    if variables not in (None, {}):
+        body = variables.get("body") if isinstance(variables, dict) else None
+        if not isinstance(body, list) or not all(isinstance(item, str) for item in body):
+            errors.append(f"Node {nid}: template_variables.body must be a list of variables")
+        else:
+            unknown = sorted({item for item in body if item not in FLOW_TEMPLATE_VARIABLES})
+            if unknown:
+                errors.append(f"Node {nid}: unsupported template variables {', '.join(unknown)}")
+    return errors
+
+
 def validate_graph(graph: dict[str, Any]) -> list[str]:
     """Validate a flow graph. Returns list of error strings (empty = valid)."""
     errors: list[str] = []
@@ -131,11 +241,7 @@ def validate_graph(graph: dict[str, Any]) -> list[str]:
                 errors.append(f"Node {nid}: wait exceeds maximum of {MAX_WAIT_DAYS} days")
 
         elif ntype == "message":
-            mode = config.get("message_mode", "")
-            if mode not in MESSAGE_MODES:
-                errors.append(f"Node {nid}: invalid message_mode '{mode}'")
-            if not config.get("message_template"):
-                errors.append(f"Node {nid}: message_template is required")
+            errors.extend(_validate_message_config(nid, config))
 
         elif ntype == "call":
             prompt = str(config.get("call_prompt") or "").strip()

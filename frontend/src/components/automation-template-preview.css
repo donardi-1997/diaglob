@@ -1,0 +1,33 @@
+.template-preview-toggle {
+  align-self: flex-start;
+  border: 1px solid var(--border);
+  background: var(--control-bg);
+  color: var(--text-secondary);
+  border-radius: 10px;
+  padding: 9px 12px;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.template-preview-toggle:hover {
+  color: var(--text);
+  background: var(--control-hover);
+}
+
+.template-preview-toggle:focus-visible {
+  outline: 3px solid var(--ds-focus, var(--accent));
+  outline-offset: 3px;
+}
+
+.template-preview-steps {
+  margin: 0;
+  padding: 12px 14px 12px 34px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--control-bg);
+  color: var(--text-secondary);
+  display: grid;
+  gap: 7px;
+  font-size: 13px;
+}

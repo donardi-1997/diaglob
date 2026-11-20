@@ -1,17 +1,20 @@
 import { useTranslation } from "react-i18next";
-import { useState, lazy, Suspense } from "react";
+import { useCallback, useState, lazy, Suspense } from "react";
 import {
   History,
   Workflow,
   PlayCircle,
   GitBranch,
   LayoutTemplate,
+  LayoutDashboard,
+  Send,
 } from "lucide-react";
 import AutomationsRules from "../components/AutomationsRules";
 import AutomationsExecutions from "../components/AutomationsExecutions";
 import AutomationCampaigns from "../components/AutomationCampaigns";
 import AutomationRunExplorer from "../components/AutomationRunExplorer";
 import AutomationTemplates from "../components/AutomationTemplates";
+import AutomationsOverview from "./AutomationsOverview";
 
 const FlowList = lazy(() => import("../components/automation-flows/FlowList"));
 
@@ -23,7 +26,9 @@ interface AutomationsPageProps {
 
 
 type AutomationTab =
+  | "overview"
   | "templates"
+  | "campaigns"
   | "rules"
   | "runs"
   | "executions"
@@ -36,9 +41,24 @@ const TABS: {
   icon: typeof Workflow;
 }[] = [
   {
+    key: "overview",
+    labelKey: "autoTabOverview",
+    icon: LayoutDashboard,
+  },
+  {
+    key: "flows",
+    labelKey: "autoTabFlows",
+    icon: GitBranch,
+  },
+  {
     key: "templates",
     labelKey: "autoTabTemplates",
     icon: LayoutTemplate,
+  },
+  {
+    key: "campaigns",
+    labelKey: "autoCampaigns",
+    icon: Send,
   },
   {
     key: "rules",
@@ -55,11 +75,6 @@ const TABS: {
     labelKey: "autoTabExecutions",
     icon: History,
   },
-  {
-    key: "flows",
-    labelKey: "autoTabFlows",
-    icon: GitBranch,
-  },
 ];
 
 
@@ -70,7 +85,23 @@ export default function AutomationsPage({
   const { t } = useTranslation();
 
   const [activeTab, setActiveTab] =
-    useState<AutomationTab>("templates");
+    useState<AutomationTab>("overview");
+  const [pendingTemplateFlow, setPendingTemplateFlow] = useState<{ storeId: number; flowId: number } | null>(null);
+  const [editorDirty, setEditorDirty] = useState(false);
+  const handleEditorDirtyChange = useCallback((dirty: boolean) => setEditorDirty(dirty), []);
+
+  function handleTabChange(nextTab: AutomationTab) {
+    if (nextTab === activeTab) return;
+    if (editorDirty && !window.confirm(t("flowEditorDiscardChanges"))) return;
+    setEditorDirty(false);
+    setActiveTab(nextTab);
+  }
+  const handleTemplateFlowHandled = useCallback(() => setPendingTemplateFlow(null), []);
+
+  function handleTemplateFlowCreated(flowId: number) {
+    setPendingTemplateFlow({ storeId, flowId });
+    setActiveTab("flows");
+  }
 
   return (
     <div className="content">
@@ -90,15 +121,15 @@ export default function AutomationsPage({
           return (
             <button
               key={tab.key}
+              type="button"
+              aria-pressed={activeTab === tab.key}
               className={
                 "commerce-tab"
                 + (activeTab === tab.key
                   ? " active"
                   : "")
               }
-              onClick={() =>
-                setActiveTab(tab.key)
-              }
+              onClick={() => handleTabChange(tab.key)}
             >
               <Icon size={16} />
               {t(tab.labelKey)}
@@ -108,11 +139,18 @@ export default function AutomationsPage({
       </div>
 
       <div className="commerce-content">
-        <AutomationCampaigns canWrite={canWrite} storeId={storeId} />
+        {activeTab === "overview" && (
+          <AutomationsOverview storeId={storeId} onNavigate={setActiveTab} />
+        )}
+        {activeTab === "campaigns" && (
+          <AutomationCampaigns canWrite={canWrite} storeId={storeId} />
+        )}
         {activeTab === "templates" && (
           <AutomationTemplates
+            key={storeId}
             canWrite={canWrite}
             storeId={storeId}
+            onFlowCreated={handleTemplateFlowCreated}
           />
         )}
 
@@ -139,7 +177,14 @@ export default function AutomationsPage({
 
         {activeTab === "flows" && (
           <Suspense fallback={<div className="page-loading">{t("commonLoading")}</div>}>
-            <FlowList canWrite={canWrite} storeId={storeId} />
+            <FlowList
+              key={storeId}
+              canWrite={canWrite}
+              storeId={storeId}
+              initialFlowId={pendingTemplateFlow?.storeId === storeId ? pendingTemplateFlow.flowId : null}
+              onInitialFlowHandled={handleTemplateFlowHandled}
+              onEditorDirtyChange={handleEditorDirtyChange}
+            />
           </Suspense>
         )}
       </div>

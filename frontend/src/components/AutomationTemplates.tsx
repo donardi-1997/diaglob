@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Check,
@@ -17,6 +17,10 @@ import {
 } from "lucide-react";
 
 import { api } from "../services/api";
+import { templateGraphSteps } from "../utils/automationTemplateFlow";
+import type { ModelWhatsAppSetup } from "../utils/automationModelSetup";
+import AutomationModelSetupDialog from "./AutomationModelSetupDialog";
+import "./automation-template-preview.css";
 
 
 interface AutomationTemplate {
@@ -30,6 +34,9 @@ interface AutomationTemplate {
   required_integrations: string[];
   icon: string;
   estimated_setup_minutes: number;
+  trigger_type?: string | null;
+  trigger_mode?: "automatic" | "manual";
+  whatsapp_setup?: ModelWhatsAppSetup;
   availability: {
     available: boolean;
     missing: string[];
@@ -41,6 +48,7 @@ interface AutomationTemplate {
 interface AutomationTemplatesProps {
   canWrite: boolean;
   storeId: number;
+  onFlowCreated: (flowId: number) => void;
 }
 
 
@@ -71,6 +79,7 @@ const CATEGORY_LABELS: Record<string, string> = {
 export default function AutomationTemplates({
   canWrite,
   storeId,
+  onFlowCreated,
 }: AutomationTemplatesProps) {
   const { t } = useTranslation();
 
@@ -78,9 +87,16 @@ export default function AutomationTemplates({
   const [categories, setCategories] = useState<string[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [creating, setCreating] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [previewId, setPreviewId] = useState<string | null>(null);
+  const [setupModel, setSetupModel] = useState<AutomationTemplate | null>(null);
+  const mountedStore = useRef({ storeId, active: true });
+
+  useEffect(() => {
+    mountedStore.current = { storeId, active: true };
+    return () => { mountedStore.current.active = false; };
+  }, [storeId]);
 
   useEffect(() => {
     loadTemplates();
@@ -113,37 +129,18 @@ export default function AutomationTemplates({
     }
   }
 
-  async function handleCreateTemplate(templateId: string) {
-    if (!canWrite) return;
+  function openSetup(template: AutomationTemplate) {
+    if (!canWrite || !template.availability?.available) return;
+    setError("");
+    setSuccess("");
+    setSetupModel(template);
+  }
 
-    try {
-      setCreating(templateId);
-      setError("");
-      setSuccess("");
-
-      await api.post(
-        `/api/stores/${storeId}/automation-flow-templates/${templateId}`
-      );
-
-      setSuccess(t("autoTemplateCreated"));
-    } catch (err: any) {
-      const detail = err?.response?.data?.detail;
-      if (typeof detail === "object" && detail.code === "FLOW_TEMPLATE_INTEGRATION_REQUIRED") {
-        setError(
-          t("autoTemplateMissingIntegration") +
-          ": " + (detail.missing || []).join(", ")
-        );
-      } else {
-        setError(
-          detail?.message ||
-            detail ||
-            err?.message ||
-            "Could not create automation"
-        );
-      }
-    } finally {
-      setCreating(null);
-    }
+  function handleCreated(flowId: number, activated: boolean) {
+    setSetupModel(null);
+    if (!mountedStore.current.active || mountedStore.current.storeId !== storeId) return;
+    if (activated) setSuccess(t("autoModelActivatedSuccess"));
+    onFlowCreated(flowId);
   }
 
   return (
@@ -199,7 +196,8 @@ export default function AutomationTemplates({
           {templates.map((template) => {
             const Icon = ICON_MAP[template.icon] || Workflow;
             const isAvailable = template.availability?.available;
-            const isCreating = creating === template.id;
+            const expanded = previewId === template.id;
+            const steps = templateGraphSteps(template.graph);
 
             return (
               <div
@@ -230,6 +228,15 @@ export default function AutomationTemplates({
                     </span>
                   </div>
 
+                  {template.trigger_mode && (
+                    <span
+                      className={`template-integration ${template.trigger_mode === "automatic" ? "connected" : "missing"}`}
+                      title={template.trigger_mode === "automatic" ? t("autoModelAutomaticHint") : t("autoModelManual")}
+                    >
+                      {template.trigger_mode === "automatic" ? t("autoModelBadgeAutomatic") : t("autoModelBadgeManual")}
+                    </span>
+                  )}
+
                   {template.required_integrations.length > 0 && (
                     <div className="template-integrations">
                       {template.required_integrations.map((integ) => (
@@ -251,26 +258,50 @@ export default function AutomationTemplates({
                   </div>
                 )}
 
+                {steps.length > 0 && (
+                  <>
+                    <button
+                      type="button"
+                      className="template-preview-toggle"
+                      aria-expanded={expanded}
+                      aria-controls={`template-preview-${template.id}`}
+                      onClick={() => setPreviewId(expanded ? null : template.id)}
+                    >
+                      {expanded ? t("autoTemplateHideSteps") : t("autoTemplateShowSteps")}
+                    </button>
+                    {expanded && (
+                      <ol className="template-preview-steps" id={`template-preview-${template.id}`}>
+                        {steps.map((step, index) => (
+                          <li key={`${template.id}-${index}`}>{t(`autoTemplateStep_${step}`)}</li>
+                        ))}
+                      </ol>
+                    )}
+                  </>
+                )}
+
                 {canWrite && (
                   <button
                     className="template-create-button"
-                    onClick={() => handleCreateTemplate(template.id)}
-                    disabled={!isAvailable || isCreating}
+                    onClick={() => openSetup(template)}
+                    disabled={!isAvailable || setupModel !== null}
                   >
-                    {isCreating ? (
-                      <Loader2 className="spin" size={14} />
-                    ) : (
-                      <ChevronRight size={14} />
-                    )}
-                    {isCreating
-                      ? (t("autoTemplateCreating") || "Creating...")
-                      : (t("autoTemplateCreate") || "Create flow")}
+                    <ChevronRight size={14} />
+                    {t("autoModelUse")}
                   </button>
                 )}
               </div>
             );
           })}
         </div>
+      )}
+
+      {setupModel && (
+        <AutomationModelSetupDialog
+          storeId={storeId}
+          model={setupModel}
+          onClose={() => setSetupModel(null)}
+          onCreated={handleCreated}
+        />
       )}
     </div>
   );

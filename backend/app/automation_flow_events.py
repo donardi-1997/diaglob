@@ -81,6 +81,20 @@ def _resolve_customer_id(
     return order.customer_id if order else None
 
 
+def format_money_display(amount: float | None, currency: str | None) -> str:
+    """Customer-facing amount for WhatsApp copy, e.g. "125.000 COP", "49,90 USD".
+
+    LatAm convention: dot thousands separator, comma decimals, decimals only
+    when the amount is not whole. Raw `order.total` stays numeric for rules.
+    """
+    value = float(amount or 0)
+    text = f"{value:,.2f}"
+    if text.endswith(".00"):
+        text = text[:-3]
+    text = text.replace(",", "\0").replace(".", ",").replace("\0", ".")
+    return f"{text} {currency}".strip() if currency else text
+
+
 def _order_trigger_context(order: Order) -> dict[str, Any]:
     shipping = dict(order.shipping_address or {})
     items = [
@@ -105,6 +119,7 @@ def _order_trigger_context(order: Order) -> dict[str, Any]:
         "external_id": order.external_order_id,
         "shopify_order_id": order.shopify_order_id,
         "total": float(order.total_amount or 0),
+        "total_display": format_money_display(order.total_amount, order.currency),
         "currency": order.currency,
         "financial_status": order.financial_status,
         "payment_status": order.payment_status,

@@ -4,6 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from app.api.deps import get_current_membership
 from app.db import Base, get_db
@@ -23,10 +24,11 @@ from app.services.agent_management import (
 
 
 @pytest.fixture
-def context(tmp_path):
+def context():
     engine = create_engine(
-        f"sqlite:///{tmp_path / 'agents_smoke.db'}",
+        "sqlite://",
         connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
     )
     Base.metadata.create_all(bind=engine)
     session = sessionmaker(bind=engine, autoflush=False)()

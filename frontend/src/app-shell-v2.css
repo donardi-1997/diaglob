@@ -7,9 +7,9 @@
   --dg-shell-text: #111827;
   --dg-shell-muted: #6b7280;
   --dg-shell-subtle: #94a3b8;
-  --dg-shell-accent: #6d5dfc;
-  --dg-shell-accent-2: #8b5cf6;
-  --dg-shell-accent-soft: rgba(109, 93, 252, 0.1);
+  --dg-shell-accent: var(--brand-text-accent);
+  --dg-shell-accent-2: var(--brand-action);
+  --dg-shell-accent-soft: rgba(185, 71, 41, 0.1);
   --dg-shell-sidebar: rgba(248, 250, 252, 0.96);
   --dg-shell-shadow: 0 18px 45px rgba(15, 23, 42, 0.08);
   --dg-shell-shadow-soft: 0 8px 24px rgba(15, 23, 42, 0.06);
@@ -24,8 +24,8 @@
   --dg-shell-text: #f8fafc;
   --dg-shell-muted: #9ca3af;
   --dg-shell-subtle: #64748b;
-  --dg-shell-accent: #8b7cff;
-  --dg-shell-accent-2: #a78bfa;
+  --dg-shell-accent: var(--brand-core);
+  --dg-shell-accent-2: var(--brand-text-accent);
   --dg-shell-accent-soft: rgba(139, 124, 255, 0.12);
   --dg-shell-sidebar: rgba(11, 15, 24, 0.97);
   --dg-shell-shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
@@ -88,7 +88,7 @@
 
 .dg-sidebar-collapse:hover {
   color: var(--dg-shell-accent);
-  border-color: rgba(109, 93, 252, 0.28);
+  border-color: rgba(185, 71, 41, 0.28);
 }
 
 .dg-shell.is-sidebar-collapsed .dg-sidebar {
@@ -164,7 +164,7 @@
   place-items: center;
   color: #fff;
   background: linear-gradient(145deg, var(--dg-shell-accent), var(--dg-shell-accent-2));
-  box-shadow: 0 8px 20px rgba(109, 93, 252, 0.28);
+  box-shadow: 0 8px 20px rgba(185, 71, 41, 0.28);
 }
 
 .dg-brand-copy {
@@ -251,8 +251,8 @@
 
 .dg-nav-item.is-active {
   color: var(--dg-shell-text);
-  background: linear-gradient(90deg, var(--dg-shell-accent-soft), rgba(109, 93, 252, 0.035));
-  box-shadow: inset 0 0 0 1px rgba(109, 93, 252, 0.07);
+  background: linear-gradient(90deg, var(--dg-shell-accent-soft), rgba(185, 71, 41, 0.035));
+  box-shadow: inset 0 0 0 1px rgba(185, 71, 41, 0.07);
 }
 
 .dg-nav-icon {
@@ -266,7 +266,7 @@
 
 .dg-nav-item.is-active .dg-nav-icon {
   color: var(--dg-shell-accent);
-  background: rgba(109, 93, 252, 0.08);
+  background: rgba(185, 71, 41, 0.08);
 }
 
 .dg-nav-active-dot {
@@ -274,7 +274,7 @@
   height: 5px;
   border-radius: 999px;
   background: var(--dg-shell-accent);
-  box-shadow: 0 0 0 4px rgba(109, 93, 252, 0.08);
+  box-shadow: 0 0 0 4px rgba(185, 71, 41, 0.08);
 }
 
 .dg-sidebar-footer {
@@ -322,9 +322,9 @@
   font-size: 0.68rem;
   font-weight: 800;
   letter-spacing: 0.05em;
-  background: linear-gradient(145deg, rgba(109, 93, 252, 0.18), rgba(139, 92, 246, 0.08));
+  background: linear-gradient(145deg, rgba(185, 71, 41, 0.18), rgba(240, 107, 69, 0.08));
   color: var(--dg-shell-accent);
-  border: 1px solid rgba(109, 93, 252, 0.12);
+  border: 1px solid rgba(185, 71, 41, 0.12);
 }
 
 .dg-user-copy {
@@ -630,7 +630,7 @@
 
 .dg-language-row button.is-active {
   color: var(--dg-shell-accent);
-  border-color: rgba(109, 93, 252, 0.25);
+  border-color: rgba(185, 71, 41, 0.25);
   background: var(--dg-shell-accent-soft);
 }
 

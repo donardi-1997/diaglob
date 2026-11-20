@@ -77,11 +77,29 @@ def _relink_deleted_cognito_identity(
     cognito_sub: str,
     name: str,
 ) -> bool:
-    """Relink a local user only when its previous Cognito identity is gone."""
+    """Relink a local user after a verified account recreation.
+
+    A closed local account is a tombstone created by ``DELETE /api/account``:
+    its memberships and user are inactive, so a fresh, email-verified Cognito
+    identity may safely reclaim it without an IAM admin lookup.  Active users
+    still require proof that the previous Cognito identity no longer exists;
+    this prevents an active account from being taken over by another identity
+    with the same email.
+    """
     previous_sub = email_user.external_auth_id
 
     if not previous_sub or previous_sub == cognito_sub:
         return False
+
+    # The registration endpoint already authenticated the new Cognito access
+    # token and verified its email.  Inactive local users are explicitly
+    # recoverable account tombstones; avoid requiring production API IAM
+    # permissions for the normal close-and-recreate flow.
+    if not email_user.active:
+        email_user.external_auth_id = cognito_sub
+        email_user.name = name
+        email_user.active = True
+        return True
 
     try:
         cognito.admin_get_user(

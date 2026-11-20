@@ -10,8 +10,8 @@
   --text-secondary: #8f9aae;
   --text-muted: #596579;
 
-  --accent: #7c6cff;
-  --accent-soft: rgba(124, 108, 255, 0.13);
+  --accent: var(--brand-text-accent);
+  --accent-soft: rgba(240, 107, 69, 0.13);
 
   --green: #3ddc97;
 
@@ -36,8 +36,8 @@
   --text-secondary: #667085;
   --text-muted: #8b95a7;
 
-  --accent: #6d5dfc;
-  --accent-soft: rgba(109, 93, 252, 0.1);
+  --accent: var(--brand-text-accent);
+  --accent-soft: rgba(185, 71, 41, 0.1);
 
   --green: #159b68;
 
@@ -81,8 +81,8 @@
   display: grid;
   place-items: center;
   border-radius: 11px;
-  background: linear-gradient(145deg, #897bff, #6351ee);
-  box-shadow: 0 10px 30px rgba(112, 91, 255, 0.25);
+  background: linear-gradient(145deg, var(--brand-action), var(--brand-action-hover));
+  box-shadow: 0 10px 30px rgba(240, 107, 69, 0.25);
 }
 
 .brand-name {
@@ -358,7 +358,7 @@
   border: 0;
   background: var(--accent);
   color: white;
-  box-shadow: 0 10px 28px rgba(124, 108, 255, 0.2);
+  box-shadow: 0 10px 28px rgba(240, 107, 69, 0.2);
 }
 
 .primary-button:hover {
@@ -979,7 +979,7 @@
   flex-direction: column;
   background:
     radial-gradient(circle at 50% 0%,
-      rgba(124, 108, 255, 0.045),
+      rgba(240, 107, 69, 0.045),
       transparent 38%),
     var(--bg);
 }
@@ -1071,7 +1071,7 @@
 .message.sent {
   margin-left: auto;
   background: var(--accent-soft);
-  border-color: rgba(124, 108, 255, 0.18);
+  border-color: rgba(240, 107, 69, 0.18);
   border-bottom-right-radius: 4px;
 }
 
@@ -1126,7 +1126,7 @@
 }
 
 .chat-composer input:focus {
-  border-color: rgba(124, 108, 255, 0.5);
+  border-color: rgba(240, 107, 69, 0.5);
 }
 
 .send-channel-toggle {
@@ -1322,11 +1322,11 @@
   font-size: 10px;
 }
 
-.ci-color-new { color: #7c6cff; }
+.ci-color-new { color: var(--brand-text-accent); }
 .ci-color-high-intent { color: #f59e0b; }
 .ci-color-buyer { color: #3ddc97; }
 .ci-color-repeat { color: #10b981; }
-.ci-color-vip { color: #a855f7; }
+.ci-color-vip { color: var(--warning-primary); }
 .ci-color-at-risk { color: #ef4444; }
 .ci-color-inactive { color: #6b7280; }
 
@@ -1380,7 +1380,7 @@
 }
 
 .ci-tab.active .ci-tab-count {
-  background: rgba(124, 108, 255, 0.2);
+  background: rgba(240, 107, 69, 0.2);
 }
 
 .ci-search {
@@ -3160,7 +3160,7 @@ button:disabled {
 }
 
 .primary-button {
-  background: var(--accent, #7c5cff);
+  background: var(--accent, var(--brand-text-accent));
   color: white;
 }
 
@@ -3437,8 +3437,8 @@ button:disabled {
 }
 
 .store-integration-button.primary {
-  background: rgba(99, 102, 241, .16);
-  border-color: rgba(99, 102, 241, .4);
+  background: rgba(240, 107, 69, .16);
+  border-color: rgba(240, 107, 69, .4);
 }
 
 .store-integration-button.danger {
@@ -3713,7 +3713,7 @@ button:disabled {
 
 .stores-form-field input:focus,
 .stores-form-field select:focus {
-  border-color: var(--accent, #7c5cff);
+  border-color: var(--accent, var(--brand-text-accent));
 }
 
 .stores-form-field small {
@@ -3830,7 +3830,7 @@ button:disabled {
 
 
 .stores-form-field select option:checked {
-  background-color: #6d5dfc;
+  background-color: var(--brand-text-accent);
   color: #ffffff;
 }
 
@@ -4101,7 +4101,7 @@ button:disabled {
 .store-plan-progress-bar {
   height: 100%;
   border-radius: inherit;
-  background: var(--accent, #7c5cff);
+  background: var(--accent, var(--brand-text-accent));
   transition: width .25s ease;
 }
 
@@ -4150,7 +4150,7 @@ button:disabled {
   margin-bottom: 18px;
   background: rgba(124, 92, 255, .12);
   border: 1px solid rgba(124, 92, 255, .22);
-  color: var(--accent, #7c5cff);
+  color: var(--accent, var(--brand-text-accent));
 }
 
 .plan-limit-copy h2 {
@@ -4266,7 +4266,7 @@ button:disabled {
   background:
     rgba(124, 92, 255, .14);
   color:
-    var(--accent, #7c5cff);
+    var(--accent, var(--brand-text-accent));
   font-size: 10px;
   font-weight: 800;
   text-transform: uppercase;
@@ -4354,7 +4354,7 @@ button:disabled {
   border-radius: 10px;
   border: 0;
   background:
-    var(--accent, #7c5cff);
+    var(--accent, var(--brand-text-accent));
   color: white;
   font: inherit;
   font-weight: 750;
@@ -6347,7 +6347,7 @@ button:disabled {
 
 /* Plan seleccionado por defecto / plan activo */
 .plan-card.selected {
-  outline: 2px solid var(--accent, #7c3aed);
+  outline: 2px solid var(--accent, var(--brand-text-accent));
   outline-offset: 2px;
 }
 
@@ -6749,10 +6749,10 @@ button:disabled {
 
   .mobile-nav-item.active {
     border-color:
-      rgba(124, 108, 255, 0.2);
+      rgba(240, 107, 69, 0.2);
 
     background:
-      rgba(124, 108, 255, 0.12);
+      rgba(240, 107, 69, 0.12);
 
     color:
       var(--accent);
@@ -6820,7 +6820,7 @@ button:disabled {
 
   .mobile-language-switch button.active {
     background:
-      rgba(124, 108, 255, 0.14);
+      rgba(240, 107, 69, 0.14);
 
     color:
       var(--accent);
@@ -7139,12 +7139,12 @@ button:disabled {
 
 :root[data-theme="light"] .billing-period-locked-note {
   border-color:
-    rgba(109, 93, 252, 0.16);
+    rgba(185, 71, 41, 0.16);
 
   background:
     linear-gradient(
       145deg,
-      rgba(109, 93, 252, 0.07),
+      rgba(185, 71, 41, 0.07),
       rgba(20, 24, 35, 0.015)
     );
 
@@ -7225,18 +7225,18 @@ button:disabled {
   opacity: 1;
 
   border-color:
-    rgba(109, 93, 252, 0.72);
+    rgba(185, 71, 41, 0.72);
 
   background:
     linear-gradient(
       145deg,
-      rgba(109, 93, 252, 0.13),
-      rgba(109, 93, 252, 0.05)
+      rgba(185, 71, 41, 0.13),
+      rgba(185, 71, 41, 0.05)
     );
 
   box-shadow:
     inset 0 0 0 1px
-    rgba(109, 93, 252, 0.05);
+    rgba(185, 71, 41, 0.05);
 }
 
 
@@ -7317,10 +7317,10 @@ button:disabled {
 
 :root[data-theme="light"] .billing-current-period {
   border-color:
-    rgba(109, 93, 252, 0.18);
+    rgba(185, 71, 41, 0.18);
 
   background:
-    rgba(109, 93, 252, 0.07);
+    rgba(185, 71, 41, 0.07);
 }
 
 
@@ -7365,10 +7365,10 @@ button:disabled {
 
 :root[data-theme="light"] .billing-period-option:hover:not(:disabled) {
   border-color:
-    rgba(109, 93, 252, 0.35);
+    rgba(185, 71, 41, 0.35);
 
   background:
-    rgba(109, 93, 252, 0.055);
+    rgba(185, 71, 41, 0.055);
 
   box-shadow:
     0 8px 20px
@@ -7382,20 +7382,20 @@ button:disabled {
 
 :root[data-theme="light"] .billing-period-option.active {
   border-color:
-    rgba(109, 93, 252, 0.74);
+    rgba(185, 71, 41, 0.74);
 
   background:
     linear-gradient(
       145deg,
-      rgba(109, 93, 252, 0.13),
-      rgba(109, 93, 252, 0.045)
+      rgba(185, 71, 41, 0.13),
+      rgba(185, 71, 41, 0.045)
     );
 
   box-shadow:
     inset 0 0 0 1px
-      rgba(109, 93, 252, 0.05),
+      rgba(185, 71, 41, 0.05),
     0 8px 20px
-      rgba(109, 93, 252, 0.07);
+      rgba(185, 71, 41, 0.07);
 }
 
 
@@ -7445,13 +7445,13 @@ button:disabled {
   opacity: 1;
 
   border-color:
-    rgba(109, 93, 252, 0.72);
+    rgba(185, 71, 41, 0.72);
 
   background:
     linear-gradient(
       145deg,
-      rgba(109, 93, 252, 0.14),
-      rgba(109, 93, 252, 0.05)
+      rgba(185, 71, 41, 0.14),
+      rgba(185, 71, 41, 0.05)
     );
 }
 
@@ -7472,12 +7472,12 @@ button:disabled {
 
 :root[data-theme="light"] .billing-period-locked-note {
   border-color:
-    rgba(109, 93, 252, 0.15);
+    rgba(185, 71, 41, 0.15);
 
   background:
     linear-gradient(
       145deg,
-      rgba(109, 93, 252, 0.065),
+      rgba(185, 71, 41, 0.065),
       rgba(255, 255, 255, 0.72)
     );
 
@@ -7523,13 +7523,13 @@ button:disabled {
   background:
     linear-gradient(
       135deg,
-      #6d5dfc,
+      var(--brand-text-accent),
       #806fff
     );
 
   box-shadow:
     0 4px 12px
-    rgba(109, 93, 252, 0.2);
+    rgba(185, 71, 41, 0.2);
 }
 
 
@@ -7585,7 +7585,7 @@ button:disabled {
     #ffffff;
 
   border-color:
-    rgba(109, 93, 252, 0.2);
+    rgba(185, 71, 41, 0.2);
 
   box-shadow:
     0 18px 42px
@@ -7599,16 +7599,16 @@ button:disabled {
   background:
     linear-gradient(
       180deg,
-      rgba(109, 93, 252, 0.055),
+      rgba(185, 71, 41, 0.055),
       #ffffff 28%
     );
 
   border-color:
-    rgba(109, 93, 252, 0.38);
+    rgba(185, 71, 41, 0.38);
 
   box-shadow:
     0 18px 44px
-    rgba(109, 93, 252, 0.09);
+    rgba(185, 71, 41, 0.09);
 }
 
 
@@ -7664,10 +7664,10 @@ button:disabled {
 
 :root[data-theme="light"] .plan-upgrade-price {
   background:
-    rgba(109, 93, 252, 0.05);
+    rgba(185, 71, 41, 0.05);
 
   border-color:
-    rgba(109, 93, 252, 0.14);
+    rgba(185, 71, 41, 0.14);
 }
 
 
@@ -7762,7 +7762,7 @@ button:disabled {
   background:
     linear-gradient(
       90deg,
-      #6d5dfc,
+      var(--brand-text-accent),
       #9b8cff
     );
 }
@@ -8006,7 +8006,7 @@ button:disabled {
 
 :root[data-theme="light"] .plan-card:hover {
   border-color:
-    rgba(109, 93, 252, 0.26);
+    rgba(185, 71, 41, 0.26);
 
   box-shadow:
     0 18px 44px
@@ -8018,33 +8018,33 @@ button:disabled {
   background:
     linear-gradient(
       180deg,
-      rgba(109, 93, 252, 0.045),
+      rgba(185, 71, 41, 0.045),
       #ffffff 26%
     );
 
   border-color:
-    rgba(109, 93, 252, 0.36);
+    rgba(185, 71, 41, 0.36);
 }
 
 
 :root[data-theme="light"] .plan-store-limit {
   border-color:
-    rgba(109, 93, 252, 0.12);
+    rgba(185, 71, 41, 0.12);
 
   background:
-    rgba(109, 93, 252, 0.045);
+    rgba(185, 71, 41, 0.045);
 }
 
 
 :root[data-theme="light"] .plan-upgrade-price {
   border-color:
-    rgba(109, 93, 252, 0.14);
+    rgba(185, 71, 41, 0.14);
 
   background:
     linear-gradient(
       145deg,
-      rgba(109, 93, 252, 0.07),
-      rgba(109, 93, 252, 0.025)
+      rgba(185, 71, 41, 0.07),
+      rgba(185, 71, 41, 0.025)
     );
 }
 
@@ -8746,8 +8746,8 @@ button:disabled {
 }
 
 .automation-trigger-badge.manual {
-  background: rgba(139, 92, 246, 0.12);
-  color: #a78bfa;
+  background: rgba(240, 107, 69, 0.12);
+  color: var(--brand-text-accent);
 }
 
 .automation-trigger-badge.order.created {
@@ -9183,7 +9183,7 @@ button:disabled {
 }
 
 .analytics-bar.executions {
-  background: rgba(139, 92, 246, 0.7);
+  background: rgba(240, 107, 69, 0.7);
 }
 
 .analytics-bar-label {
@@ -11526,7 +11526,7 @@ button:disabled {
 
 .template-card:hover {
   border-color: var(--accent);
-  box-shadow: 0 2px 12px rgba(124, 108, 255, 0.1);
+  box-shadow: 0 2px 12px rgba(240, 107, 69, 0.1);
 }
 
 .template-card.unavailable {
@@ -11991,7 +11991,7 @@ button:disabled {
   border: 1px solid var(--border);
   border-radius: 18px;
   background:
-    linear-gradient(155deg, rgba(124, 108, 255, 0.08), transparent 55%),
+    linear-gradient(155deg, rgba(240, 107, 69, 0.08), transparent 55%),
     var(--panel);
   box-shadow: 0 18px 70px rgba(0, 0, 0, 0.16);
 }

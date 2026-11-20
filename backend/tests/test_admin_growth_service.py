@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from app.db import Base
 from app.model_domains.marketing import (
@@ -13,10 +14,11 @@ from app.model_domains.marketing import (
 from app.models import Conversation, Customer, Message, Order, Organization, Store, User
 from app.services.admin_growth_service import get_admin_growth_metrics
 
-SQLALCHEMY_TEST_DATABASE_URL = "sqlite:///./test_admin_growth_service.db"
+SQLALCHEMY_TEST_DATABASE_URL = "sqlite://"
 
 engine = create_engine(
     SQLALCHEMY_TEST_DATABASE_URL,
+    poolclass=StaticPool,
     connect_args={"check_same_thread": False},
 )
 TestingSessionLocal = sessionmaker(

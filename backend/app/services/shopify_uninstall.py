@@ -16,6 +16,7 @@ from ..models import (
     ShopifyEmbeddedIdentityBinding, ShopifyEmbeddedLinkTicket,
 )
 from ..shopify_oauth import normalize_shop_domain
+from .billing_channel_policy import shopify_paid_access_should_suspend
 from .shopify_pending_install_retention import (
     purge_unclaimed_pending_installs,
 )
@@ -195,11 +196,7 @@ def process_shopify_uninstall(
         .with_for_update()
         .first()
     )
-    if (
-        billing_org is not None
-        and billing_org.billing_provider == "shopify"
-        and billing_org.plan in {"starter", "growth", "pro", "scale"}
-    ):
+    if shopify_paid_access_should_suspend(billing_org):
         billing_org.subscription_status = "inactive"
 
     (

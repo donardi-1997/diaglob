@@ -1432,8 +1432,14 @@ class TestRegressionFixes:
             page=1,
             page_size=100,
         )
-        # VIP: customer 6 (6 orders) + customer 50 (5 orders)
-        assert result["total"] == 2
+        # Derive the expectation from the module's current data instead of a
+        # hard-coded count: other tests in this module add VIP customers
+        # (e.g. customer 50), so a fixed number made this test order-dependent.
+        metrics = get_customer_metrics(setup_db, organization_id=1)
+        expected_vip = sum(1 for m in metrics if m["primary_segment"] == SEGMENT_VIP)
+        assert expected_vip >= 1  # fixture customer 6 has 6 orders
+        assert expected_vip < len(metrics)  # the filter really excludes customers
+        assert result["total"] == expected_vip
         assert result["total_pages"] == 1
 
     def test_summary_partition_invariant(self, setup_db):
