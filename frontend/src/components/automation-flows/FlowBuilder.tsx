@@ -89,6 +89,8 @@ function FlowBuilderInner({
         }
 
         if (change.type === "remove") {
+          // The single trigger is required for every publishable flow.
+          if (nextNodes.some((node) => node.id === change.id && node.type === "trigger")) continue;
           nextNodes = nextNodes.filter(
             (node) => node.id !== change.id,
           );
