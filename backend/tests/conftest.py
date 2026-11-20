@@ -1,12 +1,22 @@
 """Register all SQLAlchemy domain models before test fixtures create tables."""
 
 import importlib
+import os
 import sys
 from pathlib import Path
 
 import pytest
 
-import app.models  # noqa: F401
+# Must run before any `app` import: settings are cached on first read.
+# Every TestClient(app) runs the lifespan, which would start the Knowledge
+# reconciliation in a background thread. That thread queries the database
+# concurrently with the test; with a shared in-memory SQLite connection
+# (StaticPool) two threads on one sqlite3 connection can segfault the worker
+# (seen in CI as "[gwN] node down" and a hung run). Tests that cover the
+# reconciliation call it explicitly with their own settings.
+os.environ.setdefault("KNOWLEDGE_RECONCILE_ON_STARTUP", "false")
+
+import app.models  # noqa: E402,F401
 
 _MODEL_DIR = Path(__file__).resolve().parents[1] / "app" / "model_domains"
 
