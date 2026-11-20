@@ -53,7 +53,7 @@ jobs:
 
       - name: Validate readiness gate without network access
         run: |
-          bash -n scripts/check-api-readiness.sh scripts/restart-api-verified.sh
+          bash -n scripts/check-api-readiness.sh scripts/restart-api-verified.sh scripts/restart-automation-worker.sh
           python3 -m unittest discover -s scripts/tests -p 'test_api_readiness.py'
 
       - name: Backend tests
@@ -192,6 +192,21 @@ jobs:
           if [[ "$deploy_status" -eq 22 ]]; then
             echo "RECOVERED: deploy.sh curl raced Uvicorn startup; both readiness gates passed."
           fi
+
+      # deploy.sh only restarts the API; the automation worker (flows,
+      # campaigns, WhatsApp sends) is a separate service and must load the
+      # same code. The checkout was updated in "Prepare production schema".
+      - name: Restart automation worker on deployed code
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -i "$HOME/.ssh/diaglob_actions_prod" \
+            "$PROD_USER@$PROD_HOST" \
+            "bash /opt/diaglob/app/scripts/restart-automation-worker.sh"
 
       - name: Verify production smoke surfaces
         shell: bash
