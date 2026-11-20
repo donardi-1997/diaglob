@@ -9,6 +9,7 @@ import {
 import FlowCanvas from "./FlowCanvas";
 import FlowNode from "./FlowNode";
 import FlowNodePalette from "./FlowNodePalette";
+import { connectFlowNodes, type FlowConnectionError } from "./flowConnectionRules";
 import {
   addNodeToGraph,
   type FlowGraph,
@@ -25,6 +26,15 @@ interface FlowBuilderInnerProps {
   canWrite: boolean;
 }
 
+const CONNECTION_MESSAGES: Record<FlowConnectionError, string> = {
+  "missing-node": "Selecciona dos nodos existentes para conectarlos.",
+  "self-loop": "No puedes conectar un nodo consigo mismo.",
+  "trigger-target": "Un nodo de inicio no puede recibir conexiones.",
+  "end-source": "Un nodo de fin no puede tener salidas.",
+  "invalid-handle": "Utiliza una salida válida para este tipo de nodo.",
+  "cycle": "Esa conexión crearía un ciclo. Los flujos deben avanzar sin bucles.",
+};
+
 const nodeTypes: NodeTypes = {
   flowNode: FlowNode as any,
 };
@@ -38,12 +48,14 @@ function FlowBuilderInner({
 }: FlowBuilderInnerProps) {
   const graphRef = React.useRef(graph);
   graphRef.current = graph;
+  const [connectionError, setConnectionError] = React.useState<FlowConnectionError | null>(null);
 
   const syncGraph = useCallback(
     (
       newNodes: FlowNodeData[],
       newEdges: FlowGraph["edges"],
     ) => {
+      setConnectionError(null);
       onGraphChange({
         nodes: newNodes,
         edges: newEdges,
@@ -131,43 +143,15 @@ function FlowBuilderInner({
 
   const handleConnect = useCallback(
     (connection: Connection) => {
-      if (
-        !canWrite
-        || !connection.source
-        || !connection.target
-      ) {
-        return;
+      if (!canWrite) return;
+
+      const result = connectFlowNodes(graphRef.current, connection);
+      setConnectionError(result.error);
+      if (!result.error && result.graph !== graphRef.current) {
+        onGraphChange(result.graph);
       }
-
-      const label =
-        connection.sourceHandle === "true"
-        || connection.sourceHandle === "false"
-          ? connection.sourceHandle
-          : undefined;
-
-      const nextEdge = {
-        source: connection.source,
-        target: connection.target,
-        sourceHandle: connection.sourceHandle || undefined,
-        targetHandle: connection.targetHandle || undefined,
-        label,
-      };
-
-      const withoutConflictingBranch =
-        graphRef.current.edges.filter((edge) => {
-          if (edge.source !== connection.source) return true;
-          if (label) {
-            return (edge.label || edge.sourceHandle) !== label;
-          }
-          return Boolean(edge.label || edge.sourceHandle);
-        });
-
-      syncGraph(
-        graphRef.current.nodes,
-        [...withoutConflictingBranch, nextEdge],
-      );
     },
-    [canWrite, syncGraph],
+    [canWrite, onGraphChange],
   );
 
   const addNode = useCallback(
@@ -192,6 +176,7 @@ function FlowBuilderInner({
 
       if (next === graphRef.current) return;
 
+      setConnectionError(null);
       onGraphChange(next);
       const created = next.nodes[next.nodes.length - 1];
       if (created) onNodeSelect(created.id);
@@ -210,11 +195,17 @@ function FlowBuilderInner({
         <div className="flow-canvas-hint">
           <span>Canvas</span>
           <small>
-            Conecta los nodos desde los puntos de entrada y salida.
+            Arrastra o toca una herramienta para agregarla; conecta sus salidas con otros nodos.
           </small>
         </div>
+        {connectionError && (
+          <p className="flow-connection-error" role="status" aria-live="polite">
+            {CONNECTION_MESSAGES[connectionError]}
+          </p>
+        )}
         <FlowCanvas
           graph={graph}
+          canWrite={canWrite}
           onNodesChange={handleNodesChange}
           onEdgesChange={handleEdgesChange}
           onConnect={handleConnect}
