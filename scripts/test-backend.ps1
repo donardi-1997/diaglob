@@ -73,7 +73,9 @@ try {
     if ($LASTEXITCODE -ne 0) {
       throw "pytest-xdist is not installed. Run: $python -m pip install -r requirements-dev.txt (or use --serial)."
     }
-    $arguments.AddRange([string[]]@("-n", $workers))
+    # loadfile keeps each test module on one worker in file order, so modules
+    # with module-scoped fixtures behave exactly as in a serial run.
+    $arguments.AddRange([string[]]@("-n", $workers, "--dist", "loadfile"))
   }
   if ($pytestArgs.Count -gt 0) {
     $arguments.AddRange($pytestArgs)

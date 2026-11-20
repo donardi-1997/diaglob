@@ -194,7 +194,8 @@ jobs:
           set -euo pipefail
           mapfile -t test_files < /tmp/backend-test-files.txt
           # Tests use in-memory SQLite per process, so xdist workers are isolated.
-          python -m pytest -q --tb=short -n auto "${test_files[@]}"
+          # loadfile keeps each module on one worker in file order (module-scoped fixtures).
+          python -m pytest -q --tb=short -n auto --dist loadfile "${test_files[@]}"
 
   frontend:
     name: Frontend validation
