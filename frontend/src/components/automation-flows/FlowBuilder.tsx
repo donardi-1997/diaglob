@@ -54,7 +54,18 @@ function FlowBuilderInner({
   const graphRef = React.useRef(graph);
   graphRef.current = graph;
   const [connectionError, setConnectionError] = React.useState<FlowConnectionError | null>(null);
-  const [selectedEdgeIndex, setSelectedEdgeIndex] = React.useState<number | null>(null);
+  const [selectedEdgeRef, setSelectedEdgeRef] = React.useState<{
+    index: number;
+    edge: FlowGraph["edges"][number];
+  } | null>(null);
+  // Index alone is unsafe after undo/redo or restoring an older graph.
+  const selectedEdgeIndex = selectedEdgeRef
+    && graph.edges[selectedEdgeRef.index] === selectedEdgeRef.edge
+      ? selectedEdgeRef.index : null;
+  const selectEdge = (index: number | null) => {
+    const edge = index === null ? null : graph.edges[index];
+    setSelectedEdgeRef(edge ? { index: index!, edge } : null);
+  };
 
   const syncGraph = useCallback(
     (
@@ -62,7 +73,7 @@ function FlowBuilderInner({
       newEdges: FlowGraph["edges"],
     ) => {
       setConnectionError(null);
-      setSelectedEdgeIndex(null);
+      setSelectedEdgeRef(null);
       onGraphChange({
         nodes: newNodes,
         edges: newEdges,
@@ -157,7 +168,7 @@ function FlowBuilderInner({
       const result = connectFlowNodes(graphRef.current, connection);
       setConnectionError(result.error);
       if (!result.error && result.graph !== graphRef.current) {
-        setSelectedEdgeIndex(null);
+        setSelectedEdgeRef(null);
         onGraphChange(result.graph);
       }
     },
@@ -169,7 +180,7 @@ function FlowBuilderInner({
     const result = insertNodeOnEdge(graphRef.current, selectedEdgeIndex, type);
     if (!result.insertedNodeId) return;
     setConnectionError(null);
-    setSelectedEdgeIndex(null);
+    setSelectedEdgeRef(null);
     onGraphChange(result.graph);
     onNodeSelect(result.insertedNodeId);
   }, [canWrite, selectedEdgeIndex, onGraphChange, onNodeSelect]);
@@ -197,7 +208,7 @@ function FlowBuilderInner({
       if (next === graphRef.current) return;
 
       setConnectionError(null);
-      setSelectedEdgeIndex(null);
+      setSelectedEdgeRef(null);
       onGraphChange(next);
       const created = next.nodes[next.nodes.length - 1];
       if (created) onNodeSelect(created.id);
@@ -225,7 +236,7 @@ function FlowBuilderInner({
             <select
               id="flow-edge-select"
               value={selectedEdgeIndex ?? ""}
-              onChange={(event) => setSelectedEdgeIndex(
+              onChange={(event) => selectEdge(
                 event.target.value === "" ? null : Number(event.target.value),
               )}
             >
@@ -261,7 +272,7 @@ function FlowBuilderInner({
           onEdgesChange={handleEdgesChange}
           onConnect={handleConnect}
           onNodeClick={onNodeSelect}
-          onEdgeSelect={(index) => setSelectedEdgeIndex(index >= 0 ? index : null)}
+          onEdgeSelect={(index) => selectEdge(index >= 0 ? index : null)}
           onNodeDragStart={() => onGestureStart?.()}
           onNodeDragStop={() => onGestureEnd?.()}
           onDropNode={addNode}
