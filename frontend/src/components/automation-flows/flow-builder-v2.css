@@ -1312,3 +1312,15 @@
     min-height: 440px;
   }
 }
+
+/* Editor feedback for rejected connections; never changes the saved draft. */
+.flow-connection-error {
+  margin: 0 0 10px;
+  padding: 9px 12px;
+  border: 1px solid var(--warning-primary);
+  border-radius: 10px;
+  background: var(--warning-soft);
+  color: var(--warning-primary);
+  font-size: 12px;
+  line-height: 1.4;
+}
