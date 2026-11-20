@@ -1,7 +1,7 @@
 import {
   serializeFlowGraph,
   type FlowGraph,
-} from "./flowGraphUtils";
+} from "./flowGraphUtils.ts";
 
 const HISTORY_LIMIT = 40;
 
