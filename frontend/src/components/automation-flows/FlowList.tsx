@@ -187,18 +187,20 @@ export default function FlowList({ canWrite, storeId, initialFlowId, onInitialFl
         onInitialFlowHandled?.();
       });
     return () => { cancelled = true; };
-  }, [initialFlowId, storeId, onInitialFlowHandled, t]);
+  }, [initialFlowId, storeId, onInitialFlowHandled, t, resetGraph]);
 
   const handleCreate = async () => {
     if (!canWrite) return;
     setSaving(true);
     setError("");
     try {
+      setShowVersions(false);
       const flow = await createFlow(storeId, {
         name: t("flowNewName"),
         graph: serializeFlowGraph(createDefaultGraph()),
       });
       const full = await getFlow(storeId, flow.id);
+      setShowVersions(false);
       setSelectedFlow(full);
       const createdGraph = full.current_version
         ? deserializeFlowGraph(full.current_version.graph)
@@ -220,6 +222,7 @@ export default function FlowList({ canWrite, storeId, initialFlowId, onInitialFl
     setError("");
     try {
       const full = await getFlow(storeId, flow.id);
+      setShowVersions(false);
       setSelectedFlow(full);
       const loadedGraph = full.current_version
         ? deserializeFlowGraph(full.current_version.graph)
@@ -427,6 +430,24 @@ export default function FlowList({ canWrite, storeId, initialFlowId, onInitialFl
           <div className="flow-editor-actions">
             <h3 style={{ margin: 0 }}>{selectedFlow.name}</h3>
             <span className="flow-editor-status">{t(`flowStatus_${selectedFlow.status}`)}</span>
+            <button type="button" className="secondary-button" onClick={() => setShowVersions((value) => !value)}
+              aria-expanded={showVersions} aria-label="Historial de versiones">
+              <History size={14} /> Versiones
+            </button>
+            {canEditGraph && (
+              <>
+                <button type="button" className="secondary-button flow-history-button" onClick={handleUndo}
+                  disabled={!editHistory.past.length || saving || publishing || activating || editHistory.gestureStart !== null}
+                  title="Deshacer (Ctrl/Cmd + Z)" aria-label="Deshacer cambio">
+                  <Undo2 size={14} /> Deshacer
+                </button>
+                <button type="button" className="secondary-button flow-history-button" onClick={handleRedo}
+                  disabled={!editHistory.future.length || saving || publishing || activating || editHistory.gestureStart !== null}
+                  title="Rehacer (Ctrl/Cmd + Shift + Z)" aria-label="Rehacer cambio">
+                  <Redo2 size={14} /> Rehacer
+                </button>
+              </>
+            )}
             {canWrite && (
               <>
                 <button
@@ -487,6 +508,18 @@ export default function FlowList({ canWrite, storeId, initialFlowId, onInitialFl
             )}
           </div>
         </div>
+        {showVersions && (
+          <FlowVersionHistory
+            key={selectedFlow.id}
+            storeId={storeId}
+            flowId={selectedFlow.id}
+            currentVersionId={selectedFlow.current_version_id}
+            activeVersionId={selectedFlow.active_version_id}
+            canRestore={canEditGraph && !saving && !publishing && !activating}
+            onRestore={handleRestoreVersion}
+            onClose={() => setShowVersions(false)}
+          />
+        )}
         <div className="flow-editor-guidance" role="status">
           {selectedFlow.status === "active"
             ? t("flowEditorActiveNotice")
@@ -533,7 +566,9 @@ export default function FlowList({ canWrite, storeId, initialFlowId, onInitialFl
           onGraphChange={setGraph}
           selectedNodeId={selectedNodeId}
           onNodeSelect={setSelectedNodeId}
-          canWrite={canWrite && selectedFlow.status !== "active"}
+          canWrite={canEditGraph}
+          onGestureStart={() => dispatchGraph({ type: "gesture-start" })}
+          onGestureEnd={() => dispatchGraph({ type: "gesture-end" })}
         />
 
         <FlowSidebar
