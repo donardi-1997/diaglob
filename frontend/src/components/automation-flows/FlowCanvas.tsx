@@ -27,6 +27,9 @@ interface FlowCanvasProps {
   onEdgesChange: OnEdgesChange;
   onConnect: (connection: Connection) => void;
   onNodeClick: (nodeId: string) => void;
+  onEdgeSelect: (edgeIndex: number) => void;
+  onNodeDragStart: () => void;
+  onNodeDragStop: () => void;
   onDropNode: (
     type: FlowNodeType,
     position: { x: number; y: number },
@@ -73,6 +76,9 @@ export default function FlowCanvas({
   onEdgesChange,
   onConnect,
   onNodeClick,
+  onEdgeSelect,
+  onNodeDragStart,
+  onNodeDragStop,
   onDropNode,
   selectedNodeId,
   nodeTypes,
@@ -157,6 +163,9 @@ export default function FlowCanvas({
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         onNodeClick={handleNodeClick}
+        onEdgeClick={(_event, edge) => onEdgeSelect(edges.findIndex((candidate) => candidate.id === edge.id))}
+        onNodeDragStart={onNodeDragStart}
+        onNodeDragStop={onNodeDragStop}
         nodeTypes={nodeTypes}
         nodesDraggable={canWrite}
         nodesConnectable={canWrite}
