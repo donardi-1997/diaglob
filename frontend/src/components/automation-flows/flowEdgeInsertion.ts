@@ -21,7 +21,7 @@ export function insertNodeOnEdge(
   const source = graph.nodes.find((node) => node.id === edge?.source);
   const target = graph.nodes.find((node) => node.id === edge?.target);
 
-  if (!edge || !source || !target
+  if (!edge || !source || !target || graph.nodes.length >= 50
     || !["wait", "message", "tool"].includes(type)) {
     return { graph, insertedNodeId: null };
   }
@@ -32,7 +32,7 @@ export function insertNodeOnEdge(
   };
   const withNode = addNodeToGraph(graph, type, position);
   const inserted = withNode.nodes[withNode.nodes.length - 1];
-  if (inserted === graph.nodes[graph.nodes.length - 1]) {
+  if (withNode.nodes.length === graph.nodes.length) {
     return { graph, insertedNodeId: null };
   }
 
@@ -42,7 +42,7 @@ export function insertNodeOnEdge(
       edges: [
         ...graph.edges.slice(0, edgeIndex),
         { ...edge, target: inserted.id, targetHandle: undefined },
-        { source: inserted.id, target: edge.target },
+        { source: inserted.id, target: edge.target, ...(edge.targetHandle ? { targetHandle: edge.targetHandle } : {}) },
         ...graph.edges.slice(edgeIndex + 1),
       ],
     },
