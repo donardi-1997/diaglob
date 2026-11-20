@@ -33,6 +33,7 @@ from .services.whatsapp_channel_health import (
     mark_channel_paused,
     should_give_up,
 )
+from .services.whatsapp_delivery_tracking import record_flow_delivery
 
 logger = logging.getLogger(__name__)
 
@@ -1217,6 +1218,10 @@ def _process_message_node(db: Session, recipient: AutomationFlowRecipientExecuti
         return "skipped"
     recipient = db.get(AutomationFlowRecipientExecution, recipient.id)
     clear_channel_pause(db.get(WhatsAppConnection, connection.id), now)
+    record_flow_delivery(
+        db, organization_id=run.organization_id, store_id=run.store_id,
+        node_execution_id=node_exec.id, provider_message_id=result.get("message_id"), sent_at=now,
+    )
     _finish_node_attempt(db, node_exec, "completed", now, provider_id=result.get("message_id"))
     _advance_flow(db, recipient, _get_graph_from_version(db, recipient.flow_version_id), node["id"], now)
     return "sent"

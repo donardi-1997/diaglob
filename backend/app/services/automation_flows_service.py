@@ -357,6 +357,7 @@ def _run_node_stats(db: Session, run: AutomationFlowRun, graph: dict) -> dict[st
 
 
 def get_flow_run(db: Session, organization_id: int, store_id: int, flow_id: int, run_id: int) -> dict:
+    from .whatsapp_delivery_tracking import flow_delivery_metrics
     _flow_or_404(db, organization_id, store_id, flow_id)
     run = db.get(AutomationFlowRun, run_id)
     if not run or run.flow_id != flow_id:
@@ -372,6 +373,7 @@ def get_flow_run(db: Session, organization_id: int, store_id: int, flow_id: int,
     result["recipients"] = [_srec(r) for r in recipients]
     result["graph"] = graph
     result["node_stats"] = _run_node_stats(db, run, graph)
+    result["delivery_metrics"] = flow_delivery_metrics(db, run.id)
     return result
 
 

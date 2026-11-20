@@ -18,6 +18,7 @@ from ..models import (
     WhatsAppConnection,
 )
 from .checkout_reply_service import generate_checkout_or_auto_reply
+from .whatsapp_delivery_tracking import apply_delivery_status
 from .shopify_privacy_suppression import evaluate_shopify_local_privacy, evaluate_shopify_privacy_suppression
 from ..models import Store, CustomerStoreProfile
 
@@ -298,6 +299,18 @@ def process_webhook_payload(db: Session, payload: dict) -> dict:
                 if new_status not in valid_statuses:
                     continue
 
+                errors = status_event.get("errors") or []
+                error_code = str(errors[0].get("code")) if errors and isinstance(errors[0], dict) and errors[0].get("code") is not None else None
+                apply_delivery_status(
+                    db,
+                    organization_id=connection.organization_id,
+                    store_id=connection.store_id,
+                    provider_message_id=ext_msg_id,
+                    status=new_status,
+                    error_code=error_code,
+                    now=datetime.utcnow(),
+                )
+
                 # A signed Meta callback can contain statuses for many stores.
                 # A message ID alone is not permission to modify another
                 # tenant or store: bind status updates to the receiving phone.
@@ -328,7 +341,13 @@ def process_webhook_payload(db: Session, payload: dict) -> dict:
                         # Provider status retries must not revive a previously
                         # suppressed conversation's metadata.
                         continue
-                    existing.delivery_status = new_status
+                    # Meta callbacks can arrive out of order. Never turn a
+                    # read receipt back into delivered/sent; failed is final.
+                    ranks = {"sent": 1, "delivered": 2, "read": 3, "failed": 4}
+                    if not (
+                        existing.delivery_status == "failed" and new_status != "failed"
+                    ) and ranks[new_status] >= ranks.get(existing.delivery_status, 0):
+                        existing.delivery_status = new_status
                     if conversation:
                         conversation.updated_at = datetime.utcnow()
 

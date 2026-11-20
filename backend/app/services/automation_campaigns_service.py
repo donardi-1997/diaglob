@@ -327,6 +327,7 @@ def list_campaign_runs(db: Session, organization_id: int, store_id: int, campaig
 
 
 def get_campaign_run(db: Session, organization_id: int, store_id: int, campaign_id: int, run_id: int) -> dict:
+    from .whatsapp_delivery_tracking import campaign_delivery_metrics
     _campaign_store_or_404(db, organization_id, store_id)
     campaign = _campaign_or_404(db, organization_id, store_id, campaign_id)
     run = db.query(AutomationRun).filter(AutomationRun.id == run_id, AutomationRun.automation_id == campaign.id).first()
@@ -336,7 +337,8 @@ def get_campaign_run(db: Session, organization_id: int, store_id: int, campaign_
     total = db.query(AutomationRecipientExecution).filter(AutomationRecipientExecution.run_id == run.id).count()
     terminal_count = db.query(AutomationRecipientExecution).filter(AutomationRecipientExecution.run_id == run.id, AutomationRecipientExecution.status.in_(terminal)).count()
     pending = total - terminal_count
-    return {**_serialize_run(run, campaign.name), "total_recipients": total, "pending_count": pending}
+    return {**_serialize_run(run, campaign.name), "total_recipients": total, "pending_count": pending,
+            "delivery_metrics": campaign_delivery_metrics(db, run.id)}
 
 
 def list_run_recipients(
