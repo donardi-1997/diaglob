@@ -88,7 +88,7 @@ export default function AutomationRunExplorer({ storeId, canWrite }: Props) {
   const handleRetry = async (campaignId: number, runId: number, recipientId: number) => {
     if (!window.confirm(t("autoRetryConfirm"))) return;
     setLoading(true); setError("");
-    try { await retryRunRecipient(storeId, campaignId, runId, recipientId); setSelectedRecipient(null); void loadRecipients(campaignId, runId, recipientPage.page, recipientFilters, recipientPage.pageSize); void loadRunDetail(campaignId, runId); } catch (err: any) { setError(err?.response?.data?.detail || t("autoRetryFailed")); } finally { setLoading(false); }
+    try { await retryRunRecipient(storeId, campaignId, runId, recipientId); setSelectedRecipient(null); void loadRecipients(campaignId, runId, recipientPage.page, recipientFilters, recipientPage.pageSize); void loadRunDetail(campaignId, runId); } catch { setError(t("autoRetryFailed")); } finally { setLoading(false); }
   };
 
   const formatDate = (iso: string | null) => iso ? new Date(iso).toLocaleString() : "-";

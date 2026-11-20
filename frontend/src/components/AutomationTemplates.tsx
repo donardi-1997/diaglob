@@ -118,12 +118,8 @@ export default function AutomationTemplates({
       const data = response.data;
       setTemplates(data.items || []);
       setCategories(data.categories || []);
-    } catch (err: any) {
-      setError(
-        err?.response?.data?.detail ||
-          err?.message ||
-          "Could not load templates"
-      );
+    } catch {
+      setError(t("autoLoadError"));
     } finally {
       setLoading(false);
     }
