@@ -544,18 +544,17 @@ export default function StoresPage({
     } catch (err: any) {
       console.error(err);
       const status = err?.response?.status;
-      const detail = err?.response?.data?.detail;
 
       if (status === 409) {
         setError("");
         setModalOpen(false);
         setEditingStore(null);
         setForm(EMPTY_FORM);
-        setPlanLimitMessage(detail || t("storesI18nPlanLimitReached"));
+        setPlanLimitMessage(t("storesI18nPlanLimitReached"));
         return;
       }
 
-      setError(detail || t("storesI18nSaveError"));
+      setError(t("storesI18nSaveError"));
     } finally {
       setSaving(false);
     }
@@ -576,7 +575,7 @@ export default function StoresPage({
       onStoresChanged?.();
     } catch (err: any) {
       console.error(err);
-      setError(err?.response?.data?.detail || t("storesI18nDeleteError"));
+      setError(t("storesI18nDeleteError"));
     } finally {
       setSaving(false);
     }
@@ -597,13 +596,7 @@ export default function StoresPage({
       window.location.href = "/";
     } catch (err: any) {
       setDeleting(false);
-      setDeleteError(
-        err?.response?.data?.detail?.message ||
-          err?.response?.data?.detail ||
-          err?.message ||
-          t("storesI18nDeleteAccountError") ||
-          "Unable to delete account.",
-      );
+      setDeleteError(t("storesI18nDeleteAccountError"));
     }
   }
 

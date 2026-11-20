@@ -86,15 +86,8 @@ export default function AiUsagePackagesSection({
       setError("");
       const checkout = await createAiUsagePackageCheckout(packageKey);
       paddle.Checkout.open({ transactionId: checkout.transaction_id });
-    } catch (requestError: any) {
-      const detail = requestError?.response?.data?.detail;
-      if (typeof detail === "string") {
-        setError(detail);
-      } else if (typeof detail?.message === "string") {
-        setError(detail.message);
-      } else {
+    } catch {
         setError(t("aiPackagesCheckoutError"));
-      }
     } finally {
       setBuying(null);
     }

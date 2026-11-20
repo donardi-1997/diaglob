@@ -64,48 +64,11 @@ const EMPTY_FORM: InvitationForm = {
 
 
 function extractError(
-  error: unknown,
+  _error: unknown,
   fallback: string,
 ) {
-  if (
-    typeof error === "object"
-    && error !== null
-    && "response" in error
-  ) {
-    const response = (
-      error as {
-        response?: {
-          data?: {
-            detail?:
-              | string
-              | {
-                  message?: string;
-                };
-          };
-        };
-      }
-    ).response;
-
-    const detail =
-      response?.data?.detail;
-
-    if (typeof detail === "string") {
-      return detail;
-    }
-
-    if (
-      detail
-      && typeof detail === "object"
-      && detail.message
-    ) {
-      return detail.message;
-    }
-  }
-
-  if (error instanceof Error) {
-    return error.message;
-  }
-
+  // Team API details can include provider and authorization diagnostics.
+  // Keep those in observability rather than rendering them to an operator.
   return fallback;
 }
 
