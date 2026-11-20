@@ -26,6 +26,7 @@ import {
   resendConfirmationCode,
   signUp,
 } from "../services/auth";
+import { authErrorMessageKey, isAlreadyConfirmed } from "../services/authErrorMessage";
 import { saveSession } from "../services/authStorage";
 import { getMarketingCopy, resolveMarketingLocale } from "../marketingCopy";
 import {
@@ -193,6 +194,10 @@ export default function LoginPage({
     setMessage("");
   }
 
+  function showAuthError(error: unknown, fallback: string) {
+    setError(t(authErrorMessageKey(error, fallback)));
+  }
+
   function changeMode(nextMode: AuthMode) {
     clearFeedback();
     setMode(nextMode);
@@ -218,7 +223,7 @@ export default function LoginPage({
       saveSession(result.AccessToken, result.IdToken, result.RefreshToken);
       onAuthenticated();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("loginI18nLoginError"));
+      showAuthError(err, "loginI18nLoginError");
     } finally {
       setLoading(false);
     }
@@ -251,7 +256,7 @@ export default function LoginPage({
       setMode("confirm");
       setMessage(t("loginI18nVerificationSent", { email: cleanEmail }));
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("loginI18nCreateError"));
+      showAuthError(err, "loginI18nCreateError");
     } finally {
       setLoading(false);
     }
@@ -289,18 +294,11 @@ export default function LoginPage({
       try {
         await confirmSignUp(email.trim().toLowerCase(), confirmationCode.trim());
       } catch (err) {
-        const text = err instanceof Error ? err.message : "";
-        if (!text.toLowerCase().includes("confirmed")) throw err;
+        if (!isAlreadyConfirmed(err)) throw err;
       }
       await finishRegistration();
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message === "ACCOUNT_PROVISION_FAILED"
-            ? t("loginI18nProvisionError")
-            : err.message
-          : t("loginI18nConfirmError"),
-      );
+      showAuthError(err, "loginI18nConfirmError");
     } finally {
       setLoading(false);
     }
@@ -313,7 +311,7 @@ export default function LoginPage({
       await resendConfirmationCode(email.trim().toLowerCase());
       setMessage(t("loginI18nCodeResent"));
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("loginI18nResendError"));
+      showAuthError(err, "loginI18nResendError");
     } finally {
       setLoading(false);
     }
@@ -333,11 +331,7 @@ export default function LoginPage({
       setMode("reset");
       setMessage(recoveryCopy.codeSent);
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : recoveryCopy.codeSent,
-      );
+      showAuthError(err, "loginI18nForgotPasswordError");
     } finally {
       setLoading(false);
     }
@@ -366,11 +360,7 @@ export default function LoginPage({
       setMode("login");
       setMessage(recoveryCopy.passwordUpdated);
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : recoveryCopy.passwordsMismatch,
-      );
+      showAuthError(err, "loginI18nResetPasswordError");
     } finally {
       setLoading(false);
     }
@@ -383,11 +373,7 @@ export default function LoginPage({
       await requestPasswordReset(email.trim().toLowerCase());
       setMessage(recoveryCopy.codeSent);
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : recoveryCopy.codeSent,
-      );
+      showAuthError(err, "loginI18nForgotPasswordError");
     } finally {
       setLoading(false);
     }

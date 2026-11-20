@@ -1,3 +1,5 @@
+import { AuthError, authErrorCode, cognitoErrorCode } from "./authErrors";
+
 const REGION =
   import.meta.env.VITE_AWS_REGION ||
   "us-east-2";
@@ -27,6 +29,9 @@ interface CognitoAuthResponse {
 }
 
 
+export { AuthError, authErrorCode };
+
+
 async function cognitoRequest(
   target: string,
   body: Record<string, unknown>,
@@ -49,16 +54,15 @@ async function cognitoRequest(
     },
   );
 
-  const data =
-    await response.json();
+  let data: Record<string, unknown> = {};
+  try {
+    data = await response.json();
+  } catch {
+    // Do not expose an upstream HTML/proxy body to the login screen.
+  }
 
   if (!response.ok) {
-    const message =
-      data.message ||
-      data.Message ||
-      "Authentication failed";
-
-    throw new Error(message);
+    throw new AuthError(cognitoErrorCode(data));
   }
 
   return data;
@@ -87,9 +91,7 @@ export async function login(
     )) as CognitoAuthResponse;
 
   if (!data.AuthenticationResult) {
-    throw new Error(
-      "Cognito did not return authentication tokens",
-    );
+    throw new AuthError("AUTH_TOKENS_MISSING");
   }
 
   return data.AuthenticationResult;
@@ -242,28 +244,20 @@ export async function provisionAccount(
   const raw =
     await response.text();
 
-  let data: any = {};
+  let data: unknown = {};
 
   if (raw) {
     try {
       data = JSON.parse(raw);
     } catch {
-      data = {
-        detail: raw,
-      };
+      data = {};
     }
   }
 
   if (!response.ok) {
-    const detail =
-      typeof data?.detail === "string"
-        ? data.detail
-        : data?.detail?.message;
-
-    throw new Error(
-      detail ||
-      "ACCOUNT_PROVISION_FAILED",
-    );
+    // Provisioning errors can contain validation/database/provider details.
+    // Keep them in server logs; the login UI receives a stable code only.
+    throw new AuthError("ACCOUNT_PROVISION_FAILED");
   }
 
   return data;
@@ -291,9 +285,7 @@ export async function refreshSession(
     )) as CognitoAuthResponse;
 
   if (!data.AuthenticationResult) {
-    throw new Error(
-      "Unable to refresh session",
-    );
+    throw new AuthError("SESSION_REFRESH_FAILED");
   }
 
   return data.AuthenticationResult;

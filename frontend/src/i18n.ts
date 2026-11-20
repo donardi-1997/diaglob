@@ -240,6 +240,24 @@ const resources = {
 
       loginI18nLoginError:
         "No fue posible iniciar sesión.",
+      loginI18nInvalidCredentials:
+        "El correo o la contraseña no son correctos.",
+      loginI18nConfirmationRequired:
+        "Confirma tu correo antes de iniciar sesión.",
+      loginI18nEmailAlreadyRegistered:
+        "Ya existe una cuenta con este correo.",
+      loginI18nPasswordPolicyError:
+        "La contraseña no cumple los requisitos de seguridad.",
+      loginI18nInvalidCode:
+        "El código no es válido. Inténtalo de nuevo.",
+      loginI18nExpiredCode:
+        "El código venció. Solicita uno nuevo.",
+      loginI18nTryLater:
+        "Hiciste demasiados intentos. Espera un momento e inténtalo de nuevo.",
+      loginI18nForgotPasswordError:
+        "No fue posible enviar el código de recuperación.",
+      loginI18nResetPasswordError:
+        "No fue posible actualizar la contraseña.",
       loginI18nNameRequired:
         "Escribe tu nombre.",
       loginI18nOrganizationRequired:
@@ -2575,6 +2593,24 @@ const resources = {
 
       loginI18nLoginError:
         "We couldn't sign you in.",
+      loginI18nInvalidCredentials:
+        "The email or password is incorrect.",
+      loginI18nConfirmationRequired:
+        "Confirm your email before signing in.",
+      loginI18nEmailAlreadyRegistered:
+        "An account already exists for this email.",
+      loginI18nPasswordPolicyError:
+        "The password does not meet the security requirements.",
+      loginI18nInvalidCode:
+        "The code is not valid. Try again.",
+      loginI18nExpiredCode:
+        "The code has expired. Request a new one.",
+      loginI18nTryLater:
+        "Too many attempts. Wait a moment and try again.",
+      loginI18nForgotPasswordError:
+        "Unable to send the recovery code.",
+      loginI18nResetPasswordError:
+        "Unable to update the password.",
       loginI18nNameRequired:
         "Enter your name.",
       loginI18nOrganizationRequired:
