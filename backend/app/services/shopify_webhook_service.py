@@ -845,7 +845,8 @@ def _currency(payload: dict[str, Any], fallback: str) -> str:
 
 def _money(value: Any) -> Decimal:
     try:
-        return Decimal(str(value or "0"))
+        amount = Decimal(str(value or "0"))
+        return amount if amount.is_finite() else Decimal("0")
     except (InvalidOperation, ValueError, TypeError):
         return Decimal("0")
 

@@ -132,6 +132,8 @@ class ShopifyGraphQLClient:
                     if isinstance(extensions, dict)
                     else ""
                 )
+                if code == "THROTTLED":
+                    raise ShopifyRateLimitError("Shopify rate limit exceeded")
                 if (
                     "not approved to access" in message
                     or "not approved to use" in message
@@ -149,7 +151,10 @@ class ShopifyGraphQLClient:
 
             raise ShopifyGraphQLError("SHOPIFY_GRAPHQL_QUERY_FAILED")
 
-        return data.get("data", {})
+        result = data.get("data", {})
+        if not isinstance(result, dict):
+            raise ShopifyGraphQLError("SHOPIFY_GRAPHQL_QUERY_FAILED")
+        return result
 
 
 class ShopifyAPIError(Exception):
