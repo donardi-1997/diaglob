@@ -1,11 +1,13 @@
 name: Shopify Playwright Browser E2E
 
 on:
+  # Opt-in suite: runs manually or when these journeys/the workflow change,
+  # so regular frontend PRs keep the fast CI. Run it on demand before
+  # Shopify-facing UI releases (Actions > Shopify Playwright Browser E2E).
   pull_request:
     branches: [main]
     paths:
       - "e2e/**"
-      - "frontend/**"
       - ".github/workflows/shopify-playwright.yml"
   workflow_dispatch:
     inputs:
