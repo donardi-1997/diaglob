@@ -10,6 +10,7 @@ import FlowCanvas from "./FlowCanvas";
 import FlowNode from "./FlowNode";
 import FlowNodePalette from "./FlowNodePalette";
 import { connectFlowNodes, type FlowConnectionError } from "./flowConnectionRules";
+import { insertNodeOnEdge, type SequentialNodeType } from "./flowEdgeInsertion";
 import {
   addNodeToGraph,
   type FlowGraph,
@@ -24,6 +25,8 @@ interface FlowBuilderInnerProps {
   selectedNodeId: string | null;
   onNodeSelect: (nodeId: string | null) => void;
   canWrite: boolean;
+  onGestureStart?: () => void;
+  onGestureEnd?: () => void;
 }
 
 const CONNECTION_MESSAGES: Record<FlowConnectionError, string> = {
@@ -45,10 +48,13 @@ function FlowBuilderInner({
   selectedNodeId,
   onNodeSelect,
   canWrite,
+  onGestureStart,
+  onGestureEnd,
 }: FlowBuilderInnerProps) {
   const graphRef = React.useRef(graph);
   graphRef.current = graph;
   const [connectionError, setConnectionError] = React.useState<FlowConnectionError | null>(null);
+  const [selectedEdgeIndex, setSelectedEdgeIndex] = React.useState<number | null>(null);
 
   const syncGraph = useCallback(
     (
@@ -56,6 +62,7 @@ function FlowBuilderInner({
       newEdges: FlowGraph["edges"],
     ) => {
       setConnectionError(null);
+      setSelectedEdgeIndex(null);
       onGraphChange({
         nodes: newNodes,
         edges: newEdges,
@@ -150,11 +157,22 @@ function FlowBuilderInner({
       const result = connectFlowNodes(graphRef.current, connection);
       setConnectionError(result.error);
       if (!result.error && result.graph !== graphRef.current) {
+        setSelectedEdgeIndex(null);
         onGraphChange(result.graph);
       }
     },
     [canWrite, onGraphChange],
   );
+
+  const insertNode = useCallback((type: SequentialNodeType) => {
+    if (!canWrite || selectedEdgeIndex === null) return;
+    const result = insertNodeOnEdge(graphRef.current, selectedEdgeIndex, type);
+    if (!result.insertedNodeId) return;
+    setConnectionError(null);
+    setSelectedEdgeIndex(null);
+    onGraphChange(result.graph);
+    onNodeSelect(result.insertedNodeId);
+  }, [canWrite, selectedEdgeIndex, onGraphChange, onNodeSelect]);
 
   const addNode = useCallback(
     (
@@ -179,6 +197,7 @@ function FlowBuilderInner({
       if (next === graphRef.current) return;
 
       setConnectionError(null);
+      setSelectedEdgeIndex(null);
       onGraphChange(next);
       const created = next.nodes[next.nodes.length - 1];
       if (created) onNodeSelect(created.id);
@@ -200,6 +219,36 @@ function FlowBuilderInner({
             Arrastra o toca una herramienta para agregarla; conecta sus salidas con otros nodos.
           </small>
         </div>
+        {canWrite && graph.edges.length > 0 && (
+          <div className="flow-edge-insertion" aria-label="Insertar nodo en una conexión">
+            <label htmlFor="flow-edge-select">Insertar paso en conexión</label>
+            <select
+              id="flow-edge-select"
+              value={selectedEdgeIndex ?? ""}
+              onChange={(event) => setSelectedEdgeIndex(
+                event.target.value === "" ? null : Number(event.target.value),
+              )}
+            >
+              <option value="">Selecciona una línea del canvas o elige aquí</option>
+              {graph.edges.map((edge, index) => (
+                <option key={`${index}-${edge.source}-${edge.target}`} value={index}>
+                  {edge.source} → {edge.target}{edge.label ? ` (${edge.label})` : ""}
+                </option>
+              ))}
+            </select>
+            <div className="flow-edge-insertion-actions">
+              <button type="button" disabled={selectedEdgeIndex === null} onClick={() => insertNode("wait")}>
+                + Espera
+              </button>
+              <button type="button" disabled={selectedEdgeIndex === null} onClick={() => insertNode("message")}>
+                + WhatsApp
+              </button>
+              <button type="button" disabled={selectedEdgeIndex === null} onClick={() => insertNode("tool")}>
+                + Consulta
+              </button>
+            </div>
+          </div>
+        )}
         {connectionError && (
           <p className="flow-connection-error" role="status" aria-live="polite">
             {CONNECTION_MESSAGES[connectionError]}
@@ -212,6 +261,9 @@ function FlowBuilderInner({
           onEdgesChange={handleEdgesChange}
           onConnect={handleConnect}
           onNodeClick={onNodeSelect}
+          onEdgeSelect={(index) => setSelectedEdgeIndex(index >= 0 ? index : null)}
+          onNodeDragStart={() => onGestureStart?.()}
+          onNodeDragStop={() => onGestureEnd?.()}
           onDropNode={addNode}
           selectedNodeId={selectedNodeId}
           nodeTypes={nodeTypes}
@@ -227,6 +279,8 @@ export interface FlowBuilderProps {
   selectedNodeId: string | null;
   onNodeSelect: (nodeId: string | null) => void;
   canWrite: boolean;
+  onGestureStart?: () => void;
+  onGestureEnd?: () => void;
 }
 
 export default function FlowBuilder(props: FlowBuilderProps) {
