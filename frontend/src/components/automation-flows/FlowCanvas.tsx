@@ -22,6 +22,7 @@ import type {
 
 interface FlowCanvasProps {
   graph: FlowGraph;
+  canWrite: boolean;
   onNodesChange: OnNodesChange;
   onEdgesChange: OnEdgesChange;
   onConnect: (connection: Connection) => void;
@@ -67,6 +68,7 @@ function toReactFlowEdges(edges: FlowEdge[]): Edge[] {
 
 export default function FlowCanvas({
   graph,
+  canWrite,
   onNodesChange,
   onEdgesChange,
   onConnect,
@@ -156,6 +158,9 @@ export default function FlowCanvas({
         onConnect={onConnect}
         onNodeClick={handleNodeClick}
         nodeTypes={nodeTypes}
+        nodesDraggable={canWrite}
+        nodesConnectable={canWrite}
+        deleteKeyCode={canWrite ? ["Backspace", "Delete"] : null}
         fitView
         fitViewOptions={{ padding: 0.2 }}
         proOptions={{ hideAttribution: true }}
