@@ -179,6 +179,31 @@ def reclaim_expired_flow_leases(db: Session, now: datetime | None = None) -> Non
         "claim_token": None,
         "claim_expires_at": None,
     }, synchronize_session=False)
+    # "processing" is only set right before the WhatsApp request, together
+    # with a "sending" node execution. If the lease expired there, Meta may
+    # already have delivered the message: re-running the node would send it
+    # twice. Keep at-most-once semantics (as campaigns do) and mark it
+    # ambiguous so the merchant decides whether to retry.
+    stuck = db.query(AutomationFlowRecipientExecution).filter(
+        AutomationFlowRecipientExecution.status == "processing",
+        AutomationFlowRecipientExecution.claim_expires_at < now,
+    ).all()
+    for recipient in stuck:
+        sending = db.query(AutomationNodeExecution).filter(
+            AutomationNodeExecution.flow_recipient_execution_id == recipient.id,
+            AutomationNodeExecution.status == "sending",
+        ).order_by(AutomationNodeExecution.id.desc()).first()
+        if sending is None:
+            continue
+        message = "Worker stopped after the WhatsApp request began"
+        sending.status = "ambiguous"
+        sending.error_code = "lease_expired_sending"
+        sending.error_message = message
+        sending.completed_at = now
+        _finish_flow_recipient(
+            db, recipient, "ambiguous", now,
+            code="lease_expired_sending", message=message,
+        )
     db.query(AutomationFlowRecipientExecution).filter(
         AutomationFlowRecipientExecution.status == "processing",
         AutomationFlowRecipientExecution.claim_expires_at < now,
@@ -1088,11 +1113,27 @@ def _process_message_node(db: Session, recipient: AutomationFlowRecipientExecuti
         recipient.claim_expires_at = None
         db.commit()
         return "rate_limited"
+    # Decrypt before marking the send as started: a failure here means no
+    # request reached Meta, so it must not look like an interrupted send.
+    try:
+        token = decrypt_whatsapp_secret(connection.access_token_encrypted)
+    except Exception:
+        logger.exception("flow_whatsapp_token_unavailable recipient=%s", recipient.id)
+        _record_node_execution(
+            db, recipient, node["id"], "message", "failed", now,
+            error_code="whatsapp_credentials_unavailable",
+            message="WhatsApp credentials could not be read",
+        )
+        _finish_flow_recipient(
+            db, recipient, "failed", now,
+            code="whatsapp_credentials_unavailable",
+            message="WhatsApp credentials could not be read",
+        )
+        return "failed"
     recipient.status = "processing"
     recipient.attempt_count += 1
     node_exec = _record_node_execution(db, recipient, node["id"], "message", "sending", now)
     db.commit()
-    token = decrypt_whatsapp_secret(connection.access_token_encrypted)
     try:
         if compliance["mode"] == "template":
             from .whatsapp_compliance import FLOW_TEMPLATE_VARIABLES, template_components

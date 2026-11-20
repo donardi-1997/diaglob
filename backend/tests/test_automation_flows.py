@@ -1543,3 +1543,229 @@ class TestFlowDebuggerEndpoints:
             assert response.status_code == 409
         finally:
             app.dependency_overrides.clear()
+
+
+# ═══════════════════════════════════════════════════════════════
+# TENANT ISOLATION OF RUN RECIPIENTS + AT-MOST-ONCE WHATSAPP SENDS
+# ═══════════════════════════════════════════════════════════════
+
+def _published_flow(session, org, store, graph, name="Flow"):
+    flow = AutomationFlow(
+        organization_id=org.id, store_id=store.id, name=name, status="draft",
+    )
+    session.add(flow)
+    session.flush()
+    version = AutomationFlowVersion(
+        flow_id=flow.id, organization_id=org.id, version_number=1, graph=graph,
+    )
+    session.add(version)
+    session.flush()
+    now = utcnow()
+    version.published_at = now
+    version.activated_at = now
+    flow.current_version_id = version.id
+    flow.active_version_id = version.id
+    flow.status = "active"
+    session.commit()
+    return flow
+
+
+def _store_customer(session, org, store, phone):
+    customer = Customer(organization_id=org.id, name="Cliente", phone=phone)
+    session.add(customer)
+    session.flush()
+    session.add(CustomerStoreProfile(
+        organization_id=org.id, customer_id=customer.id, store_id=store.id,
+        currency=store.currency,
+    ))
+    session.flush()
+    return customer
+
+
+def _message_only_graph():
+    return {
+        "nodes": [
+            {"id": "trigger", "type": "trigger", "config": {"trigger_type": "manual"}},
+            {"id": "msg", "type": "message", "config": {
+                "message_mode": "free_form", "message_template": "Hola, tu pedido va en camino",
+            }},
+        ],
+        "edges": [{"source": "trigger", "target": "msg"}],
+    }
+
+
+class TestFlowRecipientTenantIsolation:
+    """A caller must not reach another tenant's run through their own flow."""
+
+    def _two_tenants(self, db):
+        session, org, store = db
+        user, membership = _user_and_membership(session, org, store)
+        own_flow = _published_flow(session, org, store, _make_graph(), name="Own")
+
+        other_org = Organization(
+            name="Other Org", slug="other-org", plan="starter",
+            subscription_status="active",
+        )
+        session.add(other_org)
+        session.flush()
+        other_store = Store(
+            organization_id=other_org.id, name="Other Store", slug="other-store",
+            country_code="CO", currency="COP", timezone="America/Bogota",
+            default_language="es",
+        )
+        session.add(other_store)
+        session.flush()
+        other_flow = _published_flow(
+            session, other_org, other_store, _make_graph(), name="Other",
+        )
+        other_customer = _store_customer(
+            session, other_org, other_store, "+573009990000",
+        )
+        other_run = materialize_flow_trigger(session, other_flow, [other_customer.id])
+        other_recipient = session.query(AutomationFlowRecipientExecution).filter(
+            AutomationFlowRecipientExecution.flow_run_id == other_run.id,
+        ).one()
+        other_recipient.status = "failed"
+        other_recipient.error_code = "secret_provider_detail"
+        session.commit()
+
+        app.dependency_overrides[get_current_user] = lambda: user
+        app.dependency_overrides[get_current_membership] = lambda: membership
+        app.dependency_overrides[get_db] = lambda: session
+        return session, store, own_flow, other_run, other_recipient
+
+    def test_detail_rejects_foreign_run_through_own_flow(self, db):
+        session, store, own_flow, other_run, other_recipient = self._two_tenants(db)
+        try:
+            response = TestClient(app).get(
+                f"/api/stores/{store.id}/automation-flows/{own_flow.id}"
+                f"/runs/{other_run.id}/recipients/{other_recipient.id}"
+            )
+            assert response.status_code == 404
+            assert "secret_provider_detail" not in response.text
+        finally:
+            app.dependency_overrides.clear()
+
+    def test_retry_rejects_foreign_run_and_leaves_it_untouched(self, db):
+        session, store, own_flow, other_run, other_recipient = self._two_tenants(db)
+        try:
+            response = TestClient(app).post(
+                f"/api/stores/{store.id}/automation-flows/{own_flow.id}"
+                f"/runs/{other_run.id}/recipients/{other_recipient.id}/retry"
+            )
+            assert response.status_code == 404
+            session.expire_all()
+            untouched = session.get(AutomationFlowRecipientExecution, other_recipient.id)
+            assert untouched.status == "failed"
+            assert untouched.error_code == "secret_provider_detail"
+        finally:
+            app.dependency_overrides.clear()
+
+    def test_retry_from_node_rejects_foreign_run(self, db):
+        session, store, own_flow, other_run, other_recipient = self._two_tenants(db)
+        try:
+            response = TestClient(app).post(
+                f"/api/stores/{store.id}/automation-flows/{own_flow.id}"
+                f"/runs/{other_run.id}/recipients/{other_recipient.id}"
+                "/retry-from-node/wait1"
+            )
+            assert response.status_code == 404
+        finally:
+            app.dependency_overrides.clear()
+
+
+class TestFlowMessageAtMostOnce:
+    def _claimed_message_recipient(self, db):
+        session, org, store = db
+        flow = _published_flow(session, org, store, _message_only_graph())
+        customer = _store_customer(session, org, store, "+573001112233")
+        session.add(WhatsAppConnection(
+            organization_id=org.id, store_id=store.id, phone_number_id="phone",
+            business_account_id="business", access_token_encrypted="encrypted",
+            verify_token="verify", status="connected",
+        ))
+        session.commit()
+        run = materialize_flow_trigger(session, flow, [customer.id])
+        recipient = session.query(AutomationFlowRecipientExecution).filter(
+            AutomationFlowRecipientExecution.flow_run_id == run.id,
+        ).one()
+        recipient.current_node_id = "msg"
+        session.commit()
+        claims = claim_flow_recipients(session, include_tokens=True)
+        assert [claim[0] for claim in claims] == [recipient.id]
+        return session, run, recipient, claims[0][1]
+
+    def _allow_send(self, monkeypatch):
+        import app.automation_flow_engine as engine
+        monkeypatch.setattr(
+            engine, "evaluate_whatsapp_delivery_eligibility",
+            lambda *args, **kwargs: {"allowed": True, "mode": "free_form"},
+        )
+        monkeypatch.setattr(engine, "_acquire_rate_slot", lambda *args: True)
+        return engine
+
+    def test_expired_lease_during_send_is_ambiguous_not_resent(self, db, monkeypatch):
+        engine = self._allow_send(monkeypatch)
+        monkeypatch.setattr(engine, "decrypt_whatsapp_secret", lambda value: "token")
+        session, run, recipient, token = self._claimed_message_recipient(db)
+
+        class WorkerKilled(BaseException):
+            pass
+
+        def sender_that_dies(*args):
+            # The request reached Meta, then the worker process died.
+            raise WorkerKilled()
+
+        with pytest.raises(WorkerKilled):
+            process_flow_recipient(
+                session, recipient.id, claim_token=token, sender=sender_that_dies,
+            )
+        session.rollback()
+        session.expire_all()
+        assert session.get(AutomationFlowRecipientExecution, recipient.id).status == "processing"
+
+        reclaim_expired_flow_leases(session, now=utcnow() + timedelta(hours=1))
+        session.expire_all()
+
+        stuck = session.get(AutomationFlowRecipientExecution, recipient.id)
+        assert stuck.status == "ambiguous"
+        assert stuck.error_code == "lease_expired_sending"
+        assert stuck.claim_token is None
+        node = session.query(AutomationNodeExecution).filter(
+            AutomationNodeExecution.flow_recipient_execution_id == recipient.id,
+        ).one()
+        assert node.status == "ambiguous"
+        assert node.completed_at is not None
+        refreshed_run = session.get(AutomationFlowRun, run.id)
+        assert refreshed_run.failed_recipients == 1
+        assert refreshed_run.status == "partial"
+        # Never claimable again, so the message is not sent a second time.
+        assert claim_flow_recipients(session, now=utcnow() + timedelta(days=1)) == []
+
+    def test_unreadable_credentials_fail_without_marking_a_send(self, db, monkeypatch):
+        engine = self._allow_send(monkeypatch)
+
+        def broken_decrypt(value):
+            raise RuntimeError("kms unavailable")
+
+        monkeypatch.setattr(engine, "decrypt_whatsapp_secret", broken_decrypt)
+        session, run, recipient, token = self._claimed_message_recipient(db)
+        calls = []
+
+        result = process_flow_recipient(
+            session, recipient.id, claim_token=token,
+            sender=lambda *args: calls.append(args),
+        )
+
+        assert result == "failed"
+        assert calls == []
+        session.expire_all()
+        failed = session.get(AutomationFlowRecipientExecution, recipient.id)
+        assert failed.status == "failed"
+        assert failed.error_code == "whatsapp_credentials_unavailable"
+        assert failed.attempt_count == 0
+        node = session.query(AutomationNodeExecution).filter(
+            AutomationNodeExecution.flow_recipient_execution_id == recipient.id,
+        ).one()
+        assert node.status == "failed"
+        assert "kms" not in (node.error_message or "")
