@@ -400,11 +400,35 @@ def list_flow_run_recipients(
     return {"items": [_srec(r) for r in items], "total": total, "page": page, "size": size, "pages": max(1, -(-total // size))}
 
 
-def get_flow_recipient_detail(db: Session, organization_id: int, store_id: int, flow_id: int, run_id: int, recipient_id: int) -> dict:
+def _flow_recipient_or_404(
+    db: Session,
+    organization_id: int,
+    store_id: int,
+    flow_id: int,
+    run_id: int,
+    recipient_id: int,
+) -> tuple[AutomationFlowRun, AutomationFlowRecipientExecution]:
+    """Resolve flow -> run -> recipient, each scoped to the caller's tenant.
+
+    Checking only the flow is not enough: run and recipient ids are
+    sequential, so a caller could pair their own flow with another
+    tenant's run/recipient. The run must belong to this flow and the
+    recipient to this run.
+    """
     _flow_or_404(db, organization_id, store_id, flow_id)
+    run = db.get(AutomationFlowRun, run_id)
+    if not run or run.flow_id != flow_id:
+        raise FlowNotFoundError("Run not found")
     recipient = db.get(AutomationFlowRecipientExecution, recipient_id)
-    if not recipient or recipient.flow_run_id != run_id:
+    if not recipient or recipient.flow_run_id != run.id:
         raise FlowNotFoundError("Recipient not found")
+    return run, recipient
+
+
+def get_flow_recipient_detail(db: Session, organization_id: int, store_id: int, flow_id: int, run_id: int, recipient_id: int) -> dict:
+    _run, recipient = _flow_recipient_or_404(
+        db, organization_id, store_id, flow_id, run_id, recipient_id
+    )
 
     node_execs = db.query(AutomationNodeExecution).filter(
         AutomationNodeExecution.flow_recipient_execution_id == recipient_id
@@ -468,20 +492,15 @@ def _reset_flow_recipient(
 
 
 def retry_flow_recipient(db: Session, organization_id: int, store_id: int, flow_id: int, run_id: int, recipient_id: int) -> dict:
-    _flow_or_404(db, organization_id, store_id, flow_id)
-    recipient = db.get(AutomationFlowRecipientExecution, recipient_id)
-    if not recipient or recipient.flow_run_id != run_id:
-        raise FlowNotFoundError("Recipient not found")
+    run, recipient = _flow_recipient_or_404(
+        db, organization_id, store_id, flow_id, run_id, recipient_id
+    )
 
     if recipient.status not in ("failed", "ambiguous", "completed"):
         raise FlowConflictError(f"Cannot retry recipient in '{recipient.status}' status")
 
     now = utcnow()
     _reset_flow_recipient(recipient, now)
-
-    run = db.get(AutomationFlowRun, run_id)
-    if not run or run.flow_id != flow_id:
-        raise FlowNotFoundError("Run not found")
     _recalculate_flow_run(db, run)
 
     db.commit()
@@ -498,15 +517,9 @@ def retry_flow_recipient_from_node(
     node_id: str,
 ) -> dict:
     """Restart one terminal recipient from an explicit node in its run version."""
-    _flow_or_404(db, organization_id, store_id, flow_id)
-
-    run = db.get(AutomationFlowRun, run_id)
-    if not run or run.flow_id != flow_id:
-        raise FlowNotFoundError("Run not found")
-
-    recipient = db.get(AutomationFlowRecipientExecution, recipient_id)
-    if not recipient or recipient.flow_run_id != run_id:
-        raise FlowNotFoundError("Recipient not found")
+    run, recipient = _flow_recipient_or_404(
+        db, organization_id, store_id, flow_id, run_id, recipient_id
+    )
     if recipient.status not in ("failed", "ambiguous", "completed"):
         raise FlowConflictError(
             f"Cannot retry recipient in '{recipient.status}' status"

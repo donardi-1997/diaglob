@@ -331,6 +331,8 @@ function App() {
     localStorage.setItem("diaglob-language", language);
   };
 
+  // Takes page keys (see APP_PAGE_SEGMENTS), not URL segments:
+  // the stores page is "settings" and lives at /app/stores.
   const handleNavigate = (page: string) => {
     setSearchTarget(null);
     navigate(getAppPath(page));
@@ -725,7 +727,7 @@ function App() {
                   storeName={selectedStore?.name}
                   pageContext={copilotPageContext}
                   onClose={() => setCopilotOpen(false)}
-                  onNavigateToStores={() => { setCopilotOpen(false); handleNavigate("stores"); }}
+                  onNavigateToStores={() => { setCopilotOpen(false); handleNavigate("settings"); }}
                 />
               </Suspense>
             )}
