@@ -1,6 +1,7 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Response
 
 from ..db import engine
+from ..services.runtime_health import readiness_payload
 
 router = APIRouter()
 
@@ -14,25 +15,16 @@ def root():
 
 
 @router.get("/health")
-def health():
-    db_status = "disconnected"
+@router.get("/health/ready")
+def readiness(response: Response):
+    """Readiness: API traffic is safe only when the database is reachable."""
+    payload = readiness_payload(engine.connect)
+    if payload["status"] != "ok":
+        response.status_code = 503
+    return payload
 
-    try:
-        with engine.connect() as conn:
-            conn.execute(
-                __import__(
-                    "sqlalchemy",
-                    fromlist=["text"],
-                ).text("SELECT 1")
-            )
-            db_status = "connected"
-    except Exception:
-        db_status = "error"
 
-    return {
-        "status": "ok" if db_status == "connected" else "degraded",
-        "service": "diaglob-api",
-        "database": db_status,
-        "multitenant": True,
-        "multistore": True,
-    }
+@router.get("/health/live")
+def liveness():
+    """Liveness deliberately avoids dependencies so restarts are not amplified."""
+    return {"status": "ok", "service": "diaglob-api"}
