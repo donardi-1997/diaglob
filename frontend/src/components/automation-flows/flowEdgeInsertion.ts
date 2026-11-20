@@ -2,7 +2,7 @@ import {
   addNodeToGraph,
   type FlowGraph,
   type FlowNodeType,
-} from "./flowGraphUtils";
+} from "./flowGraphUtils.ts";
 
 export type SequentialNodeType = Extract<FlowNodeType, "wait" | "message" | "tool">;
 
