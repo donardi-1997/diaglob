@@ -1,0 +1,209 @@
+/*
+ * DIAGLOB · Coral & Graphite
+ * Source of truth for primitive, semantic, chart, and flow tokens.
+ * Imported AFTER legacy styles in main.tsx. Keep feature CSS on semantic tokens.
+ *
+ * Brand core is deliberately NOT the default light-mode text or CTA color:
+ * #F06B45 with white is only ~3.05:1, below WCAG AA for normal text.
+ */
+:root,
+:root[data-theme="light"] {
+  color-scheme: light;
+  --coral-50: #FFF3EF;
+  --coral-100: #FFE1D6;
+  --coral-200: #FFC4AF;
+  --coral-300: #FFA083;
+  --coral-400: #F67C5A;
+  --coral-500: #F06B45;
+  --coral-600: #D95835;
+  --coral-700: #B94729;
+  --coral-800: #913821;
+  --coral-900: #6F2A19;
+  --graphite-50: #F6F6F5;
+  --graphite-100: #ECEDEB;
+  --graphite-200: #DADCD8;
+  --graphite-300: #B6BAB3;
+  --graphite-400: #8D938B;
+  --graphite-500: #656C65;
+  --graphite-600: #4A514B;
+  --graphite-700: #343933;
+  --graphite-800: #232723;
+  --graphite-900: #191B19;
+  --sand-50: #FDFBF8;
+  --sand-100: #F7F4EE;
+  --sand-200: #EEE8DF;
+  --sand-300: #DDD4C7;
+
+  --brand-core: var(--coral-500);
+  --brand-text-accent: var(--coral-700);
+  --brand-action: var(--coral-700);
+  --brand-action-hover: var(--coral-800);
+  --brand-action-active: var(--coral-900);
+  --brand-action-fg: #FFFFFF;
+  --brand-soft: var(--coral-50);
+  --brand-surface: #FFEDE6;
+  --brand-border: var(--coral-200);
+  --brand-selected-ring: rgba(185, 71, 41, .20);
+
+  --bg-app: var(--sand-100);
+  --bg-subtle: var(--sand-50);
+  --bg-surface: #FFFFFF;
+  --bg-surface-hover: #FBFAF8;
+  --bg-surface-secondary: var(--graphite-50);
+  --bg-canvas: #F3EFE8;
+  --text-primary: var(--graphite-900);
+  --text-secondary-strong: var(--graphite-600);
+  --text-tertiary: var(--graphite-500);
+  --text-disabled: var(--graphite-400);
+  --text-inverse: #FFFFFF;
+  --border-default: #E7E2D9;
+  --border-strong: var(--graphite-200);
+  --border-soft: #F0ECE5;
+  --focus-ring: var(--coral-700);
+  --focus-ring-offset: #FFFFFF;
+  --shadow-card: 0 1px 2px rgba(25,27,25,.04), 0 10px 28px rgba(25,27,25,.04);
+  --shadow-popover: 0 16px 48px rgba(25,27,25,.13);
+
+  --success-primary: #257B4E;
+  --success-soft: #EFFAF3;
+  --warning-primary: #8E5D10;
+  --warning-soft: #FFF8EB;
+  --danger-primary: #B53C3C;
+  --danger-soft: #FEF1F0;
+  --info-primary: #25518D;
+  --info-soft: #EEF6FF;
+  --plum-primary: #694A9A;
+  --plum-soft: #F3EEFB;
+
+  --chart-1: #B94729;
+  --chart-2: #257B4E;
+  --chart-3: #8E5D10;
+  --chart-4: #694A9A;
+  --chart-5: #25518D;
+  --chart-grid: #EAE3D9;
+  --chart-label: #656C65;
+  --flow-trigger: var(--coral-700);
+  --flow-condition: #8E5D10;
+  --flow-action: #257B4E;
+  --flow-wait: #656C65;
+  --flow-ai: #694A9A;
+  --flow-human: #25518D;
+  --flow-neutral: #656C65;
+  --flow-grid: #EAE3D9;
+  --flow-connector: #8D938B;
+  --flow-canvas: var(--bg-canvas);
+
+  /* Compatibility contract for pre-tokenized UI. */
+  --bg: var(--bg-app);
+  --sidebar: var(--bg-subtle);
+  --panel: var(--bg-surface);
+  --panel-hover: var(--bg-surface-hover);
+  --elevated: var(--bg-surface-secondary);
+  --border: var(--border-default);
+  --text: var(--text-primary);
+  --text-secondary: var(--text-secondary-strong);
+  --text-muted: var(--text-tertiary);
+  --accent: var(--brand-text-accent);
+  --accent-soft: var(--brand-soft);
+  --green: var(--success-primary);
+  --topbar-bg: rgba(255,255,255,.94);
+  --sidebar-bg: #FDFBF8;
+  --control-bg: var(--bg-surface-secondary);
+  --control-hover: var(--brand-soft);
+  --ds-focus: var(--focus-ring);
+  --ds-shadow-card: var(--shadow-card);
+  --dg-shell-bg: var(--bg-app);
+  --dg-shell-surface: var(--bg-surface);
+  --dg-shell-surface-strong: var(--bg-surface);
+  --dg-shell-sidebar: var(--bg-subtle);
+  --dg-shell-border: var(--border-default);
+  --dg-shell-border-strong: var(--border-strong);
+  --dg-shell-text: var(--text-primary);
+  --dg-shell-muted: var(--text-secondary-strong);
+  --dg-shell-subtle: var(--text-tertiary);
+  --dg-shell-accent: var(--brand-text-accent);
+  --dg-shell-accent-2: var(--brand-core);
+  --dg-shell-accent-soft: var(--brand-soft);
+  --dg-shell-shadow: var(--shadow-popover);
+  --dg-shell-shadow-soft: var(--shadow-card);
+  --marketing-bg: var(--bg-app);
+  --marketing-surface: rgba(255,255,255,.90);
+  --marketing-surface-strong: var(--bg-surface);
+  --marketing-card: var(--bg-surface);
+  --marketing-border: var(--border-default);
+  --marketing-border-strong: var(--brand-border);
+  --marketing-text: var(--text-primary);
+  --marketing-muted: var(--text-secondary-strong);
+  --marketing-soft: var(--text-tertiary);
+  --marketing-accent: var(--brand-text-accent);
+  --marketing-accent-2: var(--brand-core);
+  --marketing-cyan: var(--chart-2);
+  --marketing-success: var(--success-primary);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --brand-core: var(--coral-500);
+  --brand-text-accent: var(--coral-300);
+  --brand-action: var(--coral-400);
+  --brand-action-hover: var(--coral-300);
+  --brand-action-active: var(--coral-500);
+  --brand-action-fg: var(--graphite-900);
+  --brand-soft: rgba(246,124,90,.14);
+  --brand-surface: rgba(240,107,69,.18);
+  --brand-border: rgba(246,124,90,.34);
+  --brand-selected-ring: rgba(246,124,90,.27);
+
+  --bg-app: #141715;
+  --bg-subtle: var(--graphite-900);
+  --bg-surface: #1D211E;
+  --bg-surface-hover: var(--graphite-800);
+  --bg-surface-secondary: #262B27;
+  --bg-canvas: #111311;
+  --text-primary: var(--sand-100);
+  --text-secondary-strong: #DAD6CF;
+  --text-tertiary: var(--graphite-300);
+  --text-disabled: #8D938B;
+  --text-inverse: var(--graphite-900);
+  --border-default: #2E342F;
+  --border-strong: #3A413B;
+  --border-soft: #252925;
+  --focus-ring: var(--coral-300);
+  --focus-ring-offset: #1D211E;
+  --shadow-card: 0 2px 18px rgba(0,0,0,.16);
+  --shadow-popover: 0 20px 55px rgba(0,0,0,.32);
+
+  --success-primary: #4DBA7C;
+  --success-soft: rgba(77,186,124,.14);
+  --warning-primary: #E5A93A;
+  --warning-soft: rgba(229,169,58,.16);
+  --danger-primary: #E66B6B;
+  --danger-soft: rgba(230,107,107,.16);
+  --info-primary: #68A2F2;
+  --info-soft: rgba(104,162,242,.16);
+  --plum-primary: #C8B5E8;
+  --plum-soft: rgba(179,154,217,.14);
+
+  --chart-1: #F67C5A;
+  --chart-2: #4DBA7C;
+  --chart-3: #E5A93A;
+  --chart-4: #C8B5E8;
+  --chart-5: #68A2F2;
+  --chart-grid: #303630;
+  --chart-label: #B6BAB3;
+  --flow-trigger: var(--coral-300);
+  --flow-condition: #E5A93A;
+  --flow-action: #4DBA7C;
+  --flow-wait: #B6BAB3;
+  --flow-ai: #C8B5E8;
+  --flow-human: #68A2F2;
+  --flow-neutral: #B6BAB3;
+  --flow-grid: #303630;
+  --flow-connector: #8D938B;
+  --flow-canvas: var(--bg-canvas);
+
+  --topbar-bg: rgba(29,33,30,.95);
+  --sidebar-bg: var(--graphite-900);
+  --marketing-surface: rgba(29,33,30,.90);
+}
+/* Alias variables above resolve lazily to dark-mode token values. */

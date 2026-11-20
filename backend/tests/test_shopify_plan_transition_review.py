@@ -796,13 +796,19 @@ def test_shopify_lifecycle_reinstall_during_partner_check_fails_closed(
 
 
 
-@pytest.mark.parametrize("provider,expected", [
-    ("shopify", "inactive"), ("paddle", "active"),
+@pytest.mark.parametrize("entitlements,provider,expected", [
+    ("true", "shopify", "inactive"),
+    ("true", "paddle", "active"),
+    # Without verified Shopify entitlements no Shopify charge backs the paid
+    # plan (operator-granted), so losing the install must not zero capacity.
+    ("", "shopify", "active"),
+    ("", "paddle", "active"),
 ])
 def test_shopify_disconnect_only_suspends_shopify_billed_access(
-    sandbox, provider, expected,
+    sandbox, monkeypatch, entitlements, provider, expected,
 ):
     from app.services.shopify_service import disconnect
+    monkeypatch.setenv("SHOPIFY_BILLING_ENTITLEMENTS_ENABLED", entitlements)
     db, org, store, _, _, _ = sandbox
     org.billing_provider = provider
     org.subscription_status = "active"
@@ -813,14 +819,18 @@ def test_shopify_disconnect_only_suspends_shopify_billed_access(
     assert org.subscription_status == expected
 
 
-@pytest.mark.parametrize("provider,expected", [
-    ("shopify", "inactive"), ("paddle", "active"),
+@pytest.mark.parametrize("entitlements,provider,expected", [
+    ("true", "shopify", "inactive"),
+    ("true", "paddle", "active"),
+    ("", "shopify", "active"),
+    ("", "paddle", "active"),
 ])
 def test_verified_shopify_uninstall_suspends_only_shopify_billing(
-    sandbox, provider, expected,
+    sandbox, monkeypatch, entitlements, provider, expected,
 ):
     from datetime import timezone
     from app.services.shopify_uninstall import process_shopify_uninstall
+    monkeypatch.setenv("SHOPIFY_BILLING_ENTITLEMENTS_ENABLED", entitlements)
     db, org, _, _, _, _ = sandbox
     org.billing_provider = provider
     org.subscription_status = "active"

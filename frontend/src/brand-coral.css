@@ -1,0 +1,341 @@
+/*
+ * DIAGLOB Coral + Graphite implementation layer.
+ * Imported after legacy feature styles. Prefer tokens over new hardcoded colors.
+ * State colors are reserved for meaning; brand coral is reserved for selection/CTA.
+ */
+html, body { background: var(--bg-app); color: var(--text-primary); }
+body { background-image: none; }
+:where(.dg-shell, .app-shell, .landing-page, .marketing-page, .marketing-auth-page) {
+  color: var(--text-primary);
+}
+:where(.dg-shell, .app-shell) :is(.panel, .stat-card, .dg-metric-card, .dg-dashboard-panel) {
+  border-color: var(--border-default);
+}
+:where(.dg-shell, .app-shell) :is(.dg-sidebar, .sidebar) {
+  background: var(--sidebar-bg);
+  border-color: var(--border-default);
+}
+:where(.dg-shell, .app-shell) :is(.dg-nav-item.is-active, .nav-item.active) {
+  color: var(--brand-text-accent);
+  background: var(--brand-soft);
+}
+:where(.dg-shell, .app-shell) :is(.dg-nav-item.is-active, .nav-item.active) svg {
+  color: var(--brand-text-accent);
+}
+.dg-shell .dg-dashboard-hero,
+.auto-overview-hero {
+  background: linear-gradient(115deg, var(--bg-surface) 35%, var(--brand-soft) 100%);
+}
+.dg-shell .dg-metric-card, .dg-shell .dg-dashboard-panel,
+.auto-overview-metric, .auto-overview-panel {
+  box-shadow: var(--shadow-card);
+}
+.dg-shell .dg-metric-card:hover { box-shadow: var(--shadow-popover); }
+:where(.dg-shell, .app-shell) .dg-metric-icon,
+.auto-overview-metric-icon {
+  background: var(--brand-soft);
+  color: var(--brand-text-accent);
+}
+.dg-shell .dg-metric-card:nth-child(2) .dg-metric-icon { background: var(--success-soft); color: var(--success-primary); }
+.dg-shell .dg-metric-card:nth-child(3) .dg-metric-icon { background: var(--warning-soft); color: var(--warning-primary); }
+.dg-shell .dg-metric-card:nth-child(4) .dg-metric-icon { background: var(--info-soft); color: var(--info-primary); }
+
+ :is(.primary-button, .dg-shell .dg-dashboard-action.is-primary,
+  .landing-btn-primary, .marketing-primary-button, .flow-sidebar-save) {
+  background: var(--brand-action);
+  color: var(--brand-action-fg);
+  border-color: var(--brand-action);
+  box-shadow: none;
+}
+ :is(.primary-button, .dg-shell .dg-dashboard-action.is-primary,
+  .landing-btn-primary, .marketing-primary-button, .flow-sidebar-save):hover:not(:disabled) {
+  background: var(--brand-action-hover);
+  color: var(--brand-action-fg);
+  border-color: var(--brand-action-hover);
+  box-shadow: var(--shadow-card);
+  filter: none;
+}
+ :is(.primary-button, .dg-shell .dg-dashboard-action.is-primary,
+  .landing-btn-primary, .marketing-primary-button, .flow-sidebar-save):active:not(:disabled) {
+  background: var(--brand-action-active);
+}
+:is(.secondary-button, .landing-btn-outline) {
+  border-color: var(--border-strong);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+:is(.secondary-button, .landing-btn-outline):hover:not(:disabled) {
+  background: var(--bg-surface-hover);
+}
+:where(.dg-shell, .app-shell, .marketing-page, .landing-page, .flow-builder-v2)
+  :is(button, a, input, textarea, select, [role="button"], [role="tab"]):focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+:where(.dg-shell, .app-shell, .flow-builder-v2, .marketing-auth-page)
+  :is(input, select, textarea) {
+  caret-color: var(--brand-text-accent);
+}
+:where(.dg-shell, .app-shell, .flow-builder-v2, .marketing-auth-page)
+  :is(input, select, textarea):focus-visible {
+  border-color: var(--brand-text-accent);
+}
+:where(.dg-shell, .app-shell, .flow-builder-v2, .marketing-auth-page)
+  :is(input, textarea)::placeholder { color: var(--text-tertiary); }
+
+/* Compact neutral tables: stripes are semantic states, not branding. */
+:where(.dg-shell, .analytics-v2) :is(table, .data-table) {
+  color: var(--text-primary);
+  border-color: var(--border-default);
+}
+:where(.dg-shell, .analytics-v2) :is(thead, .table-header) {
+  background: var(--bg-surface-secondary);
+}
+:where(.dg-shell, .analytics-v2) :is(tbody tr:hover, .table-row:hover) {
+  background: var(--bg-surface-hover);
+}
+
+/* Analytics local CSS historically redefines its own purple tokens. */
+.analytics-v2 {
+  --analytics-surface: var(--bg-surface);
+  --analytics-surface-strong: var(--bg-surface);
+  --analytics-surface-soft: var(--bg-surface-secondary);
+  --analytics-border: var(--border-default);
+  --analytics-border-strong: var(--border-strong);
+  --analytics-text: var(--text-primary);
+  --analytics-muted: var(--text-secondary-strong);
+  --analytics-subtle: var(--text-tertiary);
+  --analytics-accent: var(--brand-text-accent);
+  --analytics-accent-soft: var(--brand-soft);
+  --analytics-accent-border: var(--brand-border);
+  --analytics-positive: var(--success-primary);
+  --analytics-positive-soft: var(--success-soft);
+  --analytics-warning: var(--warning-primary);
+  --analytics-warning-soft: var(--warning-soft);
+  --analytics-danger: var(--danger-primary);
+  --analytics-shadow: var(--shadow-card);
+}
+:root[data-theme="light"] .analytics-v2,
+:root[data-theme="dark"] .analytics-v2 {
+  --analytics-surface: var(--bg-surface);
+  --analytics-surface-strong: var(--bg-surface);
+  --analytics-surface-soft: var(--bg-surface-secondary);
+  --analytics-border: var(--border-default);
+  --analytics-border-strong: var(--border-strong);
+  --analytics-text: var(--text-primary);
+  --analytics-muted: var(--text-secondary-strong);
+  --analytics-subtle: var(--text-tertiary);
+  --analytics-accent: var(--brand-text-accent);
+  --analytics-accent-soft: var(--brand-soft);
+  --analytics-accent-border: var(--brand-border);
+}
+.analytics-v2-hero {
+  background:
+    radial-gradient(circle at 92% 10%, var(--brand-soft), transparent 36%),
+    var(--bg-surface);
+}
+.analytics-v2 .analytics-bar {
+  background: linear-gradient(to top, var(--chart-1), color-mix(in srgb, var(--chart-1) 55%, var(--bg-surface)));
+  box-shadow: none;
+}
+.analytics-v2 .analytics-bar.orders {
+  background: linear-gradient(to top, var(--chart-2), color-mix(in srgb, var(--chart-2) 55%, var(--bg-surface)));
+  box-shadow: none;
+}
+.analytics-v2 .analytics-v2-eyebrow,
+.analytics-v2 .analytics-v2-range.is-active {
+  color: var(--brand-text-accent);
+}
+.analytics-v2 .analytics-bar-chart {
+  background-image: linear-gradient(to top, var(--chart-grid) 1px, transparent 1px);
+}
+.auto-overview-status--active {
+  background: var(--success-soft);
+  color: var(--success-primary);
+}
+
+/* Marketing inherits the same brand and contrast decisions. */
+.marketing-brand-mark,
+.landing-btn-primary {
+  background: var(--brand-action);
+  color: var(--brand-action-fg);
+}
+.marketing-hero-copy h1 span {
+  color: var(--brand-text-accent);
+  background: none;
+  -webkit-text-fill-color: currentColor;
+}
+.marketing-page .demo-chart-bars i {
+  background: linear-gradient(to top, var(--chart-1), var(--brand-core));
+}
+.marketing-page .demo-chart-legend span { background: var(--chart-1); }
+.marketing-page .demo-chart-legend span:last-child { background: var(--chart-2); }
+:root[data-theme="light"] .landing-hero,
+:root[data-theme="dark"] .landing-hero {
+  background: linear-gradient(180deg, var(--brand-soft), transparent 62%);
+}
+.landing-navbar { background: var(--topbar-bg); }
+
+/* Color grammar for the automation builder and React Flow. */
+.flow-canvas-container, .flow-debugger-canvas, .flow-builder-v2 .react-flow {
+  background: var(--flow-canvas);
+}
+.flow-canvas-container .react-flow__background {
+  color: var(--flow-grid);
+}
+.flow-canvas-container .react-flow__controls,
+.flow-canvas-container .react-flow__minimap,
+.flow-canvas-container .flow-node-card {
+  background: var(--bg-surface);
+  border-color: var(--border-default);
+}
+.flow-canvas-container .react-flow__edge-path,
+.flow-canvas-container .react-flow__connection-path {
+  stroke: var(--flow-connector);
+}
+.flow-canvas-container .react-flow__controls-button {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  fill: var(--text-primary);
+}
+.flow-canvas-container .react-flow__controls-button:hover {
+  background: var(--bg-surface-hover);
+}
+.flow-palette-icon.type-trigger { color: var(--flow-trigger); }
+.flow-palette-icon.type-condition { color: var(--flow-condition); }
+.flow-palette-icon.type-wait { color: var(--flow-wait); }
+.flow-palette-icon.type-message { color: var(--flow-action); }
+.flow-palette-icon.type-call { color: var(--flow-human); }
+.flow-palette-icon.type-tool { color: var(--flow-ai); }
+.flow-palette-icon.type-end { color: var(--flow-neutral); }
+.flow-node-card.type-trigger { --flow-node-accent: var(--flow-trigger); }
+.flow-node-card.type-condition { --flow-node-accent: var(--flow-condition); }
+.flow-node-card.type-wait { --flow-node-accent: var(--flow-wait); }
+.flow-node-card.type-message { --flow-node-accent: var(--flow-action); }
+.flow-node-card.type-call { --flow-node-accent: var(--flow-human); }
+.flow-node-card.type-tool { --flow-node-accent: var(--flow-ai); }
+.flow-node-card.type-end { --flow-node-accent: var(--flow-neutral); }
+.flow-canvas-container .flow-node-card:hover {
+  box-shadow: var(--shadow-card);
+}
+.flow-canvas-container .react-flow__node:focus-visible,
+.flow-canvas-container .react-flow__node:focus {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+.flow-canvas-container .react-flow__edge.selected .react-flow__edge-path {
+  stroke: var(--brand-action);
+  stroke-width: 2.5px;
+}
+.flow-canvas-container .react-flow__handle { border-color: var(--bg-surface); }
+.flow-debugger-legend .ok, .flow-debug-status.is-completed { color: var(--success-primary); }
+.flow-debugger-legend .run, .flow-debug-status.is-running { color: var(--info-primary); }
+.flow-debugger-legend .wait, .flow-debug-status.is-waiting { color: var(--warning-primary); }
+.flow-debugger-legend .fail, .flow-debug-status.is-ambiguous { color: var(--danger-primary); }
+
+@media (prefers-reduced-motion: reduce) {
+  :where(.dg-shell, .flow-builder-v2, .marketing-page) *,
+  :where(.dg-shell, .flow-builder-v2, .marketing-page) *::before,
+  :where(.dg-shell, .flow-builder-v2, .marketing-page) *::after {
+    scroll-behavior: auto;
+    animation-duration: 0.01ms;
+    transition-duration: 0.01ms;
+  }
+}
+
+/* Final state and contrast guards for component-scoped legacy buttons. */
+:root[data-theme="light"] :is(.dg-shell .dg-dashboard-action.is-primary, .primary-button, .marketing-page .marketing-primary-button, .landing-page .landing-btn-primary),
+:root[data-theme="dark"] :is(.dg-shell .dg-dashboard-action.is-primary, .primary-button, .marketing-page .marketing-primary-button, .landing-page .landing-btn-primary) {
+  background: var(--brand-action);
+  color: var(--brand-action-fg);
+  border-color: var(--brand-action);
+}
+:root[data-theme="light"] :is(.dg-shell .dg-dashboard-action.is-primary, .primary-button, .marketing-page .marketing-primary-button, .landing-page .landing-btn-primary):hover:not(:disabled),
+:root[data-theme="dark"] :is(.dg-shell .dg-dashboard-action.is-primary, .primary-button, .marketing-page .marketing-primary-button, .landing-page .landing-btn-primary):hover:not(:disabled) {
+  background: var(--brand-action-hover);
+  color: var(--brand-action-fg);
+}
+
+/* Contrast fixes for promotional surfaces and inverse actions. */
+:root[data-theme="light"] .marketing-page .marketing-primary-button.inverse,
+:root[data-theme="dark"] .marketing-page .marketing-primary-button.inverse {
+  background: #FFFFFF;
+  border-color: #FFFFFF;
+  color: #191B19;
+}
+:root[data-theme="light"] .marketing-page .marketing-primary-button.inverse:hover,
+:root[data-theme="dark"] .marketing-page .marketing-primary-button.inverse:hover {
+  background: var(--sand-100);
+  border-color: var(--sand-100);
+  color: #191B19;
+}
+.marketing-recommended,
+.marketing-chat-message.user {
+  background: var(--brand-action);
+  color: var(--brand-action-fg);
+  border-color: var(--brand-action);
+}
+.marketing-price-card.recommended {
+  border-color: var(--brand-border);
+  box-shadow: var(--shadow-card);
+}
+.marketing-final-card {
+  background: linear-gradient(135deg, var(--graphite-900), var(--graphite-700));
+  border: 1px solid var(--brand-border);
+  color: #FFFFFF;
+}
+.marketing-final-glow {
+  background: rgba(240, 107, 69, .16);
+}
+:where(.brand-mark, .marketing-brand-mark, .dg-shell .dg-brand-mark) {
+  background: var(--brand-action);
+  color: var(--brand-action-fg);
+  box-shadow: none;
+}
+:root[data-theme="dark"] .marketing-final-card > p,
+:root[data-theme="light"] .marketing-final-card > p {
+  color: #F7F4EE;
+}
+
+/* Dual-mode DIAGLOB identity mark. Keep the original silhouette; only palette changes. */
+.diaglob-brand-mark {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  vertical-align: middle;
+}
+.diaglob-brand-mark > img {
+  grid-area: 1 / 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.diaglob-brand-mark > .diaglob-brand-mark-dark { display: none; }
+:root[data-theme="dark"] .diaglob-brand-mark > .diaglob-brand-mark-light { display: none; }
+:root[data-theme="dark"] .diaglob-brand-mark > .diaglob-brand-mark-dark { display: block; }
+:root[data-theme="light"] .diaglob-brand-mark > .diaglob-brand-mark-dark { display: none; }
+
+:where(.brand-mark, .marketing-brand-mark, .dg-shell .dg-brand-mark) {
+  background: var(--bg-surface-secondary);
+  border: 1px solid var(--border-default);
+  color: var(--text-primary);
+  box-shadow: none;
+}
+
+/* Match the logo's contrast surface across desktop sidebar, marketing and auth.
+   More specific than the legacy gradient rules loaded in feature stylesheets. */
+.dg-shell .dg-brand-mark,
+.marketing-page .marketing-brand-mark,
+.marketing-auth-page .marketing-brand-mark,
+.landing-page .marketing-brand-mark,
+.landing-page .brand-mark {
+  background: var(--bg-surface-secondary);
+  border: 1px solid var(--border-default);
+  box-shadow: none;
+}
+.copilot-floating-button .copilot-floating-button-icon {
+  background: var(--bg-surface-secondary);
+  border: 1px solid var(--border-default);
+  box-shadow: var(--shadow-card);
+}

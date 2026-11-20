@@ -25,8 +25,10 @@ import {
   FLOW_TOOL_CATALOG,
   getFlowToolCatalogItem,
 } from "./flowToolCatalog";
+import FlowMessageTemplatePicker from "./FlowMessageTemplatePicker";
 
 interface FlowSidebarProps {
+  storeId: number;
   node: FlowNode | null;
   onUpdate: (
     nodeId: string,
@@ -36,6 +38,9 @@ interface FlowSidebarProps {
   onClose: () => void;
   t: (key: string) => string;
   canWrite: boolean;
+  onSaveDraft: () => void;
+  canSaveDraft: boolean;
+  savingDraft: boolean;
 }
 
 const TRIGGER_LABELS: Record<string, string> = {
@@ -128,12 +133,16 @@ function updateToolArgument(
 }
 
 export default function FlowSidebar({
+  storeId,
   node,
   onUpdate,
   onDelete,
   onClose,
   t,
   canWrite,
+  onSaveDraft,
+  canSaveDraft,
+  savingDraft,
 }: FlowSidebarProps) {
   const isOpen = node !== null;
   const Icon = node ? NODE_ICONS[node.type] || Square : Square;
@@ -387,26 +396,31 @@ export default function FlowSidebar({
                   </select>
                 </label>
 
-                <label>
-                  <span>{t("flowMessageLabel")}</span>
-                  <textarea
-                    rows={5}
-                    value={node.config.message_template || ""}
-                    onChange={(event) =>
-                      canWrite
-                      && onUpdate(node.id, {
-                        message_template: event.target.value,
-                      })}
-                    disabled={!canWrite}
-                    placeholder={t("flowMessagePlaceholder")}
-                  />
-                </label>
-
-                {node.config.message_mode === "template" && (
-                  <small className="flow-field-hint">
-                    {t("flowTemplateHint")}
-                  </small>
+                {(node.config.message_mode || "auto") !== "template" && (
+                  <label>
+                    <span>{t("flowMessageLabel")}</span>
+                    <textarea
+                      rows={5}
+                      value={node.config.message_template || ""}
+                      onChange={(event) =>
+                        canWrite
+                        && onUpdate(node.id, {
+                          message_template: event.target.value,
+                        })}
+                      disabled={!canWrite}
+                      placeholder={t("flowMessagePlaceholder")}
+                    />
+                  </label>
                 )}
+
+                <FlowMessageTemplatePicker
+                  storeId={storeId}
+                  nodeId={node.id}
+                  config={node.config}
+                  canWrite={canWrite}
+                  onUpdate={onUpdate}
+                  t={t}
+                />
               </>
             )}
 
@@ -626,15 +640,26 @@ export default function FlowSidebar({
             )}
           </div>
 
-          {node.type !== "trigger" && canWrite && (
+          {canWrite && (
             <div className="flow-sidebar-footer">
               <button
-                className="secondary-button flow-delete-node"
-                onClick={() => onDelete(node.id)}
+                type="button"
+                className="primary-button flow-sidebar-save"
+                onClick={onSaveDraft}
+                disabled={!canSaveDraft || savingDraft}
               >
-                <Trash2 size={14} />
-                {t("flowDeleteNode")}
+                {savingDraft ? t("flowSaving") : t("flowSave")}
               </button>
+              {node.type !== "trigger" && (
+                <button
+                  type="button"
+                  className="secondary-button flow-delete-node"
+                  onClick={() => onDelete(node.id)}
+                >
+                  <Trash2 size={14} />
+                  {t("flowDeleteNode")}
+                </button>
+              )}
             </div>
           )}
         </>

@@ -64,12 +64,12 @@
 }
 
 .landing-btn-primary {
-  background: linear-gradient(145deg, #897bff, #6351ee);
+  background: linear-gradient(145deg, var(--brand-action), var(--brand-action-hover));
   color: #fff;
-  box-shadow: 0 4px 16px rgba(112, 91, 255, 0.3);
+  box-shadow: 0 4px 16px rgba(240, 107, 69, 0.3);
 }
 
-.landing-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 24px rgba(112, 91, 255, 0.45); }
+.landing-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 24px rgba(240, 107, 69, 0.45); }
 .landing-btn-primary:active { transform: translateY(0); }
 
 .landing-btn-ghost { background: transparent; color: var(--text-secondary); border: 1px solid transparent; }
@@ -389,7 +389,7 @@
 .landing-mock-bar {
   flex: 1;
   border-radius: 4px 4px 0 0;
-  background: linear-gradient(180deg, var(--accent), rgba(124, 108, 255, 0.4));
+  background: linear-gradient(180deg, var(--accent), rgba(240, 107, 69, 0.4));
   min-width: 0;
   transition: opacity 0.2s;
 }
@@ -434,7 +434,7 @@
   padding: 24px;
   border-radius: 14px;
   background: var(--accent-soft);
-  border: 1px solid rgba(124, 108, 255, 0.2);
+  border: 1px solid rgba(240, 107, 69, 0.2);
   text-align: center;
   flex-direction: column;
 }
@@ -534,14 +534,14 @@
   left: 0;
   right: 0;
   height: 3px;
-  background: linear-gradient(90deg, var(--accent), rgba(124, 108, 255, 0.3));
+  background: linear-gradient(90deg, var(--accent), rgba(240, 107, 69, 0.3));
   opacity: 0;
   transition: opacity 0.3s;
 }
 
 .landing-innovation-card:hover {
   border-color: var(--accent);
-  box-shadow: 0 8px 32px rgba(124, 108, 255, 0.1);
+  box-shadow: 0 8px 32px rgba(240, 107, 69, 0.1);
   transform: translateY(-3px);
 }
 
@@ -622,7 +622,7 @@
   transition: border-color 0.2s, box-shadow 0.2s;
 }
 
-.landing-how-step:hover { border-color: var(--accent); box-shadow: 0 4px 20px rgba(124, 108, 255, 0.1); }
+.landing-how-step:hover { border-color: var(--accent); box-shadow: 0 4px 20px rgba(240, 107, 69, 0.1); }
 
 .landing-how-step-number {
   width: 28px;
@@ -681,7 +681,7 @@
   transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
 }
 
-.landing-feature-card:hover { border-color: var(--accent); box-shadow: 0 4px 24px rgba(124, 108, 255, 0.08); transform: translateY(-2px); }
+.landing-feature-card:hover { border-color: var(--accent); box-shadow: 0 4px 24px rgba(240, 107, 69, 0.08); transform: translateY(-2px); }
 
 .landing-feature-icon {
   width: 48px;
@@ -836,12 +836,12 @@
   gap: 8px;
   padding: 12px 18px;
   border-radius: 10px;
-  background: linear-gradient(135deg, var(--accent-soft), rgba(124, 108, 255, 0.06));
+  background: linear-gradient(135deg, var(--accent-soft), rgba(240, 107, 69, 0.06));
   border: 1px solid var(--accent);
   color: var(--accent);
   font-weight: 700;
   font-size: 0.875rem;
-  box-shadow: 0 0 20px rgba(124, 108, 255, 0.12);
+  box-shadow: 0 0 20px rgba(240, 107, 69, 0.12);
 }
 
 .landing-kb-node-desc {
@@ -1007,7 +1007,7 @@
   gap: 10px;
   padding: 12px 16px;
   border-radius: 10px;
-  background: linear-gradient(135deg, var(--accent-soft), rgba(124, 108, 255, 0.06));
+  background: linear-gradient(135deg, var(--accent-soft), rgba(240, 107, 69, 0.06));
   border: 1px solid var(--accent);
   width: 100%;
   transition: border-color 0.2s;
@@ -1134,7 +1134,7 @@
   }
 }
 
-.landing-integration-card:hover { border-color: var(--accent); box-shadow: 0 4px 24px rgba(124, 108, 255, 0.08); transform: translateY(-2px); }
+.landing-integration-card:hover { border-color: var(--accent); box-shadow: 0 4px 24px rgba(240, 107, 69, 0.08); transform: translateY(-2px); }
 
 .landing-integration-icon {
   width: 56px;
@@ -1256,7 +1256,7 @@
   transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
 }
 
-.landing-target-card:hover { border-color: var(--accent); box-shadow: 0 4px 24px rgba(124, 108, 255, 0.08); transform: translateY(-2px); }
+.landing-target-card:hover { border-color: var(--accent); box-shadow: 0 4px 24px rgba(240, 107, 69, 0.08); transform: translateY(-2px); }
 .landing-target-card svg { color: var(--accent); margin-bottom: 12px; }
 .landing-target-card h3 { font-size: 0.9375rem; font-weight: 600; color: var(--text); margin: 0 0 6px; }
 .landing-target-card p { font-size: 0.8125rem; color: var(--text-secondary); line-height: 1.5; margin: 0; }
@@ -1281,10 +1281,10 @@
 
 .landing-pricing-card.recommended {
   border-color: var(--accent);
-  background: linear-gradient(135deg, rgba(124, 108, 255, 0.05), transparent);
+  background: linear-gradient(135deg, rgba(240, 107, 69, 0.05), transparent);
 }
 
-.landing-pricing-card.recommended:hover { box-shadow: 0 12px 48px rgba(124, 108, 255, 0.2); }
+.landing-pricing-card.recommended:hover { box-shadow: 0 12px 48px rgba(240, 107, 69, 0.2); }
 
 .landing-pricing-badge {
   display: inline-block;
@@ -1329,11 +1329,11 @@
 .landing-pricing-features li svg { flex-shrink: 0; color: var(--accent); }
 
 .landing-pricing-card .landing-btn-primary.recommended {
-  background: linear-gradient(145deg, #897bff, #6351ee);
-  box-shadow: 0 4px 20px rgba(112, 91, 255, 0.35);
+  background: linear-gradient(145deg, var(--brand-action), var(--brand-action-hover));
+  box-shadow: 0 4px 20px rgba(240, 107, 69, 0.35);
 }
 
-.landing-pricing-card .landing-btn-primary.recommended:hover { box-shadow: 0 6px 28px rgba(112, 91, 255, 0.5); }
+.landing-pricing-card .landing-btn-primary.recommended:hover { box-shadow: 0 6px 28px rgba(240, 107, 69, 0.5); }
 
 /* ── Benefits ──────────────────────────────────────────────────── */
 .landing-benefits-grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
@@ -1348,7 +1348,7 @@
   transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
 }
 
-.landing-benefit-card:hover { border-color: var(--accent); box-shadow: 0 4px 24px rgba(124, 108, 255, 0.08); transform: translateY(-2px); }
+.landing-benefit-card:hover { border-color: var(--accent); box-shadow: 0 4px 24px rgba(240, 107, 69, 0.08); transform: translateY(-2px); }
 .landing-benefit-card svg { color: var(--accent); margin-bottom: 14px; }
 .landing-benefit-card h3 { font-size: 1rem; font-weight: 600; color: var(--text); margin: 0 0 8px; }
 .landing-benefit-card p { font-size: 0.8125rem; color: var(--text-secondary); line-height: 1.6; margin: 0; }
@@ -1554,7 +1554,7 @@
 
 /* ── Light theme overrides ─────────────────────────────────────── */
 :root[data-theme="light"] .landing-hero {
-  background: linear-gradient(180deg, rgba(139, 92, 246, 0.03) 0%, transparent 60%);
+  background: linear-gradient(180deg, rgba(240, 107, 69, 0.03) 0%, transparent 60%);
 }
 
 /* ── Accessibility ─────────────────────────────────────────────── */

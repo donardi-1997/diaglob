@@ -17,13 +17,13 @@ import {
 } from "./flowGraphUtils";
 
 const TYPE_COLORS: Record<FlowNodeType, string> = {
-  trigger: "var(--accent)",
-  wait: "#e6a817",
-  condition: "#4a9eff",
-  message: "var(--green)",
-  call: "#06b6d4",
-  tool: "#8b5cf6",
-  end: "var(--text-muted)",
+  trigger: "var(--flow-trigger)",
+  wait: "var(--flow-wait)",
+  condition: "var(--flow-condition)",
+  message: "var(--flow-action)",
+  call: "var(--flow-human)",
+  tool: "var(--flow-ai)",
+  end: "var(--flow-neutral)",
 };
 
 const TYPE_ICONS: Record<FlowNodeType, typeof Zap> = {
@@ -41,38 +41,38 @@ const DEBUG_STYLES: Record<
   { color: string; background: string; label: string }
 > = {
   completed: {
-    color: "#22c55e",
-    background: "rgba(34,197,94,0.12)",
+    color: "var(--success-primary)",
+    background: "var(--success-soft)",
     label: "Completado",
   },
   failed: {
-    color: "#ef4444",
-    background: "rgba(239,68,68,0.12)",
+    color: "var(--danger-primary)",
+    background: "var(--danger-soft)",
     label: "Falló",
   },
   ambiguous: {
-    color: "#f59e0b",
-    background: "rgba(245,158,11,0.12)",
+    color: "var(--warning-primary)",
+    background: "var(--warning-soft)",
     label: "Ambiguo",
   },
   skipped: {
-    color: "#94a3b8",
-    background: "rgba(148,163,184,0.12)",
+    color: "var(--flow-neutral)",
+    background: "var(--bg-surface-secondary)",
     label: "Omitido",
   },
   running: {
-    color: "#3b82f6",
-    background: "rgba(59,130,246,0.12)",
+    color: "var(--info-primary)",
+    background: "var(--info-soft)",
     label: "Ejecutando",
   },
   waiting: {
-    color: "#e6a817",
-    background: "rgba(230,168,23,0.12)",
+    color: "var(--warning-primary)",
+    background: "var(--warning-soft)",
     label: "Esperando",
   },
   pending: {
     color: "var(--text-muted)",
-    background: "rgba(255,255,255,0.06)",
+    background: "var(--bg-surface-secondary)",
     label: "Pendiente",
   },
 };
@@ -108,8 +108,8 @@ export default function FlowNode({
     <div
       className={
         debug
-          ? `flow-node-card flow-node-debug is-${debug.status}`
-          : "flow-node-card"
+          ? `flow-node-card type-${nodeType} flow-node-debug is-${debug.status}`
+          : `flow-node-card type-${nodeType}`
       }
       style={{
         position: "relative",
@@ -127,7 +127,7 @@ export default function FlowNode({
         minWidth: 190,
         maxWidth: 250,
         boxShadow: selected
-          ? "0 0 0 3px rgba(124, 92, 255, 0.12)"
+          ? "0 0 0 3px var(--brand-selected-ring)"
           : debugStyle
             ? `0 0 0 2px ${debugStyle.background}`
             : "none",
@@ -243,7 +243,7 @@ export default function FlowNode({
             style={{
               width: 10,
               height: 10,
-              background: "#ef4444",
+              background: "var(--danger-primary)",
               border: "2px solid var(--panel)",
               left: "30%",
             }}
@@ -256,9 +256,9 @@ export default function FlowNode({
         <>
           {[
             ["confirmed", "CONF", "var(--green)", "12%"],
-            ["rejected", "RECH", "#ef4444", "37%"],
-            ["no_answer", "SIN", "#f59e0b", "63%"],
-            ["failed", "FAIL", "#94a3b8", "88%"],
+            ["rejected", "RECH", "var(--danger-primary)", "37%"],
+            ["no_answer", "SIN", "var(--warning-primary)", "63%"],
+            ["failed", "FAIL", "var(--flow-neutral)", "88%"],
           ].map(([id, label, background, left]) => (
             <div key={id}>
               <Handle

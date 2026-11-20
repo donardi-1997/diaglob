@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import PlansPage from "./PlansPage";
+import { normalizeBillingLocale, type BillingLocale } from "./shopifyBillingCopy";
 import ShopifyBillingWorkspace from "./ShopifyBillingWorkspace";
 import { getShopifyBillingCapabilities } from "../services/shopifyBilling";
 import {
@@ -11,12 +13,88 @@ import { billingChannel } from "../services/billingChannel";
 import { createPaddlePortalSession, getPaddleBillingStatus, type PaddleBillingStatus } from "../services/billing";
 import "../shopify-billing-workspace.css";
 
+const CHANNEL_COPY: Record<BillingLocale, {
+  loading: string;
+  errorTitle: string;
+  errorBody: string;
+  retry: string;
+  portalError: string;
+  accountBillingTitle: string;
+  accountBillingBody: string;
+  openingPortal: string;
+  managePaddle: string;
+  pendingShopifyTitle: string;
+  pendingShopifyBody: string;
+  pendingShopifyNote: string;
+  goToStores: string;
+  unknownTitle: string;
+  unknownBody: string;
+  checkAgain: string;
+}> = {
+  es: {
+    loading: "Cargando facturación…",
+    errorTitle: "No fue posible consultar tu facturación",
+    errorBody: "Por seguridad, no mostramos enlaces de pago hasta confirmar tu organización.",
+    retry: "Reintentar",
+    portalError: "No fue posible abrir el portal de Paddle. Inténtalo de nuevo.",
+    accountBillingTitle: "Facturación de tu cuenta",
+    accountBillingBody: "Consulta facturas, medios de pago y renovaciones en el portal seguro de Paddle.",
+    openingPortal: "Abriendo portal…",
+    managePaddle: "Administrar facturación en Paddle",
+    pendingShopifyTitle: "Termina de conectar tu tienda Shopify",
+    pendingShopifyBody: "Tu cuenta de Diaglob está preparada para Shopify, pero todavía debemos verificar la instalación. Crea o selecciona una tienda y completa su autorización OAuth desde la sección Tiendas.",
+    pendingShopifyNote: "Mientras la conexión esté pendiente, los pagos y los cambios de plan permanecerán deshabilitados. No se ha creado ninguna suscripción.",
+    goToStores: "Ir a mis tiendas",
+    unknownTitle: "Proveedor de facturación por confirmar",
+    unknownBody: "No hemos podido determinar si tu organización se factura por Shopify o Paddle. Por seguridad, las operaciones de pago están deshabilitadas. Contacta con soporte para revisar tu cuenta.",
+    checkAgain: "Volver a consultar",
+  },
+  en: {
+    loading: "Loading billing…",
+    errorTitle: "We couldn't load your billing",
+    errorBody: "For security, we don't show payment links until your organization is confirmed.",
+    retry: "Retry",
+    portalError: "We couldn't open the Paddle portal. Please try again.",
+    accountBillingTitle: "Account billing",
+    accountBillingBody: "View invoices, payment methods and renewals in Paddle's secure portal.",
+    openingPortal: "Opening portal…",
+    managePaddle: "Manage billing in Paddle",
+    pendingShopifyTitle: "Finish connecting your Shopify store",
+    pendingShopifyBody: "Your Diaglob account is ready for Shopify, but we still need to verify the installation. Create or select a store and complete its authorization from the Stores section.",
+    pendingShopifyNote: "While the connection is pending, payments and plan changes stay disabled. No subscription has been created.",
+    goToStores: "Go to my stores",
+    unknownTitle: "Billing provider not confirmed",
+    unknownBody: "We couldn't determine whether your organization is billed through Shopify or Paddle. For security, payment operations are disabled. Contact support to review your account.",
+    checkAgain: "Check again",
+  },
+  "pt-BR": {
+    loading: "Carregando cobrança…",
+    errorTitle: "Não foi possível consultar sua cobrança",
+    errorBody: "Por segurança, não mostramos links de pagamento até confirmar sua organização.",
+    retry: "Tentar novamente",
+    portalError: "Não foi possível abrir o portal da Paddle. Tente novamente.",
+    accountBillingTitle: "Cobrança da sua conta",
+    accountBillingBody: "Consulte faturas, meios de pagamento e renovações no portal seguro da Paddle.",
+    openingPortal: "Abrindo portal…",
+    managePaddle: "Gerenciar cobrança na Paddle",
+    pendingShopifyTitle: "Termine de conectar sua loja Shopify",
+    pendingShopifyBody: "Sua conta Diaglob está pronta para a Shopify, mas ainda precisamos verificar a instalação. Crie ou selecione uma loja e conclua a autorização na seção Lojas.",
+    pendingShopifyNote: "Enquanto a conexão estiver pendente, pagamentos e mudanças de plano ficam desativados. Nenhuma assinatura foi criada.",
+    goToStores: "Ir para minhas lojas",
+    unknownTitle: "Provedor de cobrança a confirmar",
+    unknownBody: "Não conseguimos determinar se sua organização é cobrada pela Shopify ou pela Paddle. Por segurança, as operações de pagamento estão desativadas. Fale com o suporte para revisar sua conta.",
+    checkAgain: "Consultar novamente",
+  },
+};
+
 /** Prevents accidentally presenting Paddle checkout to Shopify-managed shops. */
 export default function BillingChannelPage({
   userEmail,
 }: {
   userEmail?: string | null;
 }) {
+  const { i18n } = useTranslation();
+  const copy = CHANNEL_COPY[normalizeBillingLocale(i18n.resolvedLanguage || i18n.language)];
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [error, setError] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -66,14 +144,14 @@ export default function BillingChannelPage({
   }, [load]);
 
   if (loading) {
-    return <main className="billing-channel-state" role="status">Cargando facturación…</main>;
+    return <main className="billing-channel-state" role="status">{copy.loading}</main>;
   }
   if (error || !organization) {
     return (
       <main className="billing-channel-state">
-        <h1>No fue posible consultar tu facturación</h1>
-        <p>Por seguridad, no mostramos enlaces de pago hasta confirmar tu organización.</p>
-        <button type="button" onClick={() => { void load(); }}>Reintentar</button>
+        <h1>{copy.errorTitle}</h1>
+        <p>{copy.errorBody}</p>
+        <button type="button" onClick={() => { void load(); }}>{copy.retry}</button>
       </main>
     );
   }
@@ -87,7 +165,7 @@ export default function BillingChannelPage({
       const { url } = await createPaddlePortalSession();
       window.location.assign(url);
     } catch {
-      setPortalError("No fue posible abrir el portal de Paddle. Inténtalo de nuevo.");
+      setPortalError(copy.portalError);
     } finally {
       setPortalLoading(false);
     }
@@ -110,10 +188,10 @@ export default function BillingChannelPage({
         <>
           {paddleStatus?.portal_available && (
             <section className="billing-channel-state">
-              <h2>Facturación de tu cuenta</h2>
-              <p>Consulta facturas, medios de pago y renovaciones en el portal seguro de Paddle.</p>
+              <h2>{copy.accountBillingTitle}</h2>
+              <p>{copy.accountBillingBody}</p>
               <button type="button" disabled={portalLoading} onClick={() => { void openPortal(); }}>
-                {portalLoading ? "Abriendo portal…" : "Administrar facturación en Paddle"}
+                {portalLoading ? copy.openingPortal : copy.managePaddle}
               </button>
               {portalError && <p role="alert">{portalError}</p>}
             </section>
@@ -128,18 +206,18 @@ export default function BillingChannelPage({
       if (organization.billing_onboarding_channel === "shopify_install") {
         return (
           <main className="billing-channel-state">
-            <h1>Termina de conectar tu tienda Shopify</h1>
-            <p>Tu cuenta de Diaglob está preparada para Shopify, pero todavía debemos verificar la instalación. Crea o selecciona una tienda y completa su autorización OAuth desde la sección Tiendas.</p>
-            <p>Mientras la conexión esté pendiente, los pagos y los cambios de plan permanecerán deshabilitados. No se ha creado ninguna suscripción.</p>
-            <a href="/app/stores">Ir a mis tiendas</a>
+            <h1>{copy.pendingShopifyTitle}</h1>
+            <p>{copy.pendingShopifyBody}</p>
+            <p>{copy.pendingShopifyNote}</p>
+            <a href="/app/stores">{copy.goToStores}</a>
           </main>
         );
       }
       return (
         <main className="billing-channel-state">
-          <h1>Proveedor de facturación por confirmar</h1>
-          <p>No hemos podido determinar si tu organización se factura por Shopify o Paddle. Por seguridad, las operaciones de pago están deshabilitadas. Contacta con soporte para revisar tu cuenta.</p>
-          <button type="button" onClick={() => { void load(); }}>Volver a consultar</button>
+          <h1>{copy.unknownTitle}</h1>
+          <p>{copy.unknownBody}</p>
+          <button type="button" onClick={() => { void load(); }}>{copy.checkAgain}</button>
         </main>
       );
   }

@@ -21,9 +21,6 @@ def _client_error(code: str) -> ClientError:
 
 def test_relinks_when_previous_cognito_identity_was_deleted():
     cognito = MagicMock()
-    cognito.admin_get_user.side_effect = _client_error(
-        "UserNotFoundException"
-    )
     user = SimpleNamespace(
         external_auth_id="old-sub",
         name="Old Name",
@@ -41,6 +38,30 @@ def test_relinks_when_previous_cognito_identity_was_deleted():
     assert user.external_auth_id == "new-sub"
     assert user.name == "New Name"
     assert user.active is True
+    cognito.admin_get_user.assert_not_called()
+
+
+def test_relinks_inactive_tombstone_without_cognito_admin_permission():
+    cognito = MagicMock()
+    cognito.admin_get_user.side_effect = _client_error("AccessDeniedException")
+    user = SimpleNamespace(
+        external_auth_id="old-sub",
+        name="Closed User",
+        active=False,
+    )
+
+    recovered = _relink_deleted_cognito_identity(
+        cognito=cognito,
+        email_user=user,
+        cognito_sub="new-sub",
+        name="Recovered User",
+    )
+
+    assert recovered is True
+    assert user.external_auth_id == "new-sub"
+    assert user.name == "Recovered User"
+    assert user.active is True
+    cognito.admin_get_user.assert_not_called()
 
 
 def test_does_not_relink_while_previous_identity_still_exists():

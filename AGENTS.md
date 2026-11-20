@@ -31,8 +31,20 @@ Business logic lives in `backend/app/services/`, not in API routers.
 
 ## Useful Commands
 
+```powershell
+# Fast local backend suite: parallel (8 workers, ~30s), offline test env vars set for you.
+# One-time: backend/.venv/Scripts/python -m pip install -r backend/requirements-dev.txt
+pwsh -File scripts/test-backend.ps1                                  # whole suite
+pwsh -File scripts/test-backend.ps1 tests/test_whatsapp.py -k send   # any pytest args
+pwsh -File scripts/test-backend.ps1 --serial tests/test_x.py -s      # one process (pdb/prints)
+pwsh -File scripts/test-backend.ps1 --lint                           # ruff, then tests
+```
+
+Tests must use in-memory SQLite (`sqlite://` + `StaticPool`); `tests/test_suite_hygiene.py`
+fails on on-disk databases, which made the suite ~4x slower.
+
 ```bash
-# Run full backend test suite
+# Run full backend test suite (serial)
 cd backend && python -m pytest -q
 
 # Run specific test files

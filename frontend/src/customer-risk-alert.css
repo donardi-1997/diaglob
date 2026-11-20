@@ -261,9 +261,9 @@
   align-items: center;
   gap: 6px 8px;
   padding: 10px 11px;
-  border: 1px solid rgba(99, 102, 241, 0.22);
+  border: 1px solid rgba(240, 107, 69, 0.22);
   border-radius: 10px;
-  background: rgba(99, 102, 241, 0.07);
+  background: rgba(240, 107, 69, 0.07);
   font-size: 0.76rem;
 }
 
