@@ -73,7 +73,7 @@ jobs:
 
           while IFS= read -r file; do
             case "$file" in
-              backend/*|scripts/check-api-readiness.sh|scripts/restart-api-verified.sh|scripts/tests/*|scripts/*shopify*.py)
+              backend/*|scripts/check-api-readiness.sh|scripts/restart-api-verified.sh|scripts/restart-automation-worker.sh|scripts/tests/*|scripts/*shopify*.py)
                 backend=true
                 ;;
               shopify.app.toml|shopify/*)
@@ -143,7 +143,7 @@ jobs:
         if: matrix.shard == 0
         shell: bash
         run: |
-          bash -n scripts/check-api-readiness.sh scripts/restart-api-verified.sh
+          bash -n scripts/check-api-readiness.sh scripts/restart-api-verified.sh scripts/restart-automation-worker.sh
           python3 -m unittest discover -s scripts/tests -p 'test_api_readiness.py'
 
       - name: Ruff
