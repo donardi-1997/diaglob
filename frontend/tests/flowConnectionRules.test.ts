@@ -162,6 +162,7 @@ test("editor wires safe connections and respects read-only mode in the canvas", 
   assert.match(builder, /connectFlowNodes\(graphRef\.current, connection\)/);
   assert.match(builder, /if \(!result\.error && result\.graph !== graphRef\.current\)/);
   assert.match(builder, /aria-live="polite"/);
+  assert.match(builder, /node\.type === "trigger"/);
   assert.match(canvas, /nodesDraggable=\{canWrite\}/);
   assert.match(canvas, /nodesConnectable=\{canWrite\}/);
   assert.match(canvas, /deleteKeyCode=\{canWrite \?/);
