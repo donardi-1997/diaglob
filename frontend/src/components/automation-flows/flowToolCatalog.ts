@@ -215,6 +215,7 @@ export const FLOW_RUNTIME_VARIABLES = [
   "{{order.id}}",
   "{{order.number}}",
   "{{order.total}}",
+  "{{order.total_display}}",
   "{{order.currency}}",
   "{{order.payment_method}}",
   "{{order.payment_status}}",

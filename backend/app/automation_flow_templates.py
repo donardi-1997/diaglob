@@ -136,6 +136,25 @@ def _call_confirmation_flow():
     }
 
 
+def _wa_setup(name: str, category: str, body: str, variables: list[str]) -> dict:
+    """Suggested Meta template for the model's message node.
+
+    `body` uses Meta's positional {{n}} parameters and `variables[n-1]` is the
+    Diaglob value suggested for each one. Utility templates are for
+    transactional order/shipping updates; marketing ones need opt-in.
+    """
+    return {
+        "node_id": "message",
+        "suggested_template": {
+            "name": name,
+            "category": category,
+            "language": "es",
+            "body": body,
+            "variables": variables,
+        },
+    }
+
+
 FLOW_TEMPLATES = [
     {
         "id": "voice_order_confirmation",
@@ -151,15 +170,42 @@ FLOW_TEMPLATES = [
     {
         "id": "order_confirmation_flow",
         "name": "Confirmar pedido",
-        "description": "Confirma por WhatsApp un pedido nuevo usando el motor durable de flujos.",
+        "description": "Confirma por WhatsApp cada pedido nuevo con su número y total.",
         "category": "Orders",
         "recommended_role": "sales",
         "required_integrations": ["whatsapp"],
         "icon": "check-circle",
-        "estimated_setup_minutes": 1,
+        "estimated_setup_minutes": 2,
         "graph": _message_flow(
             "order_created",
-            "Hola {{customer.name}}, recibimos tu pedido. Te mantendremos al tanto de su avance.",
+            "Hola {{customer.name}}, recibimos tu pedido {{order.number}} por {{order.total_display}}. "
+            "Te avisaremos cuando sea despachado.",
+        ),
+        "whatsapp_setup": _wa_setup(
+            "diaglob_pedido_recibido", "UTILITY",
+            "Hola {{1}}, recibimos tu pedido {{2}} por {{3}}. Te avisaremos cuando sea despachado.",
+            ["customer.name", "order.number", "order.total_display"],
+        ),
+    },
+    {
+        "id": "order_cancelled_notice",
+        "name": "Avisar pedido cancelado",
+        "description": "Informa al cliente cuando su pedido se cancela, para evitar dudas y reclamos.",
+        "category": "Orders",
+        "recommended_role": "support",
+        "required_integrations": ["whatsapp"],
+        "icon": "alert-triangle",
+        "estimated_setup_minutes": 2,
+        "graph": _message_flow(
+            "order_cancelled",
+            "Hola {{customer.name}}, tu pedido {{order.number}} fue cancelado. "
+            "Si no lo solicitaste o tienes dudas, responde este mensaje y te ayudamos.",
+        ),
+        "whatsapp_setup": _wa_setup(
+            "diaglob_pedido_cancelado", "UTILITY",
+            "Hola {{1}}, tu pedido {{2}} fue cancelado. Si no lo solicitaste o tienes dudas, "
+            "responde este mensaje y te ayudamos.",
+            ["customer.name", "order.number"],
         ),
     },
     {
@@ -173,8 +219,14 @@ FLOW_TEMPLATES = [
         "estimated_setup_minutes": 2,
         "graph": _message_flow(
             "failed_order",
-            "Hola {{customer.name}}, vimos que tu compra no se completó. ¿Podemos ayudarte?",
+            "Hola {{customer.name}}, vimos que tu compra en {{store.name}} no se completó. "
+            "¿Podemos ayudarte a terminarla?",
             wait=(30, "minutes"),
+        ),
+        "whatsapp_setup": _wa_setup(
+            "diaglob_compra_incompleta", "MARKETING",
+            "Hola {{1}}, vimos que tu compra en {{2}} no se completó. ¿Podemos ayudarte a terminarla?",
+            ["customer.name", "store.name"],
         ),
     },
     {
@@ -188,8 +240,13 @@ FLOW_TEMPLATES = [
         "estimated_setup_minutes": 2,
         "graph": _message_flow(
             "customer_created",
-            "Hola {{customer.name}}, gracias por confiar en nosotros. Si necesitas ayuda, estamos aquí.",
+            "Hola {{customer.name}}, gracias por confiar en {{store.name}}. Si necesitas ayuda, estamos aquí.",
             wait=(5, "minutes"),
+        ),
+        "whatsapp_setup": _wa_setup(
+            "diaglob_bienvenida", "MARKETING",
+            "Hola {{1}}, gracias por confiar en {{2}}. Si necesitas ayuda, estamos aquí.",
+            ["customer.name", "store.name"],
         ),
     },
     {
@@ -206,7 +263,13 @@ FLOW_TEMPLATES = [
             field="customer.segment",
             operator="equals",
             value="vip",
-            message="Hola {{customer.name}}, gracias por seguir eligiéndonos. Queremos darte una atención prioritaria.",
+            message="Hola {{customer.name}}, gracias por seguir eligiendo {{store.name}}. "
+            "Queremos darte una atención prioritaria.",
+        ),
+        "whatsapp_setup": _wa_setup(
+            "diaglob_seguimiento_vip", "MARKETING",
+            "Hola {{1}}, gracias por seguir eligiendo {{2}}. Queremos darte una atención prioritaria.",
+            ["customer.name", "store.name"],
         ),
     },
     {
@@ -223,21 +286,33 @@ FLOW_TEMPLATES = [
             field="customer.needs_followup",
             operator="is_true",
             value=True,
-            message="Hola {{customer.name}}, hace tiempo no sabemos de ti. ¿Podemos ayudarte con algo?",
+            message="Hola {{customer.name}}, hace tiempo no sabemos de ti en {{store.name}}. "
+            "¿Podemos ayudarte con algo?",
+        ),
+        "whatsapp_setup": _wa_setup(
+            "diaglob_reactivacion", "MARKETING",
+            "Hola {{1}}, hace tiempo no sabemos de ti en {{2}}. ¿Podemos ayudarte con algo?",
+            ["customer.name", "store.name"],
         ),
     },
     {
-        "id": "delivery_exception_followup",
-        "name": "Novedad de entrega",
-        "description": "Avisa al cliente cuando el tracking normalizado reporta una excepción.",
-        "category": "Post-sales",
+        "id": "shipment_dispatched_notice",
+        "name": "Avisar pedido despachado",
+        "description": "Envía la guía y la transportadora en cuanto se crea el envío.",
+        "category": "Logistics",
         "recommended_role": "logistics",
         "required_integrations": ["whatsapp"],
         "icon": "truck",
         "estimated_setup_minutes": 2,
         "graph": _message_flow(
-            "shipment_delivery_exception",
-            "Hola {{customer.name}}, detectamos una novedad con tu envío {{shipment.tracking_number}} de {{shipment.carrier}}. Estamos revisándola y te mantendremos informado.",
+            "shipment_created",
+            "Hola {{customer.name}}, tu pedido fue despachado con {{shipment.carrier}}. "
+            "Tu número de guía es {{shipment.tracking_number}}.",
+        ),
+        "whatsapp_setup": _wa_setup(
+            "diaglob_pedido_despachado", "UTILITY",
+            "Hola {{1}}, tu pedido fue despachado con {{2}}. Tu número de guía es {{3}}.",
+            ["customer.name", "shipment.carrier", "shipment.tracking_number"],
         ),
     },
     {
@@ -253,6 +328,52 @@ FLOW_TEMPLATES = [
             "shipment_out_for_delivery",
             "Hola {{customer.name}}, tu envío {{shipment.tracking_number}} con {{shipment.carrier}} ya está en reparto. Te recomendamos estar atento a la entrega.",
         ),
+        "whatsapp_setup": _wa_setup(
+            "diaglob_pedido_en_reparto", "UTILITY",
+            "Hola {{1}}, tu envío {{2}} con {{3}} ya está en reparto. Te recomendamos estar atento a la entrega.",
+            ["customer.name", "shipment.tracking_number", "shipment.carrier"],
+        ),
+    },
+    {
+        "id": "shipment_delayed_notice",
+        "name": "Avisar envío retrasado",
+        "description": "Avisa con anticipación cuando la transportadora reporta un retraso.",
+        "category": "Logistics",
+        "recommended_role": "logistics",
+        "required_integrations": ["whatsapp"],
+        "icon": "truck",
+        "estimated_setup_minutes": 2,
+        "graph": _message_flow(
+            "shipment_delayed",
+            "Hola {{customer.name}}, tu envío {{shipment.tracking_number}} con {{shipment.carrier}} "
+            "presenta un retraso. Lo estamos siguiendo y te avisaremos cualquier novedad.",
+        ),
+        "whatsapp_setup": _wa_setup(
+            "diaglob_envio_retrasado", "UTILITY",
+            "Hola {{1}}, tu envío {{2}} con {{3}} presenta un retraso. Lo estamos siguiendo y te "
+            "avisaremos cualquier novedad.",
+            ["customer.name", "shipment.tracking_number", "shipment.carrier"],
+        ),
+    },
+    {
+        "id": "delivery_exception_followup",
+        "name": "Novedad de entrega",
+        "description": "Avisa al cliente cuando el tracking normalizado reporta una excepción.",
+        "category": "Post-sales",
+        "recommended_role": "logistics",
+        "required_integrations": ["whatsapp"],
+        "icon": "truck",
+        "estimated_setup_minutes": 2,
+        "graph": _message_flow(
+            "shipment_delivery_exception",
+            "Hola {{customer.name}}, detectamos una novedad con tu envío {{shipment.tracking_number}} de {{shipment.carrier}}. Estamos revisándola y te mantendremos informado.",
+        ),
+        "whatsapp_setup": _wa_setup(
+            "diaglob_novedad_entrega", "UTILITY",
+            "Hola {{1}}, detectamos una novedad con tu envío {{2}} de {{3}}. Estamos revisándola y "
+            "te mantendremos informado.",
+            ["customer.name", "shipment.tracking_number", "shipment.carrier"],
+        ),
     },
     {
         "id": "shipment_delivered_followup",
@@ -267,6 +388,11 @@ FLOW_TEMPLATES = [
             "shipment_delivered",
             "Hola {{customer.name}}, {{shipment.carrier}} reportó como entregado tu envío {{shipment.tracking_number}}. ¿Recibiste todo correctamente?",
         ),
+        "whatsapp_setup": _wa_setup(
+            "diaglob_pedido_entregado", "UTILITY",
+            "Hola {{1}}, {{2}} reportó como entregado tu envío {{3}}. ¿Recibiste todo correctamente?",
+            ["customer.name", "shipment.carrier", "shipment.tracking_number"],
+        ),
     },
     {
         "id": "post_sales_case_acknowledgement",
@@ -279,7 +405,14 @@ FLOW_TEMPLATES = [
         "estimated_setup_minutes": 1,
         "graph": _message_flow(
             "post_sales_case_created",
-            "Hola {{customer.name}}, registramos tu solicitud de postventa. Nuestro equipo revisará el caso y te mantendrá informado.",
+            "Hola {{customer.name}}, registramos tu solicitud de postventa en {{store.name}}. "
+            "Nuestro equipo revisará el caso y te mantendrá informado.",
+        ),
+        "whatsapp_setup": _wa_setup(
+            "diaglob_caso_postventa", "UTILITY",
+            "Hola {{1}}, registramos tu solicitud de postventa en {{2}}. Nuestro equipo revisará el "
+            "caso y te mantendrá informado.",
+            ["customer.name", "store.name"],
         ),
     },
     {
@@ -293,8 +426,14 @@ FLOW_TEMPLATES = [
         "estimated_setup_minutes": 2,
         "graph": _message_flow(
             "shipment_delivered",
-            "Hola {{customer.name}}, ¿cómo fue tu experiencia con el pedido? Tu opinión nos ayuda a mejorar.",
+            "Hola {{customer.name}}, ¿cómo fue tu experiencia con tu pedido de {{store.name}}? "
+            "Tu opinión nos ayuda a mejorar.",
             wait=(7, "days"),
+        ),
+        "whatsapp_setup": _wa_setup(
+            "diaglob_resena_entrega", "MARKETING",
+            "Hola {{1}}, ¿cómo fue tu experiencia con tu pedido de {{2}}? Tu opinión nos ayuda a mejorar.",
+            ["customer.name", "store.name"],
         ),
     },
     {
@@ -328,6 +467,29 @@ FLOW_TEMPLATES = [
 ]
 
 
+def _trigger_type(template: dict) -> str | None:
+    for node in template["graph"].get("nodes", []):
+        if node.get("type") == "trigger":
+            return (node.get("config") or {}).get("trigger_type")
+    return None
+
+
+def _with_trigger_mode(template: dict) -> dict:
+    """`automatic` only when a real domain event dispatches the trigger.
+
+    Derived from the event bridge so the catalog never promises automation
+    for triggers that today only run manually or from a campaign.
+    """
+    from .automation_flow_events import EVENT_TO_FLOW_TRIGGER
+
+    trigger = _trigger_type(template)
+    template["trigger_type"] = trigger
+    template["trigger_mode"] = (
+        "automatic" if trigger in set(EVENT_TO_FLOW_TRIGGER.values()) else "manual"
+    )
+    return template
+
+
 def get_flow_templates(category: str | None = None) -> list[dict]:
     templates = FLOW_TEMPLATES
     if category:
@@ -335,13 +497,13 @@ def get_flow_templates(category: str | None = None) -> list[dict]:
             item for item in templates
             if item["category"].lower() == category.strip().lower()
         ]
-    return deepcopy(templates)
+    return [_with_trigger_mode(item) for item in deepcopy(templates)]
 
 
 def get_flow_template(template_id: str) -> dict | None:
     for item in FLOW_TEMPLATES:
         if item["id"] == template_id:
-            return deepcopy(item)
+            return _with_trigger_mode(deepcopy(item))
     return None
 
 

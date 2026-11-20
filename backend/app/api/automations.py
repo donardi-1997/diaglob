@@ -46,6 +46,11 @@ from ..automation_flow_templates import (
     get_flow_template_categories,
     get_flow_templates,
 )
+from ..services.automation_flow_template_setup import (
+    FlowTemplateSetup,
+    FlowTemplateSetupError,
+    create_flow_from_model,
+)
 from ..services.automation_flows_service import (
     FlowConflictError,
     FlowNotFoundError,
@@ -154,6 +159,23 @@ class _FlowVersionPublish(BaseModel):
 class _FlowRunCreate(BaseModel):
     customer_ids: list[int]
     trigger_key: str | None = None
+
+
+class _FlowTemplateSetup(BaseModel):
+    """Optional one-step setup when creating a flow from a catalog model."""
+    whatsapp_template_id: int | None = None
+    template_variables: dict | None = None
+    message_mode: str | None = None
+    activate: bool = False
+    name: str | None = None
+
+
+_TEMPLATE_SETUP_ERROR_STATUS = {
+    "FLOW_TEMPLATE_NOT_FOUND": 404,
+    "WHATSAPP_NOT_CONNECTED": 409,
+    "WHATSAPP_TEMPLATE_NOT_FOUND": 404,
+    "WHATSAPP_TEMPLATE_NOT_APPROVED": 409,
+}
 
 
 class VoiceCallCallback(BaseModel):
@@ -453,6 +475,7 @@ def list_flow_templates_route(
 def create_flow_from_template_route(
     store_id: int,
     template_id: str,
+    payload: _FlowTemplateSetup | None = None,
     membership: OrganizationMembership = Depends(require_permission("automations.write")),
     db: Session = Depends(get_db),
 ):
@@ -476,25 +499,25 @@ def create_flow_from_template_route(
             },
         )
 
+    setup = FlowTemplateSetup(**payload.model_dump()) if payload else None
     try:
-        flow = create_flow(
+        return create_flow_from_model(
             db,
-            membership.organization_id,
-            store_id,
-            membership.user_id,
-            template["name"],
-            template["description"],
-            template["graph"],
+            organization_id=membership.organization_id,
+            store_id=store_id,
+            user_id=membership.user_id,
+            model_id=template_id,
+            setup=setup,
         )
+    except FlowTemplateSetupError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=_TEMPLATE_SETUP_ERROR_STATUS.get(exc.code, 400),
+            detail={"code": exc.code},
+        ) from exc
     except (FlowNotFoundError, FlowConflictError, FlowValidationError) as exc:
+        db.rollback()
         raise _map_flow_error(exc)
-
-    return {
-        "template_id": template_id,
-        "recommended_role": template.get("recommended_role"),
-        "flow": flow,
-        "next_step": "review_publish_activate",
-    }
 
 
 # ============================================================

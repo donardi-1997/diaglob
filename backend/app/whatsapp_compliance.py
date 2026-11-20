@@ -19,6 +19,7 @@ TEMPLATE_VARIABLES = {"customer.name", "store.name", "customer.segment", "custom
 FLOW_TEMPLATE_VARIABLES = frozenset(TEMPLATE_VARIABLES | {
     "order.number",
     "order.total",
+    "order.total_display",
     "order.currency",
     "order.items_summary",
     "order.payment_method",

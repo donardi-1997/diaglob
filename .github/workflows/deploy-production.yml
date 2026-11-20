@@ -59,7 +59,7 @@ jobs:
       - name: Backend tests
         run: |
           cd backend
-          python -m pytest -q --tb=short -n auto
+          python -m pytest -q --tb=short -n auto --dist loadfile
 
       - name: Frontend validation
         run: |

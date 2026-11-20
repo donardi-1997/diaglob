@@ -19,6 +19,7 @@ function initialGraph(): Graph {
 
 interface Scenario {
   available?: boolean;
+  withWhatsAppSetup?: boolean;
 }
 
 async function mockStoreApi(page: Page, options: Scenario = {}) {
@@ -33,6 +34,7 @@ async function mockStoreApi(page: Page, options: Scenario = {}) {
     savedDrafts: [] as Graph[],
     getRequests: [] as string[],
     simulationCount: 0,
+    createBodies: [] as Array<Record<string, unknown> | null>,
   };
 
   await page.route("**/api/stores/**", async (route: Route) => {
@@ -53,6 +55,17 @@ async function mockStoreApi(page: Page, options: Scenario = {}) {
           category: "Retention", recommended_for: "stores",
           graph: initialGraph(), required_integrations: ["whatsapp"], icon: "sparkles",
           estimated_setup_minutes: 2,
+          trigger_type: "order_created", trigger_mode: "automatic",
+          ...(options.withWhatsAppSetup ? {
+            whatsapp_setup: {
+              node_id: "message",
+              suggested_template: {
+                name: "diaglob_pedido_recibido", category: "UTILITY", language: "es",
+                body: "Hola {{1}}, recibimos tu pedido {{2}}.",
+                variables: ["customer.name", "order.number"],
+              },
+            },
+          } : {}),
           availability: {
             available, missing: available ? [] : ["whatsapp"],
             status: available ? "ready" : "integration_required",
@@ -62,10 +75,28 @@ async function mockStoreApi(page: Page, options: Scenario = {}) {
       });
     }
 
+    if (method === "GET" && /\/whatsapp\/templates$/.test(pathname)) {
+      return respond({ items: [
+        { id: 7, provider_template_name: "diaglob_pedido_recibido", language_code: "es", category: "UTILITY",
+          status: "approved", components: { items: [{ type: "BODY", text: "Hola {{1}}, recibimos tu pedido {{2}}." }] } },
+        { id: 8, provider_template_name: "pending_one", language_code: "es", category: "UTILITY",
+          status: "pending", components: { items: [] } },
+      ] });
+    }
+
     if (method === "POST" && /\/automation-flow-templates\/welcome$/.test(pathname)) {
       if (options.available === false || storeId !== 101) return respond({ detail: "Integration required" }, 400);
+      const body = request.postData() ? (request.postDataJSON() as Record<string, unknown>) : null;
+      state.createBodies.push(body);
       state.created = true;
-      return respond({ template_id: "welcome", flow: { id: 42 }, next_step: "review_publish_activate" });
+      if (body?.activate) {
+        state.published = true;
+        state.status = "active";
+      }
+      return respond({
+        template_id: "welcome", flow: { id: 42 }, activated: Boolean(body?.activate),
+        next_step: body?.activate ? "monitor_runs" : "review_publish_activate",
+      });
     }
 
     const flow = () => ({
@@ -140,7 +171,10 @@ async function openTemplateEditor(page: Page) {
   await expect(card).toBeVisible();
   await card.getByRole("button", { name: "Ver pasos" }).click();
   await expect(card.locator(".template-preview-steps li")).toHaveCount(3);
-  await card.getByRole("button", { name: "Crear flujo" }).click();
+  await card.getByRole("button", { name: "Usar modelo" }).click();
+  const setup = page.getByRole("dialog");
+  await expect(setup).toContainText("Automático cuando ocurre");
+  await setup.getByRole("button", { name: "Crear borrador" }).click();
   await expect(page.locator(".flow-builder-section")).toBeVisible();
   await expect(page.locator(".flow-editor-actions h3")).toHaveText("Bienvenida de prueba");
 }
@@ -201,9 +235,40 @@ test("missing integrations and read-only permissions block flow creation", async
   await page.getByRole("button", { name: "Plantillas", exact: true }).click();
   const card = page.locator(".template-card").first();
   await expect(card).toContainText("whatsapp");
-  await expect(card.getByRole("button", { name: "Crear flujo" })).toBeDisabled();
+  await expect(card.getByRole("button", { name: "Usar modelo" })).toBeDisabled();
   await page.getByRole("button", { name: "Toggle write permission" }).click();
-  await expect(card.getByRole("button", { name: "Crear flujo" })).toHaveCount(0);
+  await expect(card.getByRole("button", { name: "Usar modelo" })).toHaveCount(0);
+});
+
+test("model wizard binds the approved Meta template and activates only after confirmation", async ({ page }) => {
+  const state = await mockStoreApi(page, { withWhatsAppSetup: true });
+  await page.goto("/e2e/harness.html");
+  await page.getByRole("button", { name: "Plantillas", exact: true }).click();
+  await page.locator(".template-card").filter({ hasText: "Bienvenida de prueba" })
+    .getByRole("button", { name: "Usar modelo" }).click();
+
+  const setup = page.getByRole("dialog");
+  // The synced template matching the suggested name is preselected; pending ones are not offered.
+  const templateSelect = setup.getByLabel("Plantilla aprobada de WhatsApp");
+  await expect(templateSelect).toHaveValue("7");
+  await expect(templateSelect.locator("option")).toHaveCount(2);
+  await expect(setup).toContainText("Hola [customer.name], recibimos tu pedido [order.number].");
+
+  await setup.getByLabel("Publicar y activar ahora").check();
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await setup.getByRole("button", { name: "Crear y activar" }).click();
+  expect(state.createBodies).toHaveLength(0);
+
+  page.once("dialog", (dialog) => dialog.accept());
+  await setup.getByRole("button", { name: "Crear y activar" }).click();
+  await expect(page.locator(".flow-builder-section")).toBeVisible();
+  expect(state.createBodies).toEqual([{
+    activate: true,
+    whatsapp_template_id: 7,
+    template_variables: { body: ["customer.name", "order.number"] },
+    message_mode: "auto",
+  }]);
+  await expect(page.getByRole("button", { name: "Pausar" })).toBeVisible();
 });
 
 test("store changes never open previously created flow in a different store", async ({ page }) => {

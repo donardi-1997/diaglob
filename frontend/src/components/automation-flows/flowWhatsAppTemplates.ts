@@ -12,6 +12,7 @@ export const FLOW_TEMPLATE_VARIABLES = [
   "store.name",
   "order.number",
   "order.total",
+  "order.total_display",
   "order.currency",
   "order.items_summary",
   "order.payment_method",

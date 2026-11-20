@@ -43,8 +43,10 @@ test("template preview omits malformed nodes and sensitive config values", () =>
 
 test("creating a template navigates to the exact created flow, not the general list", () => {
   const templates = source("components/AutomationTemplates.tsx");
+  const setup = source("components/AutomationModelSetupDialog.tsx");
   const page = source("pages/AutomationsPage.tsx");
-  assert.match(templates, /createdTemplateFlowId\(response\.data\)/);
+  assert.match(setup, /createdTemplateFlowId\(response\.data\)/);
+  assert.match(setup, /onCreated\(createdTemplateFlowId\(response\.data\), activated\)/);
   assert.match(templates, /onFlowCreated\(flowId\)/);
   assert.match(page, /setPendingTemplateFlow\(\{ storeId, flowId \}\)/);
   assert.match(page, /initialFlowId=\{pendingTemplateFlow\?\.storeId === storeId/);
@@ -62,4 +64,9 @@ test("editor flow activation remains explicitly gated by publication and confirm
   assert.match(flows, /onEditorDirtyChange\?\.\(view === "builder" && dirty\)/);
   assert.match(flows, /setSavedGraphSignature\(signature\)/);
   assert.doesNotMatch(source("components/AutomationTemplates.tsx"), /activateFlow\(/);
+  // The model wizard may activate in one step, but only after the same explicit confirmation.
+  const setup = source("components/AutomationModelSetupDialog.tsx");
+  assert.doesNotMatch(setup, /activateFlow\(/);
+  assert.match(setup, /if \(activate && !window\.confirm\(t\("flowEditorConfirmActivate"\)\)\) return;/);
+  assert.match(setup, /useState\(false\);\s*\n\s*const \[submitting/);
 });
