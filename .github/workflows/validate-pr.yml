@@ -130,13 +130,14 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-          cache-dependency-path: backend/requirements.txt
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
 
       - name: Install backend dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r backend/requirements.txt
-          pip install ruff pytest
+          pip install -r backend/requirements.txt -r backend/requirements-dev.txt
 
       - name: Validate production readiness helpers
         if: matrix.shard == 0
@@ -192,7 +193,8 @@ jobs:
         run: |
           set -euo pipefail
           mapfile -t test_files < /tmp/backend-test-files.txt
-          python -m pytest -q --tb=short "${test_files[@]}"
+          # Tests use in-memory SQLite per process, so xdist workers are isolated.
+          python -m pytest -q --tb=short -n auto "${test_files[@]}"
 
   frontend:
     name: Frontend validation
