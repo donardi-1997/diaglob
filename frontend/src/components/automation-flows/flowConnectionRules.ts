@@ -34,7 +34,8 @@ function pathExists(edges: FlowEdge[], start: string, destination: string): bool
   const pending = [start];
 
   while (pending.length) {
-    const id = pending.pop()!;
+    const id = pending.pop();
+    if (id === undefined) continue;
     if (id === destination) return true;
     if (visited.has(id)) continue;
     visited.add(id);
