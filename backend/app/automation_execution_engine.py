@@ -16,6 +16,14 @@ from .models import (
     AutomationRateLimit, AutomationRun, Store, WhatsAppConnection,
 )
 from .whatsapp_client import WhatsAppDeliveryError, send_whatsapp_template_message, send_whatsapp_text_message
+from .services.whatsapp_channel_health import (
+    CHANNEL_PAUSE,
+    CHANNEL_UNAVAILABLE_CODE,
+    channel_resume_at,
+    clear_channel_pause,
+    mark_channel_paused,
+    should_give_up,
+)
 from .whatsapp_security import decrypt_whatsapp_secret
 from .whatsapp_compliance import evaluate_whatsapp_delivery_eligibility, get_last_whatsapp_inbound_by_customer, template_components
 
@@ -220,6 +228,17 @@ def process_recipient(db: Session, recipient_id: int, now: datetime | None = Non
     if not connection:
         _finish_attempt(db, recipient, "failed", now, code="channel_unavailable", message="WhatsApp connection is unavailable")
         return "failed"
+    resume_at = channel_resume_at(connection, now)
+    if resume_at is not None:
+        # Channel paused after Meta rejected the token/account: don't call
+        # Meta and don't consume attempts until the pause window ends.
+        if should_give_up(run.started_at, now):
+            _finish_attempt(db, recipient, "failed", now, code=CHANNEL_UNAVAILABLE_CODE, message="WhatsApp channel needs attention")
+            return "failed"
+        recipient.status = "queued"; recipient.next_attempt_at = resume_at; recipient.lease_expires_at = None
+        recipient.error_code = CHANNEL_UNAVAILABLE_CODE; recipient.error_message = "WhatsApp channel needs attention"
+        db.commit()
+        return "channel_paused"
     compliance = evaluate_whatsapp_delivery_eligibility(db, campaign, connection, recipient.customer_id, now, last_inbound_at, inbound_known)
     if not compliance["allowed"]:
         _finish_attempt(db, recipient, "skipped", now, code=compliance["reason"], message="WhatsApp delivery is not eligible")
@@ -248,10 +267,20 @@ def process_recipient(db: Session, recipient_id: int, now: datetime | None = Non
         recipient = db.get(AutomationRecipientExecution, recipient_id)
         if exc.category == "ambiguous":
             _finish_attempt(db, recipient, "ambiguous", now, code=exc.code, message=str(exc)); return "ambiguous"
+        if exc.category == "channel":
+            connection = db.get(WhatsAppConnection, connection.id)
+            mark_channel_paused(connection, exc.code, now)
+            _finish_attempt(db, recipient, "retry_wait", now, code=exc.code, message=str(exc))
+            # The channel failed, not this recipient: wait for the pause
+            # window (later deferrals don't call Meta or add attempts).
+            recipient.next_attempt_at = now + CHANNEL_PAUSE
+            db.commit()
+            return "channel_paused"
         if exc.category == "transient" and recipient.attempt_count < MAX_ATTEMPTS:
             recipient.status = "retry_wait"; recipient.next_attempt_at = now + timedelta(seconds=BACKOFF_SECONDS[min(recipient.attempt_count - 1, len(BACKOFF_SECONDS) - 1)]); recipient.lease_expires_at = None; _finish_attempt(db, recipient, "retry_wait", now, code=exc.code, message=str(exc)); return "retry_wait"
         _finish_attempt(db, recipient, "failed", now, code=exc.code, message=str(exc)); return "failed"
     recipient = db.get(AutomationRecipientExecution, recipient_id)
+    clear_channel_pause(db.get(WhatsAppConnection, connection.id), now)
     _finish_attempt(db, recipient, "sent", now, provider_id=result.get("message_id"))
     return "sent"
 

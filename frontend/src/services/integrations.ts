@@ -491,6 +491,11 @@ export interface WhatsAppConnectionStatus {
   verify_token: string | null;
   connected_at: string | null;
   last_error: string | null;
+  // Meta rejected the token/account; automated sends are paused.
+  channel_attention?: {
+    required: boolean;
+    reason: string | null;
+  };
 }
 
 

@@ -28,6 +28,75 @@ class WhatsAppWebhookError(Exception):
     pass
 
 
+# Inbound kinds the AI can answer: free text, and the label of a tapped
+# template quick-reply / interactive button or list option ("Confirmar
+# pedido"). Media and locations are stored for the inbox but left to a human.
+CONVERSATIONAL_KINDS = frozenset({"text", "button", "interactive"})
+
+_MEDIA_PLACEHOLDERS = {
+    "es": {
+        "image": "[Imagen]", "video": "[Video]", "audio": "[Audio]",
+        "document": "[Documento]", "sticker": "[Sticker]",
+        "location": "[Ubicación]", "contacts": "[Contacto]",
+    },
+    "en": {
+        "image": "[Image]", "video": "[Video]", "audio": "[Audio]",
+        "document": "[Document]", "sticker": "[Sticker]",
+        "location": "[Location]", "contacts": "[Contact]",
+    },
+    "pt": {
+        "image": "[Imagem]", "video": "[Vídeo]", "audio": "[Áudio]",
+        "document": "[Documento]", "sticker": "[Figurinha]",
+        "location": "[Localização]", "contacts": "[Contato]",
+    },
+}
+
+
+def _placeholder(kind: str, language: str | None) -> str:
+    lang = (language or "es").lower()[:2]
+    return _MEDIA_PLACEHOLDERS.get(lang, _MEDIA_PLACEHOLDERS["es"])[kind]
+
+
+def inbound_message_content(msg: dict, language: str | None) -> tuple[str, str, str | None] | None:
+    """Return ``(text, kind, payload)`` for an inbound Cloud API message.
+
+    ``text`` is what the inbox and automations see; ``payload`` is the
+    developer payload/id of a tapped button. Returns None for messages that
+    carry nothing for the merchant (reactions, system/unsupported notices).
+    """
+    kind = msg.get("type") or ""
+    if kind == "text":
+        text = ((msg.get("text") or {}).get("body") or "").strip()
+        return (text, kind, None) if text else None
+    if kind == "button":
+        # Quick-reply button on a template message.
+        button = msg.get("button") or {}
+        text = (button.get("text") or button.get("payload") or "").strip()
+        return (text, kind, button.get("payload")) if text else None
+    if kind == "interactive":
+        interactive = msg.get("interactive") or {}
+        reply = interactive.get("button_reply") or interactive.get("list_reply") or {}
+        text = (reply.get("title") or "").strip()
+        return (text, kind, reply.get("id")) if text else None
+    if kind in ("image", "video", "document", "audio", "sticker"):
+        media = msg.get(kind) or {}
+        caption = (media.get("caption") or "").strip()
+        filename = (media.get("filename") or "").strip() if kind == "document" else ""
+        label = _placeholder(kind, language)
+        detail = caption or filename
+        return (f"{label} {detail}" if detail else label, kind, None)
+    if kind == "location":
+        location = msg.get("location") or {}
+        detail = " - ".join(
+            part for part in ((location.get("name") or "").strip(), (location.get("address") or "").strip()) if part
+        )
+        label = _placeholder(kind, language)
+        return (f"{label} {detail}" if detail else label, kind, None)
+    if kind == "contacts":
+        return (_placeholder(kind, language), kind, None)
+    return None
+
+
 def process_webhook_payload(db: Session, payload: dict) -> dict:
     """Process a verified WhatsApp webhook payload.
 
@@ -80,30 +149,29 @@ def process_webhook_payload(db: Session, payload: dict) -> dict:
                 if c.get("wa_id")
             }
 
+            shop = db.query(Store).filter(
+                Store.id == connection.store_id,
+                Store.organization_id == connection.organization_id,
+            ).first()
+
             for msg in messages:
                 wa_id = msg.get("from") or ""
                 msg_id = msg.get("id") or ""
-                msg_type = msg.get("type") or ""
 
                 if not wa_id or not msg_id:
                     continue
 
-                if msg_type != "text":
+                content = inbound_message_content(
+                    msg, shop.default_language if shop is not None else None,
+                )
+                if content is None:
                     continue
-
-                text_body = msg.get("text", {}).get("body") or ""
-
-                if not text_body:
-                    continue
+                text_body, msg_kind, button_payload = content
 
                 # Signed suppression guard runs before creating customer,
                 # message, conversation or scheduling an AI reply.
                 # WhatsApp phone is NOT a Shopify customer ID. Check only
                 # exact signed phone HMAC and shop-wide tombstones here.
-                shop = db.query(Store).filter(
-                    Store.id == connection.store_id,
-                    Store.organization_id == connection.organization_id,
-                ).first()
                 if shop is not None and shop.shopify_domain:
                     reason, _ = evaluate_shopify_privacy_suppression(
                         db, organization_id=connection.organization_id,
@@ -200,14 +268,23 @@ def process_webhook_payload(db: Session, payload: dict) -> dict:
                         created_at=datetime.utcnow(),
                     )
                     db.add(message)
+                    # Not persisted (no column); carried to the automation event.
+                    message.inbound_kind = msg_kind
+                    message.inbound_payload = button_payload
                     new_messages.append((message, conversation, connection))
 
                     conversation.preview = text_body
                     conversation.unread += 1
                     conversation.updated_at = datetime.utcnow()
 
-                    if conversation.id not in inbound_conversation_ids:
-                        inbound_conversation_ids.append(conversation.id)
+                    # The AI answers the conversation's latest message: only
+                    # schedule it when that message is text or a tapped
+                    # button, never for a photo/audio it cannot understand.
+                    if msg_kind in CONVERSATIONAL_KINDS:
+                        if conversation.id not in inbound_conversation_ids:
+                            inbound_conversation_ids.append(conversation.id)
+                    elif conversation.id in inbound_conversation_ids:
+                        inbound_conversation_ids.remove(conversation.id)
 
             for status_event in statuses:
                 ext_msg_id = status_event.get("id") or ""
@@ -323,6 +400,8 @@ def emit_webhook_events(db: Session, new_conversations: list, new_messages: list
                     "sender": message.sender,
                     "channel": "whatsapp",
                     "text": message.text,
+                    "type": getattr(message, "inbound_kind", "text"),
+                    "button_payload": getattr(message, "inbound_payload", None),
                 },
                 "conversation": {
                     "id": conversation.id,
