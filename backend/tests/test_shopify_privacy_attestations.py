@@ -169,6 +169,7 @@ def test_execution_requires_the_exact_approved_policy_digest(monkeypatch):
         SHOPIFY_PRIVACY_PROCESSING_ENABLED="true",
         SHOPIFY_PRIVACY_OPERATOR_APPROVED_POLICY_SHA256="0" * 64,
         SHOPIFY_PRIVACY_EXECUTION_PUBLIC_KEY="synthetic",
+        SHOPIFY_PRIVACY_LEGAL_REVIEW_PUBLIC_KEY="independent-synthetic",
         SHOPIFY_PRIVACY_SUPPRESSION_KEY="synthetic",
     )
     blockers = _audit(monkeypatch, _all_docs(private), env)["privacy_fulfillment_release_blockers"]
@@ -176,3 +177,9 @@ def test_execution_requires_the_exact_approved_policy_digest(monkeypatch):
     env["SHOPIFY_PRIVACY_OPERATOR_APPROVED_POLICY_SHA256"] = POLICY
     blockers = _audit(monkeypatch, _all_docs(private), env)["privacy_fulfillment_release_blockers"]
     assert blockers == ["REAL_SHOPIFY_DELIVERY_NOT_VERIFIED_BY_THIS_AUDIT"]
+    env.pop("SHOPIFY_PRIVACY_LEGAL_REVIEW_PUBLIC_KEY")
+    blockers = _audit(monkeypatch, _all_docs(private), env)["privacy_fulfillment_release_blockers"]
+    assert "LIVE_CUSTOMER_AND_SHOP_REDACTION_NOT_ENABLED" in blockers
+    env["SHOPIFY_PRIVACY_LEGAL_REVIEW_PUBLIC_KEY"] = env["SHOPIFY_PRIVACY_EXECUTION_PUBLIC_KEY"]
+    blockers = _audit(monkeypatch, _all_docs(private), env)["privacy_fulfillment_release_blockers"]
+    assert "LIVE_CUSTOMER_AND_SHOP_REDACTION_NOT_ENABLED" in blockers
