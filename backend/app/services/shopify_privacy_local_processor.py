@@ -26,13 +26,17 @@ from .shopify_privacy_scope_preview import (
 from .shopify_privacy_automation_provenance import (
     inspect_shopify_automation_privacy_impact,
 )
+from .shopify_privacy_automation_export import (
+    ShopifyAutomationExportError,
+    export_linked_automation_records,
+)
 
 _REQUEST_ID = re.compile(r"^[0-9a-f]{64}$")
 _MAX_ROWS = 250
 _MAX_BYTES = 1_000_000
 _UNCOVERED = (
     "shared_customer_identity",
-    "unstructured_agent_and_automation_records",
+    "merchant_copilot_and_legacy_automation_payloads",
     "external_processors_and_files",
     "legal_retention_and_backups",
 )
@@ -353,6 +357,13 @@ def build_encrypted_local_customer_export(
         ConversationalCheckout.customer_id == customer_id,
     ).order_by(ConversationalCheckout.id), "checkouts")
 
+    try:
+        linked_automation = export_linked_automation_records(
+            db, receipt=receipt, customer_id=customer_id,
+        )
+    except ShopifyAutomationExportError as exc:
+        raise ShopifyLocalPrivacyError(str(exc)) from exc
+
     payload = {
         "schema": "diaglob.shopify.local_customer_export.v1",
         "request_id": receipt.request_id,
@@ -383,6 +394,7 @@ def build_encrypted_local_customer_export(
             "country_code": c.country_code, "postal_code": c.postal_code,
             "delivery_reference": c.delivery_reference, "failure_reason": c.failure_reason,
         } for c in checkouts],
+        "linked_automation": linked_automation,
     }
     plaintext = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
     if len(plaintext.encode("utf-8")) > _MAX_BYTES:

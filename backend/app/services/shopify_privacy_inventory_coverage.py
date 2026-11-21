@@ -51,15 +51,15 @@ DECLARED_COVERAGE: tuple[PrivacyTableCoverage, ...] = (
     PrivacyTableCoverage("automations", "store_or_organization", "uncovered"),
     PrivacyTableCoverage("automation_executions", "store_or_organization", "uncovered"),
     PrivacyTableCoverage("automation_campaigns", "store", "uncovered"),
-    PrivacyTableCoverage("automation_audience_members", "store_via_campaign", "uncovered"),
+    PrivacyTableCoverage("automation_audience_members", "store_via_campaign", "partial"),
     PrivacyTableCoverage("automation_runs", "store_via_campaign", "uncovered"),
-    PrivacyTableCoverage("automation_recipient_executions", "store_via_campaign_run", "uncovered"),
-    PrivacyTableCoverage("automation_delivery_attempts", "store_via_recipient", "uncovered"),
+    PrivacyTableCoverage("automation_recipient_executions", "store_via_campaign_run", "partial"),
+    PrivacyTableCoverage("automation_delivery_attempts", "store_via_recipient", "partial"),
     PrivacyTableCoverage("automation_flows", "store", "uncovered"),
     PrivacyTableCoverage("automation_flow_versions", "store_via_flow", "uncovered"),
     PrivacyTableCoverage("automation_flow_runs", "store", "uncovered"),
-    PrivacyTableCoverage("automation_flow_recipient_executions", "store_via_flow_run", "uncovered"),
-    PrivacyTableCoverage("automation_node_executions", "store_via_recipient", "uncovered"),
+    PrivacyTableCoverage("automation_flow_recipient_executions", "store_via_flow_run", "partial"),
+    PrivacyTableCoverage("automation_node_executions", "store_via_recipient", "partial"),
 )
 
 EXTERNAL_REVIEW_AREAS: tuple[str, ...] = (
