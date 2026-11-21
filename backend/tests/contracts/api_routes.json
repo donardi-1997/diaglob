@@ -777,6 +777,14 @@
   ],
   [
     "GET",
+    "/health/live"
+  ],
+  [
+    "GET",
+    "/health/ready"
+  ],
+  [
+    "GET",
     "/openapi.json"
   ],
   [
