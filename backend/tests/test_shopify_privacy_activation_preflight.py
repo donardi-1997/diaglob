@@ -24,7 +24,10 @@ def test_activation_script_has_no_self_approved_policy_or_rotated_suppression_ke
     assert 'SHOPIFY_PRIVACY_WORM_LEDGER_PUBLIC_KEY' in data
     assert 'PRIVACY_WORM_LEDGER_PREFLIGHT_FAILED' in data
     assert 'PRIVACY_WORM_LEDGER_PREFLIGHT=verified' in data
-    assert 'verify_worm_ledger(s3, bucket=bucket, prefix=prefix, public_key=public)' in data
+    assert 'verify_worm_ledger(' in data
+    assert 'minimum_remaining_days=int(retention_horizon)' in data
+    assert 'PRIVACY_WORM_RETENTION_HORIZON_REQUIRED' in data
+    assert 'SHOPIFY_PRIVACY_WORM_MIN_REMAINING_DAYS' in data
     assert 'verify_shopify_suppression_restore(' in data
     assert 'anchor["last_checkpoint_hmac"] != checkpoint' in data
     assert 'anchor["last_policy_sha256"] != policy_digest' in data
