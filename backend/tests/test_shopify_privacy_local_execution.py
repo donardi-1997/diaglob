@@ -36,7 +36,9 @@ from app.services.shopify_privacy_live_delivery import (
     issue_local_privacy_delivery, purge_expired_local_privacy_deliveries,
     redeem_local_privacy_delivery,
 )
-from app.services.shopify_privacy_suppression import evaluate_shopify_privacy_suppression
+from app.services.shopify_privacy_suppression import (
+    ShopifySuppressionError, evaluate_shopify_privacy_suppression,
+)
 from app.shopify_security import encrypt_shopify_secret
 
 ACCESS = "a" * 64
