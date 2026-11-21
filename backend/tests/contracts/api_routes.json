@@ -693,6 +693,10 @@
   ],
   [
     "GET",
+    "/api/stores/{store_id}/shopify/privacy/cases/{request_id}/copilot-erasure/plan"
+  ],
+  [
+    "GET",
     "/api/stores/{store_id}/shopify/privacy/cases/{request_id}/delivery"
   ],
   [
@@ -1246,6 +1250,10 @@
   [
     "POST",
     "/api/stores/{store_id}/shopify/poc/order"
+  ],
+  [
+    "POST",
+    "/api/stores/{store_id}/shopify/privacy/cases/{request_id}/copilot-erasure"
   ],
   [
     "POST",

@@ -139,6 +139,33 @@ def test_redaction_without_automation_scrub_cannot_pass_as_full_coverage(db):
     assert result["fulfillment_complete"] is False
 
 
+def test_shop_copilot_stage_is_explicit_closure_blocker(db):
+    receipt = add_receipt(db, "shop/redact")
+    for event in ("local_redaction_executed", "automation_redaction_executed",
+                  "knowledge_erasure_executed"):
+        db.add(ShopifyPrivacyAuditEvent(
+            request_id=REQUEST_ID, event_type=event,
+            actor_type="independently_permitted_worker", reason_code="a" * 64,
+            to_status=receipt.status,
+        ))
+    db.commit()
+    result = summarize_shopify_privacy_case_evidence(db, request_id=REQUEST_ID)
+    assert result["shop_copilot_erasure_recorded"] is False
+    assert "COPILOT_SQL_ERASURE_REQUIRED_AFTER_LOCAL_REDACTION" in result["blockers"]
+    assert result["fulfillment_complete"] is False
+    db.add(ShopifyPrivacyAuditEvent(
+        request_id=REQUEST_ID, event_type="copilot_erasure_executed",
+        actor_type="independently_permitted_worker", reason_code="a" * 64,
+        to_status=receipt.status,
+    ))
+    db.commit()
+    after = summarize_shopify_privacy_case_evidence(db, request_id=REQUEST_ID)
+    assert after["shop_copilot_erasure_recorded"] is True
+    assert "COPILOT_SQL_ERASURE_REQUIRED_AFTER_LOCAL_REDACTION" not in after["blockers"]
+    assert after["fulfillment_complete"] is False
+    assert "EXTERNAL_SURFACES_NOT_INDEPENDENTLY_VERIFIED" in after["blockers"]
+
+
 def test_no_data_determination_is_not_a_customer_erasure(db):
     receipt = add_receipt(db, "shop/redact")
     receipt.status = NO_DATA_STATUS
