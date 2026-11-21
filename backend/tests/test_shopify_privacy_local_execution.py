@@ -39,6 +39,7 @@ from app.services.shopify_privacy_live_delivery import (
 )
 from app.services.shopify_privacy_suppression import (
     ShopifySuppressionError, evaluate_shopify_privacy_suppression,
+    evaluate_shopify_local_privacy,
 )
 from app.shopify_security import encrypt_shopify_secret
 
@@ -282,6 +283,41 @@ def test_local_redaction_is_real_atomic_scoped_and_idempotent(sandbox, monkeypat
         legal_clearance_token=clearance, **owner)
     assert retry["idempotent"] is True and retry["fulfillment_complete"] is False
     assert db.query(ShopifyPrivacyAuditEvent).filter_by(event_type="local_redaction_executed").count() == 1
+
+
+def test_queued_local_buyer_is_suppressed_after_profile_deletion_without_harming_other_store(sandbox, monkeypatch):
+    db, owner, _, _, stores, customer = sandbox
+    before = preview_local_privacy_execution(db, request_id=ERASE, **owner)
+    assert before["planned_restore_checkpoint"]["total_records"] >= 2
+    assert db.query(ShopifyPrivacySuppression).count() == 0
+    permit = signed_permit(sandbox, request_id=ERASE, operation="local_redaction")
+    legal = signed_legal_clearance(sandbox)
+    allow_redaction_checkpoint(sandbox, monkeypatch)
+    result = execute_local_privacy_redaction(db, request_id=ERASE,
+        permit_token=permit, legal_clearance_token=legal, **owner)
+    assert result["local_redaction_executed"] is True
+    assert db.query(CustomerStoreProfile).filter_by(store_id=stores[0].id).count() == 0
+    assert db.query(CustomerStoreProfile).filter_by(store_id=stores[1].id).count() == 1
+    local_rows = db.query(ShopifyPrivacySuppression).filter_by(
+        store_id=stores[0].id, kind="local_customer", status="active",
+    ).all()
+    assert len(local_rows) == 1
+    # HMAC is a 64-character hex digest, not the raw local identifier.
+    # A single decimal digit can coincidentally occur inside any hex digest.
+    assert len(local_rows[0].selector_digest) == 64
+    assert local_rows[0].selector_digest != str(customer.id)
+    assert evaluate_shopify_local_privacy(
+        db, organization_id=owner["organization_id"], store_id=stores[0].id,
+        local_customer_id=customer.id,
+    ) == "local_customer"
+    # A shared customer remains reachable via another tenant/store scope.
+    assert evaluate_shopify_local_privacy(
+        db, organization_id=owner["organization_id"], store_id=stores[1].id,
+        local_customer_id=customer.id,
+    ) is None
+    assert db.query(ShopifyPrivacySuppression).filter_by(
+        store_id=stores[1].id,
+    ).count() == 0
 
 
 def test_redaction_requires_independently_signed_case_clearance(sandbox, monkeypatch):

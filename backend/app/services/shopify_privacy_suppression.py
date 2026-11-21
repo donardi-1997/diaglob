@@ -408,6 +408,35 @@ def evaluate_shopify_local_privacy(
         raise ShopifySuppressionError("SHOP_IDENTITY_MISMATCH")
     remote_id = None
     if local_customer_id is not None:
+        # The Shopify store profile may already have been deleted by a
+        # permitted redaction. A durable keyed local-ID tombstone prevents
+        # queued campaign/flow sends from relying on that lost profile.
+        if type(local_customer_id) is not int or local_customer_id <= 0:
+            return "customer_unresolved"
+        local_rows = db.query(ShopifyPrivacySuppression).filter(
+            ShopifyPrivacySuppression.organization_id == organization_id,
+            ShopifyPrivacySuppression.store_id == store_id,
+            ShopifyPrivacySuppression.status == "active",
+            ShopifyPrivacySuppression.kind == "local_customer",
+        ).all()
+        if local_rows:
+            key = _secret()
+            _require_fingerprint(local_rows, _key_fingerprint(key))
+            try:
+                domain = normalize_shop_domain(store.shopify_domain)
+            except (ValueError, TypeError, AttributeError) as exc:
+                raise ShopifySuppressionError("SHOP_IDENTITY_MISMATCH") from exc
+            expected_domain = _domain_fingerprint(key, organization_id, store_id, domain)
+            if any(not hmac.compare_digest(row.domain_fingerprint, expected_domain)
+                   for row in local_rows):
+                raise ShopifySuppressionError("SUPPRESSION_SHOP_IDENTITY_MISMATCH")
+            local_digest = _digest(
+                key=key, organization_id=organization_id, store_id=store_id,
+                domain=domain, kind="local_customer", identity=str(local_customer_id),
+            )
+            if any(hmac.compare_digest(row.selector_digest, local_digest)
+                   for row in local_rows):
+                return "local_customer"
         customer = db.query(Customer).filter(
             Customer.id == local_customer_id,
             Customer.organization_id == organization_id,
