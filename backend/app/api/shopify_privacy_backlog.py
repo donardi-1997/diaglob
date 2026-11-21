@@ -76,6 +76,11 @@ from ..services.shopify_privacy_legacy_ai_attribution import (
 )
 from ..services.shopify_privacy_scope_preview import ShopifyPrivacyScopeError
 
+from ..services.shopify_privacy_case_evidence import (
+    ShopifyPrivacyCaseEvidenceError,
+    summarize_shopify_privacy_case_evidence,
+)
+
 router = APIRouter()
 
 
@@ -487,3 +492,19 @@ def post_shopify_privacy_restore_drill(
         )
     except (ShopifyRestoreVerificationError, ShopifyPrivacyBackupCoverageError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
+
+@router.get("/api/internal/shopify/privacy/cases/{request_id}/evidence-summary")
+def get_shopify_privacy_case_evidence_summary(
+    request_id: str,
+    x_internal_secret: str | None = Header(None, alias="X-Internal-Secret"),
+    db: Session = Depends(get_db),
+):
+    """Read-only ten-control report, internal auth, no PII or completion claim."""
+    _require_internal_secret(x_internal_secret)
+    try:
+        report = summarize_shopify_privacy_case_evidence(db, request_id=request_id)
+    except ShopifyPrivacyCaseEvidenceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    if report is None:
+        raise HTTPException(status_code=404, detail="PRIVACY_CASE_UNAVAILABLE")
+    return report
