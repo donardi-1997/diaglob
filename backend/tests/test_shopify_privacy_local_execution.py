@@ -125,12 +125,12 @@ def signed_permit(sandbox, request_id=ACCESS, operation="local_export", changes=
     return b64(payload) + "." + b64(signature)
 
 
-def signed_legal_clearance(sandbox, changes=None):
+def signed_legal_clearance(sandbox, changes=None, request_id=ERASE):
     db, owner, *_ = sandbox
-    preview = preview_local_privacy_execution(db, request_id=ERASE, **owner)
+    preview = preview_local_privacy_execution(db, request_id=request_id, **owner)
     now = int(time.time())
     data = dict(
-        version=1, request_id=ERASE,
+        version=1, request_id=request_id,
         organization_id=owner["organization_id"], store_id=owner["store_id"],
         scope_sha256=preview["scope_sha256"], policy_sha256=policy_snapshot()[1],
         merchant_instruction_evidence_sha256="c" * 64,
@@ -161,9 +161,28 @@ def test_preview_does_not_mutate_or_read_other_store_content(sandbox):
     assert result["fulfillment_complete"] is False
 
 
+def test_local_export_requires_independent_clearance_before_extraction(sandbox):
+    db, owner, *_ = sandbox
+    permit = signed_permit(sandbox, request_id=ACCESS, operation="local_export")
+    with patch("app.services.shopify_privacy_live_delivery.build_encrypted_local_customer_export") as extract:
+        with pytest.raises(ShopifyPrivacyExecutionError, match="PRIVACY_CASE_LEGAL_CLEARANCE_REQUIRED"):
+            issue_local_privacy_delivery(db, request_id=ACCESS, permit_token=permit, **owner)
+        with pytest.raises(ShopifyPrivacyExecutionError, match="PRIVACY_CASE_LEGAL_CLEARANCE_SCOPE_MISMATCH"):
+            issue_local_privacy_delivery(db, request_id=ACCESS, permit_token=permit,
+                legal_clearance_token=signed_legal_clearance(
+                    sandbox, request_id=ACCESS, changes={"store_id": owner["store_id"] + 1}), **owner)
+        with pytest.raises(ShopifyPrivacyExecutionError, match="PRIVACY_CASE_LEGAL_CLEARANCE_INVALID"):
+            issue_local_privacy_delivery(db, request_id=ACCESS, permit_token=permit,
+                legal_clearance_token=signed_legal_clearance(
+                    sandbox, request_id=ACCESS, changes={"legal_hold": True}), **owner)
+        extract.assert_not_called()
+    assert db.query(ShopifyPrivacyDeliveryArtifact).count() == 0
+
+
 def test_live_delivery_is_encrypted_bound_and_one_time(sandbox):
     db, owner, *_ = sandbox
-    result = issue_local_privacy_delivery(db, request_id=ACCESS, permit_token=signed_permit(sandbox), **owner)
+    result = issue_local_privacy_delivery(db, request_id=ACCESS, permit_token=signed_permit(sandbox),
+        legal_clearance_token=signed_legal_clearance(sandbox, request_id=ACCESS), **owner)
     row = db.query(ShopifyPrivacyDeliveryArtifact).one()
     assert row.synthetic_only is False
     assert result["delivery_token"] not in row.token_digest
@@ -184,8 +203,10 @@ def test_live_delivery_is_encrypted_bound_and_one_time(sandbox):
 def test_reissuing_revokes_old_ticket_and_expiry_purges_ciphertext(sandbox):
     db, owner, *_ = sandbox
     permit = signed_permit(sandbox)
-    old = issue_local_privacy_delivery(db, request_id=ACCESS, permit_token=permit, **owner)
-    new = issue_local_privacy_delivery(db, request_id=ACCESS, permit_token=permit, **owner)
+    old = issue_local_privacy_delivery(db, request_id=ACCESS, permit_token=permit,
+        legal_clearance_token=signed_legal_clearance(sandbox, request_id=ACCESS), **owner)
+    new = issue_local_privacy_delivery(db, request_id=ACCESS, permit_token=permit,
+        legal_clearance_token=signed_legal_clearance(sandbox, request_id=ACCESS), **owner)
     with pytest.raises(ShopifyPrivacyExecutionError):
         redeem_local_privacy_delivery(db, request_id=ACCESS, token=old["delivery_token"], **owner)
     row = db.query(ShopifyPrivacyDeliveryArtifact).order_by(ShopifyPrivacyDeliveryArtifact.id.desc()).first()
@@ -207,7 +228,8 @@ def test_even_valid_signature_cannot_bypass_permit_scope(sandbox, changes):
     db, owner, *_ = sandbox
     permit = signed_permit(sandbox, changes=changes)
     with pytest.raises(ShopifyPrivacyExecutionError):
-        issue_local_privacy_delivery(db, request_id=ACCESS, permit_token=permit, **owner)
+        issue_local_privacy_delivery(db, request_id=ACCESS, permit_token=permit,
+        legal_clearance_token=signed_legal_clearance(sandbox, request_id=ACCESS), **owner)
     assert db.query(ShopifyPrivacyDeliveryArtifact).count() == 0
 
 
@@ -216,7 +238,8 @@ def test_tampered_or_unsigned_permit_never_extracts_pii(sandbox):
     permit = signed_permit(sandbox)
     with patch("app.services.shopify_privacy_live_delivery.build_encrypted_local_customer_export") as extract:
         with pytest.raises(ShopifyPrivacyExecutionError):
-            issue_local_privacy_delivery(db, request_id=ACCESS, permit_token=permit[:-3], **owner)
+            issue_local_privacy_delivery(db, request_id=ACCESS, permit_token=permit[:-3],
+        legal_clearance_token=signed_legal_clearance(sandbox, request_id=ACCESS), **owner)
         extract.assert_not_called()
 
 
@@ -225,11 +248,13 @@ def test_processing_disabled_by_default_and_policy_changes_revoke_authorization(
     permit = signed_permit(sandbox)
     monkeypatch.delenv("SHOPIFY_PRIVACY_PROCESSING_ENABLED")
     with pytest.raises(ShopifyPrivacyExecutionError, match="DISABLED"):
-        issue_local_privacy_delivery(db, request_id=ACCESS, permit_token=permit, **owner)
+        issue_local_privacy_delivery(db, request_id=ACCESS, permit_token=permit,
+        legal_clearance_token=signed_legal_clearance(sandbox, request_id=ACCESS), **owner)
     monkeypatch.setenv("SHOPIFY_PRIVACY_PROCESSING_ENABLED", "true")
     monkeypatch.setenv("SHOPIFY_PRIVACY_OPERATOR_APPROVED_POLICY_SHA256", "wrong")
     with pytest.raises(ShopifyPrivacyExecutionError, match="POLICY_REQUIRED"):
-        issue_local_privacy_delivery(db, request_id=ACCESS, permit_token=permit, **owner)
+        issue_local_privacy_delivery(db, request_id=ACCESS, permit_token=permit,
+        legal_clearance_token=signed_legal_clearance(sandbox, request_id=ACCESS), **owner)
 
 
 def test_local_redaction_is_real_atomic_scoped_and_idempotent(sandbox, monkeypatch):
@@ -309,7 +334,8 @@ def test_redaction_failure_rolls_back_records_and_tombstones(sandbox, monkeypatc
 def test_owner_role_store_assignment_and_recipient_are_revalidated(sandbox):
     db, owner, _, member, stores, _ = sandbox
     permit = signed_permit(sandbox)
-    issued = issue_local_privacy_delivery(db, request_id=ACCESS, permit_token=permit, **owner)
+    issued = issue_local_privacy_delivery(db, request_id=ACCESS, permit_token=permit,
+        legal_clearance_token=signed_legal_clearance(sandbox, request_id=ACCESS), **owner)
     member.all_stores = False
     db.add(MembershipStore(membership_id=member.id, store_id=stores[1].id))
     db.commit()
@@ -319,7 +345,8 @@ def test_owner_role_store_assignment_and_recipient_are_revalidated(sandbox):
     member.role = "manager"
     db.commit()
     with pytest.raises(ShopifyPrivacyExecutionError, match="OWNER_ACCESS"):
-        issue_local_privacy_delivery(db, request_id=ACCESS, permit_token=permit, **owner)
+        issue_local_privacy_delivery(db, request_id=ACCESS, permit_token=permit,
+        legal_clearance_token=signed_legal_clearance(sandbox, request_id=ACCESS), **owner)
 
 
 def test_live_http_delivery_has_no_cache_and_cannot_bypass_authentication(sandbox):
@@ -332,7 +359,10 @@ def test_live_http_delivery_has_no_cache_and_cannot_bypass_authentication(sandbo
         assert client.post(path).status_code in (401, 403)
         app.dependency_overrides[get_current_membership] = lambda: member
         assert client.post(path).status_code == 409
-        prepared = client.post(path, headers={"X-Privacy-Execution-Permit": signed_permit(sandbox)})
+        prepared = client.post(path, headers={
+            "X-Privacy-Execution-Permit": signed_permit(sandbox),
+            "X-Privacy-Legal-Clearance": signed_legal_clearance(sandbox, request_id=ACCESS),
+        })
         assert prepared.status_code == 200
         assert "no-store" in prepared.headers["cache-control"]
         downloaded = client.get(path, headers={"X-Privacy-Delivery-Token": prepared.json()["delivery_token"]})
