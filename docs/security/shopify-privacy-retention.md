@@ -10,6 +10,23 @@ Status: **review required**. No general retention period has been approved, and 
 - `shopify_privacy_local_processor.py` constructs an incomplete in-memory encrypted export or deletion manifest; it **does not** execute deletions or deliver a complete export.
 - `shopify_privacy_controls.py` collects evidence hashes but does not declare legal approval, processor compliance, or completed redaction.
 
+## External restore checkpoint prerequisite
+
+Before enabling `SHOPIFY_PRIVACY_PROCESSING_ENABLED=true`, operators must
+establish the signed suppression checkpoint outside the database **and** outside
+the backup/restore boundary. Supply the independently authenticated
+`SHOPIFY_PRIVACY_RESTORE_CHECKPOINT_HMAC` and
+`SHOPIFY_PRIVACY_RESTORE_MIN_RECORDS` from that ledger. When live processing is
+enabled and the checkpoint is absent, Shopify re-ingestion now fails closed,
+even when the restored database has no tombstones. A checkpoint computed from
+the restored database does **not** prove recovery safety.
+
+Refresh the external checkpoint and deployment values as a controlled part of
+each local redaction; validate the restored snapshot against the latest
+independent checkpoint before restarting any ingestion or campaign worker.
+This gate does not itself verify legal holds, offsite ledger durability,
+third-party deletions, or complete Shopify privacy fulfillment.
+
 ## Data classes to inventory
 
 | Area | Verification required |
