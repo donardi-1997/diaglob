@@ -27,6 +27,7 @@ from .shopify_privacy_execution_authorization import (
 from .shopify_privacy_local_processor import (
     ShopifyLocalPrivacyError, _canonical_order_ids, _receipt, _selectors, build_local_redaction_manifest,
 )
+from .shopify_privacy_legal_clearance import verify_case_legal_clearance
 from .shopify_privacy_lock import lock_shopify_privacy_scope
 from .shopify_privacy_restore import (
     checkpoint_for_suppression_rows, create_shopify_suppression_checkpoint,
@@ -191,7 +192,8 @@ def preview_local_privacy_execution(db: Session, *, request_id: str, organizatio
 
 
 def execute_local_privacy_redaction(db: Session, *, request_id: str, organization_id: int,
-                                    store_id: int, user_id: int, permit_token: str) -> dict:
+                                    store_id: int, user_id: int, permit_token: str,
+                                    legal_clearance_token: str | None = None) -> dict:
     require_privacy_owner(db, organization_id=organization_id, store_id=store_id, user_id=user_id)
     require_execution_policy()
     lock_shopify_privacy_scope(db, organization_id, store_id)
@@ -206,12 +208,18 @@ def execute_local_privacy_redaction(db: Session, *, request_id: str, organizatio
     if audit is not None:
         verify_execution_permit(permit_token, operation="local_redaction", request_id=request_id,
             organization_id=organization_id, store_id=store_id, scope_sha256=audit.reason_code)
+        verify_case_legal_clearance(legal_clearance_token, request_id=request_id,
+            organization_id=organization_id, store_id=store_id, scope_sha256=audit.reason_code)
         return {"local_redaction_executed": True, "idempotent": True, "fulfillment_complete": False}
     if receipt.topic not in {"customers/redact", "shop/redact"}:
         raise ShopifyPrivacyExecutionError("REDACTION_TOPIC_REQUIRED")
     targets = local_privacy_targets(db, receipt)
     digest = scope_digest(receipt, targets)
     permit = verify_execution_permit(permit_token, operation="local_redaction", request_id=request_id,
+        organization_id=organization_id, store_id=store_id, scope_sha256=digest)
+    # The operator permit asserts legal_hold=False; only an independent reviewer
+    # may certify this against a case-specific merchant instruction and evidence.
+    verify_case_legal_clearance(legal_clearance_token, request_id=request_id,
         organization_id=organization_id, store_id=store_id, scope_sha256=digest)
     additions, checkpoint = planned_suppressions(db, receipt)
     if (

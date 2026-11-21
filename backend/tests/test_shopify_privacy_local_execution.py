@@ -29,6 +29,7 @@ from app.models import (
 from app.services.shopify_privacy_execution_authorization import (
     ShopifyPrivacyExecutionError, policy_snapshot,
 )
+from app.services.shopify_privacy_legal_clearance import _SIGNING_CONTEXT
 from app.services.shopify_privacy_local_execution import (
     execute_local_privacy_redaction, preview_local_privacy_execution,
 )
@@ -43,6 +44,7 @@ from app.shopify_security import encrypt_shopify_secret
 
 ACCESS = "a" * 64
 ERASE = "b" * 64
+LEGAL_TEST_PRIVATE = Ed25519PrivateKey.generate()
 
 
 def b64(data):
@@ -60,6 +62,9 @@ def sandbox(monkeypatch):
     monkeypatch.delenv("SHOPIFY_PRIVACY_RESTORE_MIN_RECORDS", raising=False)
     private = Ed25519PrivateKey.generate()
     monkeypatch.setenv("SHOPIFY_PRIVACY_EXECUTION_PUBLIC_KEY", b64(private.public_key().public_bytes(
+        serialization.Encoding.Raw, serialization.PublicFormat.Raw,
+    )))
+    monkeypatch.setenv("SHOPIFY_PRIVACY_LEGAL_REVIEW_PUBLIC_KEY", b64(LEGAL_TEST_PRIVATE.public_key().public_bytes(
         serialization.Encoding.Raw, serialization.PublicFormat.Raw,
     )))
     engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)
@@ -118,6 +123,24 @@ def signed_permit(sandbox, request_id=ACCESS, operation="local_export", changes=
     payload = json.dumps(data, sort_keys=True, separators=(",", ":")).encode()
     signature = private.sign(b"diaglob.shopify.privacy.execution.v1\0" + payload)
     return b64(payload) + "." + b64(signature)
+
+
+def signed_legal_clearance(sandbox, changes=None):
+    db, owner, *_ = sandbox
+    preview = preview_local_privacy_execution(db, request_id=ERASE, **owner)
+    now = int(time.time())
+    data = dict(
+        version=1, request_id=ERASE,
+        organization_id=owner["organization_id"], store_id=owner["store_id"],
+        scope_sha256=preview["scope_sha256"], policy_sha256=policy_snapshot()[1],
+        merchant_instruction_evidence_sha256="c" * 64,
+        legal_review_evidence_sha256="d" * 64,
+        reviewer_role="privacy_counsel", issued_at=now, expires_at=now + 600,
+        legal_hold=False,
+    )
+    data.update(changes or {})
+    payload = json.dumps(data, sort_keys=True, separators=(",", ":")).encode()
+    return b64(payload) + "." + b64(LEGAL_TEST_PRIVATE.sign(_SIGNING_CONTEXT + payload))
 
 
 def allow_redaction_checkpoint(sandbox, monkeypatch):
@@ -212,8 +235,9 @@ def test_processing_disabled_by_default_and_policy_changes_revoke_authorization(
 def test_local_redaction_is_real_atomic_scoped_and_idempotent(sandbox, monkeypatch):
     db, owner, _, _, stores, customer = sandbox
     permit = signed_permit(sandbox, request_id=ERASE, operation="local_redaction")
+    clearance = signed_legal_clearance(sandbox)
     allow_redaction_checkpoint(sandbox, monkeypatch)
-    result = execute_local_privacy_redaction(db, request_id=ERASE, permit_token=permit, **owner)
+    result = execute_local_privacy_redaction(db, request_id=ERASE, permit_token=permit, legal_clearance_token=clearance, **owner)
     assert result["local_redaction_executed"] is True and result["fulfillment_complete"] is False
     erased = db.query(Order).filter(Order.store_id == stores[0].id).one()
     untouched = db.query(Order).filter(Order.store_id == stores[1].id).one()
@@ -229,16 +253,41 @@ def test_local_redaction_is_real_atomic_scoped_and_idempotent(sandbox, monkeypat
     assert all(row.status == "active" for row in db.query(ShopifyPrivacySuppression).all())
     assert evaluate_shopify_privacy_suppression(db, organization_id=owner["organization_id"],
         store_id=stores[0].id, shop_domain=stores[0].shopify_domain, customer_id="700", order_id="101")[0] is not None
-    retry = execute_local_privacy_redaction(db, request_id=ERASE, permit_token=permit, **owner)
+    retry = execute_local_privacy_redaction(db, request_id=ERASE, permit_token=permit,
+        legal_clearance_token=clearance, **owner)
     assert retry["idempotent"] is True and retry["fulfillment_complete"] is False
     assert db.query(ShopifyPrivacyAuditEvent).filter_by(event_type="local_redaction_executed").count() == 1
+
+
+def test_redaction_requires_independently_signed_case_clearance(sandbox, monkeypatch):
+    db, owner, _, _, stores, _ = sandbox
+    permit = signed_permit(sandbox, request_id=ERASE, operation="local_redaction")
+    allow_redaction_checkpoint(sandbox, monkeypatch)
+
+    with pytest.raises(ShopifyPrivacyExecutionError, match="PRIVACY_CASE_LEGAL_CLEARANCE_REQUIRED"):
+        execute_local_privacy_redaction(db, request_id=ERASE, permit_token=permit, **owner)
+    with pytest.raises(ShopifyPrivacyExecutionError, match="PRIVACY_CASE_LEGAL_CLEARANCE_SCOPE_MISMATCH"):
+        execute_local_privacy_redaction(db, request_id=ERASE, permit_token=permit,
+            legal_clearance_token=signed_legal_clearance(sandbox, changes={"store_id": owner["store_id"] + 1}), **owner)
+    with pytest.raises(ShopifyPrivacyExecutionError, match="PRIVACY_CASE_LEGAL_CLEARANCE_INVALID"):
+        execute_local_privacy_redaction(db, request_id=ERASE, permit_token=permit,
+            legal_clearance_token=signed_legal_clearance(sandbox, changes={"legal_hold": True}), **owner)
+    monkeypatch.setenv("SHOPIFY_PRIVACY_LEGAL_REVIEW_PUBLIC_KEY",
+        b64(sandbox[2].public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)))
+    with pytest.raises(ShopifyPrivacyExecutionError, match="PRIVACY_LEGAL_REVIEW_INDEPENDENCE_REQUIRED"):
+        execute_local_privacy_redaction(db, request_id=ERASE, permit_token=permit,
+            legal_clearance_token=signed_legal_clearance(sandbox), **owner)
+    assert db.query(Order).filter_by(shopify_order_id="101").one().note == "PRIVATE_NOTE_0"
+    assert db.query(ShopifyPrivacySuppression).count() == 0
 
 
 def test_redaction_cannot_run_without_independently_anchored_restore_checkpoint(sandbox):
     db, owner, *_ = sandbox
     permit = signed_permit(sandbox, request_id=ERASE, operation="local_redaction")
+    clearance = signed_legal_clearance(sandbox)
     with pytest.raises(ShopifyPrivacyExecutionError, match="INDEPENDENT_RESTORE_CHECKPOINT_REQUIRED"):
-        execute_local_privacy_redaction(db, request_id=ERASE, permit_token=permit, **owner)
+        execute_local_privacy_redaction(db, request_id=ERASE, permit_token=permit,
+            legal_clearance_token=clearance, **owner)
     assert db.query(Order).filter_by(shopify_order_id="101").one().note == "PRIVATE_NOTE_0"
     assert db.query(ShopifyPrivacySuppression).count() == 0
 
@@ -246,10 +295,12 @@ def test_redaction_cannot_run_without_independently_anchored_restore_checkpoint(
 def test_redaction_failure_rolls_back_records_and_tombstones(sandbox, monkeypatch):
     db, owner, *_ = sandbox
     permit = signed_permit(sandbox, request_id=ERASE, operation="local_redaction")
+    clearance = signed_legal_clearance(sandbox)
     allow_redaction_checkpoint(sandbox, monkeypatch)
     with patch("app.services.shopify_privacy_local_execution.create_shopify_suppression_checkpoint", side_effect=RuntimeError("test checkpoint failure")):
         with pytest.raises(RuntimeError):
-            execute_local_privacy_redaction(db, request_id=ERASE, permit_token=permit, **owner)
+            execute_local_privacy_redaction(db, request_id=ERASE, permit_token=permit,
+                legal_clearance_token=clearance, **owner)
     assert db.query(Order).filter_by(shopify_order_id="101").one().note == "PRIVATE_NOTE_0"
     assert db.query(ShopifyPrivacySuppression).count() == 0
     assert db.query(CustomerStoreProfile).count() == 2
@@ -333,8 +384,10 @@ def test_live_processing_requires_external_checkpoint_before_reingestion(sandbox
 def test_deleted_customer_cannot_reenter_when_external_checkpoint_disappears(sandbox, monkeypatch):
     db, owner, _, _, stores, _ = sandbox
     permit = signed_permit(sandbox, request_id=ERASE, operation="local_redaction")
+    clearance = signed_legal_clearance(sandbox)
     allow_redaction_checkpoint(sandbox, monkeypatch)
-    execute_local_privacy_redaction(db, request_id=ERASE, permit_token=permit, **owner)
+    execute_local_privacy_redaction(db, request_id=ERASE, permit_token=permit,
+        legal_clearance_token=clearance, **owner)
     assert db.query(ShopifyPrivacySuppression).filter_by(status="active").count() > 0
 
     # Configuration rollback or a lost external ledger must never silently skip
