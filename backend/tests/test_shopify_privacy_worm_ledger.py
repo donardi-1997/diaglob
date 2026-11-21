@@ -169,6 +169,14 @@ def test_concurrent_fork_rejects_two_records_with_same_sequence():
         verify(s3)
 
 
+def test_rejects_suppression_count_regression():
+    s3 = FakeS3()
+    append(s3, min_records=4)
+    with pytest.raises(ShopifyPrivacyWormLedgerError, match="COUNT_REGRESSION"):
+        append(s3, request_id="e" * 64, checkpoint_hmac="d" * 64, min_records=3)
+    assert len(s3.records) == 1
+
+
 def test_wrong_signer_does_not_create_object():
     s3 = FakeS3()
     with pytest.raises(ShopifyPrivacyWormLedgerError, match="SIGNER_MISMATCH"):
