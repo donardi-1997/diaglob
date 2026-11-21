@@ -174,7 +174,7 @@ def test_preview_is_counts_and_digest_only_without_content(scenario):
     for value in ("SENSITIVE", "private-", "orders.search", "synthetic-copilot"):
         assert value not in str(report)
     assert db.query(AgentChatSession).count() == original
-    assert db.dirty == set()
+    assert not db.dirty
 
 
 def test_requires_both_permits_before_any_sql_deletion(scenario):
