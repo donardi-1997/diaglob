@@ -137,6 +137,25 @@ def test_expired_lock_or_governance_is_not_accepted():
         verify(s3)
 
 
+def test_expiring_before_approved_backup_horizon_is_rejected():
+    s3 = FakeS3()
+    append(s3)
+    # Still locked now, but about to expire before the full backup retention
+    # window. An old DB snapshot could be restored after the ledger disappears.
+    s3.records[0]["Retention"]["RetainUntilDate"] = NOW + timedelta(days=6)
+    assert verify_worm_ledger(s3, **ARGS, now=NOW,
+                              minimum_remaining_days=5)["verified"] is True
+    with pytest.raises(ShopifyPrivacyWormLedgerError, match="RETENTION_HORIZON_INSUFFICIENT"):
+        verify_worm_ledger(s3, **ARGS, now=NOW, minimum_remaining_days=7)
+
+
+@pytest.mark.parametrize("invalid", [-1, 3651, True, 3.5])
+def test_invalid_retention_horizon_config_is_rejected(invalid):
+    with pytest.raises(ShopifyPrivacyWormLedgerError, match="MINIMUM_RETENTION_INVALID"):
+        verify_worm_ledger(FakeS3(), **ARGS, now=NOW,
+                           minimum_remaining_days=invalid)
+
+
 def test_new_version_delete_marker_and_fork_are_detected():
     s3 = FakeS3()
     append(s3)

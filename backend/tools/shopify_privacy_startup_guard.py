@@ -44,6 +44,7 @@ def verify_startup_privacy_checkpoint(db: Session, s3, *, settings: dict[str, st
         "SHOPIFY_PRIVACY_WORM_LEDGER_BUCKET",
         "SHOPIFY_PRIVACY_WORM_LEDGER_PREFIX",
         "SHOPIFY_PRIVACY_WORM_LEDGER_PUBLIC_KEY",
+        "SHOPIFY_PRIVACY_WORM_MIN_REMAINING_DAYS",
         "SHOPIFY_PRIVACY_RESTORE_CHECKPOINT_HMAC",
         "SHOPIFY_PRIVACY_RESTORE_MIN_RECORDS",
         "SHOPIFY_PRIVACY_SUPPRESSION_KEY",
@@ -56,12 +57,20 @@ def verify_startup_privacy_checkpoint(db: Session, s3, *, settings: dict[str, st
             raise ValueError
     except (ValueError, TypeError) as exc:
         raise PrivacyStartupGuardError("PRIVACY_LEDGER_RECORD_COUNT_INVALID") from exc
+    try:
+        horizon = int(settings["SHOPIFY_PRIVACY_WORM_MIN_REMAINING_DAYS"])
+        if (not 1 <= horizon <= 3650
+                or str(horizon) != settings["SHOPIFY_PRIVACY_WORM_MIN_REMAINING_DAYS"]):
+            raise ValueError
+    except (ValueError, TypeError) as exc:
+        raise PrivacyStartupGuardError("PRIVACY_WORM_RETENTION_HORIZON_REQUIRED") from exc
     _, current_policy = policy_snapshot()
     try:
         anchor = verify_worm_ledger(
             s3, bucket=settings["SHOPIFY_PRIVACY_WORM_LEDGER_BUCKET"],
             prefix=settings["SHOPIFY_PRIVACY_WORM_LEDGER_PREFIX"],
             public_key=_public_key(settings["SHOPIFY_PRIVACY_WORM_LEDGER_PUBLIC_KEY"]),
+            minimum_remaining_days=horizon,
         )
     except Exception as exc:
         raise PrivacyStartupGuardError("PRIVACY_LEDGER_EXTERNAL_CHECK_FAILED") from exc
@@ -82,6 +91,7 @@ def verify_startup_privacy_checkpoint(db: Session, s3, *, settings: dict[str, st
     return {
         "startup_allowed": True, "ledger_anchored": True,
         "ledger_record_count": anchor["record_count"],
+        "retention_horizon_verified_days": horizon,
         "fulfillment_complete": False,
     }
 

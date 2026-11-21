@@ -53,6 +53,9 @@ def main() -> int:
         cmd.add_argument("--prefix", required=True)
         cmd.add_argument("--region", default="us-east-2")
         cmd.add_argument("--public-key", required=True, help="Base64url Ed25519 public key; not secret")
+        if name in ("verify", "verify-restore"):
+            cmd.add_argument("--minimum-remaining-days", type=int, required=True,
+                             help="Approved maximum recoverable backup age plus safety margin")
         if name == "append":
             cmd.add_argument("--private-key", type=Path, required=True)
             cmd.add_argument("--checkpoint", type=Path, required=True,
@@ -70,12 +73,14 @@ def main() -> int:
     s3 = boto3.client("s3", region_name=args.region)
     if args.cmd == "verify":
         report = verify_worm_ledger(s3, bucket=args.bucket, prefix=args.prefix,
-                                    public_key=public)
+                                    public_key=public,
+                                    minimum_remaining_days=args.minimum_remaining_days)
     elif args.cmd == "verify-restore":
         from app.db import SessionLocal
         with SessionLocal() as db:
             report = verify_restored_db_against_worm_ledger(
                 db, s3, bucket=args.bucket, prefix=args.prefix, public_key=public,
+                minimum_remaining_days=args.minimum_remaining_days,
             )
     else:
         try:

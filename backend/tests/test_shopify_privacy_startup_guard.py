@@ -18,6 +18,7 @@ def configured():
     return {
         "SHOPIFY_PRIVACY_WORM_LEDGER_BUCKET": "isolated-privacy-bucket",
         "SHOPIFY_PRIVACY_WORM_LEDGER_PREFIX": "privacy/restore/checkpoints",
+        "SHOPIFY_PRIVACY_WORM_MIN_REMAINING_DAYS": "35",
         "SHOPIFY_PRIVACY_WORM_LEDGER_PUBLIC_KEY": b64encode(private.public_key().public_bytes(
             serialization.Encoding.Raw, serialization.PublicFormat.Raw)),
         "SHOPIFY_PRIVACY_RESTORE_CHECKPOINT_HMAC": "a" * 64,
@@ -47,6 +48,7 @@ def test_startup_reconciles_external_worm_head_even_if_processing_disabled():
     assert result["startup_allowed"] is True
     assert result["fulfillment_complete"] is False
     external.assert_called_once()
+    assert external.call_args.kwargs["minimum_remaining_days"] == 35
     restored.assert_called_once_with(None,
         externally_stored_hmac="a" * 64, minimum_records=3)
 
@@ -71,6 +73,16 @@ def test_old_or_mismatched_worm_checkpoint_blocks_startup(field, value):
             with pytest.raises(PrivacyStartupGuardError, match="HEAD_MISMATCH"):
                 verify_startup_privacy_checkpoint(None, object(), settings=configured())
             restored.assert_not_called()
+
+
+@pytest.mark.parametrize("raw", ["0", "-1", "3651", "unapproved", "", " 30 "])
+def test_missing_or_invalid_approved_retention_horizon_fails_before_s3(raw):
+    settings = configured()
+    settings["SHOPIFY_PRIVACY_WORM_MIN_REMAINING_DAYS"] = raw
+    with patch("tools.shopify_privacy_startup_guard.verify_worm_ledger") as ext:
+        with pytest.raises(PrivacyStartupGuardError, match="RETENTION_HORIZON_REQUIRED|CONFIGURATION_REQUIRED"):
+            verify_startup_privacy_checkpoint(None, object(), settings=settings)
+        ext.assert_not_called()
 
 
 def test_invalid_signature_or_aws_outage_blocks_startup():

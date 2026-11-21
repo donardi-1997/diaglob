@@ -102,7 +102,8 @@ def _list_objects(s3, bucket: str, prefix: str) -> list[dict]:
 
 
 def _read_verified(s3, bucket: str, item: dict, prefix: str,
-                   public_key: Ed25519PublicKey, now: datetime) -> tuple[dict, str]:
+                   public_key: Ed25519PublicKey, now: datetime,
+                   minimum_remaining_days: int = 0) -> tuple[dict, str]:
     key = item.get("Key", "")
     name = key[len(prefix):] if key.startswith(prefix) else ""
     match = _RECORD_NAME.fullmatch(name)
@@ -122,6 +123,11 @@ def _read_verified(s3, bucket: str, item: dict, prefix: str,
     if (retention.get("Mode") != "COMPLIANCE" or not isinstance(retain_until, datetime)
             or retain_until.astimezone(timezone.utc) <= now):
         _fail("PRIVACY_LEDGER_RETENTION_UNVERIFIED")
+    # A WORM ledger cannot safely cover future restores if it expires sooner
+    # than the longest recoverable backup plus an approved margin. Every
+    # record is checked while this verifier requires the complete chain.
+    if retain_until.astimezone(timezone.utc) <= now + timedelta(days=minimum_remaining_days):
+        _fail("PRIVACY_LEDGER_RETENTION_HORIZON_INSUFFICIENT")
     try:
         envelope = json.loads(raw)
         if not isinstance(envelope, dict) or set(envelope) != {"payload", "signature"}:
@@ -155,7 +161,8 @@ def _read_verified(s3, bucket: str, item: dict, prefix: str,
 
 
 def verify_worm_ledger(s3, *, bucket: str, prefix: str,
-                       public_key: Ed25519PublicKey, now: datetime | None = None) -> dict:
+                       public_key: Ed25519PublicKey, now: datetime | None = None,
+                       minimum_remaining_days: int = 0) -> dict:
     """Verify ALL versioned objects, signatures, chain, WORM retention and last anchor.
 
     Detects forks/rewrites/delete-markers. No claims of data erasure or backup
@@ -164,11 +171,17 @@ def verify_worm_ledger(s3, *, bucket: str, prefix: str,
     """
     prefix = _prefix(prefix)
     now = now or datetime.now(timezone.utc)
+    if (type(minimum_remaining_days) is not int
+            or not 0 <= minimum_remaining_days <= 3650):
+        _fail("PRIVACY_LEDGER_MINIMUM_RETENTION_INVALID")
     _check_immutable_bucket(s3, bucket)
     items = _list_objects(s3, bucket, prefix)
     records = []
     for item in items:
-        payload, digest = _read_verified(s3, bucket, item, prefix, public_key, now)
+        payload, digest = _read_verified(
+            s3, bucket, item, prefix, public_key, now,
+            minimum_remaining_days=minimum_remaining_days,
+        )
         records.append((payload["sequence"], payload, digest))
     records.sort(key=lambda x: x[0])
     previous_sha = ""
@@ -178,7 +191,9 @@ def verify_worm_ledger(s3, *, bucket: str, prefix: str,
         previous_sha = digest
     last = records[-1][1] if records else None
     return {
-        "verified": True, "record_count": len(records), "last_record_sha256": previous_sha,
+        "verified": True, "record_count": len(records),
+        "minimum_remaining_days_checked": minimum_remaining_days,
+        "last_record_sha256": previous_sha,
         "last_checkpoint_hmac": last["checkpoint_hmac"] if last else None,
         "last_min_records": last["min_records"] if last else None,
         "last_policy_sha256": last["policy_sha256"] if last else None,
@@ -249,9 +264,13 @@ def append_worm_checkpoint(s3, *, bucket: str, prefix: str,
 
 
 def verify_restored_db_against_worm_ledger(db: Session, s3, *, bucket: str,
-                                          prefix: str, public_key: Ed25519PublicKey) -> dict:
+                                          prefix: str, public_key: Ed25519PublicKey,
+                                          minimum_remaining_days: int = 0) -> dict:
     """Fail closed if no WORM anchor or restored tombstones mismatch latest."""
-    anchor = verify_worm_ledger(s3, bucket=bucket, prefix=prefix, public_key=public_key)
+    anchor = verify_worm_ledger(
+        s3, bucket=bucket, prefix=prefix, public_key=public_key,
+        minimum_remaining_days=minimum_remaining_days,
+    )
     if not anchor["last_checkpoint_hmac"]:
         _fail("PRIVACY_LEDGER_EMPTY")
     result = verify_shopify_suppression_restore(
