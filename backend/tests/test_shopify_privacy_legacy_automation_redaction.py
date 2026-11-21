@@ -104,13 +104,16 @@ def test_shop_redact_scrubs_all_store_specific_payloads_not_shared_or_other_stor
     assert result["legacy_execution_payloads_scrubbed"] == 3
     assert result["legacy_rules_scrubbed"] == 1
     assert result["legacy_possible_inflight_actions"] == 3
+    assert result["legacy_result_payloads_pending_external_review"] == 3
     assert result["legacy_shared_parent_executions_for_review"] == 1
     assert result["fulfillment_complete"] is False
     db.refresh(rows["buyer"])
     assert rows["buyer"].input_json == "{}"
-    assert rows["buyer"].result_json == "{}"
+    # Unstructured provider results/event IDs are held for provider deletion
+    # review; never misreport this as completed erasure.
+    assert "SENSITIVE_RESULT_BUYER" in rows["buyer"].result_json
+    assert rows["buyer"].event_id == "SENSITIVE_EVENT_BUYER"
     assert rows["buyer"].error_message is None
-    assert rows["buyer"].event_id is None
     assert rows["buyer"].status == "failed"
     db.refresh(rules[0])
     assert rules[0].active is False
@@ -139,6 +142,7 @@ def test_customer_redact_only_scrubs_verified_local_subject_and_flags_unattribut
     assert result["legacy_execution_payloads_scrubbed"] == 1
     assert result["legacy_rules_scrubbed"] == 0
     assert result["legacy_possible_inflight_actions"] == 1
+    assert result["legacy_result_payloads_pending_external_review"] == 1
     assert result["legacy_unattributed_executions_for_review"] == 1
     assert result["legacy_shared_parent_executions_for_review"] == 1
     assert result["legacy_rules_with_unstructured_conditions_for_review"] == 1
