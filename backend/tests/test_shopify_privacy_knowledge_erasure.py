@@ -247,6 +247,43 @@ def test_partial_kb_batch_commits_do_not_falsely_certify_erasure(db):
         _run(session, lambda *_: pytest.fail("must not run unchecked retry"))
 
 
+def test_kb_becoming_shared_during_batch_cannot_be_deleted(db):
+    session, _ = db
+    _redacted(session)
+    session.add(KnowledgeBase(
+        id=6, organization_id=ORG, name="second-exclusive",
+        scope="selected_stores",
+    ))
+    session.flush()
+    session.execute(insert(knowledge_base_stores).values(
+        knowledge_base_id=6, store_id=STORE,
+    ))
+    session.commit()
+    attempted = []
+
+    def change_scope_after_first_delete(_db, kb):
+        attempted.append(kb.id)
+        if kb.id == 1:
+            # Another store is associated with KB #6 before the next delete.
+            session.execute(insert(knowledge_base_stores).values(
+                knowledge_base_id=6, store_id=OTHER,
+            ))
+            session.commit()
+            return
+        pytest.fail("a newly shared KB must never be passed to the provider")
+
+    with pytest.raises(ShopifyPrivacyExecutionError, match="OWNERSHIP_CHANGED_RECONCILIATION_REQUIRED"):
+        _run(session, change_scope_after_first_delete)
+    assert attempted == [1]
+    assert session.get(KnowledgeBase, 6) is not None
+    assert session.query(ShopifyPrivacyAuditEvent).filter_by(
+        event_type=erasure.STARTED_EVENT,
+    ).count() == 1
+    assert session.query(ShopifyPrivacyAuditEvent).filter_by(
+        event_type=erasure.EXECUTED_EVENT,
+    ).count() == 0
+
+
 def test_external_knowledge_erasure_requires_separate_technical_and_legal_permits(db):
     session, _ = db
     _redacted(session)
