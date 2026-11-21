@@ -24,6 +24,7 @@ from .services.whatsapp_channel_health import (
     mark_channel_paused,
     should_give_up,
 )
+from .services.shopify_privacy_suppression import evaluate_shopify_local_privacy
 from .services.whatsapp_delivery_tracking import record_campaign_delivery
 from .whatsapp_security import decrypt_whatsapp_secret
 from .whatsapp_compliance import evaluate_whatsapp_delivery_eligibility, get_last_whatsapp_inbound_by_customer, template_components
@@ -214,6 +215,14 @@ def process_recipient(db: Session, recipient_id: int, now: datetime | None = Non
     campaign = db.get(AutomationCampaign, run.automation_id)
     if campaign.status != "active":
         recipient.status = "queued"; recipient.next_attempt_at = now + timedelta(minutes=1); recipient.lease_expires_at = None; db.commit(); return "paused"
+    # Recheck at send time: the recipient may have been queued before a
+    # Shopify privacy redaction activated a tombstone for this customer.
+    if evaluate_shopify_local_privacy(
+        db, organization_id=campaign.organization_id, store_id=campaign.store_id,
+        local_customer_id=recipient.customer_id,
+    ):
+        _finish_attempt(db, recipient, "skipped", now, code="privacy_suppressed", message="Customer data was redacted")
+        return "privacy_suppressed"
     zone = ZoneInfo(campaign.timezone)
     local_now = now.replace(tzinfo=timezone.utc).astimezone(zone)
     if campaign.send_window_start and campaign.send_window_end:

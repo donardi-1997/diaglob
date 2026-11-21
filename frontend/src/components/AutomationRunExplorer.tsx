@@ -21,7 +21,7 @@ interface Props {
 
 const TERMINAL_RUN = new Set(["completed", "partial", "failed", "simulated"]);
 const RETRYABLE = new Set(["failed", "skipped"]);
-const NON_RETRYABLE_SKIP = new Set(["outside_service_window", "cooldown", "no_phone", "invalid_template_data", "send_window", "rate_limited"]);
+const NON_RETRYABLE_SKIP = new Set(["outside_service_window", "cooldown", "no_phone", "invalid_template_data", "send_window", "rate_limited", "privacy_suppressed"]);
 
 export default function AutomationRunExplorer({ storeId, canWrite }: Props) {
   const { t } = useTranslation();
