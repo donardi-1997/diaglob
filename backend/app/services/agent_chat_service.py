@@ -13,7 +13,7 @@ from ..model_domains.ai_agent import (
     AgentChatSession,
     AgentChatToolCall,
 )
-from ..models import OrganizationMembership
+from ..models import OrganizationMembership, Store
 from ..settings import get_settings
 from .action_policy import evaluate_action
 from .agent_approvals import (
@@ -61,6 +61,30 @@ def _require_chat_access(
     )
     if not decision.allowed:
         raise AgentChatError(decision.code or "CHAT_ACCESS_DENIED")
+
+    # A shop/redact tombstone must also block *new* AI prompts/tool calls.
+    # Do not use evaluate_shopify_local_privacy without a buyer: it would
+    # block an entire store after unrelated customers/redact requests.
+    shop = db.query(Store.shopify_domain).filter(
+        Store.id == store_id,
+        Store.organization_id == membership.organization_id,
+    ).first()
+    if shop and shop[0]:
+        from .shopify_privacy_suppression import (
+            ShopifySuppressionError,
+            evaluate_shopify_privacy_suppression,
+        )
+        try:
+            reason, _ = evaluate_shopify_privacy_suppression(
+                db, organization_id=membership.organization_id,
+                store_id=store_id, shop_domain=shop[0],
+                customer_id=None, order_id=None,
+                require_customer_id=False, require_order_id=False,
+            )
+        except ShopifySuppressionError as exc:
+            raise AgentChatError("CHAT_SHOP_PRIVACY_GATE_UNVERIFIED") from exc
+        if reason == "shop":
+            raise AgentChatError("CHAT_SHOP_PRIVACY_SUPPRESSED")
 
 
 def _require_session(

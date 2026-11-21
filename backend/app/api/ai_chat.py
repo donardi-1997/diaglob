@@ -57,8 +57,13 @@ def _map_chat_error(exc: Exception):
     status = 409
     if code == "CHAT_SESSION_NOT_FOUND":
         status = 404
-    elif code in {"STORE_NOT_FOUND", "STORE_ACCESS_DENIED", "PERMISSION_DENIED"}:
+    elif code in {
+        "STORE_NOT_FOUND", "STORE_ACCESS_DENIED", "PERMISSION_DENIED",
+        "CHAT_SHOP_PRIVACY_SUPPRESSED",
+    }:
         status = 403
+    elif code == "CHAT_SHOP_PRIVACY_GATE_UNVERIFIED":
+        status = 503
     elif code in {
         "CHAT_MESSAGE_REQUIRED",
         "CHAT_MESSAGE_TOO_LONG",
