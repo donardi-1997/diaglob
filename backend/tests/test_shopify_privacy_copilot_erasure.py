@@ -247,6 +247,35 @@ def test_new_message_invalidates_signed_scope_without_mutations(scenario):
     assert db.query(AgentChatSession).count() == 3
 
 
+def test_existing_copilot_message_content_change_invalidates_signed_scope(scenario):
+    db, _, _, _, records, _ = scenario
+    tech, legal = signed(scenario)
+    message = db.get(AgentChatMessage, records[0][1])
+    message.text = "CHANGED_AFTER_LEGAL_APPROVAL"
+    db.commit()
+    with pytest.raises(ShopifyPrivacyExecutionError, match="PRIVACY_EXECUTION_PERMIT_SCOPE_MISMATCH"):
+        privacy.execute_shop_copilot_erasure(
+            db, **arguments(scenario), execution_permit=tech,
+            legal_clearance_token=legal,
+        )
+    assert db.query(AgentChatSession).count() == 3
+    assert db.query(AgentChatMessage).count() == 3
+
+
+def test_existing_tool_result_change_invalidates_signed_scope(scenario):
+    db, _, _, _, records, _ = scenario
+    tech, legal = signed(scenario)
+    tool = db.get(AgentChatToolCall, records[0][3].id)
+    tool.result = {"different": "newly-added-personal-data"}
+    db.commit()
+    with pytest.raises(ShopifyPrivacyExecutionError, match="PRIVACY_EXECUTION_PERMIT_SCOPE_MISMATCH"):
+        privacy.execute_shop_copilot_erasure(
+            db, **arguments(scenario), execution_permit=tech,
+            legal_clearance_token=legal,
+        )
+    assert db.query(AgentChatToolCall).count() == 3
+
+
 def test_cross_store_approval_reference_fails_closed(scenario):
     db, _, _, _, records, _ = scenario
     records[0][3].approval_id = records[1][2]
