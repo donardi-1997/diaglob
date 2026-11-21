@@ -263,13 +263,16 @@ def activate_synthetic_privacy_suppressions(db: Session, *, request_id: str) -> 
 
 
 def _check_restore_gate(db: Session) -> None:
-    """Optional externally anchored checkpoint, evaluated before any write path.
+    """Verify an external checkpoint before ingress when live erasure is enabled.
 
-    Production cannot safely activate tombstones until independently managed
-    checkpoint distribution is configured, including cold backup restores.
+    If redaction has ever run, a restored database can have zero tombstones.
+    Therefore, looking for active rows (or silently skipping a missing ledger)
+    is unsafe: a rollback could reimport a previously erased customer.
     """
     expected = os.getenv("SHOPIFY_PRIVACY_RESTORE_CHECKPOINT_HMAC")
     if not expected:
+        if os.getenv("SHOPIFY_PRIVACY_PROCESSING_ENABLED") == "true":
+            raise ShopifySuppressionError("RESTORE_CHECKPOINT_REQUIRED")
         return
     from .shopify_privacy_restore import (
         ShopifyRestoreVerificationError,
