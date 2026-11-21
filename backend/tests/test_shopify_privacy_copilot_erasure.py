@@ -256,6 +256,15 @@ def test_cross_store_approval_reference_fails_closed(scenario):
     assert db.query(AgentChatSession).count() == 3
 
 
+def test_foreign_tool_call_using_target_message_fails_closed(scenario):
+    db, _, _, _, records, _ = scenario
+    records[1][3].message_id = records[0][1]
+    db.commit()
+    with pytest.raises(ShopifyPrivacyExecutionError, match="COPILOT_CROSS_STORE_MESSAGE_REFERENCE"):
+        privacy.preview_shop_copilot_erasure(db, **arguments(scenario))
+    assert db.query(AgentChatMessage).count() == 3
+
+
 def test_foreign_tool_call_using_approved_target_approval_fails_closed(scenario):
     db, _, _, _, records, _ = scenario
     records[1][3].approval_id = records[0][2]
