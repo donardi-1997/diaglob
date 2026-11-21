@@ -49,7 +49,9 @@ class ExecutionPermit(BaseModel):
 
 def policy_snapshot() -> tuple[dict, str]:
     try:
-        raw = POLICY_PATH.read_bytes()
+        # Normalize line endings: a Windows checkout (CRLF) and the server
+        # (LF) must bind permits and attestations to the same policy digest.
+        raw = POLICY_PATH.read_bytes().replace(b"\r\n", b"\n")
         return json.loads(raw), hashlib.sha256(raw).hexdigest()
     except (OSError, ValueError, UnicodeError) as exc:
         raise ShopifyPrivacyExecutionError("PRIVACY_POLICY_UNAVAILABLE") from exc

@@ -52,6 +52,18 @@ def _evaluate(public, docs, active=()):
     )
 
 
+def test_policy_digest_is_identical_for_crlf_and_lf_checkouts(tmp_path, monkeypatch):
+    from app.services import shopify_privacy_execution_authorization as auth
+    body = b'{\n  "schema_version": 1,\n  "policy_id": "x"\n}\n'
+    lf, crlf = tmp_path / "lf.json", tmp_path / "crlf.json"
+    lf.write_bytes(body)
+    crlf.write_bytes(body.replace(b"\n", b"\r\n"))
+    monkeypatch.setattr(auth, "POLICY_PATH", lf)
+    lf_digest = auth.policy_snapshot()[1]
+    monkeypatch.setattr(auth, "POLICY_PATH", crlf)
+    assert auth.policy_snapshot()[1] == lf_digest
+
+
 def test_complete_valid_set_verifies_every_group():
     private, public = _key()
     result = _evaluate(public, _all_docs(private))
