@@ -18,6 +18,10 @@ from app.models import (
 from app.services.shopify_privacy_automation_provenance import (
     inspect_shopify_automation_privacy_impact,
 )
+from app.services.shopify_privacy_automation_export import (
+    ShopifyAutomationExportError,
+    export_linked_automation_records,
+)
 from app.services.shopify_privacy_scope_preview import ShopifyPrivacyScopeError
 from app.services.shopify_privacy_local_processor import (
     inspect_local_customer_export_counts,
@@ -81,6 +85,7 @@ def scenario(monkeypatch):
                 run_id=run.id, customer_id=customer.id, status="sent",
                 rendered_message=f"PRIVATE_MESSAGE_{store.slug}",
                 template_data={"customer_address": store.slug},
+                error_message=f"RAW_PROVIDER_ERROR_{store.slug}",
             )
             db.add(recipient)
             db.flush()
@@ -88,6 +93,7 @@ def scenario(monkeypatch):
                 recipient_execution_id=recipient.id,
                 attempt_number=1, status="sent",
                 provider_message_id=f"PRIVATE_PROVIDER_{store.slug}",
+                error_message=f"RAW_ATTEMPT_ERROR_{store.slug}",
             ))
             flow = AutomationFlow(
                 organization_id=store.organization_id,
@@ -119,6 +125,7 @@ def scenario(monkeypatch):
                 flow_recipient_execution_id=flow_recipient.id,
                 node_id="message", node_type="message",
                 extra_data={"private_contact": store.slug},
+                error_message=f"RAW_NODE_ERROR_{store.slug}",
             ))
         receipt = ShopifyPrivacyRequest(
             request_id="s" * 64,
@@ -150,6 +157,45 @@ def test_customer_exact_store_and_tenant_only(scenario):
     for secret in ("PRIVATE_MESSAGE", "PRIVATE_PROVIDER", "private checkout"):
         assert secret not in result
     assert not db.dirty and not db.new and not db.deleted
+
+
+def test_export_includes_only_subject_rows_from_exact_store(scenario):
+    db, receipt = scenario
+    profile = db.query(CustomerStoreProfile).filter_by(
+        store_id=receipt.store_id, external_customer_id="700",
+    ).one()
+
+    result = export_linked_automation_records(
+        db, receipt=receipt, customer_id=profile.customer_id,
+    )
+
+    assert result["coverage"] == "linked_rows_included_field_review_pending"
+    assert len(result["audience_members"]) == 1
+    assert result["campaign_recipients"][0]["rendered_message"] == "PRIVATE_MESSAGE_store-a"
+    assert result["campaign_recipients"][0]["template_data"] == {"customer_address": "store-a"}
+    assert result["campaign_recipients"][0]["error_detail_present"] is True
+    assert result["delivery_attempts"][0]["provider_message_id"] == "PRIVATE_PROVIDER_store-a"
+    assert result["flow_node_executions"][0]["extra_data"] == {"private_contact": "store-a"}
+    serialized = json.dumps(result)
+    assert "PRIVATE_MESSAGE_store-b" not in serialized
+    assert "PRIVATE_MESSAGE_store-c" not in serialized
+    assert "RAW_PROVIDER_ERROR" not in serialized
+    assert "RAW_ATTEMPT_ERROR" not in serialized
+    assert "RAW_NODE_ERROR" not in serialized
+    # Parent-level content can be shared across recipients and is not exported
+    # through a recipient row without separate provenance.
+    assert "private checkout message" not in serialized
+    assert "trigger_context" not in serialized
+    assert not db.dirty and not db.new and not db.deleted
+
+
+def test_automation_export_rejects_unverified_subject(scenario):
+    db, receipt = scenario
+    receipt.selector_encrypted = encrypt_shopify_secret(
+        json.dumps({"customer": {"id": 999999}})
+    )
+    with pytest.raises(ShopifyAutomationExportError, match="SUBJECT_UNVERIFIED"):
+        export_linked_automation_records(db, receipt=receipt, customer_id=999999)
 
 
 def test_unknown_subject_never_includes_shared_or_other_tenant_rows(scenario):

@@ -111,6 +111,8 @@ def test_encrypted_export_exact_store_subject_and_requested_order(sandbox):
     assert data["orders"][0]["shopify_order_id"] == "101"
     assert data["orders"][0]["shipping_address"]["address1"] == "PRIVATE_ADDRESS_0"
     assert data["conversations"][0]["messages"][0]["text"] == "PRIVATE_MESSAGE_0"
+    assert data["linked_automation"]["coverage"] == "linked_rows_included_field_review_pending"
+    assert data["linked_automation"]["campaign_recipients"] == []
     assert "PRIVATE_ADDRESS_1" not in str(data)
     assert "PRIVATE_MESSAGE_1" not in str(data)
     assert "SHARED_PRIVATE_NAME" not in str(data)
