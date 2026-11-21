@@ -9,7 +9,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.db import Base
 from app.model_domains.ai_agent import AgentActionApproval, AgentChatMessage, AgentChatToolCall
-from app.models import AutomationFlow, Order, Organization, OrganizationMembership, Store, User
+from app.models import AutomationFlow, Order, Organization, OrganizationMembership, ShopifyPrivacySuppression, Store, User
 from app.services import agent_chat_service as service
 
 
@@ -158,6 +158,68 @@ def test_copilot_unverified_privacy_checkpoint_fails_closed_without_pii(db, monk
     monkeypatch.setattr(suppression, "evaluate_shopify_privacy_suppression", checkpoint_failed)
     with pytest.raises(service.AgentChatError, match="CHAT_SHOP_PRIVACY_GATE_UNVERIFIED"):
         service.create_chat_session(db, membership, store_id=store.id)
+
+
+def test_real_hmac_shop_tombstone_prevents_copilot_reingestion(db, monkeypatch):
+    from app.services import shopify_privacy_suppression as suppression
+    membership, store, _ = seed(db)
+    store.shopify_domain = "copilot-store.myshopify.com"
+    db.commit()
+    monkeypatch.setenv(
+        "SHOPIFY_PRIVACY_SUPPRESSION_KEY",
+        "synthetic-stable-copilot-shop-privacy-tombstone-key-123456789",
+    )
+    monkeypatch.setenv("SHOPIFY_PRIVACY_PROCESSING_ENABLED", "false")
+    monkeypatch.delenv("SHOPIFY_PRIVACY_RESTORE_CHECKPOINT_HMAC", raising=False)
+    key = suppression._secret()
+    domain = suppression.normalize_shop_domain(store.shopify_domain)
+    db.add(ShopifyPrivacySuppression(
+        organization_id=membership.organization_id, store_id=store.id,
+        request_id="a" * 64, kind="shop",
+        selector_digest=suppression._digest(
+            key=key, organization_id=membership.organization_id,
+            store_id=store.id, domain=domain, kind="shop", identity="all",
+        ),
+        key_fingerprint=suppression._key_fingerprint(key),
+        domain_fingerprint=suppression._domain_fingerprint(
+            key, membership.organization_id, store.id, domain,
+        ),
+        status="active",
+    ))
+    db.commit()
+    with pytest.raises(service.AgentChatError, match="CHAT_SHOP_PRIVACY_SUPPRESSED"):
+        service.create_chat_session(db, membership, store_id=store.id)
+
+
+def test_real_customer_tombstone_does_not_disable_whole_copilot_store(db, monkeypatch):
+    from app.services import shopify_privacy_suppression as suppression
+    membership, store, _ = seed(db)
+    store.shopify_domain = "copilot-store.myshopify.com"
+    db.commit()
+    monkeypatch.setenv(
+        "SHOPIFY_PRIVACY_SUPPRESSION_KEY",
+        "synthetic-stable-copilot-shop-privacy-tombstone-key-123456789",
+    )
+    monkeypatch.setenv("SHOPIFY_PRIVACY_PROCESSING_ENABLED", "false")
+    monkeypatch.delenv("SHOPIFY_PRIVACY_RESTORE_CHECKPOINT_HMAC", raising=False)
+    key = suppression._secret()
+    domain = suppression.normalize_shop_domain(store.shopify_domain)
+    db.add(ShopifyPrivacySuppression(
+        organization_id=membership.organization_id, store_id=store.id,
+        request_id="b" * 64, kind="customer",
+        selector_digest=suppression._digest(
+            key=key, organization_id=membership.organization_id,
+            store_id=store.id, domain=domain, kind="customer", identity="700",
+        ),
+        key_fingerprint=suppression._key_fingerprint(key),
+        domain_fingerprint=suppression._domain_fingerprint(
+            key, membership.organization_id, store.id, domain,
+        ),
+        status="active",
+    ))
+    db.commit()
+    created = service.create_chat_session(db, membership, store_id=store.id)
+    assert created["id"] > 0
 
 
 def model_response(content, stop_reason):
