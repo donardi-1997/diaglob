@@ -35,13 +35,15 @@ def _map_live_error(exc: ShopifyPrivacyExecutionError):
 def prepare_permitted_local_export(
     store_id: int, request_id: str,
     x_privacy_execution_permit: str | None = Header(None, alias="X-Privacy-Execution-Permit"),
+    x_privacy_legal_clearance: str | None = Header(None, alias="X-Privacy-Legal-Clearance"),
     membership: OrganizationMembership = Depends(get_current_membership),
     store: Store = Depends(require_authorized_path_store), db: Session = Depends(get_db),
 ):
     try:
         result = live_delivery.issue_local_privacy_delivery(db, request_id=request_id,
             organization_id=membership.organization_id, store_id=store.id,
-            user_id=membership.user_id, permit_token=x_privacy_execution_permit)
+            user_id=membership.user_id, permit_token=x_privacy_execution_permit,
+            legal_clearance_token=x_privacy_legal_clearance)
     except ShopifyPrivacyExecutionError as exc:
         _map_live_error(exc)
     from fastapi.responses import JSONResponse
