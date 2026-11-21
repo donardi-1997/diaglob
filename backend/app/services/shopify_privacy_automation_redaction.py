@@ -11,6 +11,8 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
+from .shopify_privacy_legacy_automation_redaction import scrub_shopify_legacy_automations
+
 from ..models import (
     AutomationAudienceMember, AutomationCampaign, AutomationDeliveryAttempt,
     AutomationFlowRecipientExecution, AutomationFlowRun, AutomationNodeExecution,
@@ -174,4 +176,12 @@ def scrub_shopify_automation_scope(
             else:
                 report["mixed_recipient_contexts_unverified"] += 1
 
+    # Legacy executions keep input_json/result_json outside the modern
+    # campaigns/flows tables. Only explicit store/subject provenance permits
+    # this scrub. Unattributed historical payloads remain manual blockers.
+    legacy = scrub_shopify_legacy_automations(
+        db, organization_id=organization_id, store_id=store_id,
+        customer_ids=customer_ids, now=now,
+    )
+    report.update(legacy)
     return report
