@@ -313,3 +313,36 @@ def test_shop_redact_preview_is_limited_to_originating_store(sandbox):
         Order.store_id == stores[1].id, Order.note == "PRIVATE_NOTE_1"
     ).one()
     assert db.query(ShopifyPrivacySuppression).count() == 0
+
+
+def test_live_processing_requires_external_checkpoint_before_reingestion(sandbox, monkeypatch):
+    db, owner, _, _, stores, _ = sandbox
+    args = dict(organization_id=owner["organization_id"], store_id=stores[0].id,
+                shop_domain=stores[0].shopify_domain, customer_id="700", order_id="101")
+    # Even an empty local suppression table could be a restored, pre-erasure snapshot.
+    assert db.query(ShopifyPrivacySuppression).count() == 0
+    with pytest.raises(ShopifySuppressionError, match="RESTORE_CHECKPOINT_REQUIRED"):
+        evaluate_shopify_privacy_suppression(db, **args)
+
+    # No customer redactions are authorized when the program is disabled.
+    # Ordinary ingress remains possible without an external ledger in that state.
+    monkeypatch.setenv("SHOPIFY_PRIVACY_PROCESSING_ENABLED", "false")
+    assert evaluate_shopify_privacy_suppression(db, **args) == (None, False)
+
+
+def test_deleted_customer_cannot_reenter_when_external_checkpoint_disappears(sandbox, monkeypatch):
+    db, owner, _, _, stores, _ = sandbox
+    permit = signed_permit(sandbox, request_id=ERASE, operation="local_redaction")
+    allow_redaction_checkpoint(sandbox, monkeypatch)
+    execute_local_privacy_redaction(db, request_id=ERASE, permit_token=permit, **owner)
+    assert db.query(ShopifyPrivacySuppression).filter_by(status="active").count() > 0
+
+    # Configuration rollback or a lost external ledger must never silently skip
+    # replay protection while local privacy processing remains enabled.
+    monkeypatch.delenv("SHOPIFY_PRIVACY_RESTORE_CHECKPOINT_HMAC")
+    monkeypatch.delenv("SHOPIFY_PRIVACY_RESTORE_MIN_RECORDS")
+    with pytest.raises(ShopifySuppressionError, match="RESTORE_CHECKPOINT_REQUIRED"):
+        evaluate_shopify_privacy_suppression(
+            db, organization_id=owner["organization_id"], store_id=stores[0].id,
+            shop_domain=stores[0].shopify_domain, customer_id="700", order_id="101",
+        )
