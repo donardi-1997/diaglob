@@ -69,6 +69,7 @@ def _content_digest(db: Session, sessions: list[int], messages: list[int],
             raise ShopifyPrivacyExecutionError("COPILOT_SCOPE_CONCURRENT_DRIFT")
         for row in rows:
             records.append((model.__tablename__, row.id, extract(row)))
+    records.sort(key=lambda item: (item[0], item[1]))
     raw = json.dumps(records, sort_keys=True, separators=(",", ":"),
                      ensure_ascii=True, default=str).encode()
     return hashlib.sha256(raw).hexdigest()
