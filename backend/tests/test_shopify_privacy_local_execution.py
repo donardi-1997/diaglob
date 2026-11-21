@@ -4,6 +4,7 @@ No production DB, Shopify call, external erasure or compliance claim.
 """
 import base64
 import json
+import os
 import time
 from datetime import datetime, timedelta
 from unittest.mock import patch
@@ -36,6 +37,9 @@ from app.services.shopify_privacy_local_execution import (
 from app.services.shopify_privacy_live_delivery import (
     issue_local_privacy_delivery, purge_expired_local_privacy_deliveries,
     redeem_local_privacy_delivery,
+)
+from app.services.shopify_privacy_review_manifest import (
+    build_shopify_privacy_review_manifest,
 )
 from app.services.shopify_privacy_suppression import (
     ShopifySuppressionError, evaluate_shopify_privacy_suppression,
@@ -407,6 +411,125 @@ def test_live_http_delivery_has_no_cache_and_cannot_bypass_authentication(sandbo
         assert "no-store" in downloaded.headers["cache-control"]
         assert downloaded.json()["complete"] is False
         assert "PRIVATE_NOTE_1" not in downloaded.text
+    finally:
+        app.dependency_overrides.clear()
+        app.dependency_overrides.update(original)
+
+
+def test_review_manifest_is_stable_pii_free_and_does_not_authorize(sandbox, monkeypatch):
+    db, owner, _, _, _, _ = sandbox
+    attestation = Ed25519PrivateKey.generate()
+    monkeypatch.setenv("SHOPIFY_PRIVACY_ATTESTATION_PUBLIC_KEY", b64(
+        attestation.public_key().public_bytes(
+            serialization.Encoding.Raw, serialization.PublicFormat.Raw,
+        ),
+    ))
+
+    first = build_shopify_privacy_review_manifest(db, request_id=ACCESS, **owner)
+    second = build_shopify_privacy_review_manifest(db, request_id=ACCESS, **owner)
+
+    assert first == second
+    assert first["manifest_sha256"] == second["manifest_sha256"]
+    assert first["case"] == {
+        "request_id": ACCESS,
+        "organization_id": owner["organization_id"],
+        "store_id": owner["store_id"],
+        "topic": "customers/data_request",
+        "local_operation": "local_export",
+        "shopify_hmac_intake_verified": True,
+    }
+    assert first["policy"]["sha256"] == policy_snapshot()[1]
+    assert first["documents"]["merchant_instruction"].endswith(ACCESS)
+    assert first["documents"]["legal_review"].endswith(ACCESS)
+    assert first["configuration"]["review_configuration_ready"] is True
+    assert first["configuration"]["blockers"] == []
+    assert first["fulfillment_complete"] is False
+    assert first["safety"] == {
+        "contains_personal_data": False,
+        "contains_shopify_selectors": False,
+        "authorizes_execution": False,
+        "authorizes_legal_clearance": False,
+    }
+    serialized = json.dumps(first, sort_keys=True)
+    for forbidden in (
+        "PRIVATE", "private@example.invalid", "573001234567",
+        "privacy-1.myshopify.com", "clearance.key", "permit.key",
+        os.environ["SHOPIFY_PRIVACY_EXECUTION_PUBLIC_KEY"],
+        os.environ["SHOPIFY_PRIVACY_LEGAL_REVIEW_PUBLIC_KEY"],
+    ):
+        assert forbidden not in serialized
+    assert db.query(ShopifyPrivacySuppression).count() == 0
+
+
+@pytest.mark.parametrize(
+    ("legal_value", "expected_blocker"),
+    [
+        (None, "LEGAL_REVIEW_PUBLIC_KEY_MISSING"),
+        ("same_as_execution", "LEGAL_REVIEW_PUBLIC_KEY_NOT_INDEPENDENT"),
+        ("not-a-valid-ed25519-key", "LEGAL_REVIEW_PUBLIC_KEY_MALFORMED"),
+    ],
+)
+def test_review_manifest_blocks_missing_equal_or_malformed_legal_key(
+    sandbox, monkeypatch, legal_value, expected_blocker,
+):
+    db, owner, *_ = sandbox
+    if legal_value is None:
+        monkeypatch.delenv("SHOPIFY_PRIVACY_LEGAL_REVIEW_PUBLIC_KEY", raising=False)
+    elif legal_value == "same_as_execution":
+        monkeypatch.setenv(
+            "SHOPIFY_PRIVACY_LEGAL_REVIEW_PUBLIC_KEY",
+            os.environ["SHOPIFY_PRIVACY_EXECUTION_PUBLIC_KEY"],
+        )
+    else:
+        monkeypatch.setenv("SHOPIFY_PRIVACY_LEGAL_REVIEW_PUBLIC_KEY", legal_value)
+
+    result = build_shopify_privacy_review_manifest(db, request_id=ACCESS, **owner)
+
+    assert expected_blocker in result["configuration"]["blockers"]
+    assert result["configuration"]["review_configuration_ready"] is False
+    assert result["configuration"]["key_fingerprints"]["legal_review"][
+        "sha256_fingerprint"
+    ] is None or legal_value == "same_as_execution"
+    assert result["fulfillment_complete"] is False
+
+
+def test_review_manifest_is_tenant_store_isolated_and_owner_only(sandbox):
+    db, owner, _, member, stores, _ = sandbox
+    with pytest.raises(ShopifyPrivacyExecutionError, match="PRIVACY_CASE_UNAVAILABLE"):
+        build_shopify_privacy_review_manifest(
+            db, request_id=ACCESS, organization_id=owner["organization_id"],
+            store_id=stores[1].id, user_id=owner["user_id"],
+        )
+    member.role = "manager"
+    db.commit()
+    with pytest.raises(ShopifyPrivacyExecutionError, match="PRIVACY_OWNER_ACCESS_REQUIRED"):
+        build_shopify_privacy_review_manifest(db, request_id=ACCESS, **owner)
+
+
+def test_review_manifest_http_is_authenticated_owner_only_and_no_store(sandbox):
+    db, owner, _, member, stores, _ = sandbox
+    path = (
+        f"/api/stores/{owner['store_id']}/shopify/privacy/cases/"
+        f"{ACCESS}/review-manifest"
+    )
+    original = app.dependency_overrides.copy()
+    app.dependency_overrides[get_db] = lambda: db
+    try:
+        client = TestClient(app)
+        assert client.get(path).status_code in (401, 403)
+        app.dependency_overrides[get_current_membership] = lambda: member
+        response = client.get(path)
+        assert response.status_code == 200
+        assert "no-store" in response.headers["cache-control"]
+        assert response.headers["pragma"] == "no-cache"
+        assert response.json()["fulfillment_complete"] is False
+        other_store_path = path.replace(
+            f"/stores/{owner['store_id']}/", f"/stores/{stores[1].id}/",
+        )
+        assert client.get(other_store_path).status_code == 409
+        member.role = "manager"
+        db.commit()
+        assert client.get(path).status_code == 403
     finally:
         app.dependency_overrides.clear()
         app.dependency_overrides.update(original)

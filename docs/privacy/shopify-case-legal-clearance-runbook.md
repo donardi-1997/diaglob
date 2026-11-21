@@ -12,7 +12,8 @@ La nueva variable de producción `SHOPIFY_PRIVACY_LEGAL_REVIEW_PUBLIC_KEY` debe 
 
 ## Flujo autorizado y segregación de funciones
 
-1. **Recepción y evaluación:** se requiere webhook HMAC válido, tienda verificada, `customer.id` y `orders_to_redact` comprobados. Consultar el preview del caso con una cuenta owner. Obtener su `scope_sha256` y `planned_restore_checkpoint`.
+0. **Manifiesto de revisión:** una cuenta owner consulta `GET /api/stores/{store_id}/shopify/privacy/cases/{request_id}/review-manifest`. La respuesta usa `Cache-Control: no-store` y entrega únicamente tópico, IDs internos, `scope_sha256`, conteos, política/digest, IDs documentales y huellas SHA-256 de claves públicas. No entrega dominio Shopify, selectores ni contenido de compradores. Antes de preparar documentos, comprobar que `configuration.blockers` esté vacío, `review_configuration_ready=true` y que la clave legal sea independiente. El manifiesto mantiene `authorizes_execution=false`, `authorizes_legal_clearance=false` y `fulfillment_complete=false`.
+1. **Recepción y evaluación:** se requiere webhook HMAC válido, tienda verificada, `customer.id` y `orders_to_redact` comprobados. Usar los campos del manifiesto del caso; para redacción, obtener además su `planned_restore_checkpoint` por el flujo técnico restringido.
 2. **Instrucción auténtica del comerciante:** el responsable del tratamiento o autoridad aplicable documenta la instrucción para el mismo caso y la misma tienda. Guardar su evidencia en ubicación restringida.
 3. **Revisión jurídica independiente:** un revisor distinto del firmante técnico verifica la política aprobada, jurisdicción, retenciones por categoría, litigios, bloqueos legales y excepciones. Guardar acta atribuible al caso y limitarla al alcance aprobado.
 4. **Firma legal:** el revisor autorizado crea el documento de clearance con su clave **fuera del servidor**; debe indicar expresamente `--legal-hold-cleared` después de comprobarlo. Si existe bloqueo o duda, **no firmar**. Un bloqueo parcial requiere procedimiento más granular antes de autorizar eliminación de esos campos.
@@ -20,6 +21,10 @@ La nueva variable de producción `SHOPIFY_PRIVACY_LEGAL_REVIEW_PUBLIC_KEY` debe 
 6. **Firma técnica:** el operador con **otra clave** firma su `local_redaction` para el mismo `scope_sha256`, tienda, caso y checkpoint, con TTL inferior a 24 h.
 7. **Ejecución controlada:** presentar ambos headers solo por un canal autenticado. El servicio vuelve a verificar alcance, política, rol owner, fechas, dos firmas y checkpoint antes de modificar registros locales.
 8. **Verificación:** el resultado de redacción local mantiene `fulfillment_complete=false`; faltan comprobaciones separadas sobre IA, archivos, colas, proveedores y restauraciones. No afirmar cumplimiento de Shopify por la sola respuesta 200.
+
+`manifest_sha256` permite comparar dos copias del mismo estado, pero no sustituye
+`scope_sha256`, las dos firmas ni la evidencia privada. Los PDFs permanecen
+fuera de Git; solo sus SHA-256 se incorporan al token jurídico de corta duración.
 
 ## CLI del revisor (solo estación aprobada)
 

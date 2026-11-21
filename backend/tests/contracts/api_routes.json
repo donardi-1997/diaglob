@@ -705,6 +705,10 @@
   ],
   [
     "GET",
+    "/api/stores/{store_id}/shopify/privacy/cases/{request_id}/review-manifest"
+  ],
+  [
+    "GET",
     "/api/stores/{store_id}/suppliers/cj"
   ],
   [

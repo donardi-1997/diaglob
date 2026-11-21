@@ -18,6 +18,9 @@ from ..services.shopify_privacy_secure_delivery import (
 from ..services.shopify_privacy_execution_authorization import ShopifyPrivacyExecutionError
 from ..services import shopify_privacy_live_delivery as live_delivery
 from ..services.shopify_privacy_local_execution import execute_local_privacy_redaction
+from ..services.shopify_privacy_review_manifest import (
+    build_shopify_privacy_review_manifest,
+)
 
 router = APIRouter()
 
@@ -29,6 +32,31 @@ def _map_live_error(exc: ShopifyPrivacyExecutionError):
     if code == "PRIVACY_OWNER_ACCESS_REQUIRED":
         raise HTTPException(status_code=403, detail="PRIVACY_OWNER_ACCESS_REQUIRED") from None
     raise HTTPException(status_code=409, detail="PRIVACY_OPERATION_UNAVAILABLE") from None
+
+
+@router.get("/api/stores/{store_id}/shopify/privacy/cases/{request_id}/review-manifest")
+def get_shopify_privacy_review_manifest(
+    store_id: int, request_id: str,
+    membership: OrganizationMembership = Depends(get_current_membership),
+    store: Store = Depends(require_authorized_path_store), db: Session = Depends(get_db),
+):
+    """Return only case metadata, counts and fingerprints needed for review."""
+    from fastapi.responses import JSONResponse
+    try:
+        result = build_shopify_privacy_review_manifest(
+            db, request_id=request_id, organization_id=membership.organization_id,
+            store_id=store.id, user_id=membership.user_id,
+        )
+    except ShopifyPrivacyExecutionError as exc:
+        _map_live_error(exc)
+    return JSONResponse(
+        result,
+        headers={
+            "Cache-Control": "no-store, private",
+            "Pragma": "no-cache",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @router.post("/api/stores/{store_id}/shopify/privacy/cases/{request_id}/local-export")
