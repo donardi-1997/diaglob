@@ -49,6 +49,7 @@ def scrub_shopify_automation_scope(
         "flow_contexts_scrubbed": 0,
         "mixed_recipient_contexts_unverified": 0,
         "possible_inflight_deliveries": 0,
+        "provider_handles_pending_external_erasure": 0,
         "provider_erasure_verified": False,
         "fulfillment_complete": False,
     }
@@ -73,9 +74,10 @@ def scrub_shopify_automation_scope(
         audience = audience.filter(AutomationAudienceMember.customer_id.in_(customer_ids))
         recipients = recipients.filter(AutomationRecipientExecution.customer_id.in_(customer_ids))
 
-    # Scrub message snapshots and recipient templates, including historical
-    # sent/retry rows. Attempts store errors and provider identifiers which may
-    # identify a buyer: clear them while preserving status/timestamps.
+    # Scrub snapshots and free-text errors. Preserve minimal opaque provider
+    # delivery handles until the external provider acknowledges deletion;
+    # otherwise DIAGLOB would lose the only handle needed to request erasure.
+    # Handles remain a separate external-processor closure blocker.
     selected = recipients.with_for_update(of=AutomationRecipientExecution).all()
     selected_ids = [r.id for r in selected]
     if selected_ids:
@@ -83,7 +85,8 @@ def scrub_shopify_automation_scope(
             AutomationDeliveryAttempt.recipient_execution_id.in_(selected_ids),
         ).with_for_update().all()
         for attempt in attempts:
-            attempt.provider_message_id = None
+            if attempt.provider_message_id:
+                report["provider_handles_pending_external_erasure"] += 1
             attempt.error_message = None
         report["campaign_attempts_scrubbed"] = len(attempts)
     for recipient in selected:
@@ -95,7 +98,8 @@ def scrub_shopify_automation_scope(
         recipient.rendered_message = None
         recipient.template_data = {}
         recipient.error_message = None
-        recipient.provider_message_id = None
+        if recipient.provider_message_id:
+            report["provider_handles_pending_external_erasure"] += 1
         recipient.next_attempt_at = None
         recipient.claimed_at = None
         recipient.lease_expires_at = None
@@ -140,7 +144,8 @@ def scrub_shopify_automation_scope(
         for node in nodes:
             node.extra_data = None
             node.error_message = None
-            node.provider_message_id = None
+            if node.provider_message_id:
+                report["provider_handles_pending_external_erasure"] += 1
         report["flow_nodes_scrubbed"] = len(nodes)
 
     # A flow run's trigger_context can be shared by multiple customers. For
