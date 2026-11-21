@@ -28,6 +28,7 @@ from .shopify_privacy_local_processor import (
     ShopifyLocalPrivacyError, _canonical_order_ids, _receipt, _selectors, build_local_redaction_manifest,
 )
 from .shopify_privacy_legal_clearance import verify_case_legal_clearance
+from .shopify_privacy_automation_redaction import scrub_shopify_automation_scope
 from .shopify_privacy_lock import lock_shopify_privacy_scope
 from .shopify_privacy_restore import (
     checkpoint_for_suppression_rows, create_shopify_suppression_checkpoint,
@@ -241,6 +242,21 @@ def execute_local_privacy_redaction(db: Session, *, request_id: str, organizatio
         customer_ids = {row[0] for row in db.query(CustomerStoreProfile.customer_id).filter(
             CustomerStoreProfile.id.in_(targets["customer_store_profiles"]),
         ).all()}
+        # Scrub the campaign/flow snapshots before deleting store profiles,
+        # while exact store/customer provenance is still demonstrable.
+        # This is atomic with SQL redaction and suppression tombstones.
+        automation_scrub = scrub_shopify_automation_scope(
+            db, organization_id=organization_id, store_id=store_id,
+            customer_ids=None if receipt.topic == "shop/redact" else customer_ids,
+        )
+        db.add(ShopifyPrivacyAuditEvent(
+            request_id=request_id, event_type="automation_redaction_executed",
+            from_status=receipt.status, to_status=receipt.status,
+            reason_code=hashlib.sha256(json.dumps(
+                automation_scrub, sort_keys=True, separators=(",", ":"),
+            ).encode()).hexdigest(),
+            actor_type="independently_permitted_worker", created_at=datetime.utcnow(),
+        ))
         anonymous = None
         if targets["conversations"] or targets[ConversationalCheckout.__tablename__]:
             anonymous = Customer(organization_id=organization_id, name="Redacted Shopify customer", phone="")
@@ -310,5 +326,11 @@ def execute_local_privacy_redaction(db: Session, *, request_id: str, organizatio
         db.rollback()
         raise
     return {"local_redaction_executed": True, "idempotent": False,
-            "shared_customer_records_preserved": shared, "fulfillment_complete": False,
+            "shared_customer_records_preserved": shared,
+            "automation_scrub_counts": {key: value for key, value in automation_scrub.items()
+                                        if key.endswith("_scrubbed") or key.endswith("_removed")
+                                        or key == "flow_contexts_scrubbed"},
+            "automation_inflight_review_required": automation_scrub["possible_inflight_deliveries"] > 0,
+            "automation_mixed_context_review_required": automation_scrub["mixed_recipient_contexts_unverified"] > 0,
+            "fulfillment_complete": False,
             "external_processors_verified": False, "backup_erasure_verified": False}
