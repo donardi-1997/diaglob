@@ -317,6 +317,10 @@
   ],
   [
     "GET",
+    "/api/internal/shopify/privacy/cases/{request_id}/evidence-summary"
+  ],
+  [
+    "GET",
     "/api/internal/shopify/privacy/cases/{request_id}/export/provenance"
   ],
   [
