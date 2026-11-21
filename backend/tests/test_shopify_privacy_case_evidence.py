@@ -104,6 +104,41 @@ def test_shop_redact_requires_knowledge_erasure_after_local_sql(db):
     assert result["fulfillment_complete"] is False
 
 
+def test_interrupted_shop_knowledge_erasure_shows_explicit_case_blocker(db):
+    receipt = add_receipt(db, "shop/redact")
+    for event in ("local_redaction_executed", "automation_redaction_executed",
+                  "knowledge_erasure_started"):
+        db.add(ShopifyPrivacyAuditEvent(
+            request_id=REQUEST_ID, event_type=event,
+            actor_type="independently_permitted_worker", reason_code="b" * 64,
+            to_status=receipt.status,
+        ))
+    db.commit()
+    report = summarize_shopify_privacy_case_evidence(db, request_id=REQUEST_ID)
+    assert report["shop_knowledge_erasure_started"] is True
+    assert report["shop_knowledge_erasure_recorded"] is False
+    assert report["automation_redaction_recorded"] is True
+    assert "KNOWLEDGE_ERASURE_INTERRUPTED_RECONCILIATION_REQUIRED" in report["blockers"]
+    assert "AUTOMATION_REDACTION_EVIDENCE_MISSING" not in report["blockers"]
+    assert report["fulfillment_complete"] is False
+    assert "SENSITIVE" not in str(report)
+
+
+def test_redaction_without_automation_scrub_cannot_pass_as_full_coverage(db):
+    receipt = add_receipt(db, "customers/redact")
+    db.add(ShopifyPrivacyAuditEvent(
+        request_id=REQUEST_ID, event_type="local_redaction_executed",
+        actor_type="independently_permitted_worker",
+        reason_code="b" * 64, to_status=receipt.status,
+    ))
+    db.commit()
+    result = summarize_shopify_privacy_case_evidence(db, request_id=REQUEST_ID)
+    assert result["local_redaction_recorded"] is True
+    assert result["automation_redaction_recorded"] is False
+    assert "AUTOMATION_REDACTION_EVIDENCE_MISSING" in result["blockers"]
+    assert result["fulfillment_complete"] is False
+
+
 def test_no_data_determination_is_not_a_customer_erasure(db):
     receipt = add_receipt(db, "shop/redact")
     receipt.status = NO_DATA_STATUS
