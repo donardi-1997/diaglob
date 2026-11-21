@@ -222,6 +222,20 @@ def test_real_customer_tombstone_does_not_disable_whole_copilot_store(db, monkey
     assert created["id"] > 0
 
 
+def test_chat_privacy_errors_use_explicit_safe_http_status_codes():
+    from fastapi import HTTPException
+    from app.api.ai_chat import _map_chat_error
+
+    for code, expected in (
+        ("CHAT_SHOP_PRIVACY_SUPPRESSED", 403),
+        ("CHAT_SHOP_PRIVACY_GATE_UNVERIFIED", 503),
+    ):
+        with pytest.raises(HTTPException) as error:
+            _map_chat_error(service.AgentChatError(code))
+        assert error.value.status_code == expected
+        assert error.value.detail["code"] == code
+
+
 def model_response(content, stop_reason):
     return {
         "message": {"role": "assistant", "content": content},
