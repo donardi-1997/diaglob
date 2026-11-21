@@ -179,7 +179,9 @@ def test_execution_requires_the_exact_approved_policy_digest(monkeypatch):
     assert blockers == ["REAL_SHOPIFY_DELIVERY_NOT_VERIFIED_BY_THIS_AUDIT"]
     env.pop("SHOPIFY_PRIVACY_LEGAL_REVIEW_PUBLIC_KEY")
     blockers = _audit(monkeypatch, _all_docs(private), env)["privacy_fulfillment_release_blockers"]
+    assert "LIVE_CUSTOMER_EXPORT_NOT_ENABLED" in blockers
     assert "LIVE_CUSTOMER_AND_SHOP_REDACTION_NOT_ENABLED" in blockers
     env["SHOPIFY_PRIVACY_LEGAL_REVIEW_PUBLIC_KEY"] = env["SHOPIFY_PRIVACY_EXECUTION_PUBLIC_KEY"]
     blockers = _audit(monkeypatch, _all_docs(private), env)["privacy_fulfillment_release_blockers"]
+    assert "LIVE_CUSTOMER_EXPORT_NOT_ENABLED" in blockers
     assert "LIVE_CUSTOMER_AND_SHOP_REDACTION_NOT_ENABLED" in blockers

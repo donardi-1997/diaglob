@@ -197,7 +197,7 @@ def live_execution_configured(environment: Mapping[str, str], policy_digest: str
     legal_key = environment.get("SHOPIFY_PRIVACY_LEGAL_REVIEW_PUBLIC_KEY", "")
     independently_reviewed = bool(legal_key) and legal_key != environment.get("SHOPIFY_PRIVACY_EXECUTION_PUBLIC_KEY")
     return {
-        "export_enabled": enabled and policy_bound and permit_key,
+        "export_enabled": enabled and policy_bound and permit_key and independently_reviewed,
         "redaction_enabled": enabled and policy_bound and permit_key and suppression_key and independently_reviewed,
     }
 
