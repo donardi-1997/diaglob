@@ -14,6 +14,11 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .db import SessionLocal
+from .services.shopify_privacy_attestations import (
+    evaluate_privacy_program_attestations,
+    live_execution_configured,
+    privacy_release_blockers,
+)
 from .models import (
     ShopifyPrivacyAuditEvent,
     ShopifyPrivacyRequest,
@@ -23,6 +28,35 @@ from .models import (
 
 TOPICS = ("customers/data_request", "customers/redact", "shop/redact")
 REQUIRED_WORK_ITEMS_PER_RECEIPT = 10
+_ACTIVE_STATES = frozenset({"connected", "present_unverified"})
+
+
+def _active_processor_controls(db: Session) -> set[str]:
+    """Processor controls any live store activates; counts only, no identifiers.
+
+    On any detection failure every processor is treated as active, so a
+    ``not_in_use`` attestation can never pass on missing evidence.
+    """
+    from .models import Store
+    from .services.shopify_privacy_controls import PROCESSOR_CONTROLS
+    from .services.shopify_privacy_subprocessors import inspect_shopify_privacy_subprocessors
+
+    try:
+        with db.begin_nested():
+            active: set[str] = set()
+            for store_id, organization_id in db.query(
+                Store.id, Store.organization_id,
+            ).filter(Store.deleted.is_(False)).all():
+                report = inspect_shopify_privacy_subprocessors(
+                    db, organization_id=organization_id, store_id=store_id,
+                )
+                active.update(
+                    item["control"] for item in report["subprocessors"]
+                    if item["activation"] in _ACTIVE_STATES
+                )
+            return active
+    except Exception:
+        return set(PROCESSOR_CONTROLS)
 
 
 def summarize_shopify_privacy_operations(
@@ -86,6 +120,24 @@ def summarize_shopify_privacy_operations(
         and env.get("SHOPIFY_PARTNER_APP_GID")
         and env.get("SHOPIFY_PARTNER_ACCESS_TOKEN")
     )
+    attestations = evaluate_privacy_program_attestations(
+        environment=env, active_processor_controls=_active_processor_controls(db),
+    )
+    execution = live_execution_configured(env, attestations["policy_sha256"])
+    blockers = privacy_release_blockers(
+        attestations=attestations, execution=execution, signed_receipts=signed,
+    )
+    intake_integrity_ok = (
+        hmac_configured
+        and encrypted_selectors_configured
+        and incomplete == 0
+        and unauthorized_completion_states == 0
+        and signed == received
+        and prepared_audit == received
+    )
+    # Active tombstones are expected after a real redaction; they still ask
+    # for review but do not by themselves revoke program release readiness.
+    review_required = not intake_integrity_ok or suppression_counts["active"] > 0
     return {
         "audit": "shopify_privacy_operations_read_only",
         "topic_receipts": topic_counts,
@@ -100,32 +152,22 @@ def summarize_shopify_privacy_operations(
         "selector_encryption_key_present": encrypted_selectors_configured,
         "internal_review_secret_present": bool(env.get("DIAGLOB_INTERNAL_SECRET")),
         "partner_dashboard_access_configured": partner_access,
-        "released_shopify_subscription_verified": False,
-        "valid_live_shopify_delivery_verified": False,
-        "data_export_or_erasure_fulfilled": False,
-        # The intake-only "review_required" flag below must never be used
-        # as an App Store compliance or production fulfillment verdict.
-        # These release controls are deliberately fail-closed until backed by
-        # an independently verified, end-to-end workflow.
-        "privacy_fulfillment_release_ready": False,
-        "privacy_fulfillment_release_blockers": [
-            "SHOPIFY_ACTIVE_VERSION_SUBSCRIPTIONS_NOT_VERIFIED_BY_THIS_AUDIT",
-            "REAL_SHOPIFY_DELIVERY_NOT_VERIFIED_BY_THIS_AUDIT",
-            "LEGAL_RETENTION_AND_HOLDS_NOT_APPROVED",
-            "EXTERNAL_PROCESSOR_ERASURE_NOT_VERIFIED",
-            "BACKUP_RESTORE_AND_REINGESTION_NOT_VERIFIED",
-            "LIVE_CUSTOMER_EXPORT_NOT_ENABLED",
-            "LIVE_CUSTOMER_AND_SHOP_REDACTION_NOT_ENABLED",
-        ],
-        "review_required": (
-            not hmac_configured
-            or not encrypted_selectors_configured
-            or incomplete > 0
-            or unauthorized_completion_states > 0
-            or signed != received
-            or prepared_audit != received
-            or suppression_counts["active"] > 0
+        "released_shopify_subscription_verified": attestations["subscriptions_verified"],
+        "valid_live_shopify_delivery_verified": (
+            "REAL_SHOPIFY_DELIVERY_NOT_VERIFIED_BY_THIS_AUDIT" not in blockers
         ),
+        # Program-level readiness only: an individual request is fulfilled
+        # solely through its own permitted, audited execution.
+        "data_export_or_erasure_fulfilled": False,
+        "attestation_public_key_configured": attestations["public_key_configured"],
+        "attestation_states": {
+            name: value["state"] for name, value in attestations["controls"].items()
+        },
+        # Blockers clear only through signed, unexpired, policy-bound
+        # attestations made outside the app plus live execution configuration.
+        "privacy_fulfillment_release_ready": not blockers and intake_integrity_ok,
+        "privacy_fulfillment_release_blockers": blockers,
+        "review_required": review_required,
     }
 
 
