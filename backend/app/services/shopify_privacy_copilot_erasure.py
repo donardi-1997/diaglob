@@ -36,6 +36,44 @@ def _ids(query, label: str) -> list[int]:
     return sorted(ids)
 
 
+def _content_digest(db: Session, sessions: list[int], messages: list[int],
+                    calls: list[int], approvals: list[int]) -> str:
+    """Fingerprint mutable Copilot content without returning/logging any PII.
+
+    Row IDs alone are insufficient: a new message body or tool result with the
+    same ID after signing must invalidate both short-lived permits.
+    """
+    records = []
+    specs = (
+        (AgentChatSession, sessions, lambda r: (
+            r.title, r.context, r.pending_capacity, r.status,
+        )),
+        (AgentChatMessage, messages, lambda r: (
+            r.provider_role, r.text, r.content, r.model_id, r.stop_reason,
+        )),
+        (AgentChatToolCall, calls, lambda r: (
+            r.session_id, r.message_id, r.approval_id, r.tool_use_id,
+            r.arguments, r.result, r.status,
+        )),
+        (AgentActionApproval, approvals, lambda r: (
+            r.membership_id, r.user_id, r.tool_name, r.action, r.risk,
+            r.confirmation, r.arguments_hash, r.arguments, r.status,
+            r.error_message,
+        )),
+    )
+    for model, ids, extract in specs:
+        if not ids:
+            continue
+        rows = db.query(model).filter(model.id.in_(ids)).all()
+        if len(rows) != len(ids):
+            raise ShopifyPrivacyExecutionError("COPILOT_SCOPE_CONCURRENT_DRIFT")
+        for row in rows:
+            records.append((model.__tablename__, row.id, extract(row)))
+    raw = json.dumps(records, sort_keys=True, separators=(",", ":"),
+                     ensure_ascii=True, default=str).encode()
+    return hashlib.sha256(raw).hexdigest()
+
+
 def plan_shop_copilot_erasure(db: Session, *, organization_id: int, store_id: int) -> dict:
     """Read-only exact-ID plan, never inferred from message text or buyer ID."""
     if (type(organization_id) is not int or organization_id <= 0
@@ -85,6 +123,7 @@ def plan_shop_copilot_erasure(db: Session, *, organization_id: int, store_id: in
     return {
         "session_ids": sessions, "message_ids": messages,
         "tool_call_ids": calls, "approval_ids": approvals,
+        "snapshot_sha256": _content_digest(db, sessions, messages, calls, approvals),
     }
 
 
@@ -110,6 +149,7 @@ def copilot_erasure_scope_digest(
         organization_id, store_id, subject,
         plan["session_ids"], plan["message_ids"],
         plan["tool_call_ids"], plan["approval_ids"],
+        plan["snapshot_sha256"],
     ]
     return hashlib.sha256(
         json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
@@ -136,7 +176,8 @@ def preview_shop_copilot_erasure(
         "request_id": request_id,
         "operation": "shop_copilot_erasure",
         "scope_sha256": digest,
-        "counts": {key.removesuffix("_ids"): len(value) for key, value in plan.items()},
+        "counts": {key.removesuffix("_ids"): len(value) for key, value in plan.items()
+                   if key.endswith("_ids")},
         "subject_level_attribution": False,
         "external_ai_provider_deletion_verified": False,
         "fulfillment_complete": False,
@@ -216,7 +257,8 @@ def execute_shop_copilot_erasure(
         raise
     return {
         "copilot_erasure_executed": True, "idempotent": False,
-        "counts": {key.removesuffix("_ids"): len(value) for key, value in plan.items()},
+        "counts": {key.removesuffix("_ids"): len(value) for key, value in plan.items()
+                   if key.endswith("_ids")},
         "external_ai_provider_deletion_verified": False,
         "backup_erasure_verified": False,
         "fulfillment_complete": False,
