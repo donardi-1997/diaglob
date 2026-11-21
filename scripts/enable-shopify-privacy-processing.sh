@@ -118,6 +118,10 @@ if not minimum.isascii() or not minimum.isdecimal() or int(minimum) < 0:
 bucket = current.get("SHOPIFY_PRIVACY_WORM_LEDGER_BUCKET", "")
 prefix = current.get("SHOPIFY_PRIVACY_WORM_LEDGER_PREFIX", "")
 ledger_key = current.get("SHOPIFY_PRIVACY_WORM_LEDGER_PUBLIC_KEY", "")
+retention_horizon = current.get("SHOPIFY_PRIVACY_WORM_MIN_REMAINING_DAYS", "")
+if (not retention_horizon.isascii() or not retention_horizon.isdecimal()
+        or not 1 <= int(retention_horizon) <= 3650):
+    raise SystemExit("PRIVACY_WORM_RETENTION_HORIZON_REQUIRED")
 try:
     if not bucket or not prefix:
         raise ValueError
@@ -143,7 +147,10 @@ try:
     s3 = boto3.client(
         "s3", region_name=current.get("AWS_REGION", current.get("AWS_DEFAULT_REGION", "us-east-2"))
     )
-    anchor = verify_worm_ledger(s3, bucket=bucket, prefix=prefix, public_key=public)
+    anchor = verify_worm_ledger(
+        s3, bucket=bucket, prefix=prefix, public_key=public,
+        minimum_remaining_days=int(retention_horizon),
+    )
     if (anchor["record_count"] <= 0
             or anchor["last_checkpoint_hmac"] != checkpoint
             or anchor["last_min_records"] != int(minimum)
@@ -196,6 +203,7 @@ required = {
     "SHOPIFY_PRIVACY_RESTORE_CHECKPOINT_HMAC", "SHOPIFY_PRIVACY_RESTORE_MIN_RECORDS",
     "SHOPIFY_PRIVACY_WORM_LEDGER_BUCKET", "SHOPIFY_PRIVACY_WORM_LEDGER_PREFIX",
     "SHOPIFY_PRIVACY_WORM_LEDGER_PUBLIC_KEY",
+    "SHOPIFY_PRIVACY_WORM_MIN_REMAINING_DAYS",
 }
 missing = sorted(required - loaded)
 if missing:
