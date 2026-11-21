@@ -194,6 +194,8 @@ def test_requires_both_permits_before_any_sql_deletion(scenario):
 def test_deletes_only_target_store_and_does_not_touch_other_store_or_tenant(scenario):
     db, org, stores, user, records, _ = scenario
     tech, legal = signed(scenario)
+    target_tool_id = records[0][3].id
+    other_tool_id = records[1][3].id
     out = privacy.execute_shop_copilot_erasure(
         db, **arguments(scenario), execution_permit=tech, legal_clearance_token=legal,
     )
@@ -207,8 +209,8 @@ def test_deletes_only_target_store_and_does_not_touch_other_store_or_tenant(scen
         assert db.get(model, records[0][index]) is None
         assert db.get(model, records[1][index]) is not None
         assert db.get(model, records[2][index]) is not None
-    assert db.get(AgentChatToolCall, records[0][3].id) is None
-    assert db.get(AgentChatToolCall, records[1][3].id) is not None
+    assert db.get(AgentChatToolCall, target_tool_id) is None
+    assert db.get(AgentChatToolCall, other_tool_id) is not None
     assert db.query(ShopifyPrivacyAuditEvent).filter_by(
         event_type=privacy.EXECUTED_EVENT,
     ).count() == 1
