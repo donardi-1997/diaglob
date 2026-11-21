@@ -133,17 +133,18 @@ def test_scrubs_target_store_only_and_identifies_inflight_delivery(sandbox):
     assert output["flow_nodes_scrubbed"] == 1
     assert output["flow_contexts_scrubbed"] == 1
     assert output["possible_inflight_deliveries"] == 2
+    assert output["provider_handles_pending_external_erasure"] == 3
     assert output["fulfillment_complete"] is False
     db.refresh(recipients[0])
     assert recipients[0].status == "ambiguous"
     assert recipients[0].rendered_message is None
     assert recipients[0].template_data == {}
-    assert recipients[0].provider_message_id is None
+    assert recipients[0].provider_message_id == "PROVIDER_0"
     db.refresh(recipients[1])
     assert recipients[1].status == "queued"
     assert recipients[1].rendered_message == "SENSITIVE_CAMPAIGN_1"
     db.refresh(attempts[0])
-    assert attempts[0].provider_message_id is None
+    assert attempts[0].provider_message_id == "PROVIDER_0"
     db.refresh(attempts[1])
     assert attempts[1].provider_message_id == "PROVIDER_1"
     db.refresh(frs[0])
@@ -155,7 +156,7 @@ def test_scrubs_target_store_only_and_identifies_inflight_delivery(sandbox):
     db.refresh(flows[1])
     assert flows[1].trigger_context == {"message": "SENSITIVE_TRIGGER_1"}
     db.refresh(nodes[0])
-    assert nodes[0].extra_data is None and nodes[0].provider_message_id is None
+    assert nodes[0].extra_data is None and nodes[0].provider_message_id == "PROVIDER_NODE_0"
     db.refresh(nodes[1])
     assert nodes[1].extra_data == {"payload": "SENSITIVE_NODE_1"}
 
