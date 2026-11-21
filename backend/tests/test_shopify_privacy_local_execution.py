@@ -439,10 +439,20 @@ def test_review_manifest_is_stable_pii_free_and_does_not_authorize(sandbox, monk
         "shopify_hmac_intake_verified": True,
     }
     assert first["policy"]["sha256"] == policy_snapshot()[1]
+    assert first["policy"]["policy_id"] == "diaglob-shopify-privacy-2026-10-26"
+    assert first["policy"]["source"] == "config/shopify-privacy-policy.json"
     assert first["documents"]["merchant_instruction"].endswith(ACCESS)
     assert first["documents"]["legal_review"].endswith(ACCESS)
-    assert first["configuration"]["review_configuration_ready"] is True
-    assert first["configuration"]["blockers"] == []
+    runtime = first["configuration"]["local_operation_runtime"]
+    assert runtime == {
+        "operation": "local_export", "configured": True, "blockers": [],
+    }
+    preflight = first["configuration"]["activation_preflight_configuration"]
+    assert preflight["configured"] is False
+    assert preflight["external_worm_ledger_head_evaluated"] is False
+    assert "WORM_LEDGER_PUBLIC_KEY_MISSING" in preflight["blockers"]
+    assert first["configuration"]["program_attestations_evaluated"] is False
+    assert first["configuration"]["global_release_readiness_evaluated"] is False
     assert first["fulfillment_complete"] is False
     assert first["safety"] == {
         "contains_personal_data": False,
@@ -485,12 +495,80 @@ def test_review_manifest_blocks_missing_equal_or_malformed_legal_key(
 
     result = build_shopify_privacy_review_manifest(db, request_id=ACCESS, **owner)
 
-    assert expected_blocker in result["configuration"]["blockers"]
-    assert result["configuration"]["review_configuration_ready"] is False
+    runtime = result["configuration"]["local_operation_runtime"]
+    assert expected_blocker in runtime["blockers"]
+    assert runtime["configured"] is False
     assert result["configuration"]["key_fingerprints"]["legal_review"][
         "sha256_fingerprint"
     ] is None or legal_value == "same_as_execution"
     assert result["fulfillment_complete"] is False
+
+
+def test_review_manifest_matches_export_redaction_and_activation_configuration(
+    sandbox, monkeypatch,
+):
+    db, owner, *_ = sandbox
+    monkeypatch.delenv("SHOPIFY_PRIVACY_DELIVERY_KEY")
+    export = build_shopify_privacy_review_manifest(db, request_id=ACCESS, **owner)
+    assert export["configuration"]["local_operation_runtime"] == {
+        "operation": "local_export",
+        "configured": False,
+        "blockers": ["PRIVACY_DELIVERY_KEY_INVALID"],
+    }
+
+    monkeypatch.setenv("SHOPIFY_PRIVACY_DELIVERY_KEY", Fernet.generate_key().decode())
+    monkeypatch.delenv("SHOPIFY_PRIVACY_RESTORE_CHECKPOINT_HMAC", raising=False)
+    monkeypatch.delenv("SHOPIFY_PRIVACY_RESTORE_MIN_RECORDS", raising=False)
+    redaction = build_shopify_privacy_review_manifest(db, request_id=ERASE, **owner)
+    redaction_blockers = redaction["configuration"]["local_operation_runtime"]["blockers"]
+    assert redaction["case"]["local_operation"] == "local_redaction"
+    assert "PRIVACY_RESTORE_CHECKPOINT_INVALID" in redaction_blockers
+    assert "PRIVACY_RESTORE_RECORD_COUNT_INVALID" in redaction_blockers
+
+    checkpoint = preview_local_privacy_execution(db, request_id=ERASE, **owner)[
+        "planned_restore_checkpoint"
+    ]
+    monkeypatch.setenv(
+        "SHOPIFY_PRIVACY_RESTORE_CHECKPOINT_HMAC", checkpoint["checkpoint_hmac"],
+    )
+    monkeypatch.setenv(
+        "SHOPIFY_PRIVACY_RESTORE_MIN_RECORDS", str(checkpoint["total_records"]),
+    )
+    attestation = Ed25519PrivateKey.generate()
+    ledger = Ed25519PrivateKey.generate()
+    monkeypatch.setenv("SHOPIFY_PRIVACY_ATTESTATION_PUBLIC_KEY", b64(
+        attestation.public_key().public_bytes(
+            serialization.Encoding.Raw, serialization.PublicFormat.Raw,
+        ),
+    ))
+    monkeypatch.setenv("SHOPIFY_PRIVACY_WORM_LEDGER_PUBLIC_KEY", b64(
+        ledger.public_key().public_bytes(
+            serialization.Encoding.Raw, serialization.PublicFormat.Raw,
+        ),
+    ))
+    monkeypatch.setenv("SHOPIFY_PRIVACY_WORM_LEDGER_BUCKET", "synthetic-ledger")
+    monkeypatch.setenv("SHOPIFY_PRIVACY_WORM_LEDGER_PREFIX", "privacy/checkpoints")
+    monkeypatch.setenv("SHOPIFY_PRIVACY_WORM_MIN_REMAINING_DAYS", "35")
+    configured = build_shopify_privacy_review_manifest(db, request_id=ERASE, **owner)
+
+    assert configured["configuration"]["local_operation_runtime"]["configured"] is True
+    preflight = configured["configuration"]["activation_preflight_configuration"]
+    assert preflight == {
+        "configured": True,
+        "blockers": [],
+        "external_worm_ledger_head_evaluated": False,
+    }
+
+    monkeypatch.setenv("SHOPIFY_PRIVACY_PROCESSING_ENABLED", "false")
+    disabled = build_shopify_privacy_review_manifest(db, request_id=ERASE, **owner)
+    assert disabled["configuration"]["local_operation_runtime"] == {
+        "operation": "local_redaction",
+        "configured": False,
+        "blockers": ["LIVE_PRIVACY_PROCESSING_DISABLED"],
+    }
+    assert disabled["configuration"]["activation_preflight_configuration"][
+        "configured"
+    ] is True
 
 
 def test_review_manifest_is_tenant_store_isolated_and_owner_only(sandbox):
