@@ -102,6 +102,64 @@ def seed(db):
     return membership, store, order
 
 
+def test_copilot_shop_redact_tombstone_blocks_new_and_existing_sessions(db, monkeypatch):
+    from app.services import shopify_privacy_suppression as suppression
+    membership, store, _ = seed(db)
+    first = service.create_chat_session(db, membership, store_id=store.id)
+    store.shopify_domain = "copilot-store.myshopify.com"
+    db.commit()
+    inspected = []
+
+    def shop_tombstone(_db, **kwargs):
+        inspected.append(kwargs)
+        return "shop", True
+
+    monkeypatch.setattr(suppression, "evaluate_shopify_privacy_suppression", shop_tombstone)
+    with pytest.raises(service.AgentChatError, match="CHAT_SHOP_PRIVACY_SUPPRESSED"):
+        service.create_chat_session(db, membership, store_id=store.id)
+    with pytest.raises(service.AgentChatError, match="CHAT_SHOP_PRIVACY_SUPPRESSED"):
+        service.get_chat_session(db, membership, first["id"])
+    assert len(inspected) == 2
+    assert all(kwargs["require_customer_id"] is False
+               and kwargs["require_order_id"] is False
+               and kwargs["shop_domain"] == "copilot-store.myshopify.com"
+               for kwargs in inspected)
+
+
+def test_copilot_customer_redact_does_not_block_whole_shop(db, monkeypatch):
+    from app.services import shopify_privacy_suppression as suppression
+    membership, store, _ = seed(db)
+    store.shopify_domain = "copilot-store.myshopify.com"
+    db.commit()
+    seen = []
+
+    def only_one_buyer_suppressed(_db, **kwargs):
+        seen.append(kwargs)
+        return None, True
+
+    monkeypatch.setattr(
+        suppression, "evaluate_shopify_privacy_suppression",
+        only_one_buyer_suppressed,
+    )
+    created = service.create_chat_session(db, membership, store_id=store.id)
+    assert created["id"] > 0
+    assert len(seen) >= 1
+
+
+def test_copilot_unverified_privacy_checkpoint_fails_closed_without_pii(db, monkeypatch):
+    from app.services import shopify_privacy_suppression as suppression
+    membership, store, _ = seed(db)
+    store.shopify_domain = "copilot-store.myshopify.com"
+    db.commit()
+
+    def checkpoint_failed(*_args, **_kwargs):
+        raise suppression.ShopifySuppressionError("RESTORE_CHECKPOINT_VERIFICATION_FAILED")
+
+    monkeypatch.setattr(suppression, "evaluate_shopify_privacy_suppression", checkpoint_failed)
+    with pytest.raises(service.AgentChatError, match="CHAT_SHOP_PRIVACY_GATE_UNVERIFIED"):
+        service.create_chat_session(db, membership, store_id=store.id)
+
+
 def model_response(content, stop_reason):
     return {
         "message": {"role": "assistant", "content": content},
