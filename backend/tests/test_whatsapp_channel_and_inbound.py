@@ -448,6 +448,27 @@ def test_campaign_delivery_receipts_update_metrics_and_never_regress(db, monkeyp
     }
 
 
+def test_queued_campaign_recipient_is_not_contacted_after_privacy_redaction(db, monkeypatch):
+    session, org, store, _ = db
+    add_customer(session, org, store)
+    make_campaign(session, org, store)
+    monkeypatch.setattr("app.automation_execution_engine.decrypt_whatsapp_secret", lambda _: "token")
+    materialize_due_campaigns(session)
+    (recipient_id,) = claim_recipients(session)
+    # The tombstone becomes active after the recipient was already queued.
+    monkeypatch.setattr(
+        "app.automation_execution_engine.evaluate_shopify_local_privacy",
+        lambda *args, **kwargs: "customer_suppressed",
+    )
+    sender = MagicMock()
+    assert process_recipient(session, recipient_id, sender=sender) == "privacy_suppressed"
+    sender.assert_not_called()
+    recipient = session.get(AutomationRecipientExecution, recipient_id)
+    assert recipient.status == "skipped"
+    assert recipient.error_code == "privacy_suppressed"
+    assert session.query(WhatsAppAutomationDelivery).count() == 0
+
+
 def test_failed_callback_stores_only_meta_code_and_is_terminal(db, monkeypatch):
     session, org, store, _ = db
     add_customer(session, org, store)
