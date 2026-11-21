@@ -82,7 +82,7 @@ def summarize_shopify_privacy_case_evidence(
         "processing_prepared", NO_DATA_EVENT, "local_export_prepared",
         "local_export_downloaded", "local_redaction_executed",
         "automation_redaction_executed", "knowledge_erasure_started",
-        "knowledge_erasure_executed",
+        "knowledge_erasure_executed", "copilot_erasure_executed",
     )
     observed = {name: db.query(ShopifyPrivacyAuditEvent.id).filter(
         ShopifyPrivacyAuditEvent.request_id == request_id,
@@ -157,6 +157,8 @@ def summarize_shopify_privacy_case_evidence(
         if observed["knowledge_erasure_started"] and not observed["knowledge_erasure_executed"]:
             blockers.append("KNOWLEDGE_ERASURE_INTERRUPTED_RECONCILIATION_REQUIRED")
     if receipt.topic == "shop/redact" and not no_data_recorded:
+        if observed["local_redaction_executed"] and not observed["copilot_erasure_executed"]:
+            blockers.append("COPILOT_SQL_ERASURE_REQUIRED_AFTER_LOCAL_REDACTION")
         if observed["local_redaction_executed"] and not observed["knowledge_erasure_executed"]:
             blockers.append("KNOWLEDGE_ERASURE_REQUIRED_AFTER_SQL")
         elif not observed["local_redaction_executed"]:
@@ -176,6 +178,7 @@ def summarize_shopify_privacy_case_evidence(
         "automation_redaction_recorded": observed["automation_redaction_executed"],
         "shop_knowledge_erasure_started": observed["knowledge_erasure_started"],
         "shop_knowledge_erasure_recorded": observed["knowledge_erasure_executed"],
+        "shop_copilot_erasure_recorded": observed["copilot_erasure_executed"],
         "staged_suppressions": staged_tombstones,
         "active_suppressions": active_tombstones,
         "submitted_control_evidence_count": controls_submitted,
