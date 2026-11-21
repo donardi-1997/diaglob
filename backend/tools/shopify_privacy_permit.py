@@ -95,7 +95,7 @@ def main() -> int:
     keygen.add_argument("--out", required=True)
     sign = sub.add_parser("sign")
     sign.add_argument("--key", required=True)
-    sign.add_argument("--operation", required=True, choices=["local_export", "local_redaction"])
+    sign.add_argument("--operation", required=True, choices=["local_export", "local_redaction", "shop_knowledge_erasure"])
     sign.add_argument("--request-id", required=True)
     sign.add_argument("--organization-id", type=int, required=True)
     sign.add_argument("--store-id", type=int, required=True)

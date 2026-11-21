@@ -14,6 +14,8 @@ Safety rules:
 """
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import datetime
 
 from sqlalchemy import func, select
@@ -25,9 +27,11 @@ from ..models import ShopifyPrivacyAuditEvent
 from .shopify_privacy_execution_authorization import (
     ShopifyPrivacyExecutionError,
     require_execution_policy,
+    verify_execution_permit,
 )
 from .shopify_privacy_local_execution import owned_privacy_receipt, require_privacy_owner
 from .shopify_privacy_lock import lock_shopify_privacy_scope
+from .shopify_privacy_legal_clearance import verify_case_legal_clearance
 
 EXECUTED_EVENT = "knowledge_erasure_executed"
 _ACTOR = "independently_permitted_worker"
@@ -63,8 +67,30 @@ def plan_shop_knowledge_erasure(db: Session, *, organization_id: int, store_id: 
             "shared_knowledge_bases_kept": len(rows) - len(exclusive)}
 
 
+def knowledge_erasure_scope_digest(
+    db: Session, *, request_id: str, organization_id: int, store_id: int,
+    plan: dict,
+) -> str:
+    """Bind KB candidates to the previously permitted SQL redaction scope."""
+    audit = db.query(ShopifyPrivacyAuditEvent.reason_code).filter(
+        ShopifyPrivacyAuditEvent.request_id == request_id,
+        ShopifyPrivacyAuditEvent.event_type == "local_redaction_executed",
+        ShopifyPrivacyAuditEvent.actor_type == _ACTOR,
+    ).first()
+    if audit is None or not isinstance(audit[0], str) or len(audit[0]) != 64:
+        raise ShopifyPrivacyExecutionError("LOCAL_REDACTION_SCOPE_EVIDENCE_REQUIRED")
+    payload = [
+        "diaglob.shopify.knowledge-erasure.v1", request_id,
+        organization_id, store_id, audit[0],
+        sorted(plan["exclusive_knowledge_base_ids"]),
+        plan["shared_knowledge_bases_kept"],
+    ]
+    return hashlib.sha256(json.dumps(payload, separators=(",", ":")).encode()).hexdigest()
+
+
 def execute_shop_knowledge_erasure(
     db: Session, *, request_id: str, organization_id: int, store_id: int, user_id: int,
+    execution_permit: str | None = None, legal_clearance_token: str | None = None,
     delete_knowledge_base=None,
 ) -> dict:
     if delete_knowledge_base is None:
@@ -84,6 +110,15 @@ def execute_shop_knowledge_erasure(
                 "fulfillment_complete": False}
 
     plan = plan_shop_knowledge_erasure(db, organization_id=organization_id, store_id=store_id)
+    digest = knowledge_erasure_scope_digest(db, request_id=request_id,
+        organization_id=organization_id, store_id=store_id, plan=plan)
+    # External S3/Bedrock deletions must NOT inherit permission merely from
+    # prior SQL erasure: independently authorize their own exact KB plan.
+    verify_execution_permit(execution_permit, operation="shop_knowledge_erasure",
+        request_id=request_id, organization_id=organization_id,
+        store_id=store_id, scope_sha256=digest)
+    verify_case_legal_clearance(legal_clearance_token, request_id=request_id,
+        organization_id=organization_id, store_id=store_id, scope_sha256=digest)
     deleted = 0
     for kb_id in plan["exclusive_knowledge_base_ids"]:
         knowledge_base = db.get(KnowledgeBase, kb_id)

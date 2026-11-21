@@ -28,7 +28,7 @@ class ShopifyPrivacyExecutionError(ValueError):
 class ExecutionPermit(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     version: Literal[1]
-    operation: Literal["local_export", "local_redaction"]
+    operation: Literal["local_export", "local_redaction", "shop_knowledge_erasure"]
     request_id: str = Field(pattern=_HASH)
     organization_id: int = Field(gt=0)
     store_id: int = Field(gt=0)
