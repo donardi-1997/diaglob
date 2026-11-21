@@ -1,0 +1,77 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  Optional isolated S3 Object Lock bucket for DIAGLOB Shopify privacy
+  suppression checkpoints. Deploy only after approval of retention periods
+  and in a separately managed security account if possible.
+Parameters:
+  BucketName:
+    Type: String
+    Description: Globally unique NEW bucket name; do not reuse customer documents bucket.
+    AllowedPattern: "^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$"
+  ApprovedRetentionDays:
+    Type: Number
+    MinValue: 30
+    MaxValue: 3650
+    Description: >-
+      Compliance-mode retention period approved by legal/security.
+      This period CANNOT be shortened for protected object versions.
+Resources:
+  PrivacyLedgerBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Ref BucketName
+      VersioningConfiguration:
+        Status: Enabled
+      ObjectLockEnabled: true
+      ObjectLockConfiguration:
+        ObjectLockEnabled: Enabled
+        Rule:
+          DefaultRetention:
+            Mode: COMPLIANCE
+            Days: !Ref ApprovedRetentionDays
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+            BucketKeyEnabled: false
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      Tags:
+        - Key: Product
+          Value: DIAGLOB
+        - Key: Purpose
+          Value: ShopifyPrivacyCheckpointLedger
+  EnforceTLS:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref PrivacyLedgerBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyUnencryptedTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !GetAtt PrivacyLedgerBucket.Arn
+              - !Sub "${PrivacyLedgerBucket.Arn}/*"
+            Condition:
+              Bool:
+                "aws:SecureTransport": "false"
+Outputs:
+  BucketName:
+    Value: !Ref PrivacyLedgerBucket
+  BucketArn:
+    Value: !GetAtt PrivacyLedgerBucket.Arn
+  PolicyStatus:
+    Value: >-
+      Bucket only. Separate IAM reader/writer, cross-account isolation,
+      signed chain verifier and operational restore preflight still required.
