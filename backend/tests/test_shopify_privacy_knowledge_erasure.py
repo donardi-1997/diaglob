@@ -1,8 +1,11 @@
 """shop/redact must erase knowledge bases owned only by the redacted store."""
+import time
 from datetime import datetime
 from types import SimpleNamespace
 
 import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from sqlalchemy import create_engine, insert
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
@@ -12,14 +15,30 @@ from app.db import Base
 from app.model_domains.knowledge import KnowledgeBase
 from app.model_domains.tenancy import knowledge_base_stores
 from app.models import ShopifyPrivacyAuditEvent
-from app.services.shopify_privacy_execution_authorization import ShopifyPrivacyExecutionError
+from app.services.shopify_privacy_attestations import b64encode
+from app.services.shopify_privacy_execution_authorization import ShopifyPrivacyExecutionError, policy_snapshot
+from tools.shopify_privacy_permit import mint_permit
+from tools.shopify_privacy_legal_clearance import sign_case_clearance
 
 ORG, STORE, OTHER = 1, 10, 11
 RID = "a" * 64
 
+# Fixed synthetic TEST-ONLY keys; these are not production credentials.
+_TECH = Ed25519PrivateKey.from_private_bytes(bytes(range(1, 33)))
+_LEGAL = Ed25519PrivateKey.from_private_bytes(bytes(range(33, 65)))
+
+
+def _public(key):
+    return b64encode(key.public_key().public_bytes(
+        serialization.Encoding.Raw, serialization.PublicFormat.Raw))
+
 
 @pytest.fixture
 def db(monkeypatch):
+    monkeypatch.setenv("SHOPIFY_PRIVACY_PROCESSING_ENABLED", "true")
+    monkeypatch.setenv("SHOPIFY_PRIVACY_OPERATOR_APPROVED_POLICY_SHA256", policy_snapshot()[1])
+    monkeypatch.setenv("SHOPIFY_PRIVACY_EXECUTION_PUBLIC_KEY", _public(_TECH))
+    monkeypatch.setenv("SHOPIFY_PRIVACY_LEGAL_REVIEW_PUBLIC_KEY", _public(_LEGAL))
     engine = create_engine("sqlite://", poolclass=StaticPool,
                            connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
@@ -57,9 +76,34 @@ def _redacted(session):
     session.commit()
 
 
+def _signed_permits(session):
+    plan = erasure.plan_shop_knowledge_erasure(
+        session, organization_id=ORG, store_id=STORE)
+    digest = erasure.knowledge_erasure_scope_digest(
+        session, request_id=RID, organization_id=ORG, store_id=STORE, plan=plan)
+    now = int(time.time())
+    technical = mint_permit(
+        _TECH, now=now, ttl_seconds=600, operation="shop_knowledge_erasure",
+        request_id=RID, organization_id=ORG, store_id=STORE,
+        scope_sha256=digest,
+    )
+    legal = sign_case_clearance(
+        _LEGAL, now=now, ttl_seconds=600, request_id=RID,
+        organization_id=ORG, store_id=STORE, scope_sha256=digest,
+        merchant_instruction_evidence_sha256="a" * 64,
+        legal_review_evidence_sha256="b" * 64,
+        reviewer_role="privacy_counsel",
+    )
+    return technical, legal
+
+
 def _run(session, deleter):
+    # No credentials are minted when the prerequisite SQL step is absent.
+    has_local = erasure._audit_exists(session, RID, "local_redaction_executed")
+    tech, legal = _signed_permits(session) if has_local else (None, None)
     return erasure.execute_shop_knowledge_erasure(
         session, request_id=RID, organization_id=ORG, store_id=STORE, user_id=7,
+        execution_permit=tech, legal_clearance_token=legal,
         delete_knowledge_base=deleter)
 
 
@@ -108,3 +152,41 @@ def test_external_failure_leaves_step_retryable(db):
         _run(session, failing)
     assert session.query(ShopifyPrivacyAuditEvent).filter_by(
         event_type=erasure.EXECUTED_EVENT).count() == 0
+
+
+def test_external_knowledge_erasure_requires_separate_technical_and_legal_permits(db):
+    session, _ = db
+    _redacted(session)
+    deleted = []
+    with pytest.raises(ShopifyPrivacyExecutionError, match="PRIVACY_EXECUTION_PERMIT_INVALID"):
+        erasure.execute_shop_knowledge_erasure(
+            session, request_id=RID, organization_id=ORG, store_id=STORE, user_id=7,
+            delete_knowledge_base=lambda _db, kb: deleted.append(kb.id),
+        )
+    technical, legal = _signed_permits(session)
+    with pytest.raises(ShopifyPrivacyExecutionError, match="PRIVACY_CASE_LEGAL_CLEARANCE_REQUIRED"):
+        erasure.execute_shop_knowledge_erasure(
+            session, request_id=RID, organization_id=ORG, store_id=STORE, user_id=7,
+            execution_permit=technical, delete_knowledge_base=lambda _db, kb: deleted.append(kb.id),
+        )
+    assert deleted == []
+
+
+def test_changing_kb_scope_after_signing_revokes_both_permits(db):
+    session, _ = db
+    _redacted(session)
+    technical, legal = _signed_permits(session)
+    # A second store joins what was exclusive after approval; no base may be
+    # deleted using the old digest and changing provenance never expands scope.
+    session.execute(insert(knowledge_base_stores).values(
+        knowledge_base_id=1, store_id=OTHER,
+    ))
+    session.commit()
+    deleted = []
+    with pytest.raises(ShopifyPrivacyExecutionError, match="PRIVACY_EXECUTION_PERMIT_SCOPE_MISMATCH"):
+        erasure.execute_shop_knowledge_erasure(
+            session, request_id=RID, organization_id=ORG, store_id=STORE, user_id=7,
+            execution_permit=technical, legal_clearance_token=legal,
+            delete_knowledge_base=lambda _db, kb: deleted.append(kb.id),
+        )
+    assert deleted == []
