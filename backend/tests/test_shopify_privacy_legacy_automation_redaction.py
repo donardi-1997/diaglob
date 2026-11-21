@@ -103,6 +103,7 @@ def test_shop_redact_scrubs_all_store_specific_payloads_not_shared_or_other_stor
     db.commit()
     assert result["legacy_execution_payloads_scrubbed"] == 3
     assert result["legacy_rules_scrubbed"] == 1
+    assert result["legacy_possible_inflight_actions"] == 3
     assert result["legacy_shared_parent_executions_for_review"] == 1
     assert result["fulfillment_complete"] is False
     db.refresh(rows["buyer"])
@@ -137,6 +138,7 @@ def test_customer_redact_only_scrubs_verified_local_subject_and_flags_unattribut
     db.commit()
     assert result["legacy_execution_payloads_scrubbed"] == 1
     assert result["legacy_rules_scrubbed"] == 0
+    assert result["legacy_possible_inflight_actions"] == 1
     assert result["legacy_unattributed_executions_for_review"] == 1
     assert result["legacy_shared_parent_executions_for_review"] == 1
     assert result["legacy_rules_with_unstructured_conditions_for_review"] == 1
