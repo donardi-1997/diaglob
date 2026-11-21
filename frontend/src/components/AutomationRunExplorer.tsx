@@ -115,6 +115,8 @@ export default function AutomationRunExplorer({ storeId, canWrite }: Props) {
     const processed = total - (selectedRun.pending_count ?? 0);
     const pct = total > 0 ? Math.round((processed / total) * 100) : 0;
     const campaign = campaigns.find((c) => c.id === selectedCampaignId);
+    const delivery = selectedRun.delivery_metrics;
+    const formatRate = (rate: number | null) => rate === null ? "—" : `${Math.round(rate * 100)}%`;
     return <div className="automation-run-explorer">
       <button className="icon-button" onClick={() => { setSelectedRun(null); setRecipients([]); setSelectedRecipient(null); }}><ArrowLeft size={16} /> {t("autoBackToRuns")}</button>
       <div className="automation-run-detail-header">
@@ -128,6 +130,16 @@ export default function AutomationRunExplorer({ storeId, canWrite }: Props) {
         <div className="automation-run-counter warning"><span className="automation-run-counter-value">{selectedRun.pending_count ?? 0}</span><span className="automation-run-counter-label">{t("autoRunPending")}</span></div>
         <div className="automation-run-counter"><span className="automation-run-counter-value">{pct}%</span><span className="automation-run-counter-label">{t("autoRunProgress")}</span></div>
       </div>
+      {delivery && delivery.sent > 0 && <section className="automation-run-delivery-metrics" aria-label={t("autoDeliveryMetrics")}>
+        <h4>{t("autoDeliveryMetrics")}</h4>
+        <div className="automation-run-counter-grid">
+          <div className="automation-run-counter success"><span className="automation-run-counter-value">{delivery.delivered}</span><span className="automation-run-counter-label">{t("autoDelivered")}</span></div>
+          <div className="automation-run-counter"><span className="automation-run-counter-value">{delivery.read}</span><span className="automation-run-counter-label">{t("autoRead")}</span></div>
+          <div className="automation-run-counter danger"><span className="automation-run-counter-value">{delivery.failed}</span><span className="automation-run-counter-label">{t("autoRunFailed")}</span></div>
+          <div className="automation-run-counter"><span className="automation-run-counter-value">{formatRate(delivery.delivery_rate)}</span><span className="automation-run-counter-label">{t("autoDeliveryRate")}</span></div>
+          <div className="automation-run-counter"><span className="automation-run-counter-value">{formatRate(delivery.read_rate)}</span><span className="automation-run-counter-label">{t("autoReadRate")}</span></div>
+        </div>
+      </section>}
       {!TERMINAL_RUN.has(selectedRun.status) && <p className="automation-run-live-notice">{t("autoRunLive")}</p>}
       {selectedRecipient && <div className="modal-backdrop" onClick={() => setSelectedRecipient(null)}><div className="modal automation-recipient-detail-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
         <h2>{t("autoRecipientDetail")}</h2>

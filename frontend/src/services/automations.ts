@@ -346,6 +346,17 @@ export interface AutomationRun {
   scheduled_for: string | null;
   total_recipients?: number;
   pending_count?: number;
+  delivery_metrics?: AutomationDeliveryMetrics;
+}
+
+
+export interface AutomationDeliveryMetrics {
+  sent: number;
+  delivered: number;
+  read: number;
+  failed: number;
+  delivery_rate: number | null;
+  read_rate: number | null;
 }
 
 export interface AutomationRecipientRow {
