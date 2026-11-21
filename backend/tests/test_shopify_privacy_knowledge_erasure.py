@@ -320,3 +320,65 @@ def test_changing_kb_scope_after_signing_revokes_both_permits(db):
             delete_knowledge_base=lambda _db, kb: deleted.append(kb.id),
         )
     assert deleted == []
+
+
+def test_production_knowledge_erasure_removes_active_kb_then_all_historical_s3_versions(db, monkeypatch):
+    session, _ = db
+    _redacted(session)
+    technical, legal = _signed_permits(session)
+    calls = []
+
+    def delete_kb(_session, kb):
+        calls.append(("kb", kb.id))
+
+    def purge_versions(org, kb_id):
+        calls.append(("all_versions", kb_id))
+        assert org == ORG
+        return {"versions_deleted": 3, "delete_markers_deleted": 1}
+
+    monkeypatch.setattr("app.services.knowledge_bases.delete_knowledge_base", delete_kb)
+    monkeypatch.setattr(
+        "app.services.shopify_privacy_knowledge_versions.delete_exclusive_shop_knowledge_versions",
+        purge_versions,
+    )
+    result = erasure.execute_shop_knowledge_erasure(
+        session, request_id=RID, organization_id=ORG, store_id=STORE,
+        user_id=7, execution_permit=technical, legal_clearance_token=legal,
+    )
+    assert calls == [("kb", 1), ("all_versions", 1)]
+    assert result["s3_document_versions_removed"] == 3
+    assert result["s3_delete_markers_removed"] == 1
+    assert result["s3_provider_deletion_independently_verified"] is False
+    assert result["fulfillment_complete"] is False
+
+
+def test_failure_to_delete_historical_versions_keeps_knowledge_step_unfinished(db, monkeypatch):
+    session, _ = db
+    _redacted(session)
+    technical, legal = _signed_permits(session)
+    calls = []
+
+    def delete_kb(_session, kb):
+        calls.append(("kb", kb.id))
+        # This emulates the underlying provider orchestrator's own commit.
+        _session.delete(kb)
+        _session.commit()
+
+    def purge_versions(_org, kb_id):
+        calls.append(("s3_versions", kb_id))
+        raise ValueError("PRIVACY_S3_VERSION_PURGE_FAILED")
+
+    monkeypatch.setattr("app.services.knowledge_bases.delete_knowledge_base", delete_kb)
+    monkeypatch.setattr(
+        "app.services.shopify_privacy_knowledge_versions.delete_exclusive_shop_knowledge_versions",
+        purge_versions,
+    )
+    with pytest.raises(ValueError, match="VERSION_PURGE_FAILED"):
+        erasure.execute_shop_knowledge_erasure(
+            session, request_id=RID, organization_id=ORG, store_id=STORE,
+            user_id=7, execution_permit=technical, legal_clearance_token=legal,
+        )
+    assert calls == [("kb", 1), ("s3_versions", 1)]
+    assert session.query(ShopifyPrivacyAuditEvent).filter_by(
+        event_type=erasure.EXECUTED_EVENT,
+    ).count() == 0

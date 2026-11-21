@@ -94,8 +94,23 @@ def execute_shop_knowledge_erasure(
     execution_permit: str | None = None, legal_clearance_token: str | None = None,
     delete_knowledge_base=None,
 ) -> dict:
+    # GDPR path: the generic KB deletion leaves historical versions in a
+    # versioned S3 bucket. Purge them by exact VersionId after provider cleanup.
+    # Keep general Knowledge Base deletion semantics unchanged.
+    s3_versions_removed = 0
+    s3_markers_removed = 0
     if delete_knowledge_base is None:
-        from .knowledge_bases import delete_knowledge_base
+        from .knowledge_bases import delete_knowledge_base as delete_kb_standard
+        from .shopify_privacy_knowledge_versions import delete_exclusive_shop_knowledge_versions
+
+        def delete_knowledge_base(db_session, kb):
+            nonlocal s3_versions_removed, s3_markers_removed
+            kb_org, kb_id = kb.organization_id, kb.id
+            delete_kb_standard(db_session, kb)
+            result = delete_exclusive_shop_knowledge_versions(kb_org, kb_id)
+            s3_versions_removed += result["versions_deleted"]
+            s3_markers_removed += result["delete_markers_deleted"]
+
     require_privacy_owner(db, organization_id=organization_id, store_id=store_id, user_id=user_id)
     require_execution_policy()
     lock_shopify_privacy_scope(db, organization_id, store_id)
@@ -172,6 +187,9 @@ def execute_shop_knowledge_erasure(
         "knowledge_erasure_executed": True, "idempotent": False,
         "knowledge_bases_deleted": deleted,
         "shared_knowledge_bases_kept": plan["shared_knowledge_bases_kept"],
+        "s3_document_versions_removed": s3_versions_removed,
+        "s3_delete_markers_removed": s3_markers_removed,
+        "s3_provider_deletion_independently_verified": False,
         "review_required": plan["shared_knowledge_bases_kept"] > 0,
         "fulfillment_complete": False,
     }
