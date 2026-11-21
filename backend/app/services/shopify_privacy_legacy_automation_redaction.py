@@ -95,6 +95,9 @@ def scrub_shopify_legacy_automations(
         elif prov.customer_id in customer_ids:
             selected.append(execution)
 
+    possible_inflight = sum(
+        execution.status in ("running", "processing") for execution in selected
+    )
     for execution in selected:
         execution.input_json = "{}"
         execution.result_json = "{}"
@@ -121,6 +124,7 @@ def scrub_shopify_legacy_automations(
     return {
         "legacy_execution_payloads_scrubbed": len(selected),
         "legacy_rules_scrubbed": rules_scrubbed,
+        "legacy_possible_inflight_actions": possible_inflight,
         "legacy_unattributed_executions_for_review": unknown,
         "legacy_shared_parent_executions_for_review": shared_execution_count,
         "legacy_rules_with_unstructured_conditions_for_review": (
