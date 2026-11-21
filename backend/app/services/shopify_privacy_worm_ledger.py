@@ -210,6 +210,8 @@ def append_worm_checkpoint(s3, *, bucket: str, prefix: str,
     if not hmac.compare_digest(signer_pub, expected_pub):
         _fail("PRIVACY_LEDGER_SIGNER_MISMATCH")
     old = verify_worm_ledger(s3, bucket=bucket, prefix=prefix, public_key=public_key, now=now)
+    if old["last_min_records"] is not None and min_records < old["last_min_records"]:
+        _fail("PRIVACY_LEDGER_SUPPRESSION_COUNT_REGRESSION")
     sequence = old["record_count"] + 1
     payload = {
         "version": 1, "sequence": sequence,
