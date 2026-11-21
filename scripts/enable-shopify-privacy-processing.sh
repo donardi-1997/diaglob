@@ -42,11 +42,18 @@ chmod 600 "$BACKUP"
 rollback() {
   status=$?
   trap - ERR
-  cp "$BACKUP" "$ENV_FILE"
-  chmod 600 "$ENV_FILE"
-  systemctl restart diaglob-api.service diaglob-automation-worker.service || true
+  # A failed read-only ledger preflight must not restart services using the
+  # old (possibly restored) environment. Roll back only if we actually edited
+  # the environment file.
+  if ! cmp -s "$BACKUP" "$ENV_FILE"; then
+    cp "$BACKUP" "$ENV_FILE"
+    chmod 600 "$ENV_FILE"
+    systemctl restart diaglob-api.service diaglob-automation-worker.service || true
+    echo "PRIVACY_PROCESSING_ROLLBACK=env_restored" >&2
+  else
+    echo "PRIVACY_PROCESSING_BLOCKED=preflight_failed_without_restart" >&2
+  fi
   rm -f "$BACKUP"
-  echo "PRIVACY_PROCESSING_ROLLBACK=attempted" >&2
   exit "$status"
 }
 trap rollback ERR
