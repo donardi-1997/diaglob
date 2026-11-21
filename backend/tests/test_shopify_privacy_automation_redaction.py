@@ -171,6 +171,28 @@ def test_empty_subject_set_never_becomes_full_shop_redaction(sandbox):
     assert result["audience_members_removed"] == 0
 
 
+def test_mixed_customer_run_context_is_preserved_and_reported(sandbox):
+    db, org, stores, buyer, other, _, _, _, flows, *_ = sandbox
+    shared_run = flows[0]
+    db.add(AutomationFlowRecipientExecution(
+        flow_run_id=shared_run.id, flow_version_id=shared_run.flow_version_id,
+        organization_id=org.id, customer_id=other.id, status="waiting",
+    ))
+    db.commit()
+    result = scrub_shopify_automation_scope(
+        db, organization_id=org.id, store_id=stores[0].id,
+        customer_ids={buyer.id},
+    )
+    assert result["mixed_recipient_contexts_unverified"] == 1
+    db.refresh(shared_run)
+    assert shared_run.trigger_context == {"message": "SENSITIVE_TRIGGER_0"}
+    unrelated = db.query(AutomationFlowRecipientExecution).filter_by(
+        flow_run_id=shared_run.id, customer_id=other.id,
+    ).one()
+    assert unrelated.status == "waiting"
+    assert result["fulfillment_complete"] is False
+
+
 def test_full_shop_scrubs_all_recipients_but_keeps_other_store(sandbox):
     db, org, stores, buyer, other, campaigns, recipients, *_ = sandbox
     result = scrub_shopify_automation_scope(
