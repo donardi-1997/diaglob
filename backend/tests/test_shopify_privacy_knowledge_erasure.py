@@ -141,7 +141,7 @@ def test_erases_exclusive_base_and_is_idempotent(db):
     assert again["idempotent"] is True
 
 
-def test_external_failure_leaves_step_retryable(db):
+def test_external_failure_leaves_step_open_for_manual_reconciliation(db):
     session, _ = db
     _redacted(session)
 
@@ -152,6 +152,99 @@ def test_external_failure_leaves_step_retryable(db):
         _run(session, failing)
     assert session.query(ShopifyPrivacyAuditEvent).filter_by(
         event_type=erasure.EXECUTED_EVENT).count() == 0
+
+
+def test_original_authorized_kb_plan_is_recorded_before_any_external_delete(db):
+    session, _ = db
+    _redacted(session)
+    approved = erasure.plan_shop_knowledge_erasure(
+        session, organization_id=ORG, store_id=STORE)
+    expected_digest = erasure.knowledge_erasure_scope_digest(
+        session, request_id=RID, organization_id=ORG, store_id=STORE,
+        plan=approved,
+    )
+    before_call = []
+
+    def delete(_db, kb):
+        marker = session.query(ShopifyPrivacyAuditEvent).filter_by(
+            request_id=RID, event_type=erasure.STARTED_EVENT,
+        ).one()
+        assert marker.reason_code == expected_digest
+        assert session.query(ShopifyPrivacyAuditEvent).filter_by(
+            request_id=RID, event_type=erasure.EXECUTED_EVENT,
+        ).count() == 0
+        before_call.append(kb.id)
+
+    result = _run(session, delete)
+    assert before_call == [1]
+    assert result["knowledge_erasure_executed"] is True
+    assert session.query(ShopifyPrivacyAuditEvent).filter_by(
+        event_type=erasure.STARTED_EVENT,
+    ).count() == 1
+    assert session.query(ShopifyPrivacyAuditEvent).filter_by(
+        event_type=erasure.EXECUTED_EVENT,
+    ).count() == 1
+
+
+def test_interrupted_kb_deletion_must_not_retry_unreviewed(db):
+    session, _ = db
+    _redacted(session)
+    attempted = []
+    def failing(_db, kb):
+        attempted.append(kb.id)
+        raise RuntimeError("synthetic remote failure")
+
+    with pytest.raises(RuntimeError, match="synthetic"):
+        _run(session, failing)
+    assert attempted == [1]
+    marker = session.query(ShopifyPrivacyAuditEvent).filter_by(
+        event_type=erasure.STARTED_EVENT,
+    ).one()
+    assert len(marker.reason_code) == 64
+    assert session.query(ShopifyPrivacyAuditEvent).filter_by(
+        event_type=erasure.EXECUTED_EVENT,
+    ).count() == 0
+    with pytest.raises(ShopifyPrivacyExecutionError, match="INTERRUPTED_RECONCILIATION_REQUIRED"):
+        _run(session, lambda *_: pytest.fail("never retry unchecked external deletion"))
+
+
+def test_partial_kb_batch_commits_do_not_falsely_certify_erasure(db):
+    session, _ = db
+    _redacted(session)
+    session.add(KnowledgeBase(
+        id=6, organization_id=ORG, name="second-exclusive",
+        scope="selected_stores",
+    ))
+    session.flush()
+    session.execute(insert(knowledge_base_stores).values(
+        knowledge_base_id=6, store_id=STORE,
+    ))
+    session.commit()
+    deleted = []
+    def partial_delete(_db, kb):
+        deleted.append(kb.id)
+        if len(deleted) == 1:
+            session.delete(kb)
+            # The real deletion orchestrator commits DB after remote cleanup.
+            session.commit()
+            return
+        raise RuntimeError("synthetic second-resource outage")
+
+    with pytest.raises(RuntimeError, match="second-resource"):
+        _run(session, partial_delete)
+    assert deleted == [1, 6]
+    assert session.query(KnowledgeBase).filter_by(id=1).first() is None
+    assert session.query(KnowledgeBase).filter_by(id=6).first() is not None
+    assert session.query(ShopifyPrivacyAuditEvent).filter_by(
+        event_type=erasure.EXECUTED_EVENT,
+    ).count() == 0
+    assert session.query(ShopifyPrivacyAuditEvent).filter_by(
+        event_type=erasure.STARTED_EVENT,
+    ).count() == 1
+    # A new plan after the first SQL deletion no longer matches the original
+    # approved digest. Never silently claim the whole batch was verified.
+    with pytest.raises(ShopifyPrivacyExecutionError, match="INTERRUPTED_RECONCILIATION_REQUIRED"):
+        _run(session, lambda *_: pytest.fail("must not run unchecked retry"))
 
 
 def test_external_knowledge_erasure_requires_separate_technical_and_legal_permits(db):
