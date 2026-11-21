@@ -352,5 +352,12 @@ def execute_local_privacy_redaction(db: Session, *, request_id: str, organizatio
             "automation_inflight_review_required": automation_scrub["possible_inflight_deliveries"] > 0,
             "automation_mixed_context_review_required": automation_scrub["mixed_recipient_contexts_unverified"] > 0,
             "automation_provider_deletion_review_required": automation_scrub["provider_handles_pending_external_erasure"] > 0,
+            "automation_legacy_review_required": any(
+                automation_scrub[name] > 0 for name in (
+                    "legacy_unattributed_executions_for_review",
+                    "legacy_shared_parent_executions_for_review",
+                    "legacy_rules_with_unstructured_conditions_for_review",
+                )
+            ),
             "fulfillment_complete": False,
             "external_processors_verified": False, "backup_erasure_verified": False}
