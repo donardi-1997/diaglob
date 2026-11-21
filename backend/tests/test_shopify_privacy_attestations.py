@@ -2,6 +2,7 @@
 import json
 
 import pytest
+from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from sqlalchemy import create_engine
@@ -164,13 +165,18 @@ def test_attestations_without_execution_config_keep_live_blockers(monkeypatch):
 
 def test_execution_requires_the_exact_approved_policy_digest(monkeypatch):
     private, public = _key()
+    _, execution_public = _key()
+    _, legal_public = _key()
     env = _env(
         public,
         SHOPIFY_PRIVACY_PROCESSING_ENABLED="true",
         SHOPIFY_PRIVACY_OPERATOR_APPROVED_POLICY_SHA256="0" * 64,
-        SHOPIFY_PRIVACY_EXECUTION_PUBLIC_KEY="synthetic",
-        SHOPIFY_PRIVACY_LEGAL_REVIEW_PUBLIC_KEY="independent-synthetic",
-        SHOPIFY_PRIVACY_SUPPRESSION_KEY="synthetic",
+        SHOPIFY_PRIVACY_EXECUTION_PUBLIC_KEY=execution_public,
+        SHOPIFY_PRIVACY_LEGAL_REVIEW_PUBLIC_KEY=legal_public,
+        SHOPIFY_PRIVACY_SUPPRESSION_KEY="synthetic-stable-key-longer-than-32-bytes",
+        SHOPIFY_PRIVACY_DELIVERY_KEY=Fernet.generate_key().decode(),
+        SHOPIFY_PRIVACY_RESTORE_CHECKPOINT_HMAC="a" * 64,
+        SHOPIFY_PRIVACY_RESTORE_MIN_RECORDS="0",
     )
     blockers = _audit(monkeypatch, _all_docs(private), env)["privacy_fulfillment_release_blockers"]
     assert "LIVE_CUSTOMER_EXPORT_NOT_ENABLED" in blockers

@@ -16,12 +16,16 @@ def test_activation_script_has_no_self_approved_policy_or_rotated_suppression_ke
     assert 'PRIVACY_INDEPENDENT_RESTORE_CHECKPOINT_REQUIRED' in data
     assert 'PRIVACY_LEGAL_REVIEW_KEY_REQUIRED' in data
     assert 'PRIVACY_LEGAL_REVIEW_INDEPENDENCE_REQUIRED' in data
+    assert 'review_bytes in {attestation_bytes, execution_bytes}' in data
+    assert 'ledger_bytes in {attestation_bytes, execution_bytes, review_bytes}' in data
     assert 'secrets.token_urlsafe' not in data
     assert '"SHOPIFY_PRIVACY_OPERATOR_APPROVED_POLICY_SHA256": hashlib.sha256' not in data
     assert 'SHOPIFY_PRIVACY_RESTORE_MIN_RECORDS' in data
     assert 'SHOPIFY_PRIVACY_WORM_LEDGER_BUCKET' in data
     assert 'SHOPIFY_PRIVACY_WORM_LEDGER_PREFIX' in data
     assert 'SHOPIFY_PRIVACY_WORM_LEDGER_PUBLIC_KEY' in data
+    assert 'SHOPIFY_PRIVACY_DELIVERY_KEY' in data
+    assert 'PRIVACY_DELIVERY_KEY_REQUIRED' in data
     assert 'PRIVACY_WORM_LEDGER_PREFLIGHT_FAILED' in data
     assert 'PRIVACY_WORM_LEDGER_PREFLIGHT=verified' in data
     assert 'verify_worm_ledger(' in data

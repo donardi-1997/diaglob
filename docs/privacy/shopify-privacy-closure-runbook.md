@@ -12,8 +12,8 @@ fuera del servidor) que estén vigentes, ligadas al digest exacto de
 | `LEGAL_RETENTION_AND_HOLDS_NOT_APPROVED` | 6 categorías de retención + `legal_holds` = `approved` |
 | `EXTERNAL_PROCESSOR_ERASURE_NOT_VERIFIED` | 16 procesadores atestados (`erasure_verified`, `not_in_use` o `no_personal_data_retained`) |
 | `BACKUP_RESTORE_AND_REINGESTION_NOT_VERIFIED` | 6 controles de backup/restore = `verified` |
-| `LIVE_CUSTOMER_EXPORT_NOT_ENABLED` | `SHOPIFY_PRIVACY_PROCESSING_ENABLED=true`, digest de política aprobado, clave pública de permisos |
-| `LIVE_CUSTOMER_AND_SHOP_REDACTION_NOT_ENABLED` | lo anterior + `SHOPIFY_PRIVACY_SUPPRESSION_KEY` |
+| `LIVE_CUSTOMER_EXPORT_NOT_ENABLED` | `SHOPIFY_PRIVACY_PROCESSING_ENABLED=true`, digest exacto aprobado, claves Ed25519 técnica/legal válidas y distintas, y `SHOPIFY_PRIVACY_DELIVERY_KEY` Fernet válida |
+| `LIVE_CUSTOMER_AND_SHOP_REDACTION_NOT_ENABLED` | processing/digest y claves Ed25519 anteriores + `SHOPIFY_PRIVACY_SUPPRESSION_KEY` de al menos 32 bytes + checkpoint HMAC y conteo externo con formato válido |
 
 Una atestación `not_in_use` se invalida automáticamente si cualquier tienda
 activa ese procesador. Las atestaciones caducan (máx. 400 días).
@@ -35,17 +35,21 @@ cd backend
 Las atestaciones en `config/privacy-attestations/` se fusionan por PR. Al
 cambiar la política, todas deben volver a firmarse.
 
-## Estado verificado en producción (2026-11-20, solo lectura, sin PII)
+## Estado histórico verificado en producción (2026-11-20, solo lectura, sin PII)
+
+> Esta sección es una captura histórica, no el estado contractual actual. Fue
+> superada por la auditoría de 2026-11-21 (30/30 atestaciones válidas). Consultar
+> siempre `app.shopify_privacy_operational_audit` en el commit desplegado.
 
 - 7 tiendas. Procesadores activos: `shopify_admin_api` (2), `aws_bedrock` (2),
   `google_workspace_apis` (2). `email_delivery` sin detector: requiere confirmación manual.
   Los otros 12 procesadores: 0 tiendas.
 - Lightsail: snapshots automáticos diarios, 7 retenidos.
-- **Pendiente:** snapshot manual `diaglob-prod-pre-release-20261015` sin
-  caducidad (36 días > objetivo de 35 de la política).
+- **Hallazgo histórico:** snapshot manual `diaglob-prod-pre-release-20261015`
+  excedía el objetivo técnico actual de 30 días.
 - **Pendiente:** bucket `diaglob-knowledge-765761474007-us-east-2` versionado sin
   regla de ciclo de vida: versiones antiguas se conservan indefinidamente.
-- Variables de ejecución en producción: todas sin configurar.
+- En esa fecha histórica, las variables de ejecución estaban sin configurar.
 
 ## Evidencia requerida por control
 

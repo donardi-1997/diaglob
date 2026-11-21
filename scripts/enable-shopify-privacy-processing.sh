@@ -71,15 +71,15 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 env_path, attestation_pub, execution_pub, policy_path, backend_path = sys.argv[1:6]
 
 
-def valid_public_key(value: str) -> str:
+def valid_public_key(value: str) -> bytes:
     raw = base64.b64decode(value + "=" * (-len(value) % 4), altchars=b"-_", validate=True)
     Ed25519PublicKey.from_public_bytes(raw)
-    return value
+    return raw
 
 
-attestation_pub = valid_public_key(attestation_pub)
-execution_pub = valid_public_key(execution_pub)
-if attestation_pub == execution_pub:
+attestation_bytes = valid_public_key(attestation_pub)
+execution_bytes = valid_public_key(execution_pub)
+if attestation_bytes == execution_bytes:
     raise SystemExit("PRIVACY_KEYS_MUST_DIFFER")
 
 lines = Path(env_path).read_text(encoding="utf-8").splitlines()
@@ -98,11 +98,16 @@ if current.get("SHOPIFY_PRIVACY_OPERATOR_APPROVED_POLICY_SHA256") != policy_dige
     raise SystemExit("PRIVACY_INDEPENDENT_POLICY_APPROVAL_REQUIRED")
 review_pub = current.get("SHOPIFY_PRIVACY_LEGAL_REVIEW_PUBLIC_KEY", "")
 try:
-    valid_public_key(review_pub)
+    review_bytes = valid_public_key(review_pub)
 except Exception:
     raise SystemExit("PRIVACY_LEGAL_REVIEW_KEY_REQUIRED") from None
-if review_pub in {attestation_pub, execution_pub}:
+if review_bytes in {attestation_bytes, execution_bytes}:
     raise SystemExit("PRIVACY_LEGAL_REVIEW_INDEPENDENCE_REQUIRED")
+try:
+    from cryptography.fernet import Fernet
+    Fernet(current.get("SHOPIFY_PRIVACY_DELIVERY_KEY", "").encode("ascii"))
+except Exception:
+    raise SystemExit("PRIVACY_DELIVERY_KEY_REQUIRED") from None
 if len(current.get("SHOPIFY_PRIVACY_SUPPRESSION_KEY", "").encode()) < 32:
     raise SystemExit("PRIVACY_PERSISTENT_SUPPRESSION_KEY_REQUIRED")
 checkpoint = current.get("SHOPIFY_PRIVACY_RESTORE_CHECKPOINT_HMAC", "")
@@ -125,10 +130,10 @@ if (not retention_horizon.isascii() or not retention_horizon.isdecimal()
 try:
     if not bucket or not prefix:
         raise ValueError
-    valid_public_key(ledger_key)
+    ledger_bytes = valid_public_key(ledger_key)
 except Exception:
     raise SystemExit("PRIVACY_WORM_LEDGER_CONFIGURATION_REQUIRED") from None
-if ledger_key in {attestation_pub, execution_pub, review_pub}:
+if ledger_bytes in {attestation_bytes, execution_bytes, review_bytes}:
     raise SystemExit("PRIVACY_WORM_LEDGER_SIGNER_INDEPENDENCE_REQUIRED")
 
 # EnvironmentFile is read as key=value by the existing activation script;
@@ -200,6 +205,7 @@ required = {
     "SHOPIFY_PRIVACY_ATTESTATION_PUBLIC_KEY", "SHOPIFY_PRIVACY_EXECUTION_PUBLIC_KEY",
     "SHOPIFY_PRIVACY_OPERATOR_APPROVED_POLICY_SHA256", "SHOPIFY_PRIVACY_PROCESSING_ENABLED",
     "SHOPIFY_PRIVACY_SUPPRESSION_KEY", "SHOPIFY_PRIVACY_LEGAL_REVIEW_PUBLIC_KEY",
+    "SHOPIFY_PRIVACY_DELIVERY_KEY",
     "SHOPIFY_PRIVACY_RESTORE_CHECKPOINT_HMAC", "SHOPIFY_PRIVACY_RESTORE_MIN_RECORDS",
     "SHOPIFY_PRIVACY_WORM_LEDGER_BUCKET", "SHOPIFY_PRIVACY_WORM_LEDGER_PREFIX",
     "SHOPIFY_PRIVACY_WORM_LEDGER_PUBLIC_KEY",

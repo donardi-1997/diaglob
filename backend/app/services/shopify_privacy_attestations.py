@@ -14,12 +14,14 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 import time
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Literal
 
 from cryptography.exceptions import InvalidSignature
+from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -192,13 +194,35 @@ def live_execution_configured(environment: Mapping[str, str], policy_digest: str
     policy_bound = bool(policy_digest) and (
         environment.get("SHOPIFY_PRIVACY_OPERATOR_APPROVED_POLICY_SHA256") == policy_digest
     )
-    permit_key = bool(environment.get("SHOPIFY_PRIVACY_EXECUTION_PUBLIC_KEY"))
-    suppression_key = bool(environment.get("SHOPIFY_PRIVACY_SUPPRESSION_KEY"))
-    legal_key = environment.get("SHOPIFY_PRIVACY_LEGAL_REVIEW_PUBLIC_KEY", "")
-    independently_reviewed = bool(legal_key) and legal_key != environment.get("SHOPIFY_PRIVACY_EXECUTION_PUBLIC_KEY")
+    try:
+        permit_bytes = _b64decode(environment.get("SHOPIFY_PRIVACY_EXECUTION_PUBLIC_KEY", ""))
+        Ed25519PublicKey.from_public_bytes(permit_bytes)
+        legal_bytes = _b64decode(environment.get("SHOPIFY_PRIVACY_LEGAL_REVIEW_PUBLIC_KEY", ""))
+        Ed25519PublicKey.from_public_bytes(legal_bytes)
+    except (TypeError, ValueError):
+        permit_bytes = legal_bytes = b""
+    independently_reviewed = bool(permit_bytes and legal_bytes and permit_bytes != legal_bytes)
+    suppression_key = len(environment.get("SHOPIFY_PRIVACY_SUPPRESSION_KEY", "").encode()) >= 32
+    restore_checkpoint = bool(re.fullmatch(
+        r"[0-9a-f]{64}",
+        environment.get("SHOPIFY_PRIVACY_RESTORE_CHECKPOINT_HMAC", ""),
+    ))
+    restore_minimum = environment.get("SHOPIFY_PRIVACY_RESTORE_MIN_RECORDS", "")
+    restore_count = bool(
+        restore_minimum and restore_minimum.isascii() and restore_minimum.isdecimal()
+        and str(int(restore_minimum)) == restore_minimum
+    )
+    try:
+        Fernet(environment.get("SHOPIFY_PRIVACY_DELIVERY_KEY", "").encode("ascii"))
+        delivery_key = True
+    except (TypeError, ValueError, UnicodeError):
+        delivery_key = False
     return {
-        "export_enabled": enabled and policy_bound and permit_key and independently_reviewed,
-        "redaction_enabled": enabled and policy_bound and permit_key and suppression_key and independently_reviewed,
+        "export_enabled": enabled and policy_bound and independently_reviewed and delivery_key,
+        "redaction_enabled": (
+            enabled and policy_bound and independently_reviewed and suppression_key
+            and restore_checkpoint and restore_count
+        ),
     }
 
 
