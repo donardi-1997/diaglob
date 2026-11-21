@@ -151,7 +151,13 @@ def scope_digest(receipt: ShopifyPrivacyRequest, targets: dict) -> str:
     return hashlib.sha256(json.dumps(payload, separators=(",", ":")).encode()).hexdigest()
 
 
-def planned_suppressions(db: Session, receipt: ShopifyPrivacyRequest):
+def planned_suppressions(db: Session, receipt: ShopifyPrivacyRequest, targets: dict):
+    """Include store-scoped local customer digests while profiles still exist.
+
+    Stale campaign/flow recipients keep their internal customer IDs after a
+    Shopify profile is deleted. Without these tombstones the queued recipient
+    could no longer resolve the original Shopify ID at send time.
+    """
     key = _secret()
     rows = db.query(ShopifyPrivacySuppression).all()
     planned = [SimpleNamespace(**{name: getattr(row, name) for name in (
@@ -161,7 +167,20 @@ def planned_suppressions(db: Session, receipt: ShopifyPrivacyRequest):
     existing = {(r.organization_id, r.store_id, r.kind, r.selector_digest): r for r in planned}
     fingerprint = _domain_fingerprint(key, receipt.organization_id, receipt.store_id, receipt.shop_domain)
     additions = []
-    for kind, value in _tombstone_specs(receipt):
+    specs = list(_tombstone_specs(receipt))
+    if receipt.topic == "customers/redact":
+        profile_ids = targets.get("customer_store_profiles", [])
+        if len(profile_ids) != 1:
+            raise ShopifyPrivacyExecutionError("PRIVACY_LOCAL_CUSTOMER_LINKAGE_UNRESOLVED")
+        local_customers = db.query(CustomerStoreProfile.customer_id).filter(
+            CustomerStoreProfile.id.in_(profile_ids),
+            CustomerStoreProfile.organization_id == receipt.organization_id,
+            CustomerStoreProfile.store_id == receipt.store_id,
+        ).all()
+        if len(local_customers) != 1:
+            raise ShopifyPrivacyExecutionError("PRIVACY_LOCAL_CUSTOMER_LINKAGE_UNRESOLVED")
+        specs.append(("local_customer", str(local_customers[0][0])))
+    for kind, value in specs:
         digest = _digest(key=key, organization_id=receipt.organization_id, store_id=receipt.store_id,
                          domain=receipt.shop_domain, kind=kind, identity=value)
         index = (receipt.organization_id, receipt.store_id, kind, digest)
@@ -187,7 +206,7 @@ def preview_local_privacy_execution(db: Session, *, request_id: str, organizatio
               "source_counts": {name: len(ids) for name, ids in targets.items()},
               "fulfillment_complete": False, "external_processors_verified": False}
     if receipt.topic in {"customers/redact", "shop/redact"}:
-        _, result["planned_restore_checkpoint"] = planned_suppressions(db, receipt)
+        _, result["planned_restore_checkpoint"] = planned_suppressions(db, receipt, targets)
     return result
 
 
@@ -221,7 +240,7 @@ def execute_local_privacy_redaction(db: Session, *, request_id: str, organizatio
     # may certify this against a case-specific merchant instruction and evidence.
     verify_case_legal_clearance(legal_clearance_token, request_id=request_id,
         organization_id=organization_id, store_id=store_id, scope_sha256=digest)
-    additions, checkpoint = planned_suppressions(db, receipt)
+    additions, checkpoint = planned_suppressions(db, receipt, targets)
     if (
         permit.restore_checkpoint_hmac != checkpoint["checkpoint_hmac"]
         or permit.restore_min_records != checkpoint["total_records"]
