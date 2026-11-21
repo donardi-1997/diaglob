@@ -83,6 +83,21 @@ def execute_permitted_local_redaction(
         _map_live_error(exc)
 
 
+@router.post("/api/stores/{store_id}/shopify/privacy/cases/{request_id}/knowledge-erasure")
+def execute_shop_knowledge_erasure_route(
+    store_id: int, request_id: str,
+    membership: OrganizationMembership = Depends(get_current_membership),
+    store: Store = Depends(require_authorized_path_store), db: Session = Depends(get_db),
+):
+    from ..services.shopify_privacy_knowledge_erasure import execute_shop_knowledge_erasure
+    try:
+        return execute_shop_knowledge_erasure(db, request_id=request_id,
+            organization_id=membership.organization_id, store_id=store.id,
+            user_id=membership.user_id)
+    except ShopifyPrivacyExecutionError as exc:
+        _map_live_error(exc)
+
+
 def _map_delivery_error(exc: ShopifyPrivacySecureDeliveryError):
     if str(exc) == "LIVE_PRIVACY_DELIVERY_DISABLED":
         raise HTTPException(status_code=503, detail="PRIVACY_DELIVERY_NOT_ENABLED") from exc

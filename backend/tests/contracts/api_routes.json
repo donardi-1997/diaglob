@@ -1249,6 +1249,10 @@
   ],
   [
     "POST",
+    "/api/stores/{store_id}/shopify/privacy/cases/{request_id}/knowledge-erasure"
+  ],
+  [
+    "POST",
     "/api/stores/{store_id}/shopify/privacy/cases/{request_id}/local-export"
   ],
   [
