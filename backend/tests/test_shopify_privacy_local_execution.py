@@ -302,7 +302,10 @@ def test_queued_local_buyer_is_suppressed_after_profile_deletion_without_harming
         store_id=stores[0].id, kind="local_customer", status="active",
     ).all()
     assert len(local_rows) == 1
-    assert str(customer.id) not in local_rows[0].selector_digest
+    # HMAC is a 64-character hex digest, not the raw local identifier.
+    # A single decimal digit can coincidentally occur inside any hex digest.
+    assert len(local_rows[0].selector_digest) == 64
+    assert local_rows[0].selector_digest != str(customer.id)
     assert evaluate_shopify_local_privacy(
         db, organization_id=owner["organization_id"], store_id=stores[0].id,
         local_customer_id=customer.id,
