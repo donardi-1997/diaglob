@@ -25,6 +25,7 @@ from .shopify_privacy_execution_authorization import (
 from .shopify_privacy_local_execution import (
     local_privacy_targets, owned_privacy_receipt, require_privacy_owner, scope_digest,
 )
+from .shopify_privacy_legal_clearance import verify_case_legal_clearance
 from .shopify_privacy_local_processor import ShopifyLocalPrivacyError, build_encrypted_local_customer_export
 from .shopify_privacy_lock import lock_shopify_privacy_scope
 
@@ -37,7 +38,8 @@ def _cipher() -> Fernet:
 
 
 def issue_local_privacy_delivery(db: Session, *, request_id: str, organization_id: int,
-                                 store_id: int, user_id: int, permit_token: str) -> dict:
+                                 store_id: int, user_id: int, permit_token: str,
+                                 legal_clearance_token: str | None = None) -> dict:
     require_privacy_owner(db, organization_id=organization_id, store_id=store_id, user_id=user_id)
     policy = require_execution_policy()
     cipher = _cipher()
@@ -46,8 +48,14 @@ def issue_local_privacy_delivery(db: Session, *, request_id: str, organization_i
     if receipt.topic != "customers/data_request":
         raise ShopifyPrivacyExecutionError("DATA_REQUEST_TOPIC_REQUIRED")
     targets = local_privacy_targets(db, receipt)
+    digest_scope = scope_digest(receipt, targets)
     verify_execution_permit(permit_token, operation="local_export", request_id=request_id,
-        organization_id=organization_id, store_id=store_id, scope_sha256=scope_digest(receipt, targets))
+        organization_id=organization_id, store_id=store_id, scope_sha256=digest_scope)
+    # A technical permit alone cannot authorize extraction of buyer PII.
+    # The independent review must reference the exact merchant instruction,
+    # policy version, Shopify case and scoped subject/order manifest.
+    verify_case_legal_clearance(legal_clearance_token, request_id=request_id,
+        organization_id=organization_id, store_id=store_id, scope_sha256=digest_scope)
     try:
         export = build_encrypted_local_customer_export(db, request_id=request_id)
     except ShopifyLocalPrivacyError as exc:
