@@ -31,6 +31,16 @@ REQUIRED_WORK_ITEMS_PER_RECEIPT = 10
 _ACTIVE_STATES = frozenset({"connected", "present_unverified"})
 
 
+def _register_all_model_domains() -> None:
+    import importlib
+    import pkgutil
+
+    from . import model_domains
+
+    for module in pkgutil.iter_modules(model_domains.__path__):
+        importlib.import_module(f"{model_domains.__name__}.{module.name}")
+
+
 def _active_processor_controls(db: Session) -> set[str]:
     """Processor controls any live store activates; counts only, no identifiers.
 
@@ -39,6 +49,12 @@ def _active_processor_controls(db: Session) -> set[str]:
     """
     from .models import Store
     from .services.shopify_privacy_controls import PROCESSOR_CONTROLS
+
+    # Standalone `python -m` runs do not import the full app; register every
+    # model domain so string relationships (e.g. Shipment -> SupplierOrder)
+    # resolve. Otherwise detection fails closed and contradicts valid
+    # not_in_use attestations.
+    _register_all_model_domains()
     from .services.shopify_privacy_subprocessors import inspect_shopify_privacy_subprocessors
 
     try:
