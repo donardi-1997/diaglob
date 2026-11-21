@@ -19,6 +19,15 @@ def test_activation_script_has_no_self_approved_policy_or_rotated_suppression_ke
     assert 'secrets.token_urlsafe' not in data
     assert '"SHOPIFY_PRIVACY_OPERATOR_APPROVED_POLICY_SHA256": hashlib.sha256' not in data
     assert 'SHOPIFY_PRIVACY_RESTORE_MIN_RECORDS' in data
+    assert 'SHOPIFY_PRIVACY_WORM_LEDGER_BUCKET' in data
+    assert 'SHOPIFY_PRIVACY_WORM_LEDGER_PREFIX' in data
+    assert 'SHOPIFY_PRIVACY_WORM_LEDGER_PUBLIC_KEY' in data
+    assert 'PRIVACY_WORM_LEDGER_PREFLIGHT_FAILED' in data
+    assert 'PRIVACY_WORM_LEDGER_PREFLIGHT=verified' in data
+    assert 'verify_worm_ledger(s3, bucket=bucket, prefix=prefix, public_key=public)' in data
+    assert 'verify_shopify_suppression_restore(' in data
+    assert 'anchor["last_checkpoint_hmac"] != checkpoint' in data
+    assert 'anchor["last_policy_sha256"] != policy_digest' in data
 
 
 def test_embedded_activation_python_has_valid_syntax():
