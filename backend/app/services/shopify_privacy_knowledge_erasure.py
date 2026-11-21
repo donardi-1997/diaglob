@@ -142,9 +142,21 @@ def execute_shop_knowledge_erasure(
     db.commit()
     deleted = 0
     for kb_id in plan["exclusive_knowledge_base_ids"]:
+        # Revalidate ownership immediately before each non-atomic external call:
+        # between approval and this iteration another merchant could have
+        # attached this KB to a second store, making it shared.
+        current_plan = plan_shop_knowledge_erasure(
+            db, organization_id=organization_id, store_id=store_id,
+        )
+        if kb_id not in current_plan["exclusive_knowledge_base_ids"]:
+            raise ShopifyPrivacyExecutionError(
+                "KNOWLEDGE_ERASURE_OWNERSHIP_CHANGED_RECONCILIATION_REQUIRED"
+            )
         knowledge_base = db.get(KnowledgeBase, kb_id)
         if knowledge_base is None or knowledge_base.organization_id != organization_id:
-            continue
+            raise ShopifyPrivacyExecutionError(
+                "KNOWLEDGE_ERASURE_RESOURCE_DISAPPEARED_RECONCILIATION_REQUIRED"
+            )
         # Deletes S3 documents and Bedrock resources; raises on external failure,
         # leaving no completion audit so the step can be safely retried.
         delete_knowledge_base(db, knowledge_base)
