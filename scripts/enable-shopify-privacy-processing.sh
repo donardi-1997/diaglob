@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Enables permit-gated Shopify privacy processing. Nothing runs by itself:
 # every export or redaction still needs a per-case permit signed offline.
+# Prerequisites (set independently beforehand): legal-policy approval, unique
+# legal reviewer key, suppression key and offsite restore checkpoint. This
+# script MUST NEVER self-approve a policy or bootstrap the tombstone key.
 #
 #   sudo bash /opt/diaglob/app/scripts/enable-shopify-privacy-processing.sh \
 #     <attestation_public_key_b64url> <execution_public_key_b64url>
@@ -51,7 +54,7 @@ trap rollback ERR
 "$PY" - "$ENV_FILE" "$1" "$2" "$APP_DIR/config/shopify-privacy-policy.json" <<'PY'
 import base64
 import hashlib
-import secrets
+import re
 import sys
 from pathlib import Path
 
@@ -66,7 +69,9 @@ def valid_public_key(value: str) -> str:
     return value
 
 
-if valid_public_key(attestation_pub) == valid_public_key(execution_pub):
+attestation_pub = valid_public_key(attestation_pub)
+execution_pub = valid_public_key(execution_pub)
+if attestation_pub == execution_pub:
     raise SystemExit("PRIVACY_KEYS_MUST_DIFFER")
 
 lines = Path(env_path).read_text(encoding="utf-8").splitlines()
@@ -76,16 +81,35 @@ for line in lines:
     if sep and not line.lstrip().startswith("#"):
         current[name.strip()] = value
 
+# Fail closed: legal and restore clearance must predate activation.
+# A digest written automatically by this script is NOT a human approval.
+policy_digest = hashlib.sha256(
+    Path(policy_path).read_bytes().replace(b"\r\n", b"\n")
+).hexdigest()
+if current.get("SHOPIFY_PRIVACY_OPERATOR_APPROVED_POLICY_SHA256") != policy_digest:
+    raise SystemExit("PRIVACY_INDEPENDENT_POLICY_APPROVAL_REQUIRED")
+review_pub = current.get("SHOPIFY_PRIVACY_LEGAL_REVIEW_PUBLIC_KEY", "")
+try:
+    valid_public_key(review_pub)
+except Exception:
+    raise SystemExit("PRIVACY_LEGAL_REVIEW_KEY_REQUIRED") from None
+if review_pub in {attestation_pub, execution_pub}:
+    raise SystemExit("PRIVACY_LEGAL_REVIEW_INDEPENDENCE_REQUIRED")
+if len(current.get("SHOPIFY_PRIVACY_SUPPRESSION_KEY", "").encode()) < 32:
+    raise SystemExit("PRIVACY_PERSISTENT_SUPPRESSION_KEY_REQUIRED")
+checkpoint = current.get("SHOPIFY_PRIVACY_RESTORE_CHECKPOINT_HMAC", "")
+minimum = current.get("SHOPIFY_PRIVACY_RESTORE_MIN_RECORDS", "")
+if not re.fullmatch(r"[0-9a-f]{64}", checkpoint):
+    raise SystemExit("PRIVACY_INDEPENDENT_RESTORE_CHECKPOINT_REQUIRED")
+if not minimum.isascii() or not minimum.isdecimal() or int(minimum) < 0:
+    raise SystemExit("PRIVACY_RESTORE_RECORD_COUNT_REQUIRED")
+# The operator must separately authenticate the offsite source of checkpoint
+# and verify the current database against it before executing this script.
 updates = {
     "SHOPIFY_PRIVACY_ATTESTATION_PUBLIC_KEY": attestation_pub,
     "SHOPIFY_PRIVACY_EXECUTION_PUBLIC_KEY": execution_pub,
-    "SHOPIFY_PRIVACY_OPERATOR_APPROVED_POLICY_SHA256": hashlib.sha256(
-        Path(policy_path).read_bytes()).hexdigest(),
     "SHOPIFY_PRIVACY_PROCESSING_ENABLED": "true",
 }
-existing_key = current.get("SHOPIFY_PRIVACY_SUPPRESSION_KEY", "")
-if len(existing_key.encode()) < 32:
-    updates["SHOPIFY_PRIVACY_SUPPRESSION_KEY"] = secrets.token_urlsafe(48)
 
 kept = [line for line in lines if line.partition("=")[0].strip() not in updates]
 kept += [f"{name}={value}" for name, value in updates.items()]
@@ -113,7 +137,8 @@ loaded = {
 required = {
     "SHOPIFY_PRIVACY_ATTESTATION_PUBLIC_KEY", "SHOPIFY_PRIVACY_EXECUTION_PUBLIC_KEY",
     "SHOPIFY_PRIVACY_OPERATOR_APPROVED_POLICY_SHA256", "SHOPIFY_PRIVACY_PROCESSING_ENABLED",
-    "SHOPIFY_PRIVACY_SUPPRESSION_KEY",
+    "SHOPIFY_PRIVACY_SUPPRESSION_KEY", "SHOPIFY_PRIVACY_LEGAL_REVIEW_PUBLIC_KEY",
+    "SHOPIFY_PRIVACY_RESTORE_CHECKPOINT_HMAC", "SHOPIFY_PRIVACY_RESTORE_MIN_RECORDS",
 }
 missing = sorted(required - loaded)
 if missing:
