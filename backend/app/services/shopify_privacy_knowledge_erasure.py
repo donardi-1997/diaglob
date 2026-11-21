@@ -34,6 +34,7 @@ from .shopify_privacy_lock import lock_shopify_privacy_scope
 from .shopify_privacy_legal_clearance import verify_case_legal_clearance
 
 EXECUTED_EVENT = "knowledge_erasure_executed"
+STARTED_EVENT = "knowledge_erasure_started"
 _ACTOR = "independently_permitted_worker"
 
 
@@ -108,6 +109,15 @@ def execute_shop_knowledge_erasure(
     if _audit_exists(db, request_id, EXECUTED_EVENT):
         return {"knowledge_erasure_executed": True, "idempotent": True,
                 "fulfillment_complete": False}
+    if _audit_exists(db, request_id, STARTED_EVENT):
+        # The underlying S3/Bedrock KB deletion orchestrator commits inside
+        # each deletion. A crashed or partially failed batch may have already
+        # removed remote objects, while changing the next planned KB digest.
+        # An independent reconciliation of the original signed plan is needed
+        # before any retry; do not infer remote deletion from missing SQL rows.
+        raise ShopifyPrivacyExecutionError(
+            "KNOWLEDGE_ERASURE_INTERRUPTED_RECONCILIATION_REQUIRED"
+        )
 
     plan = plan_shop_knowledge_erasure(db, organization_id=organization_id, store_id=store_id)
     digest = knowledge_erasure_scope_digest(db, request_id=request_id,
@@ -119,11 +129,34 @@ def execute_shop_knowledge_erasure(
         store_id=store_id, scope_sha256=digest)
     verify_case_legal_clearance(legal_clearance_token, request_id=request_id,
         organization_id=organization_id, store_id=store_id, scope_sha256=digest)
+
+    # Persist the exact original approved digest BEFORE the first irreversible
+    # provider operation. Each underlying delete may commit separately, so
+    # a single surrounding SQL transaction cannot make this step atomic.
+    # This PII-free marker is deliberately never cleared on exception.
+    db.add(ShopifyPrivacyAuditEvent(
+        request_id=request_id, event_type=STARTED_EVENT,
+        from_status=receipt.status, to_status=receipt.status,
+        reason_code=digest, actor_type=_ACTOR, created_at=datetime.utcnow(),
+    ))
+    db.commit()
     deleted = 0
     for kb_id in plan["exclusive_knowledge_base_ids"]:
+        # Revalidate ownership immediately before each non-atomic external call:
+        # between approval and this iteration another merchant could have
+        # attached this KB to a second store, making it shared.
+        current_plan = plan_shop_knowledge_erasure(
+            db, organization_id=organization_id, store_id=store_id,
+        )
+        if kb_id not in current_plan["exclusive_knowledge_base_ids"]:
+            raise ShopifyPrivacyExecutionError(
+                "KNOWLEDGE_ERASURE_OWNERSHIP_CHANGED_RECONCILIATION_REQUIRED"
+            )
         knowledge_base = db.get(KnowledgeBase, kb_id)
         if knowledge_base is None or knowledge_base.organization_id != organization_id:
-            continue
+            raise ShopifyPrivacyExecutionError(
+                "KNOWLEDGE_ERASURE_RESOURCE_DISAPPEARED_RECONCILIATION_REQUIRED"
+            )
         # Deletes S3 documents and Bedrock resources; raises on external failure,
         # leaving no completion audit so the step can be safely retried.
         delete_knowledge_base(db, knowledge_base)
