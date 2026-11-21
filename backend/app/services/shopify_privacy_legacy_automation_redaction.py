@@ -99,9 +99,12 @@ def scrub_shopify_legacy_automations(
         execution.status in ("running", "processing") for execution in selected
     )
     for execution in selected:
+        # Legacy result_json/event_id may contain opaque provider handles
+        # required to request external erasure. No reliable field-level schema
+        # exists here, so preserve them for restricted manual reconciliation
+        # rather than irreversibly discarding the only provider reference.
+        # The case MUST remain open while these PII-bearing fields exist.
         execution.input_json = "{}"
-        execution.result_json = "{}"
-        execution.event_id = None
         execution.error_message = None
         if execution.status in _RUNNING:
             execution.status = "failed"
@@ -125,6 +128,7 @@ def scrub_shopify_legacy_automations(
         "legacy_execution_payloads_scrubbed": len(selected),
         "legacy_rules_scrubbed": rules_scrubbed,
         "legacy_possible_inflight_actions": possible_inflight,
+        "legacy_result_payloads_pending_external_review": len(selected),
         "legacy_unattributed_executions_for_review": unknown,
         "legacy_shared_parent_executions_for_review": shared_execution_count,
         "legacy_rules_with_unstructured_conditions_for_review": (
