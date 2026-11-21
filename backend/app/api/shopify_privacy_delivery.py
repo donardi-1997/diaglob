@@ -106,6 +106,52 @@ def execute_shop_knowledge_erasure_route(
         _map_live_error(exc)
 
 
+@router.get("/api/stores/{store_id}/shopify/privacy/cases/{request_id}/copilot-erasure/plan")
+def preview_shop_copilot_erasure_route(
+    store_id: int, request_id: str,
+    membership: OrganizationMembership = Depends(get_current_membership),
+    store: Store = Depends(require_authorized_path_store), db: Session = Depends(get_db),
+):
+    """Only return SHA-256 scope and counts; never Copilot content or row IDs."""
+    from fastapi.responses import JSONResponse
+    from ..services.shopify_privacy_copilot_erasure import preview_shop_copilot_erasure
+    try:
+        report = preview_shop_copilot_erasure(
+            db, request_id=request_id, organization_id=membership.organization_id,
+            store_id=store.id, user_id=membership.user_id,
+        )
+    except ShopifyPrivacyExecutionError as exc:
+        _map_live_error(exc)
+    return JSONResponse(
+        report, headers={"Cache-Control": "no-store, private", "Pragma": "no-cache"},
+    )
+
+
+@router.post("/api/stores/{store_id}/shopify/privacy/cases/{request_id}/copilot-erasure")
+def execute_shop_copilot_erasure_route(
+    store_id: int, request_id: str,
+    x_privacy_execution_permit: str | None = Header(None, alias="X-Privacy-Execution-Permit"),
+    x_privacy_legal_clearance: str | None = Header(None, alias="X-Privacy-Legal-Clearance"),
+    membership: OrganizationMembership = Depends(get_current_membership),
+    store: Store = Depends(require_authorized_path_store), db: Session = Depends(get_db),
+):
+    """Delete only tenant/store-bound Copilot SQL after two independent permits."""
+    from fastapi.responses import JSONResponse
+    from ..services.shopify_privacy_copilot_erasure import execute_shop_copilot_erasure
+    try:
+        report = execute_shop_copilot_erasure(
+            db, request_id=request_id, organization_id=membership.organization_id,
+            store_id=store.id, user_id=membership.user_id,
+            execution_permit=x_privacy_execution_permit,
+            legal_clearance_token=x_privacy_legal_clearance,
+        )
+    except ShopifyPrivacyExecutionError as exc:
+        _map_live_error(exc)
+    return JSONResponse(
+        report, headers={"Cache-Control": "no-store, private", "Pragma": "no-cache"},
+    )
+
+
 def _map_delivery_error(exc: ShopifyPrivacySecureDeliveryError):
     if str(exc) == "LIVE_PRIVACY_DELIVERY_DISABLED":
         raise HTTPException(status_code=503, detail="PRIVACY_DELIVERY_NOT_ENABLED") from exc
