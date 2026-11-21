@@ -67,6 +67,13 @@ def plan_shop_copilot_erasure(db: Session, *, organization_id: int, store_id: in
                 approval_id is not None and approval_id not in approval_set
             ):
                 raise ShopifyPrivacyExecutionError("COPILOT_CROSS_STORE_REFERENCE")
+    if messages:
+        foreign_message_reference = db.query(AgentChatToolCall.id).filter(
+            AgentChatToolCall.message_id.in_(messages),
+            ~AgentChatToolCall.id.in_(calls),
+        ).first()
+        if foreign_message_reference is not None:
+            raise ShopifyPrivacyExecutionError("COPILOT_CROSS_STORE_MESSAGE_REFERENCE")
     if approvals:
         external_approval = db.query(AgentChatToolCall.id).filter(
             AgentChatToolCall.approval_id.in_(approvals),
