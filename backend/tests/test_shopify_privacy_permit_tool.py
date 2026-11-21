@@ -11,7 +11,7 @@ from app.services.shopify_privacy_execution_authorization import (
     policy_snapshot,
     verify_execution_permit,
 )
-from tools.shopify_privacy_permit import mint_permit
+from tools.shopify_privacy_permit import append_checkpoint_ledger, mint_permit
 
 CASE = dict(
     operation="local_redaction", request_id="a" * 64, organization_id=3,
@@ -59,6 +59,18 @@ def test_expired_or_overlong_permits_are_refused(private):
         _verify(expired)
     with pytest.raises(ValueError):
         mint_permit(private, now=int(time.time()), ttl_seconds=86400, **CASE)
+
+
+def test_checkpoint_ledger_is_append_only_and_opaque(tmp_path):
+    import json
+    ledger = tmp_path / "nested" / "checkpoint-ledger.jsonl"
+    append_checkpoint_ledger(ledger, request_id="a" * 64, checkpoint_hmac="c" * 64,
+                             min_records=2, now=100)
+    append_checkpoint_ledger(ledger, request_id="b" * 64, checkpoint_hmac="d" * 64,
+                             min_records=3, now=200)
+    entries = [json.loads(line) for line in ledger.read_text().splitlines()]
+    assert [e["min_records"] for e in entries] == [2, 3]
+    assert set(entries[-1]) == {"recorded_at", "request_id", "checkpoint_hmac", "min_records"}
 
 
 def test_permit_from_another_key_is_refused(private):

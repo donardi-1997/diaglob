@@ -47,6 +47,24 @@ def mint_permit(private: Ed25519PrivateKey, *, now: int, ttl_seconds: int, **fie
     return b64encode(payload) + "." + b64encode(private.sign(SIGNING_CONTEXT + payload))
 
 
+def append_checkpoint_ledger(ledger: Path, *, request_id: str, checkpoint_hmac: str,
+                             min_records: int, now: int) -> None:
+    """Append-only, off-server record of every planned tombstone checkpoint.
+
+    The server's own checkpoint (env + database) is inside the same instance
+    snapshot, so a restore can roll both back consistently. After any restore,
+    compare the restored database with the LAST entry of this ledger
+    (tools.shopify_privacy_restore_check verify) before resuming ingestion.
+    Contains only opaque digests and counts, never customer data.
+    """
+    ledger.parent.mkdir(parents=True, exist_ok=True)
+    with ledger.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps({
+            "recorded_at": now, "request_id": request_id,
+            "checkpoint_hmac": checkpoint_hmac, "min_records": min_records,
+        }, sort_keys=True) + "\n")
+
+
 def _keygen(out: Path) -> int:
     out.mkdir(parents=True, exist_ok=True)
     key_path = out / "permit.key"
@@ -85,6 +103,7 @@ def main() -> int:
     sign.add_argument("--restore-checkpoint-hmac")
     sign.add_argument("--restore-min-records", type=int)
     sign.add_argument("--ttl-minutes", type=int, default=60)
+    sign.add_argument("--ledger", help="Off-server checkpoint ledger; defaults next to the key")
     args = parser.parse_args()
     if args.command == "keygen":
         return _keygen(Path(args.out))
@@ -94,14 +113,22 @@ def main() -> int:
         print("REDACTION_REQUIRES_PLANNED_RESTORE_CHECKPOINT", file=sys.stderr)
         return 1
     private = serialization.load_pem_private_key(Path(args.key).read_bytes(), password=None)
+    now = int(time.time())
     token = mint_permit(
-        private, now=int(time.time()), ttl_seconds=args.ttl_minutes * 60,
+        private, now=now, ttl_seconds=args.ttl_minutes * 60,
         operation=args.operation, request_id=args.request_id,
         organization_id=args.organization_id, store_id=args.store_id,
         scope_sha256=args.scope_sha256,
         restore_checkpoint_hmac=args.restore_checkpoint_hmac,
         restore_min_records=args.restore_min_records,
     )
+    if args.restore_checkpoint_hmac is not None:
+        ledger = Path(args.ledger) if args.ledger else Path(args.key).parent / "checkpoint-ledger.jsonl"
+        append_checkpoint_ledger(
+            ledger, request_id=args.request_id, checkpoint_hmac=args.restore_checkpoint_hmac,
+            min_records=args.restore_min_records, now=now,
+        )
+        print(f"LEDGER_APPENDED={ledger}", file=sys.stderr)
     # The token is a short-lived bearer credential: hand it to the store
     # owner's execution request only; never paste it into tickets or chat.
     print(token)
