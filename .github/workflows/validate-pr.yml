@@ -144,7 +144,7 @@ jobs:
         shell: bash
         run: |
           bash -n scripts/check-api-readiness.sh scripts/restart-api-verified.sh scripts/restart-automation-worker.sh
-          python3 -m unittest discover -s scripts/tests -p 'test_api_readiness.py'
+          python3 -m unittest discover -s scripts/tests -p 'test_*.py'
 
       - name: Ruff
         if: matrix.shard == 0

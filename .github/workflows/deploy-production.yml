@@ -54,7 +54,7 @@ jobs:
       - name: Validate readiness gate without network access
         run: |
           bash -n scripts/check-api-readiness.sh scripts/restart-api-verified.sh scripts/restart-automation-worker.sh
-          python3 -m unittest discover -s scripts/tests -p 'test_api_readiness.py'
+          python3 -m unittest discover -s scripts/tests -p 'test_*.py'
 
       - name: Backend tests
         run: |
@@ -152,6 +152,40 @@ jobs:
           .venv/bin/alembic upgrade heads
           .venv/bin/alembic current
           REMOTE
+
+      - name: Sync Shopify App Pricing configuration (secrets, never printed)
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+          SHOPIFY_PARTNER_ORG_ID: ${{ secrets.SHOPIFY_PARTNER_ORG_ID }}
+          SHOPIFY_PARTNER_APP_GID: ${{ secrets.SHOPIFY_PARTNER_APP_GID }}
+          SHOPIFY_PARTNER_ACCESS_TOKEN: ${{ secrets.SHOPIFY_PARTNER_ACCESS_TOKEN }}
+          SHOPIFY_APP_PRICING_HANDLES_JSON: ${{ secrets.SHOPIFY_APP_PRICING_HANDLES_JSON }}
+          SHOPIFY_APP_STORE_HANDLE: ${{ secrets.SHOPIFY_APP_STORE_HANDLE }}
+          SHOPIFY_BILLING_ENTITLEMENTS_ENABLED: ${{ vars.SHOPIFY_BILLING_ENTITLEMENTS_ENABLED }}
+          SHOPIFY_BILLING_SCHEDULER_ENABLED: ${{ vars.SHOPIFY_BILLING_SCHEDULER_ENABLED }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Values travel over SSH stdin to a root-only temp file; the remote
+          # script validates everything, prints key names only, and deletes
+          # the payload. Empty secrets/variables never wipe existing values.
+          python3 - <<'PY' > "$RUNNER_TEMP/shopify-billing.json"
+          import json, os
+          keys = (
+              "SHOPIFY_PARTNER_ORG_ID", "SHOPIFY_PARTNER_APP_GID",
+              "SHOPIFY_PARTNER_ACCESS_TOKEN", "SHOPIFY_APP_PRICING_HANDLES_JSON",
+              "SHOPIFY_APP_STORE_HANDLE", "SHOPIFY_BILLING_ENTITLEMENTS_ENABLED",
+              "SHOPIFY_BILLING_SCHEDULER_ENABLED",
+          )
+          print(json.dumps({k: os.environ.get(k, "") for k in keys}))
+          PY
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -i "$HOME/.ssh/diaglob_actions_prod" \
+            "$PROD_USER@$PROD_HOST" \
+            'sudo bash -c "umask 077; f=\$(mktemp /root/.shopify-billing-XXXXXX); cat > \$f; /opt/diaglob/app/backend/.venv/bin/python /opt/diaglob/app/scripts/sync_shopify_billing_env.py /etc/diaglob/diaglob.env \$f"' \
+            < "$RUNNER_TEMP/shopify-billing.json"
+          rm -f "$RUNNER_TEMP/shopify-billing.json"
 
       - name: Deploy DIAGLOB and verify local + public readiness
         env:
