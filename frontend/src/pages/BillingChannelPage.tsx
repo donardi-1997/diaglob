@@ -46,7 +46,7 @@ const CHANNEL_COPY: Record<BillingLocale, {
     pendingShopifyNote: "Mientras la conexión esté pendiente, los pagos y los cambios de plan permanecerán deshabilitados. No se ha creado ninguna suscripción.",
     goToStores: "Ir a mis tiendas",
     unknownTitle: "Proveedor de facturación por confirmar",
-    unknownBody: "No hemos podido determinar si tu organización se factura por Shopify o Paddle. Por seguridad, las operaciones de pago están deshabilitadas. Contacta con soporte para revisar tu cuenta.",
+    unknownBody: "No hemos podido determinar el canal de facturación de tu organización. Por seguridad, las operaciones de pago están deshabilitadas. Contacta con soporte para revisar tu cuenta.",
     checkAgain: "Volver a consultar",
   },
   en: {
@@ -64,7 +64,7 @@ const CHANNEL_COPY: Record<BillingLocale, {
     pendingShopifyNote: "While the connection is pending, payments and plan changes stay disabled. No subscription has been created.",
     goToStores: "Go to my stores",
     unknownTitle: "Billing provider not confirmed",
-    unknownBody: "We couldn't determine whether your organization is billed through Shopify or Paddle. For security, payment operations are disabled. Contact support to review your account.",
+    unknownBody: "We couldn't determine your organization's billing channel. For security, payment operations are disabled. Contact support to review your account.",
     checkAgain: "Check again",
   },
   "pt-BR": {
@@ -82,7 +82,7 @@ const CHANNEL_COPY: Record<BillingLocale, {
     pendingShopifyNote: "Enquanto a conexão estiver pendente, pagamentos e mudanças de plano ficam desativados. Nenhuma assinatura foi criada.",
     goToStores: "Ir para minhas lojas",
     unknownTitle: "Provedor de cobrança a confirmar",
-    unknownBody: "Não conseguimos determinar se sua organização é cobrada pela Shopify ou pela Paddle. Por segurança, as operações de pagamento estão desativadas. Fale com o suporte para revisar sua conta.",
+    unknownBody: "Não conseguimos determinar o canal de cobrança da sua organização. Por segurança, as operações de pagamento estão desativadas. Fale com o suporte para revisar sua conta.",
     checkAgain: "Consultar novamente",
   },
 };
@@ -176,13 +176,9 @@ export default function BillingChannelPage({
       return <ShopifyBillingWorkspace organization={organization} />;
     case "paddle":
       if (shopifyMigrationRequired) {
-        return (
-          <ShopifyBillingWorkspace
-            organization={organization}
-            paddleMigrationStatus={paddleStatus}
-            onPaddleMigrationRefresh={() => { void load(); }}
-          />
-        );
+        // Shopify-connected tenants only see Shopify App Pricing. Any legacy
+        // off-platform renewal is handled by DIAGLOB support, never in-app.
+        return <ShopifyBillingWorkspace organization={organization} />;
       }
       return (
         <>
