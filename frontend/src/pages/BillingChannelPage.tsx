@@ -176,13 +176,9 @@ export default function BillingChannelPage({
       return <ShopifyBillingWorkspace organization={organization} />;
     case "paddle":
       if (shopifyMigrationRequired) {
-        return (
-          <ShopifyBillingWorkspace
-            organization={organization}
-            paddleMigrationStatus={paddleStatus}
-            onPaddleMigrationRefresh={() => { void load(); }}
-          />
-        );
+        // Shopify-connected tenants only see Shopify App Pricing. Any legacy
+        // off-platform renewal is handled by DIAGLOB support, never in-app.
+        return <ShopifyBillingWorkspace organization={organization} />;
       }
       return (
         <>

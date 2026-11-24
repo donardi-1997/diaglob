@@ -23,9 +23,6 @@ export interface BillingCopy {
   errorGeneric: string;
   reviewRequired: string;
   dateUnavailable: string;
-  paddleCancelledOn: (date: string) => string;
-  paddleRenewalDisabled: string;
-  paddleCancelFailed: string;
   orgMismatch: string;
   channelMismatch: string;
   applyConfirm: string;
@@ -50,21 +47,12 @@ export interface BillingCopy {
   returnApplied: (plan: string) => string;
   returnAlreadyApplied: (plan: string) => string;
   title: string;
-  subtitleMigration: string;
   subtitle: string;
   managedInShopify: string;
   cautionApplyEnabled: string;
   cautionApplyDisabled: string;
   cautionBody: string;
-  migrationTitle: string;
-  migrationBody: string;
-  paddleStatus: string;
   reviewNeeded: string;
-  renewalDisabledSuffix: string;
-  renewalActiveSuffix: string;
-  renewalDisabledButton: string;
-  renewalCancelling: string;
-  renewalCancelButton: string;
   currentPlan: string;
   currentStatus: string;
   notConfirmed: string;
@@ -179,9 +167,6 @@ const es: BillingCopy = {
   errorGeneric: "No fue posible completar la consulta. Puedes intentarlo nuevamente.",
   reviewRequired: "Revisión requerida",
   dateUnavailable: "Fecha no disponible",
-  paddleCancelledOn: (date) => `La renovación de Paddle quedó cancelada para el ${date}. Mantendrás el acceso hasta esa fecha.`,
-  paddleRenewalDisabled: "La renovación de Paddle quedó desactivada. El acceso pagado se conserva hasta el fin del periodo vigente.",
-  paddleCancelFailed: "No se pudo programar la cancelación de Paddle. No se modificó el plan Shopify.",
   orgMismatch: "No se pudo confirmar la organización de facturación.",
   channelMismatch: "No se pudo validar el canal de facturación.",
   applyConfirm: "Confirmar: Diaglob volverá a consultar Shopify y solo aplicará el plan si existe una suscripción activa y aprobada. No se efectuará ningún cobro desde Diaglob.",
@@ -206,21 +191,12 @@ const es: BillingCopy = {
   returnApplied: (plan) => `Plan ${plan} aplicado después de una segunda verificación con Shopify.`,
   returnAlreadyApplied: (plan) => `El plan ${plan} ya estaba aplicado; no se repitió ninguna operación.`,
   title: "Planes y facturación Shopify",
-  subtitleMigration: "Tu organización ya tiene una tienda Shopify y una suscripción Paddle anterior. Migra los cobros de forma segura, conservando el acceso pagado hasta el vencimiento.",
   subtitle: "Consulta el estado de la suscripción vinculada a tu tienda y revisa cualquier diferencia antes de modificar el acceso.",
   managedInShopify: "Gestionado en Shopify",
   cautionApplyEnabled: "Los cambios requieren una confirmación nueva de Shopify.",
   cautionApplyDisabled: "La activación de planes aún no está habilitada.",
   cautionBody: "Shopify administra los cobros. Verificar o preparar una propuesta no cambia el plan; la aplicación, si está habilitada, requiere confirmación activa de Shopify y autorización del propietario.",
-  migrationTitle: "Migrar la facturación anterior de Paddle",
-  migrationBody: "DIAGLOB debe cobrar la suscripción de la app mediante Shopify App Pricing. Cancela la renovación de Paddle y después elige un plan en Shopify. Paddle mantiene activo el periodo ya pagado; al finalizar, confirma un plan Shopify para reactivar las funciones de pago.",
-  paddleStatus: "Estado de Paddle",
   reviewNeeded: "revisión necesaria",
-  renewalDisabledSuffix: " · renovación desactivada",
-  renewalActiveSuffix: " · renovación activa",
-  renewalDisabledButton: "Renovación de Paddle desactivada",
-  renewalCancelling: "Cancelando renovación…",
-  renewalCancelButton: "Cancelar renovación de Paddle",
   currentPlan: "Plan actual en Diaglob",
   currentStatus: "Estado actual de la suscripción",
   notConfirmed: "No confirmado",
@@ -279,7 +255,7 @@ const es: BillingCopy = {
   checkedAt: (date) => `Comprobado: ${date} · Los contratos se revalidan antes de cualquier cambio.`,
   confirmingWithShopify: "Confirmando con Shopify…",
   applyVerifiedPlan: "Aplicar plan verificado",
-  footer: "Las suscripciones se administran desde Shopify. Esta sección no utiliza Paddle ni inicia pagos.",
+  footer: "Las suscripciones se contratan, cambian y cobran en Shopify. Esta sección no inicia pagos.",
 };
 
 const en: BillingCopy = {
@@ -335,9 +311,6 @@ const en: BillingCopy = {
   errorGeneric: "The request could not be completed. You can try again.",
   reviewRequired: "Review required",
   dateUnavailable: "Date unavailable",
-  paddleCancelledOn: (date) => `Paddle renewal was cancelled for ${date}. You keep access until that date.`,
-  paddleRenewalDisabled: "Paddle renewal was turned off. Paid access is kept until the end of the current period.",
-  paddleCancelFailed: "The Paddle cancellation could not be scheduled. The Shopify plan was not changed.",
   orgMismatch: "The billing organization could not be confirmed.",
   channelMismatch: "The billing channel could not be validated.",
   applyConfirm: "Confirm: Diaglob will check Shopify again and only apply the plan if there is an active, approved subscription. Diaglob will not charge you.",
@@ -362,21 +335,12 @@ const en: BillingCopy = {
   returnApplied: (plan) => `Plan ${plan} applied after a second verification with Shopify.`,
   returnAlreadyApplied: (plan) => `Plan ${plan} was already applied; no operation was repeated.`,
   title: "Shopify plans and billing",
-  subtitleMigration: "Your organization already has a Shopify store and a previous Paddle subscription. Move billing safely, keeping paid access until it ends.",
   subtitle: "Check the status of the subscription linked to your store and review any difference before changing access.",
   managedInShopify: "Managed in Shopify",
   cautionApplyEnabled: "Changes require a new confirmation from Shopify.",
   cautionApplyDisabled: "Plan activation is not enabled yet.",
   cautionBody: "Shopify handles charges. Verifying or preparing a proposal does not change the plan; applying it, when enabled, requires an active Shopify confirmation and the owner's authorization.",
-  migrationTitle: "Move previous Paddle billing",
-  migrationBody: "DIAGLOB must charge the app subscription through Shopify App Pricing. Cancel the Paddle renewal, then choose a plan in Shopify. Paddle keeps the paid period active; when it ends, confirm a Shopify plan to re-enable paid features.",
-  paddleStatus: "Paddle status",
   reviewNeeded: "review needed",
-  renewalDisabledSuffix: " · renewal off",
-  renewalActiveSuffix: " · renewal on",
-  renewalDisabledButton: "Paddle renewal turned off",
-  renewalCancelling: "Cancelling renewal…",
-  renewalCancelButton: "Cancel Paddle renewal",
   currentPlan: "Current plan in Diaglob",
   currentStatus: "Current subscription status",
   notConfirmed: "Not confirmed",
@@ -435,7 +399,7 @@ const en: BillingCopy = {
   checkedAt: (date) => `Checked: ${date} · Contracts are revalidated before any change.`,
   confirmingWithShopify: "Confirming with Shopify…",
   applyVerifiedPlan: "Apply verified plan",
-  footer: "Subscriptions are managed in Shopify. This section does not use Paddle or start payments.",
+  footer: "Subscriptions are purchased, changed and billed in Shopify. This section does not start payments.",
 };
 
 const ptBR: BillingCopy = {
@@ -524,7 +488,7 @@ const ptBR: BillingCopy = {
   reviewLine: (id, date) => `Revisão #${id} · expira ${date}`,
   checkValidity: "Verificar validade",
   applyVerifiedPlan: "Aplicar plano verificado",
-  footer: "As assinaturas são gerenciadas na Shopify. Esta seção não usa Paddle nem inicia pagamentos.",
+  footer: "As assinaturas são contratadas, alteradas e cobradas na Shopify. Esta seção não inicia pagamentos.",
 };
 
 export const BILLING_COPY: Record<BillingLocale, BillingCopy> = {

@@ -5,7 +5,6 @@ import {
 } from "lucide-react";
 
 import type { Organization } from "../services/organizations";
-import { schedulePaddleCancellation, type PaddleBillingStatus } from "../services/billing";
 import {
   assessShopifyPlanReview,
   applyVerifiedShopifyPlan,
@@ -34,8 +33,6 @@ import {
 
 interface Props {
   organization: Organization;
-  paddleMigrationStatus?: PaddleBillingStatus | null;
-  onPaddleMigrationRefresh?: () => void;
 }
 
 function billingErrorMessage(error: unknown, copy: BillingCopy): string {
@@ -53,11 +50,12 @@ function billingErrorMessage(error: unknown, copy: BillingCopy): string {
   return copy.errorGeneric;
 }
 
-export default function ShopifyBillingWorkspace({
-  organization,
-  paddleMigrationStatus = null,
-  onPaddleMigrationRefresh,
-}: Props) {
+/**
+ * Shopify App Store merchants manage app charges only in Shopify. This
+ * workspace must never expose off-platform (Paddle) billing controls or copy:
+ * App Store requirement 1.2.1.
+ */
+export default function ShopifyBillingWorkspace({ organization }: Props) {
   const { i18n } = useTranslation();
   const locale = normalizeBillingLocale(i18n.resolvedLanguage || i18n.language);
   const copy = BILLING_COPY[locale];
@@ -92,26 +90,6 @@ export default function ShopifyBillingWorkspace({
   const [busy, setBusy] = useState<"refresh" | "check" | "stage" | "assess" | "hosted" | "apply" | "subscription" | "trial" | "return" | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [migrationBusy, setMigrationBusy] = useState(false);
-
-  async function stopPaddleRenewal() {
-    if (!isOwner || migrationBusy || paddleMigrationStatus?.auto_renew_enabled === false) return;
-    setMigrationBusy(true);
-    setError("");
-    setNotice("");
-    try {
-      const result = await schedulePaddleCancellation();
-      if (result.auto_renew_enabled !== false) throw new Error("Renewal remains enabled");
-      setNotice(result.effective_at
-        ? copy.paddleCancelledOn(formatDate(result.effective_at))
-        : copy.paddleRenewalDisabled);
-      onPaddleMigrationRefresh?.();
-    } catch {
-      setError(copy.paddleCancelFailed);
-    } finally {
-      setMigrationBusy(false);
-    }
-  }
 
   const refreshHistory = useCallback(async () => {
     const [checks, proposals] = await Promise.all([
@@ -346,7 +324,7 @@ export default function ShopifyBillingWorkspace({
         <div>
           <p className="shopify-billing-eyebrow">DIAGLOB · SHOPIFY APP PRICING</p>
           <h1>{copy.title}</h1>
-          <p>{paddleMigrationStatus?.migration_required ? copy.subtitleMigration : copy.subtitle}</p>
+          <p>{copy.subtitle}</p>
         </div>
         <span className="shopify-billing-source"><ShieldCheck size={17} /> {copy.managedInShopify}</span>
       </header>
@@ -360,25 +338,6 @@ export default function ShopifyBillingWorkspace({
           <p>{copy.cautionBody}</p>
         </div>
       </div>
-
-      {paddleMigrationStatus?.migration_required && (
-        <section className="shopify-billing-panel" aria-labelledby="paddle-migration-heading">
-          <div className="shopify-billing-panel-title">
-            <div>
-              <h2 id="paddle-migration-heading">{copy.migrationTitle}</h2>
-              <p>{copy.migrationBody}</p>
-              <p className="shopify-billing-muted">{copy.paddleStatus}: {paddleMigrationStatus.subscription_status || copy.reviewNeeded}{paddleMigrationStatus.auto_renew_enabled === false ? copy.renewalDisabledSuffix : copy.renewalActiveSuffix}</p>
-            </div>
-            <button type="button" className="shopify-billing-primary"
-              disabled={!isOwner || migrationBusy || paddleMigrationStatus.auto_renew_enabled === false}
-              onClick={() => { void stopPaddleRenewal(); }}>
-              {paddleMigrationStatus.auto_renew_enabled === false ? copy.renewalDisabledButton : migrationBusy ? copy.renewalCancelling : copy.renewalCancelButton}
-            </button>
-          </div>
-          {error && <p className="shopify-billing-error" role="alert">{error}</p>}
-          {notice && <p className="shopify-billing-notice" role="status">{notice}</p>}
-        </section>
-      )}
 
       <div className="shopify-billing-stats">
         <section>
