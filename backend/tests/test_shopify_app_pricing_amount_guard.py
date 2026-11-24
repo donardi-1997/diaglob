@@ -169,3 +169,61 @@ def test_inactive_or_wrong_currency_never_confirms_a_paid_plan():
             ShopifySubscriptionSnapshot(active=False),
             handle_catalog=APPROVED_CATALOG,
         )
+
+
+def _partner_payload(*, active, amount):
+    return {
+        "data": {
+            "activeSubscription": {
+                "shop": {"id": "gid://shopify/Shop/789"},
+                "billingPeriod": "EVERY_30_DAYS",
+                "cancelAtEndOfCycle": False,
+                "trialEndsAt": "2026-11-27T16:49:00Z",
+                "currentBillingCycle": None,
+                "items": [{
+                    "handle": "shopify-real-handle",
+                    "description": "Starter",
+                    "price": {
+                        "__typename": "FlatRatePrice",
+                        "currency": "USD", "active": active, "amount": amount,
+                    },
+                }],
+                "pendingUpdate": None,
+            },
+        }
+    }
+
+
+def _fetch(monkeypatch, payload):
+    monkeypatch.setenv("SHOPIFY_PARTNER_ORG_ID", "12345")
+    monkeypatch.setenv("SHOPIFY_PARTNER_APP_GID", "gid://shopify/App/54321")
+    monkeypatch.setenv("SHOPIFY_PARTNER_ACCESS_TOKEN", "synthetic-token")
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, json=payload))
+    with httpx.Client(transport=transport) as client:
+        return get_active_shopify_subscription("gid://shopify/Shop/789", http_client=client)
+
+
+def test_development_store_zero_price_is_inactive_but_verifiable_only_for_dev_shops(monkeypatch):
+    # Real Partner API shape observed on a development store (Nov 2026):
+    # Shopify rewrites the plan to USD 0 and reports price.active=False.
+    subscription = _fetch(monkeypatch, _partner_payload(active=False, amount="0.0"))
+    assert subscription.eligible_handles == ("shopify-real-handle",)
+    assert subscription.eligible_amounts == ("0.0",)
+
+    verified = resolve_verified_shopify_plan(
+        subscription, handle_catalog=APPROVED_CATALOG, allow_no_charge_testing=True,
+    )
+    assert (verified.plan, verified.billing_period_months) == ("starter", 1)
+
+    with pytest.raises(ShopifyAppPricingError, match="SHOPIFY_PLAN_PRICE_UNVERIFIED"):
+        resolve_verified_shopify_plan(subscription, handle_catalog=APPROVED_CATALOG)
+
+
+@pytest.mark.parametrize("amount", ["19.00", "0.01", None, "abc"])
+def test_inactive_nonzero_or_malformed_price_is_never_eligible(monkeypatch, amount):
+    subscription = _fetch(monkeypatch, _partner_payload(active=False, amount=amount))
+    assert subscription.eligible_handles == ()
+    with pytest.raises(ShopifyAppPricingError, match="SHOPIFY_PLAN_ITEMS_UNRECOGNIZED"):
+        resolve_verified_shopify_plan(
+            subscription, handle_catalog=APPROVED_CATALOG, allow_no_charge_testing=True,
+        )

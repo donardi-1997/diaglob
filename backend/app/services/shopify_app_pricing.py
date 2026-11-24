@@ -117,6 +117,35 @@ def _valid_usd_amount(value: Any) -> bool:
     )
 
 
+def _is_zero_usd_amount(value: Any) -> bool:
+    return (
+        type(value) is str
+        and USD_AMOUNT_RE.fullmatch(value) is not None
+        and Decimal(value) == 0
+    )
+
+
+def _eligible_price_item(item: dict) -> bool:
+    """Whether a subscription item can identify the merchant's current plan.
+
+    Partner API reports ``price.active=False`` when the subscription price
+    differs from the plan's current price. Shopify rewrites paid App Pricing
+    items to USD 0 on development stores, so those test subscriptions are
+    always ``active=False``. Accept an inactive price only for that exact
+    zero-amount case; the caller still rejects zero amounts unless the shop
+    was independently authenticated as ``partnerDevelopment``.
+    """
+    handle = item.get("handle")
+    price = item.get("price")
+    if not isinstance(handle, str) or not handle.strip() or not isinstance(price, dict):
+        return False
+    if price.get("__typename") != "FlatRatePrice" or price.get("currency") != "USD":
+        return False
+    if price.get("active") is True:
+        return True
+    return price.get("active") is False and _is_zero_usd_amount(price.get("amount"))
+
+
 class ShopifyAppPricingError(RuntimeError):
     """Provider state cannot be verified; fail closed, never grant plan access."""
 
@@ -344,26 +373,12 @@ def get_active_shopify_subscription(
         for item in items
         if isinstance(handle := item.get("handle"), str) and handle.strip()
     )
-    eligible_handles = tuple(
-        str(item["handle"]).strip()
-        for item in items
-        if isinstance(item.get("handle"), str)
-        and item["handle"].strip()
-        and isinstance(item.get("price"), dict)
-        and item["price"].get("active") is True
-        and item["price"].get("__typename") == "FlatRatePrice"
-        and item["price"].get("currency") == "USD"
-    )
+    eligible_items = tuple(item for item in items if _eligible_price_item(item))
+    eligible_handles = tuple(str(item["handle"]).strip() for item in eligible_items)
     eligible_amounts = tuple(
         item["price"].get("amount")
         if type(item["price"].get("amount")) is str else None
-        for item in items
-        if isinstance(item.get("handle"), str)
-        and item["handle"].strip()
-        and isinstance(item.get("price"), dict)
-        and item["price"].get("active") is True
-        and item["price"].get("__typename") == "FlatRatePrice"
-        and item["price"].get("currency") == "USD"
+        for item in eligible_items
     )
     return ShopifySubscriptionSnapshot(
         active=True,
